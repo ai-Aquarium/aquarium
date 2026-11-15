@@ -5,7 +5,7 @@ Tracking file for in-flight feature work. Update as phases land.
 ## Data dictionary — Phase 6: schema change check
 
 Plan: `docs/plans/2026-11-14-001-data-dictionary-semantic-layer-plan.md`
-Branch: `devin/1794652805-data-dictionary-plan` (PR #921, draft)
+Merged into `develop` via #921 (2026-11-15). Not deployed: see "Deploy" in the plan.
 Status: **implemented** — updated 2026-11-15
 
 | Phase | Scope | Status |
