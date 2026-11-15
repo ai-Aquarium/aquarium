@@ -11,12 +11,12 @@ dictionary** per data source instead of one skill per table.
 | Phase | What | Status |
 |---|---|---|
 | 0 | Evaluation of the "MCP + skills" proposal, decisions, UI mockups | Done (mockups approved) |
-| 1 | Safe access and richer discovery | Done (PR #921, draft) |
-| 2 | Dictionary store, versions, sharing, API | Done (PR #921, draft) |
-| 3 | Study → propose, and the `data-questions` skill | Done (PR #921, draft) |
-| 4 | agent-home UI (`/data`) | Done (PR #921, draft; browser-tested at 390/768/1440 px) |
-| 5 | Improve over time: chat suggestions, answer feedback, Needs You | Built (PR #921); browser-tested locally, not deployed |
-| 6 | Schema change check (no model) | Built (PR #921); backend tests pass, not deployed |
+| 1 | Safe access and richer discovery | Merged (#921) |
+| 2 | Dictionary store, versions, sharing, API | Merged (#921) |
+| 3 | Study → propose, and the `data-questions` skill | Merged (#921) |
+| 4 | agent-home UI (`/data`) | Merged (#921); browser-tested at 390/768/1440 px |
+| 5 | Improve over time: chat suggestions, answer feedback, Needs You | Merged (#921, #924); browser-tested locally |
+| 6 | Schema change check (no model) | Merged (#921); backend tests pass |
 
 Log:
 - 2026-11-14 — Evaluated the hybrid "MCP for access, skills for semantics"
@@ -87,10 +87,57 @@ Log:
 - 2026-11-15 — Phase 6 built (details under Phase 6 below). Unit + real
   Postgres tests, agent-home tsc and Vitest pass. Not deployed.
 
-Next steps (for whoever picks this up):
-1. Before deploy: run `hermes db migrate` (adds the `schema_checked_at` /
-   `schema_drift` columns), then re-run the `/data` browser test on
-   production. Read `production/PRODUCTION.md` in `leolau/aquarium-ops` first.
+- 2026-11-15 — #921 (phases 1–6) and #924 merged into `develop`. #924: the
+  Needs You drawer title and Sheet ✕ are translated, and `Sheet` portals to
+  `<body>` with a focus trap that returns focus to its opener (a Sheet opened
+  from the sticky top bar was under the review page's Approve bar).
+  Browser-tested locally. Nothing deployed yet.
+
+## Deploy (next step — not started)
+
+Nothing below has run on production. Get Yan's go-ahead first, then read
+`production/PRODUCTION.md` in `leolau/aquarium-ops` for the host, access and
+deploy procedure. Do not use the old Alibaba box.
+
+1. **Ship `develop`** (it includes #921 and #924) to production the way
+   PRODUCTION.md describes: backend and agent-home together, since agent-home
+   calls the new `/api/data/*` routes.
+2. **Migrate as the schema owner**, once, before (or right after) the new
+   backend starts serving:
+   `hermes db migrate --dsn-stdin < /etc/aquarium/db-admin.env`
+   (`hermes_cli/db_migrate.py`). It's idempotent and prints one line per step.
+   The prod store runs the `site_sources` steps, which this plan needs:
+   - `data dictionary` — `data_dictionary.migrate`: `data_sources`,
+     dictionary versions, entries and grants, plus the Phase 6 columns
+     `schema_checked_at` / `schema_drift`.
+   - `app data sandbox login` — `app_data.ensure_sandbox_role`: creates
+     `aquarium_data_sandbox` (LOGIN, no superuser/BYPASSRLS, NOINHERIT) with
+     `CONNECT, TEMPORARY` on the database only. Its password is generated and
+     stored in `<hermes root>/site-sources/roles.json` (0600) next to the site
+     role passwords, so run migrate as, or readable by, the hermes service user.
+   - Check that every step reports OK. A "schema owner" error means the
+     admin address wasn't used.
+3. **Restart the web server.** The hourly schema-change sweep
+   (`schema_check_loop`) starts in its lifespan when
+   `site_sources.scheduler_enabled` is true (the site database is configured
+   and `sites.scheduler` isn't `false` in config.yaml).
+4. **Smoke-test on production:**
+   - Sign in as the owner and open `/data`. Aquarium data plus one source per
+     site appear, and each site source has its approved design as v1.
+   - In chat, ask an app-data question, e.g. "how many open to-dos do I
+     have?". The answer shows the "Based on … dictionary vN" line. If it says
+     the sandbox login can reach real tables, stop: the grants are wrong.
+   - Sign in as a member: they see only their own rows, and Aquarium data isn't
+     listed until the owner shares it.
+   - Re-run the `/data` browser checks at 390/768/1440 px (Back, single-click
+     buttons, Approve bar, Share, Needs You cards in en and zh-Hant).
+5. **Rollback:** the migration only adds tables, columns and a role (no
+   drops or renames), so redeploying the previous release shouldn't need a
+   down-migration.
+
+Known gaps after deploy: not-found pages return HTTP 200, breadcrumbs stay in
+English in zh-Hant, the source list isn't Figma's searchable table, and a live
+model writing the `data-answer` block hasn't been tested yet.
 
 ## 1. Decisions
 
