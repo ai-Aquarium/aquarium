@@ -72,6 +72,20 @@ describe("WhyThisProfile", () => {
     expect(screen.queryByTestId("why-this-profile-popover")).toBeNull();
   });
 
+  it("an outside press closes the popover; a press inside keeps it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply({ decisions: [decision()] })));
+    render(<WhyThisProfile sourceId="src-mail" batchId="b-1" profile="CFO" />);
+    await press(link());
+    await act(async () => {
+      fireEvent.pointerDown(screen.getByText("CFO"));
+    });
+    expect(screen.getByTestId("why-this-profile-popover")).toBeTruthy();
+    await act(async () => {
+      fireEvent.pointerDown(document.body);
+    });
+    expect(screen.queryByTestId("why-this-profile-popover")).toBeNull();
+  });
+
   it("titles a fallback for every profile (4b)", async () => {
     vi.stubGlobal(
       "fetch",

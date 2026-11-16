@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
-import { usePopover } from "@/components/landing/topbar/usePopover";
 import { RoutingDecisionCard, routingDecisionTitle } from "@/components/sources/RoutingDecisionCard";
 import { XIcon } from "@/components/ui/icons";
 import { InlineAlert } from "@/components/ui/InlineAlert";
@@ -14,6 +14,21 @@ import type { RoutingDecision } from "@/types";
 
 /** Popover at `lg` and up (the landing's desktop breakpoint); a bottom sheet below. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
+const POPOVER_WIDTH = 440;
+const EDGE = 16;
+
+interface Place {
+  top: number;
+  left: number;
+}
+
+/** Below the link, kept on screen; fixed so a scrolling panel can't clip it. */
+function placeBelow(el: HTMLElement, align: "start" | "end"): Place {
+  const r = el.getBoundingClientRect();
+  const width = Math.min(POPOVER_WIDTH, window.innerWidth - 2 * EDGE);
+  const want = align === "end" ? r.right - width : r.left;
+  return { top: r.bottom + 8, left: Math.max(EDGE, Math.min(want, window.innerWidth - width - EDGE)) };
+}
 
 type Load =
   | { status: "idle" | "loading" | "error" | "missing" }
@@ -48,7 +63,8 @@ function WhyThisProfileLink({
   className = "",
 }: WhyThisProfileProps & { sourceId: string; batchId: string }) {
   const t = useT("routing");
-  const { open: popOpen, setOpen: setPopOpen, ref: popRef } = usePopover<HTMLSpanElement>();
+  const [place, setPlace] = useState<Place | null>(null);
+  const popOpen = place !== null;
   const [sheetOpen, setSheetOpen] = useState(false);
   const [load, setLoad] = useState<Load>({ status: "idle" });
   const inFlight = useRef(false);
@@ -76,23 +92,44 @@ function WhyThisProfileLink({
   const open = popOpen || sheetOpen;
   const toggle = () => {
     if (open) {
-      setPopOpen(false);
+      setPlace(null);
       setSheetOpen(false);
       return;
     }
-    if (window.matchMedia(DESKTOP_QUERY).matches) setPopOpen(true);
+    if (window.matchMedia(DESKTOP_QUERY).matches && trigger.current) setPlace(placeBelow(trigger.current, align));
     else setSheetOpen(true);
     if (load.status === "idle" || load.status === "error") void fetchDecision();
   };
 
-  const closePopover = () => {
-    setPopOpen(false);
+  const closePopover = useCallback(() => {
+    setPlace(null);
     trigger.current?.focus();
-  };
+  }, []);
 
   useEffect(() => {
-    if (popOpen) panel.current?.focus();
-  }, [popOpen]);
+    if (!popOpen) return;
+    panel.current?.focus();
+    const follow = () => {
+      if (trigger.current) setPlace(placeBelow(trigger.current, align));
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closePopover();
+    };
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (!panel.current?.contains(target) && !trigger.current?.contains(target)) setPlace(null);
+    };
+    window.addEventListener("resize", follow);
+    window.addEventListener("scroll", follow, true);
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      window.removeEventListener("resize", follow);
+      window.removeEventListener("scroll", follow, true);
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [popOpen, align, closePopover]);
 
   const title =
     load.status === "ready"
@@ -106,7 +143,7 @@ function WhyThisProfileLink({
   );
 
   return (
-    <span ref={popRef} data-component="WhyThisProfile" className={`relative inline-block ${className}`}>
+    <span data-component="WhyThisProfile" className={`inline-block ${className}`}>
       <button
         ref={trigger}
         type="button"
@@ -117,16 +154,16 @@ function WhyThisProfileLink({
       >
         {t("whyLink")}
       </button>
-      {popOpen ? (
+      {place
+        ? createPortal(
         <div
           ref={panel}
           role="dialog"
           aria-label={title}
           tabIndex={-1}
           data-testid="why-this-profile-popover"
-          className={`absolute top-full z-40 mt-2 flex w-[440px] max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left shadow-[0_8px_24px_rgba(0,0,0,0.4)] outline-none ${
-            align === "end" ? "right-0" : "left-0"
-          }`}
+          style={{ top: place.top, left: place.left, maxHeight: `calc(100vh - ${place.top + EDGE}px)` }}
+          className="fixed z-50 flex w-[440px] max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left shadow-[0_8px_24px_rgba(0,0,0,0.4)] outline-none"
         >
           <div className="flex items-start gap-2">
             <h2 className="min-w-0 flex-1 text-sm font-semibold leading-5 text-[var(--color-fg)]">{title}</h2>
@@ -141,7 +178,10 @@ function WhyThisProfileLink({
           </div>
           {body}
         </div>
-      ) : null}
+      ,
+          document.body,
+        )
+        : null}
       {sheetOpen ? (
         <Sheet title={title} onClose={() => setSheetOpen(false)} component="WhyThisProfileSheet">
           {body}
@@ -202,7 +242,7 @@ function ReadyBody({
 }) {
   const sender = decision.first_sender?.trim();
   return (
-    <>
+    <div className="flex flex-col gap-3">
       <RoutingDecisionCard decision={decision} />
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium leading-4">
         <Link
@@ -217,6 +257,6 @@ function ReadyBody({
           </Link>
         ) : null}
       </div>
-    </>
+    </div>
   );
 }
