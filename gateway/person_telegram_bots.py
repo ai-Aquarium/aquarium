@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import math
 import os
 import time
 from dataclasses import dataclass, field
@@ -52,6 +53,12 @@ _REGISTRY_TIMEOUT = 10.0
 #: Backoff between writes of a batch whose write failed (2 s, 4 s, ... at most 5 min).
 _RETRY_FIRST_SECONDS = 2.0
 _RETRY_MAX_SECONDS = 300.0
+
+
+def _retry_delay(attempts: int) -> float:
+    """Backoff before the next write of a batch that failed ``attempts`` times."""
+    cap = math.ceil(math.log2(max(_RETRY_MAX_SECONDS / _RETRY_FIRST_SECONDS, 1.0)))
+    return min(_RETRY_MAX_SECONDS, _RETRY_FIRST_SECONDS * 2 ** min(max(attempts - 1, 0), cap))
 
 
 @dataclass(frozen=True)
@@ -457,8 +464,7 @@ class PersonTelegramBotsMixin:
         state["retry"][failed.record["batch_id"]] = failed
         if failed.account_id in state["closing"]:
             return  # the stop's drain makes the last attempt
-        delay = min(_RETRY_MAX_SECONDS, _RETRY_FIRST_SECONDS * 2 ** (failed.attempts - 1))
-        failed.task = asyncio.create_task(self._retry_person_bot_batch_later(failed, delay))
+        failed.task = asyncio.create_task(self._retry_person_bot_batch_later(failed, _retry_delay(failed.attempts)))
 
     async def _retry_person_bot_batch_later(self, failed: _FailedBatch, delay: float) -> None:
         await asyncio.sleep(delay)
@@ -481,15 +487,17 @@ class PersonTelegramBotsMixin:
                 await asyncio.gather(*busy, return_exceptions=True)
                 continue
             keys = [k for k in state["pending"] if k[0] == account_id]
+            # Claim the failed batches before any await so a retry timer cannot also write them.
             failed = [f for f in state["retry"].values() if f.account_id == account_id]
+            for f in failed:
+                del state["retry"][f.record["batch_id"]]
+                if f.task is not None and not f.task.done():
+                    f.task.cancel()
             if not keys and not failed:
                 return
             for key in keys:
                 await self._flush_person_bot_capture(key)
             for f in failed:
-                state["retry"].pop(f.record["batch_id"], None)
-                if f.task is not None and not f.task.done():
-                    f.task.cancel()
                 await self._write_person_bot_batch(account_id, f.record, attempts=f.attempts, final=True)
 
     async def _person_bot_owner(self, owner_user_id: str):
