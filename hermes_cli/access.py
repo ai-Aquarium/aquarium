@@ -1361,7 +1361,30 @@ class PrincipalStore:
     """
 
     def __init__(self, store: SupabaseAppStore) -> None:
+        from hermes_constants import get_hermes_home
+
         self._store = store
+        # The home this store was built under: the first guess for which
+        # profile's ``users/<user_id>/`` an enrolment change maps to (FG-03).
+        self._home_hint = get_hermes_home()
+
+    def _sync_user_dir(self, user_id: str, *, active: bool) -> None:
+        """Create or archive ``<profile home>/users/<user_id>/`` (FG-03 P1).
+
+        Runs after every enrolment change, so every path that enrols, suspends,
+        restores or removes somebody (console, CLI, invitations, pairing
+        auto-enrol) keeps the folder in step. The profile home is derived from
+        this store's schema, never the process's own home. Never raises.
+        """
+        schema = getattr(self._store, "schema", None)
+        mode = getattr(self._store, "mode", None)
+        if not isinstance(schema, str) or not isinstance(mode, str):
+            return
+        from hermes_cli.user_profile_dirs import sync_user_profile_dir
+
+        sync_user_profile_dir(
+            user_id, active=active, schema=schema, mode=mode, hint=self._home_hint
+        )
 
     @property
     def mode(self) -> str:
@@ -1458,10 +1481,13 @@ class PrincipalStore:
                 role,
             )
             channels = await self._channels_for(conn, user_id)
-            return _row_to_principal(row, channels)
+            principal = _row_to_principal(row, channels)
         finally:
             if own_connection:
                 await conn.close()
+        if principal.active:
+            self._sync_user_dir(principal.user_id, active=True)
+        return principal
 
     async def get(
         self,
@@ -1636,10 +1662,12 @@ class PrincipalStore:
                 active,
             )
             channels = await self._channels_for(conn, user_id)
-            return _row_to_principal(row, channels)
+            principal = _row_to_principal(row, channels)
         finally:
             if own_connection:
                 await conn.close()
+        self._sync_user_dir(principal.user_id, active=principal.active)
+        return principal
 
     @_invalidates_principals
     async def set_display(
@@ -1704,10 +1732,11 @@ class PrincipalStore:
             await conn.execute(
                 "DELETE FROM principals WHERE user_id = $1", user_id
             )
-            return True
         finally:
             if own_connection:
                 await conn.close()
+        self._sync_user_dir(user_id, active=False)
+        return True
 
     @_invalidates_principals
     async def set_role(

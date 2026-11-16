@@ -376,6 +376,29 @@ def member_local_principal_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def member_backfill_folders_command(args: argparse.Namespace) -> int:
+    """Run ``hermes member backfill-folders`` — create missing user folders (FG-03)."""
+    from hermes_cli.user_profile_dirs import backfill_user_profile_dirs
+
+    reports = asyncio.run(backfill_user_profile_dirs(dry_run=args.dry_run))
+    verb = "would create" if args.dry_run else "created"
+    failed = False
+    for report in reports:
+        if report.skipped:
+            print(f"{report.home}: skipped ({report.skipped})")
+            continue
+        print(
+            f"{report.home}: {verb} {len(report.created)}, "
+            f"already present {len(report.existing)}"
+        )
+        for user_id in report.created:
+            print(f"  + users/{user_id}/")
+        for error in report.errors:
+            failed = True
+            print(f"  ! {error}", file=sys.stderr)
+    return 1 if failed else 0
+
+
 def register_member_subparser(subparsers: argparse._SubParsersAction) -> None:
     """Register ``hermes member`` and its sub-actions."""
     parser = subparsers.add_parser(
@@ -542,3 +565,20 @@ def register_member_subparser(subparsers: argparse._SubParsersAction) -> None:
         help="Forget the binding (it will be resolved again next session)",
     )
     local_principal.set_defaults(func=member_local_principal_command)
+
+    backfill = member_sub.add_parser(
+        "backfill-folders",
+        help="Create <profile>/users/<user_id>/ for every active member (FG-03)",
+        description=(
+            "Create the per-user folder of every active principal in every "
+            "profile on this box (the default profile and profiles/*). "
+            "Idempotent: existing folders are left untouched; suspended "
+            "members and archived folders are not changed."
+        ),
+    )
+    backfill.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Only report which folders would be created",
+    )
+    backfill.set_defaults(func=member_backfill_folders_command)
