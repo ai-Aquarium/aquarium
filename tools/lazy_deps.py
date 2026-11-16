@@ -273,6 +273,9 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     "mssql.driver": ("python-tds==1.17.1", "pyOpenSSL==26.2.0"),
     # MySQL driver for MySQL data sources. Mirrors the ``mysql`` extra.
     "mysql.driver": ("PyMySQL==1.1.2",),
+    # PostgreSQL driver for external PostgreSQL data sources. Mirrors the
+    # ``postgres`` extra.
+    "postgres.driver": ("pg8000==1.31.6",),
     # PowerShell remoting for the ``windows_powershell`` tool. Mirrors the
     # ``winrm`` extra in pyproject.toml.
     "winrm.driver": ("pypsrp==0.9.1", "pyspnego==0.12.4", "requests-credssp==2.0.0"),

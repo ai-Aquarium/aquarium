@@ -117,7 +117,10 @@ Log:
   data source and raises a Needs You card on failure; a big source's first
   study covers its chosen schemas and any undescribed table is studied the
   first time it is asked about. Sites › Sharing and Data › Access stay
-  separate lists. Backend + API only; not deployed.
+  separate lists. External PostgreSQL connections join MySQL / SQLite on
+  `/api/db/connections/postgres/{name}` (pg8000, `postgres` extra; read-only
+  session + statement timeout + server-side `LIMIT`; VPN routing; same
+  health / keep-alive). Backend + API only; not deployed.
 
 ## Deploy (next step — not started)
 
@@ -331,10 +334,18 @@ The site-to-schema plan rejected a skill-only design for the same reason.
   override); undescribed tables are studied first, and `dictionary entity=`
   on a table not yet described returns its live structure to propose
   (studied on demand).
+- External PostgreSQL connections (not Aquarium's own Supabase): the same
+  store and API as MySQL (`engine = postgres`, ref `postgres:<name>`, port
+  5432, TLS `verify`/`on`/`off`, optional VPN). `PostgresAdapter` (pg8000,
+  `postgres` extra) opens a read-only session (`default_transaction_read_only`
+  + `START TRANSACTION READ ONLY`, 30 s `statement_timeout`) and wraps each
+  query in `LIMIT max_rows + 1`; tables are `schema.table` like SQL Server.
 - MySQL / SQLite connections: `hermes_cli/db_connections.py` +
   `/api/db/connections` (owner-only, passwords write-only, never
   materialized to agent terminals). SQLite files only under
-  `data_sources.sqlite_roots` (default `<HERMES_HOME>/data-sources`).
+  `data_sources.sqlite_roots` — members only from their own
+  `<root>/<user_id>/` folder, so nobody registers a file someone else keeps
+  private; admins from any root (default `<HERMES_HOME>/data-sources`).
 - `site_db`: `list_sources`; `describe` / `query` take `source=` (slug, `app`,
   `<engine>:<connection>` ref or id) and `params`; `study` / dictionary
   actions work on connection sources. `/api/data/sources/{id}/tables`,

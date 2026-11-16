@@ -58,7 +58,7 @@ SCHEMA = {
         "columns and the rows this person can see; app_query (areas, sql) — one SELECT over "
         "private copies of those areas, each a table named after its area, at most 500 rows. "
         "Data sources beyond sites: list_sources — every source this person can see: sites, "
-        "app, and databases connected in Settings (SQL Server, MySQL, SQLite) with ref "
+        "app, and databases connected in Settings (SQL Server, PostgreSQL, MySQL, SQLite) with ref "
         "<engine>:<connection>; describe / query also take source= (site slug, app, ref or id) "
         "instead of site=, and query takes params {name: value} for :name placeholders — put "
         "values in params, never paste them into sql. Admins and everyone a connection is shared "
@@ -251,16 +251,18 @@ async def _dictionary_action(action: str, principal: Any, args: Mapping[str, Any
     found = await dd.dictionary(source, draft=dd.allows(access, "propose"))
     approved = found["approved"]
     if action == "dictionary":
+        entity = str(args.get("entity") or "").strip()
+        described = ((approved or {}).get("entries") or {}).get("tables") or {}
+        undescribed = bool(entity) and entity not in described
         out: dict[str, Any] = {"source": source.view(access), "approved": approved and {
             "version": approved["version"],
-            **await dds.lookup(source, approved, q=args.get("q"), entity=args.get("entity"),
-                               top_k=int(args.get("top_k") or dds.TOP_K))}}
+            **({} if undescribed else await dds.lookup(
+                source, approved, q=args.get("q"), entity=entity or None,
+                top_k=int(args.get("top_k") or dds.TOP_K)))}}
         if approved and "index" in out["approved"]:
             out["note"] = ("This dictionary is large: call dictionary again with q= (the question) "
                            "or entity= to read the entries you need.")
-        entity = str(args.get("entity") or "").strip()
-        described = ((approved or {}).get("entries") or {}).get("tables") or {}
-        if entity and entity not in described:
+        if undescribed:
             out.update(await _study_on_demand(source, principal, entity))
         if found.get("draft"):
             out["draft"] = {k: found["draft"][k] for k in ("version", "changed_tables")}

@@ -1,8 +1,9 @@
 """Engine adapters behind one interface (data-dictionary plan, Phase 7).
 
 SQLite runs everywhere (stdlib). MySQL and SQL Server run against real servers
-when ``HERMES_TEST_MYSQL_DSN`` / ``HERMES_TEST_MSSQL_DSN``
-(``mysql://user:pass@host:port/db``) are set; skipped otherwise.
+when ``HERMES_TEST_MYSQL_DSN`` / ``HERMES_TEST_MSSQL_DSN`` /
+``HERMES_TEST_POSTGRES_DSN`` (``mysql://user:pass@host:port/db``) are set;
+skipped otherwise.
 """
 
 from __future__ import annotations
@@ -99,7 +100,7 @@ def test_fingerprint_ignores_order_but_not_columns():
 # -- credentials stay server-side ----------------------------------------------------------
 
 
-@pytest.mark.parametrize("kind", ["mssql", "mysql", "sqlite"])
+@pytest.mark.parametrize("kind", ["mssql", "postgres", "mysql", "sqlite"])
 def test_connection_kinds_never_reach_agent_terminals(kind):
     assert CREDENTIAL_KINDS[kind].materialize is False
 
@@ -126,15 +127,22 @@ def test_connection_access_is_owner_grant_or_admin_read():
 
 def test_everyone_who_may_read_opens_it_with_the_owners_login(monkeypatch):
     opened = []
+    alice_as_owner = Principal(user_id="alice", display="Alice", role="owner")
+
+    async def owner_principal(user_id):
+        assert user_id == "alice"
+        return alice_as_owner
 
     async def connection_adapter(source, principal, *, agent):
         opened.append((principal.user_id, principal.role))
         return de.SqliteAdapter({"path": ":memory:"})
 
+    monkeypatch.setattr(de, "_owner_principal", owner_principal)
     monkeypatch.setattr(de, "_connection_adapter", connection_adapter)
     for who in (ALICE, BOB, BOSS):
         run(de.adapter_for(_connection(), who))
-    assert opened == [("alice", "member")] * 3
+    # the owner's own role (and so the VPNs they may use) is kept for every reader
+    assert opened == [("alice", "member"), ("alice", "owner"), ("alice", "owner")]
     with pytest.raises(de.EngineError):
         run(de.adapter_for(_connection(owner=""), BOSS))
 
@@ -239,6 +247,47 @@ def _payload(dsn: str, port: int):
 
 MYSQL_DSN = os.environ.get("HERMES_TEST_MYSQL_DSN", "")
 MSSQL_DSN = os.environ.get("HERMES_TEST_MSSQL_DSN", "")
+POSTGRES_DSN = os.environ.get("HERMES_TEST_POSTGRES_DSN", "")
+
+
+@pytest.mark.skipif(not POSTGRES_DSN, reason="HERMES_TEST_POSTGRES_DSN not set")
+def test_postgres_adapter_against_a_real_server():
+    pg8000 = pytest.importorskip("pg8000.native")
+    payload = {**_payload(POSTGRES_DSN, 5432), "tls": "off"}
+    conn = pg8000.Connection(user=payload["username"], password=payload["password"],
+                             host=payload["host"], port=payload["port"], database=payload["database"])
+    for stmt in (
+        "DROP SCHEMA IF EXISTS de_shop CASCADE",
+        "CREATE SCHEMA de_shop",
+        "CREATE TABLE de_shop.customers (id int PRIMARY KEY, name text)",
+        "COMMENT ON TABLE de_shop.customers IS 'People who buy'",
+        "CREATE TABLE de_shop.orders (order_no text PRIMARY KEY, customer_id int "
+        "REFERENCES de_shop.customers (id), amount numeric(10,2))",
+        "COMMENT ON COLUMN de_shop.orders.amount IS 'HKD'",
+        "INSERT INTO de_shop.customers VALUES (1, 'Ann'), (2, 'Ben')",
+        "INSERT INTO de_shop.orders VALUES ('A1', 1, 10.5), ('A2', 2, 20), ('A3', 1, 5)",
+    ):
+        conn.run(stmt)
+    conn.close()
+    adapter = de.PostgresAdapter(payload, label="shop")
+    tables = {t["name"]: t for t in run(adapter.list_tables("de_shop"))}
+    assert tables["de_shop.customers"]["comment"] == "People who buy"
+    assert tables["de_shop.orders"]["schema"] == "de_shop"
+    table = run(adapter.describe_table("de_shop.orders"))
+    assert table["key"] == ["order_no"]
+    assert table["foreign_keys"][0]["to_table"] == "de_shop.customers"
+    assert {c["name"]: c["comment"] for c in table["columns"]}["amount"] == "HKD"
+    result = run(adapter.query(
+        "SELECT order_no, amount::text FROM de_shop.orders WHERE customer_id = :c "
+        "AND order_no LIKE 'A%' ORDER BY 1", {"c": 1}))
+    assert result["row_count"] == 2
+    assert run(adapter.query("SELECT * FROM de_shop.orders", max_rows=1))["truncated"] is True
+    with pytest.raises(de.EngineError):
+        run(adapter.query("DELETE FROM de_shop.orders"))
+    # the session itself is read-only, even past the statement check
+    with pytest.raises(de.EngineError):
+        run(adapter.query("WITH d AS (DELETE FROM de_shop.orders RETURNING 1) SELECT * FROM d"))
+    assert run(adapter.schema())["de_shop.orders"] == {"order_no", "customer_id", "amount"}
 
 
 @pytest.mark.skipif(not MYSQL_DSN, reason="HERMES_TEST_MYSQL_DSN not set")
@@ -303,3 +352,13 @@ def test_mssql_adapter_against_a_real_server():
     with pytest.raises(de.EngineError):
         run(adapter.query("DELETE FROM dbo.de_orders"))
     assert run(adapter.schema())["dbo.de_orders"] == {"order_no", "customer_id", "amount"}
+
+
+def test_listed_tables_keep_their_schema_for_study_choices(shop):
+    class Schemas(de.SqliteAdapter):
+        def _tables(self, conn):
+            return [{**t, "schema": "main"} for t in super()._tables(conn)]
+
+    tables = run(Schemas({"path": str(shop)}).list_tables())
+    assert tables and {t["schema"] for t in tables} == {"main"}
+    assert "schema" not in run(de.SqliteAdapter({"path": str(shop)}).list_tables())[0]

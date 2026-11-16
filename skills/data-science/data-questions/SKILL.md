@@ -22,7 +22,7 @@ person asking: they only ever see rows they may see.
 
 1. **Pick the source.** A site's data → `source` = the site slug
    (`list_sites`). Their own Aquarium data → `source` = `app`. A database
-   connected in Settings (SQL Server, MySQL, SQLite) → `source` = its `ref`,
+   connected in Settings (SQL Server, PostgreSQL, MySQL, SQLite) → `source` = its `ref`,
    e.g. `mssql:erp` (`list_sources` lists every source with its ref and id).
    You see a database if you connected it, it was shared with you, or you
    are an admin; you read it through its owner's saved read-only login.
