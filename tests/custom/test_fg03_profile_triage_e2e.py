@@ -1,0 +1,315 @@
+"""FG-03 P5 E2E: the real email/WhatsApp triage scripts, per triage.agent.<channel>.
+
+Real profiles over a tmp hermes root (John and Mary in CFO and CMO), the real
+box registry, router, comparisons store and layered triage skills on real
+Postgres, the real triage scripts and handlers over real SQLite channel
+stores. ``config.yaml`` sets the router and agent modes and the scripts read
+it themselves. Only the models are stand-ins: the cheap router model, the
+profile agent's turn, and DeepSeek.
+"""
+
+import json
+import sqlite3
+import sys
+
+import pytest
+import yaml
+
+from hermes_cli import source_registry as registry
+from hermes_cli import triage_agent as ta
+from hermes_cli import triage_router as tr
+from hermes_cli import triage_skills as tsk
+from tests.custom.test_fg03_batch_routing import (  # noqa: F401 — pytest fixture
+    EMAIL_TRIAGE,
+    WA_TRIAGE,
+    _exec,
+    credit,
+)
+from tests.hermes_cli._pg_fixture import hermes_root, postgres_dsn  # noqa: F401 — pytest fixtures
+from tests.hermes_cli.test_source_registry_e2e import _box, _seed, box  # noqa: F401 — pytest fixture
+from tests.hermes_cli.test_triage_router_e2e import KeywordModel
+
+ADDRESS = {"email": "john@example.com", "whatsapp": "85291234567"}
+TEXT = {
+    "b-invoice": "Invoice INV-77 is overdue",           # CFO only
+    "b-launch": "Launch plan and the agency invoice",   # CFO and CMO
+    "b-chat": "Are we on for Friday?",                  # nobody
+}
+LEGACY = {"classification": "legacy", "summary": "legacy verdict", "escalate": True,
+          "escalation_reason": "legacy", "escalation_priority": "high",
+          "tasks": [{"description": "legacy task"}], "notes": [{"content": "legacy note"}]}
+
+
+def agent_reply(profile):
+    return {"classification": f"agent-{profile}", "summary": f"{profile} verdict",
+            "escalate": True, "escalation_reason": "invoice", "escalation_priority": "high",
+            "tasks": [{"description": "pay INV-77"}], "notes": [{"content": "INV-77 overdue"}]}
+
+
+class DeepSeek:
+    def __init__(self, fail=False):
+        self.calls, self.fail = [], fail
+
+    def __call__(self, messages, **kwargs):
+        self.calls.append(messages[-1]["content"])
+        return None if self.fail else json.dumps(LEGACY)
+
+
+class Turns:
+    """The profile agent's turn: answers per profile, or fails on demand."""
+
+    def __init__(self, fail=()):
+        self.calls, self.fail = [], set(fail)
+
+    def __call__(self, prompt, *, profile_home, owner_user_id, session_id, config=None):
+        profile = profile_home.name
+        self.calls.append((profile, owner_user_id, session_id))
+        if profile in self.fail:
+            raise RuntimeError("provider 503")
+        return f"```json\n{json.dumps(agent_reply(profile))}\n```"
+
+    def profiles(self):
+        return [c[0] for c in self.calls]
+
+
+SQLITE_MESSAGING = """
+CREATE TABLE escalations (
+    id TEXT PRIMARY KEY, source_phone TEXT, source_msg_id TEXT, sender_phone TEXT,
+    reason TEXT, summary TEXT, priority TEXT, status TEXT, created_at TEXT,
+    delivered_at TEXT, channel TEXT, sender_email TEXT, sender_name TEXT, contact_id INTEGER);
+CREATE TABLE wa_tasks (id TEXT, source_phone TEXT, source_msg_id TEXT, description TEXT,
+    due_date TEXT, status TEXT, priority TEXT, created_at TEXT);
+CREATE TABLE wa_notes (id TEXT, source_phone TEXT, source_msg_id TEXT, content TEXT,
+    created_at TEXT);
+CREATE TABLE contact_handles (contact_id INTEGER, handle_type TEXT, handle_value TEXT);
+CREATE TABLE unified_contacts (id INTEGER PRIMARY KEY, display_name TEXT,
+    is_family INTEGER, is_vip INTEGER);
+"""
+SQLITE_EMAIL = """
+CREATE TABLE email_tasks (id TEXT, account_id TEXT, source_email_id TEXT, description TEXT,
+    due_date TEXT, status TEXT, priority TEXT, created_at TEXT);
+CREATE TABLE email_notes (id TEXT, account_id TEXT, source_email_id TEXT, content TEXT,
+    created_at TEXT);
+"""
+
+
+class Channel:
+    """One real triage script over tmp roots and real SQLite stores."""
+
+    def __init__(self, kind, tmp_path, monkeypatch):
+        self.kind = kind
+        self.messaging = tmp_path / "msg" / "messaging_data.db"
+        self.messaging.parent.mkdir()
+        _sqlite(self.messaging, SQLITE_MESSAGING)
+        monkeypatch.setenv("MESSAGING_DB_PATH", str(self.messaging))
+        if kind == "email":
+            root = tmp_path / "email-messages"
+            root.mkdir()
+            (root / "config.json").write_text("{}")
+            self.store = root / "email_data.db"
+            _sqlite(self.store, SQLITE_EMAIL)
+            monkeypatch.setenv("EMAIL_DB_PATH", str(self.store))
+            monkeypatch.setitem(sys.modules, "contact_manager", None)
+            self.module = _exec(EMAIL_TRIAGE, {"/opt/data/email-messages": str(root)},
+                                "_fg03p5_email_triage")
+            self.batch_dir, self.processed = self.module.EMAIL_BATCH_DIR, self.module.EMAIL_PROCESSED_DIR
+            self.tasks, self.notes = "email_tasks", "email_notes"
+        else:
+            root = tmp_path / "whatsapp-messages"
+            root.mkdir()
+            (root / "config.json").write_text("{}")
+            self.store = self.messaging
+            self.module = _exec(WA_TRIAGE, {"/opt/data/whatsapp-messages": str(root)},
+                                "_fg03p5_wa_triage")
+            self.batch_dir, self.processed = self.module.BATCH_DIR, self.module.PROCESSED_DIR
+            self.tasks, self.notes = "wa_tasks", "wa_notes"
+        self.deepseek = DeepSeek()
+        monkeypatch.setattr(self.module, "call_deepseek", self.deepseek)
+
+    def write(self, batch_id, source_id, sender=None, text=None):
+        text = TEXT.get(batch_id, "") if text is None else text
+        if self.kind == "email":
+            sender = sender or "supplier@example.com"
+            batch = {"batch_id": batch_id, "channel": "email", "account_id": ADDRESS["email"],
+                     "source_id": source_id, "owner_user_id": "john", "sender": sender,
+                     "sender_name": "Supplier", "email_count": 1,
+                     "emails": [{"id": f"{batch_id}-e1", "from_addr": sender,
+                                 "subject": "Re: things", "body_text": text}]}
+        else:
+            batch = {"batch_id": batch_id, "sender_phone": "+85211112222",
+                     "source_phone": "phone2", "source_id": source_id,
+                     "owner_user_id": "john", "message_count": 1,
+                     "messages": [{"msg_id": f"{batch_id}-m1", "text": text,
+                                   "sender_name": "Supplier", "chat_id": "111@lid",
+                                   "is_group": False}]}
+        path = self.batch_dir and __import__("pathlib").Path(self.batch_dir) / f"{batch_id}.json"
+        path.write_text(json.dumps(batch))
+        return path
+
+    def run(self, path):
+        if self.kind == "email":
+            self.module.process_email_batch_file(str(path))
+        else:
+            self.module.process_batch_file(str(path))
+
+    def done(self, path):
+        from pathlib import Path
+
+        return Path(self.processed, path.name).exists() and not path.exists()
+
+    def rows(self, table):
+        db = sqlite3.connect(self.messaging if table == "escalations" else self.store)
+        try:
+            return [r[0] for r in db.execute(
+                f"SELECT {'summary' if table == 'escalations' else 'description' if 'tasks' in table else 'content'} "
+                f"FROM {table} ORDER BY rowid")]
+        finally:
+            db.close()
+
+    def box_rows(self):
+        return {t: self.rows(t) for t in ("escalations", self.tasks, self.notes)}
+
+
+def _sqlite(path, script):
+    db = sqlite3.connect(path)
+    db.executescript(script)
+    db.commit()
+    db.close()
+
+
+def _configure(hermes_root, router, agent):  # noqa: F811
+    path = hermes_root / "config.yaml"
+    config = yaml.safe_load(path.read_text()) or {}
+    config["triage"] = {"router": {"mode": router, "retry_delay_seconds": 0},
+                        "agent": {"email": agent, "whatsapp": agent}}
+    path.write_text(yaml.safe_dump(config))
+
+
+def _people(box, kind):  # noqa: F811
+    """John and Mary in CFO and CMO; John's source routed to both."""
+    homes = box["homes"]
+    _box(box["dsn"], lambda c: registry.list_sources(c))  # box schema
+    import asyncio
+
+    asyncio.run(_seed(homes["cmo"], box["dsn"], [("mary", "member", True)]))
+    for profile in ("cfo", "cmo"):
+        for user in ("john", "mary"):
+            tsk.write_care(kind, f"{user.title()}@{profile.upper()}: invoices and launches",
+                           layer="user", home=homes[profile], user_id=user, author=user)
+
+    async def setup(c):
+        src = await registry.register_source(c, channel=kind, address=ADDRESS[kind],
+                                             owner_user_id="john")
+        for profile in ("cfo", "cmo"):
+            await registry.set_route(c, source_id=src.source_id, profile_slug=profile,
+                                     enabled=True, actor_user_id="john")
+        return src.source_id
+
+    return _box(box["dsn"], setup)
+
+
+def _comparisons(box, **filters):  # noqa: F811
+    async def rows(c):
+        return list(reversed(await ta.list_comparisons(c, **filters)))
+
+    return _box(box["dsn"], rows)
+
+
+def _decisions(box):  # noqa: F811
+    async def rows(c):
+        return {r["batch_id"]: list(r["selected"]) for r in await c.fetch(
+            f"SELECT batch_id, selected FROM {registry.BOX_SCHEMA}.routing_decisions")}
+
+    return _box(box["dsn"], rows)
+
+
+@pytest.fixture(params=["email", "whatsapp"])
+def setup(request, box, hermes_root, tmp_path, monkeypatch, credit):  # noqa: F811
+    """``setup(router, agent)`` -> (channel, source_id, router model, turns)."""
+    kind = request.param
+
+    def make(router="enforce", agent="legacy", fail=()):
+        source_id = _people(box, kind)
+        _configure(hermes_root, router, agent)
+        model = KeywordModel()
+        monkeypatch.setattr(tr, "_AuxiliaryLLM", lambda: model)
+        turns = Turns(fail)
+        monkeypatch.setattr(ta, "_default_runner", turns)
+        return Channel(kind, tmp_path, monkeypatch), source_id, model, turns
+
+    return make
+
+
+def test_legacy_is_unchanged(setup, box):  # noqa: F811
+    ch, source_id, model, turns = setup(router="shadow", agent="legacy")
+    paths = [ch.write(b, source_id) for b in TEXT]
+    for path in paths:
+        ch.run(path)
+    assert len(model.calls) == len(TEXT)  # one router call per batch
+    assert len(ch.deepseek.calls) == len(TEXT) and turns.calls == []
+    assert ch.box_rows() == {"escalations": ["legacy verdict"] * 3,
+                             ch.tasks: ["legacy task"] * 3, ch.notes: ["legacy note"] * 3}
+    assert _comparisons(box) == []
+    assert all(ch.done(p) for p in paths)
+
+
+def test_shadow_acts_on_legacy_and_stores_comparisons(setup, box):  # noqa: F811
+    ch, source_id, model, turns = setup(router="shadow", agent="shadow")
+    paths = [ch.write(b, source_id) for b in TEXT]
+    for path in paths:
+        ch.run(path)
+    assert len(model.calls) == len(TEXT)
+    assert len(ch.deepseek.calls) == len(TEXT)
+    assert ch.box_rows() == {"escalations": ["legacy verdict"] * 3,
+                             ch.tasks: ["legacy task"] * 3, ch.notes: ["legacy note"] * 3}
+    assert turns.calls == [("cfo", "john", f"triage_{ch.kind}_b-invoice_cfo"),
+                           ("cfo", "john", f"triage_{ch.kind}_b-launch_cfo"),
+                           ("cmo", "john", f"triage_{ch.kind}_b-launch_cmo")]
+    stored = _comparisons(box)
+    assert [(c["batch_id"], c["profile"], c["owner_user_id"]) for c in stored] == [
+        ("b-invoice", "cfo", "john"), ("b-launch", "cfo", "john"), ("b-launch", "cmo", "john")]
+    assert all(c["legacy_result"]["classification"] == "legacy" for c in stored)
+    assert [c["agent_result"]["classification"] for c in stored] == [
+        "agent-cfo", "agent-cfo", "agent-cmo"]
+    assert all(ch.done(p) for p in paths)
+
+
+def test_shadow_turn_failure_never_touches_legacy(setup, box):  # noqa: F811
+    ch, source_id, model, turns = setup(router="shadow", agent="shadow", fail={"cmo"})
+    path = ch.write("b-launch", source_id)
+    ch.run(path)
+    assert ch.done(path) and ch.rows("escalations") == ["legacy verdict"]
+    stored = _comparisons(box)
+    assert [(c["profile"], bool(c["agent_result"]), bool(c["agent_error"])) for c in stored] == [
+        ("cfo", True, False), ("cmo", False, True)]
+
+
+def test_agent_no_pick_is_stored_only(setup, box):  # noqa: F811
+    ch, source_id, model, turns = setup(router="shadow", agent="agent")
+    path = ch.write("b-chat", source_id)
+    ch.run(path)
+    assert ch.done(path) and _decisions(box) == {"b-chat": []}
+    assert ch.deepseek.calls == [] and turns.calls == []
+    assert ch.box_rows() == {"escalations": [], ch.tasks: [], ch.notes: []}
+
+
+@pytest.mark.parametrize("router", ["off", "registry-down"])
+def test_agent_without_a_decision_is_legacy(setup, box, router, monkeypatch):  # noqa: F811
+    ch, source_id, model, turns = setup(router="off" if router == "off" else "enforce",
+                                        agent="agent")
+    if router == "registry-down":
+        monkeypatch.setattr(registry, "box_dsn",
+                            lambda config=None: "postgresql://nobody@127.0.0.1:1/none")
+    path = ch.write("b-launch", source_id)
+    ch.run(path)
+    assert ch.done(path) and turns.calls == [] and len(ch.deepseek.calls) == 1
+    assert ch.rows("escalations") == ["legacy verdict"]
+    assert model.calls == []
+
+
+def test_agent_unsourced_batch_is_legacy(setup, box):  # noqa: F811
+    ch, source_id, model, turns = setup(router="enforce", agent="agent")
+    path = ch.write("b-launch", None)
+    ch.run(path)
+    assert ch.done(path) and turns.calls == [] and model.calls == []
+    assert ch.rows("escalations") == ["legacy verdict"]
