@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,15 +59,19 @@ def archived_user_dirs_root(user_id: str, home: Optional[Path] = None) -> Path:
 
 # -- lifecycle (create on enrolment, archive on removal, backfill) -----------
 #
-# Re-enrolment policy: a user who is removed or deactivated and later
-# re-enrolled gets a **fresh, empty** folder. Their old folder stays under
-# ``users/.archived/<user_id>/<timestamp>/`` and is never restored
-# automatically, so a purge-then-re-add or a hand-back to a different person
-# cannot resurface stale settings. An operator can move an archive back by hand.
+# Re-enrolment policy: **restore**. When a user becomes active again (re-added,
+# or restored after a suspension) and ``users/<user_id>/`` is missing, their
+# newest archive under ``users/.archived/<user_id>/`` is moved back, so their
+# own version of the profile survives a suspend/restore or remove/re-add. Only
+# a user with no archive gets a fresh, empty folder; a live folder is never
+# replaced. User ids are GoTrue UUIDs (never reused) and a box-wide person
+# purge deletes ``users/.archived/<user_id>/`` outright, so a restore cannot
+# hand one person's stale settings to somebody else.
 
 ARCHIVED_DIRNAME = ".archived"
 _DIR_MODE = 0o700
 _ARCHIVE_STAMP = "%Y%m%dT%H%M%SZ"
+_ARCHIVE_NAME_RE = re.compile(r"^(\d{8}T\d{6}Z)(?:-(\d+))?$")
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +93,35 @@ def _ensure_private_dir(path: Path) -> None:
     os.chmod(path, _DIR_MODE)
 
 
-def ensure_user_profile_dir(user_id: str, home: Optional[Path] = None) -> Path:
-    """Create ``<home>/users/<user_id>/`` (0700) if missing; return it.
+def newest_archived_user_dir(
+    user_id: str, home: Optional[Path] = None
+) -> Optional[Path]:
+    """The latest ``users/.archived/<user_id>/<stamp>[-N]/``, else ``None``.
 
-    Idempotent: an existing folder and its contents are left untouched.
+    Ordered by timestamp, then by ``-N`` numerically (``-10`` is after ``-9``).
+    Symlinks and entries that are not archive stamps are ignored.
+    """
+    root = archived_user_dirs_root(user_id, home)
+    if root.is_symlink() or not root.is_dir():
+        return None
+    newest: Optional[Path] = None
+    newest_key = ("", -1)
+    for entry in root.iterdir():
+        match = _ARCHIVE_NAME_RE.match(entry.name)
+        if not match or entry.is_symlink() or not entry.is_dir():
+            continue
+        key = (match.group(1), int(match.group(2) or 0))
+        if key > newest_key:
+            newest, newest_key = entry, key
+    return newest
+
+
+def ensure_user_profile_dir(user_id: str, home: Optional[Path] = None) -> Path:
+    """Make sure ``<home>/users/<user_id>/`` (0700) exists; return it.
+
+    An existing folder is left untouched. A missing one is restored from the
+    user's newest archive (whose empty ``.archived/<user_id>/`` parent is then
+    removed), or created empty when there is no archive.
     """
     target = user_profile_dir(user_id, home)
     if target.name.startswith("."):
@@ -100,7 +130,19 @@ def ensure_user_profile_dir(user_id: str, home: Optional[Path] = None) -> Path:
     if not base.is_dir():
         raise FileNotFoundError(f"Profile home {base} does not exist")
     _ensure_private_dir(target.parent)
-    _ensure_private_dir(target)
+    if target.is_symlink() or target.exists():
+        _ensure_private_dir(target)
+        return target
+    archive = newest_archived_user_dir(user_id, home)
+    if archive is None:
+        _ensure_private_dir(target)
+        return target
+    os.rename(archive, target)
+    os.chmod(target, _DIR_MODE)
+    try:
+        archive.parent.rmdir()
+    except OSError:
+        pass  # older archives remain
     return target
 
 
@@ -282,8 +324,10 @@ async def backfill_user_profile_dirs(
 ) -> List[ProfileBackfill]:
     """Create the folder of every **active** principal in every profile.
 
-    Idempotent: existing folders are reported, never touched. Inactive
-    principals and folders with no principal are left alone. ``homes``
+    A missing folder is restored from the newest archive or created empty
+    (see :func:`ensure_user_profile_dir`). Idempotent: existing folders are
+    reported, never touched. Inactive principals and folders with no
+    principal are left alone. ``homes``
     defaults to :func:`box_profile_homes`; ``config`` overrides each profile's
     own ``config.yaml`` (tests only).
     """

@@ -118,17 +118,35 @@ async def test_two_users_in_two_profiles_get_four_folders_and_removal_archives_o
     assert (archives[0] / "triage.md").read_text() == "john's CFO triage"
     assert not (_home(hermes_root, "cmo") / "users" / ".archived").exists()
 
-    # Suspend Mary in CMO → archived; restore → a fresh, empty folder.
+    # Suspend Mary in CMO → archived; restore → her own folder comes back.
     cmo_home = _home(hermes_root, "cmo")
     monkeypatch.setenv("HERMES_HOME", str(cmo_home))
     datastore._verified_schemas.clear()
-    (user_profile_dir(mary, cmo_home) / "x").write_text("old")
+    (user_profile_dir(mary, cmo_home) / "triage.md").write_text("mary's CMO triage")
     await services["cmo"].set_member_active(OWNER, user_id=mary, active=False)
     assert ("cmo", mary) not in _folders(hermes_root)
     assert len(list(archived_user_dirs_root(mary, cmo_home).iterdir())) == 1
     await services["cmo"].set_member_active(OWNER, user_id=mary, active=True)
-    assert list(user_profile_dir(mary, cmo_home).iterdir()) == []
-    assert ("cfo", mary) in _folders(hermes_root)
+    assert (user_profile_dir(mary, cmo_home) / "triage.md").read_text() == (
+        "mary's CMO triage"
+    )
+    assert not archived_user_dirs_root(mary, cmo_home).exists()
+
+    # Re-add John to CFO → his archived CFO folder is restored, not wiped.
+    monkeypatch.setenv("HERMES_HOME", str(cfo_home))
+    datastore._verified_schemas.clear()
+    again = await services["cfo"].create_member(
+        OWNER, email="john@x.io", profile="cfo", display="John"
+    )
+    assert again.principal.user_id == john
+    assert marker.read_text() == "john's CFO triage"
+    assert not archived_user_dirs_root(john, cfo_home).exists()
+    assert _folders(hermes_root) == {
+        ("cfo", john),
+        ("cfo", mary),
+        ("cmo", john),
+        ("cmo", mary),
+    }
 
 
 @pytest.mark.asyncio

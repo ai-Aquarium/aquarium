@@ -96,15 +96,15 @@ def test_archive_moves_never_deletes_and_nests_by_user(root: Path) -> None:
     assert _mode(home / "users" / ".archived" / "john") == 0o700
 
 
-def test_same_second_archives_get_a_suffix_and_reenrolment_is_fresh(root: Path) -> None:
+def test_same_second_archives_get_a_suffix(root: Path) -> None:
     home = root / "profiles" / "cfo"
-    first = upd.ensure_user_profile_dir("john", home)
-    (first / "a").write_text("1")
+    users = home / "users"
+    users.mkdir(mode=0o700)
+    (users / "john").mkdir()
+    (users / "john" / "a").write_text("1")
     one = upd.archive_user_profile_dir("john", home, now=NOW)
-
-    second = upd.ensure_user_profile_dir("john", home)
-    assert list(second.iterdir()) == []  # fresh, not restored
-    (second / "b").write_text("2")
+    (users / "john").mkdir()
+    (users / "john" / "b").write_text("2")
     two = upd.archive_user_profile_dir("john", home, now=NOW)
 
     assert one is not None and two is not None
@@ -112,6 +112,65 @@ def test_same_second_archives_get_a_suffix_and_reenrolment_is_fresh(root: Path) 
     assert two.name == "20261116T040506Z-1"
     assert (one / "a").read_text() == "1"
     assert (two / "b").read_text() == "2"
+
+
+def test_reenrolment_restores_the_archive_and_drops_the_empty_parent(
+    root: Path,
+) -> None:
+    home = root / "profiles" / "cfo"
+    folder = upd.ensure_user_profile_dir("john", home)
+    (folder / "triage.md").write_text("mine")
+    upd.archive_user_profile_dir("john", home, now=NOW)
+
+    restored = upd.ensure_user_profile_dir("john", home)
+
+    assert restored == folder
+    assert (restored / "triage.md").read_text() == "mine"
+    assert _mode(restored) == 0o700
+    assert not upd.archived_user_dirs_root("john", home).exists()
+    assert (home / "users" / ".archived").is_dir()
+
+
+def test_restore_takes_the_newest_archive_and_keeps_the_rest(root: Path) -> None:
+    home = root / "profiles" / "cfo"
+    archives = upd.archived_user_dirs_root("john", home)
+    archives.mkdir(parents=True)
+    for name in (
+        "20261115T000000Z",
+        "20261116T040506Z",
+        "20261116T040506Z-9",
+        "20261116T040506Z-10",
+        "notes",
+    ):
+        (archives / name).mkdir()
+        (archives / name / "id").write_text(name)
+    (archives / "99999999T999999Z").symlink_to(archives / "notes")
+
+    restored = upd.ensure_user_profile_dir("john", home)
+
+    assert (restored / "id").read_text() == "20261116T040506Z-10"
+    assert sorted(p.name for p in archives.iterdir()) == [
+        "20261115T000000Z",
+        "20261116T040506Z",
+        "20261116T040506Z-9",
+        "99999999T999999Z",
+        "notes",
+    ]
+
+
+def test_a_live_folder_is_never_overwritten_by_an_archive(root: Path) -> None:
+    home = root / "profiles" / "cfo"
+    folder = upd.ensure_user_profile_dir("john", home)
+    (folder / "triage.md").write_text("old")
+    upd.archive_user_profile_dir("john", home, now=NOW)
+    live = home / "users" / "john"
+    live.mkdir()
+    (live / "triage.md").write_text("live")
+
+    assert upd.ensure_user_profile_dir("john", home) == live
+    assert (live / "triage.md").read_text() == "live"
+    archived = upd.archived_user_dirs_root("john", home) / "20261116T040506Z"
+    assert (archived / "triage.md").read_text() == "old"
 
 
 def test_archiving_with_no_folder_is_a_no_op(root: Path) -> None:
