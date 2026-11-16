@@ -749,6 +749,10 @@ def _parse_target_ref(platform_name: str, target_ref: str):
         match = _EMAIL_TARGET_RE.fullmatch(target_ref)
         if match:
             return target_ref.strip(), None, True
+        # 'email:<address>:<message-id>' replies in that message's thread.
+        address, sep, thread = target_ref.partition(":")
+        if sep and thread.strip() and _EMAIL_TARGET_RE.fullmatch(address):
+            return address.strip(), thread.strip(), True
     if platform_name == "whatsapp":
         # Native WhatsApp JIDs (group @g.us, user @s.whatsapp.net, @lid, etc.)
         # are explicit targets — pass through verbatim. E.164 '+' numbers fall

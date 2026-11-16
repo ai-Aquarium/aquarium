@@ -131,8 +131,9 @@ async def check_reply(
 ) -> Optional[registry.Source]:
     """Refuse a reply the acting ``user_id`` may not send; return its source.
 
-    * the reply must leave on the arrival's channel and account (and reach a
-      Telegram arrival's own chat) — never a different account;
+    * the reply must leave on the arrival's channel and account — never a
+      different account — and reach the arrival's own Telegram chat or email
+      sender (recipients are not editable at approval; only the body is);
     * a registered source may only be replied from by its owner.
     """
     channel = (channel or "").strip().lower()
@@ -159,6 +160,13 @@ async def check_reply(
                     f"The arrival came in on Telegram chat {chat}; refusing to "
                     f"reply to {target}.",
                 )
+        if channel == "email" and target is not None:
+            sender = _email_address(arrival.get("sender_id"))
+            if sender and _email_address(target) != sender:
+                raise ReplyRefused(
+                    "wrong_recipient",
+                    f"The arrival came from {sender}; refusing to reply to {target}.",
+                )
     if not account:
         return None
     source = await find_source(channel, account, connection=connection)
@@ -168,6 +176,12 @@ async def check_reply(
             f"{account!r} belongs to another user; only its owner can reply from it.",
         )
     return source
+
+
+def _email_address(value: Any) -> str:
+    from email.utils import parseaddr
+
+    return parseaddr(str(value or ""))[1].strip().lower()
 
 
 def _same_account(channel: str, account: Optional[str], received_on: str) -> bool:

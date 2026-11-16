@@ -127,3 +127,80 @@ def test_email_sender_uses_an_in_memory_password_over_ssl(monkeypatch):
     assert result["success"] is True
     assert calls == [("ssl", "smtp.example.com", 465), ("login", "john", "pw"),
                      ("from", "john@example.com")]
+
+
+EMAIL_ARRIVAL = {
+    "surface": "email", "account_id": "john@example.com",
+    "external_id": "msg-2@mail.example.com", "conversation": "thread-root@mail.example.com",
+    "sender_id": "ann@example.com", "subject": "INV-77",
+}
+
+
+def test_an_email_reply_goes_to_the_sender_threaded_under_the_message():
+    from hermes_cli.todo_outbound import command_for, parse_action, target_from_arrival
+
+    assert target_from_arrival(EMAIL_ARRIVAL) == {
+        "channel": "email", "target": "ann@example.com", "account_id": "john@example.com",
+        "thread_id": "msg-2@mail.example.com", "subject": "Re: INV-77",
+    }
+    action = parse_action({"body": "Paid."}, arrival=EMAIL_ARRIVAL)
+    assert (action.target, action.thread_id, action.subject) == (
+        "ann@example.com", "msg-2@mail.example.com", "Re: INV-77")
+    assert "--to ann@example.com" in command_for("tsk_1", action)
+    assert parse_action(
+        {"body": "Paid.", "subject": "Re: INV-77"}, arrival={**EMAIL_ARRIVAL, "subject": "Re: INV-77"}
+    ).subject == "Re: INV-77"
+
+
+@pytest.mark.parametrize("target", ["ann@example.com", "ANN@example.com", "Ann <ann@example.com>"])
+def test_an_email_reply_to_the_sender_is_allowed(target):
+    assert _check("john", "email", "john@example.com", target=target,
+                  arrival=EMAIL_ARRIVAL, source=None) is None
+
+
+@pytest.mark.parametrize("target", ["thread-root@mail.example.com", "bob@example.com"])
+def test_an_email_reply_must_go_to_the_arrivals_sender(target):
+    with pytest.raises(ra.ReplyRefused) as refused:
+        _check("john", "email", "john@example.com", target=target,
+               arrival=EMAIL_ARRIVAL, source=None)
+    assert refused.value.code == "wrong_recipient"
+
+
+def test_an_email_target_may_carry_the_message_it_answers():
+    from tools.send_message_tool import _parse_target_ref
+
+    assert _parse_target_ref("email", "ann@example.com:msg-2@mail.example.com") == (
+        "ann@example.com", "msg-2@mail.example.com", True)
+    assert _parse_target_ref("email", "ann@example.com") == ("ann@example.com", None, True)
+
+
+def test_email_sender_threads_a_reply(monkeypatch):
+    import smtplib
+
+    from plugins.platforms.email.adapter import _standalone_send
+
+    sent = []
+
+    class FakeSSL:
+        def __init__(self, *_a, **_kw):
+            pass
+
+        def login(self, *_a):
+            pass
+
+        def send_message(self, msg):
+            sent.append(msg)
+
+        def quit(self):
+            pass
+
+    monkeypatch.setattr(smtplib, "SMTP_SSL", FakeSSL)
+    pconfig = SimpleNamespace(extra={
+        "address": "john@example.com", "password": "pw", "subject": "INV-77",
+        "smtp_host": "smtp.example.com", "smtp_port": 465, "smtp_security": "ssl",
+    })
+    asyncio.run(_standalone_send(pconfig, "ann@example.com", "hi",
+                                 thread_id="msg-2@mail.example.com"))
+    [msg] = sent
+    assert (msg["In-Reply-To"], msg["References"], msg["Subject"]) == (
+        "<msg-2@mail.example.com>", "<msg-2@mail.example.com>", "Re: INV-77")

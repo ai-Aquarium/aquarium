@@ -1266,7 +1266,15 @@ async def _standalone_send(
             msg = MIMEText(message, "plain", "utf-8")
         msg["From"] = address
         msg["To"] = chat_id
-        msg["Subject"] = extra.get("subject") or "Hermes Agent"
+        subject = extra.get("subject") or "Hermes Agent"
+        if thread_id:
+            # A reply: thread it under the message it answers.
+            ref = f"<{str(thread_id).strip().strip('<>')}>"
+            msg["In-Reply-To"] = ref
+            msg["References"] = ref
+            if extra.get("subject") and not subject.lower().startswith("re:"):
+                subject = f"Re: {subject}"
+        msg["Subject"] = subject
         msg["Date"] = formatdate(localtime=True)
 
         if str(extra.get("smtp_security") or "").lower() == "ssl":

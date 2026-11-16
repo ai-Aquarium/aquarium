@@ -133,6 +133,7 @@ def world(box, monkeypatch):  # noqa: F811
 
         def send_message(self, msg):
             sent.append({"platform": "email", "chat_id": msg["To"], "from": msg["From"],
+                         "subject": msg["Subject"], "in_reply_to": msg["In-Reply-To"],
                          "smtp": (self.host, self.port, self.user, self.password),
                          "message": msg.get_payload(decode=True).decode()})
 
@@ -150,7 +151,7 @@ def _app(world):
 
 
 def _offer(world, profile, user, *, surface, account, conversation, sender,
-           override=None, policy=None):
+           override=None, policy=None, external_id=None, subject=None):
     """``user`` gets an arrival in ``profile`` and a reply proposal for it."""
 
     async def run():
@@ -158,9 +159,10 @@ def _offer(world, profile, user, *, surface, account, conversation, sender,
             app = _app(world)
             principal = await PrincipalStore(app).get(user)
             item = await InboundRegistry(app).register(
-                principal, surface=surface, external_id=f"x-{surface}-{account}",
+                principal, surface=surface,
+                external_id=external_id or f"x-{surface}-{account}",
                 account_id=account, conversation=conversation, sender_id=sender,
-                body="Is INV-77 paid?")
+                subject=subject, body="Is INV-77 paid?")
             todos = TodoStore(app)
             todo = await todos.create(principal, title="Reply about INV-77",
                                       source_kind="inbound", source_ref=item.id)
@@ -197,13 +199,17 @@ def _outbound(world, profile, user, todo_id):
 
 
 def test_johns_reply_leaves_through_his_personal_mailbox(world):
+    # As the email poller registers it: the conversation is the thread's
+    # Message-ID, the sender is the address to answer.
     proposal = _offer(world, "cfo", "john", surface="email", account=JOHN_MAIL,
-                      conversation="ann@example.com", sender="ann@example.com")
+                      conversation="root-1@mail.example.com", sender="ann@example.com",
+                      external_id="msg-2@mail.example.com", subject="INV-77")
     outcome = _answer_and_execute(world, "cfo", "john", proposal)
 
     assert outcome["event"] == "sent", outcome
     assert world["sent"] == [{
         "platform": "email", "chat_id": "ann@example.com", "from": JOHN_MAIL,
+        "subject": "Re: INV-77", "in_reply_to": "<msg-2@mail.example.com>",
         "smtp": ("smtp.example.com", 465, JOHN_MAIL, f"pw-{JOHN_MAIL}"),
         "message": "Yes, paid today.",
     }]
@@ -265,6 +271,16 @@ def test_a_reply_cannot_leave_through_another_account(world, override, code):
     outcome = _answer_and_execute(world, "cfo", "john", proposal)
 
     assert outcome["error"] == code
+    assert world["sent"] == []
+
+
+def test_an_email_reply_cannot_go_to_anyone_but_the_sender(world):
+    proposal = _offer(world, "cfo", "john", surface="email", account=JOHN_MAIL,
+                      conversation="root-1@mail.example.com", sender="ann@example.com",
+                      override={"target": "bob@example.com"})
+    outcome = _answer_and_execute(world, "cfo", "john", proposal)
+
+    assert outcome["error"] == "wrong_recipient"
     assert world["sent"] == []
 
 
