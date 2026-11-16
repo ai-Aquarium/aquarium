@@ -12297,7 +12297,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "computer-use",
         "changes", "config", "cron", "curator", "dashboard", "serve", "debug", "doctor",
         "incomings",
-        "datastore", "db", "dump", "source", "fallback", "gateway", "goal", "hooks", "import", "insights",
+        "datastore", "db", "dump", "fallback", "gateway", "goal", "hooks", "import", "insights",
         "promotion",
         "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate", "moa",
         "journey", "memory-graph", "learning",
@@ -12306,7 +12306,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "project", "projects", "promote", "proxy", "ref",
         "prompt-size",
         "send", "sessions", "setup", "setup-link", "todos", "vpn",
-        "skills", "slack", "status", "tool", "tools", "uninstall", "update",
+        "skills", "slack", "source", "status", "tool", "tools", "uninstall", "update",
         "version", "webhook", "whatsapp", "whatsapp-cloud", "chat", "secrets", "security",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an
@@ -13154,6 +13154,13 @@ def main():
     register_member_subparser(subparsers)
 
     # =========================================================================
+    # source command — box-wide incoming source registry (FG-03 P2)
+    # =========================================================================
+    from hermes_cli.source_cli import register_source_subparser
+
+    register_source_subparser(subparsers)
+
+    # =========================================================================
     # changes command — review/undo/redo recorded change events (C5/FG-12)
     # =========================================================================
     from hermes_cli.changes_cli import register_changes_subparser
@@ -13223,11 +13230,6 @@ def main():
     from hermes_cli.db_migrate import register_db_subparser
 
     register_db_subparser(subparsers)
-
-    # source command — the box-level source registry (`hermes source migrate`, FG-03)
-    from hermes_cli.source_migrate import register_source_subparser
-
-    register_source_subparser(subparsers)
 
     # =========================================================================
     # login command  (parser built in hermes_cli/subcommands/login.py)

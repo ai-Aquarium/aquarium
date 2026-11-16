@@ -730,14 +730,8 @@ def source_migrate_command(args: argparse.Namespace) -> int:
     return 0
 
 
-def register_source_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
-    """Register ``hermes source`` with its ``migrate`` subcommand."""
-    parser = subparsers.add_parser(
-        "source",
-        help="The box-level source registry (mailboxes, WhatsApp numbers, Telegram bots)",
-        description="Manage the box-level source registry (FG-03).",
-    )
-    sub = parser.add_subparsers(dest="source_command", required=True)
+def add_migrate_parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    """Add ``migrate`` to the ``hermes source`` sub-actions (see :mod:`hermes_cli.source_cli`)."""
     run = sub.add_parser(
         "migrate",
         help="Register today's mailboxes, WhatsApp numbers and Telegram bots; idempotent",
@@ -755,4 +749,4 @@ def register_source_subparser(subparsers: argparse._SubParsersAction) -> argpars
     run.add_argument("--email-config", help=f"email poller config (default: config.yaml, then {EMAIL_CONFIG_PATH})")
     run.add_argument("--whatsapp-config", help=f"WhatsApp config (default: {WHATSAPP_CONFIG_PATH})")
     run.set_defaults(func=source_migrate_command)
-    return parser
+    return run

@@ -413,6 +413,24 @@ def parse_member_csv(csv_text: str) -> list[ImportRow]:
     return rows
 
 
+async def _remove_box_sources(user_id: str) -> int:
+    """FG-03: once a person is in no profile on the box, their sources go too.
+
+    The registry is box-wide, so it opens its own database, not this profile's.
+    """
+    from hermes_cli import source_registry
+
+    try:
+        connection = await source_registry.connect_box()
+    except Exception as exc:  # noqa: BLE001 - best-effort, like the file purge
+        logger.warning("source registry: no connection to remove sources: %s", exc)
+        return 0
+    try:
+        return await source_registry.on_person_left_box(connection, user_id=user_id)
+    finally:
+        await connection.close()
+
+
 def _erase_memory_files(user_id: str) -> list[str]:
     """Erase the curated memory files about ``user_id`` this profile owns.
 
@@ -1446,6 +1464,7 @@ class MemberService:
         erased, folders = (
             _erase_person_files(user_id) if strategy == "purge" else ([], [])
         )
+        sources_removed = await _remove_box_sources(user_id)
         await self._audit(
             actor,
             "user.delete",
@@ -1454,6 +1473,7 @@ class MemberService:
                 "strategy": strategy,
                 "successor": successor,
                 "memory_files_erased": erased,
+                "sources_removed": sources_removed,
                 "user_folders_removed": folders,
                 **outcome.as_dict(),
             },
