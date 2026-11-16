@@ -170,3 +170,27 @@ describe("NeedsYouItem in zh-Hant", () => {
     expect(screen.getByTestId("needs-you-title").textContent).toBe("Something new");
   });
 });
+
+describe("NeedsYouItem — Why this profile? (FG-03 P7)", () => {
+  const triaged = (context: Partial<ReturnType<typeof needsYouEntry>["context"]>) =>
+    needsYouEntry({
+      id: "notif:n1",
+      source: "notification",
+      severity: "review",
+      title: "Supplier invoice INV-2291 due Friday",
+      detail: "From john@acme.com",
+      context: { arrival_key: "a1", profile: "CFO", ...context },
+      href: "/inbox",
+      actions: [{ id: "open", label: "Open", style: "primary", href: "/inbox" }],
+    });
+
+  it("links a triaged entry to its routing decision", () => {
+    render(<ul><NeedsYouItem entry={triaged({ routing_source_id: "src-mail", routing_batch_id: "b-1" })} now={NOW} /></ul>);
+    expect(screen.getByRole("button", { name: "Why this profile?" })).toBeTruthy();
+  });
+
+  it("hides the link without routing info", () => {
+    render(<ul><NeedsYouItem entry={triaged({})} now={NOW} /></ul>);
+    expect(screen.queryByRole("button", { name: "Why this profile?" })).toBeNull();
+  });
+});

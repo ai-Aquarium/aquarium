@@ -13,6 +13,7 @@ import { useAction } from "@/lib/use-action";
 import { STAGE_LABEL, sourceGlyph } from "@/components/todos/TodoRow";
 import { formatWhen } from "@/components/files/FilesView";
 import type { Todo, TodoDetail, TodoStage } from "@/types";
+import { WhyThisProfile } from "@/components/sources/WhyThisProfile";
 import { Sheet } from "@/components/ui/Sheet";
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { useUndoToast } from "@/components/ui/UndoToast";
@@ -54,7 +55,7 @@ const SNOOZES: { label: string; hours: number }[] = [
  * the arrival is gone or was never linked, `source_note` carries the weaker
  * provenance instead — "a WhatsApp message from this number" beats silence.
  */
-export function TodoDetailView({ todo }: { todo: TodoDetail }) {
+export function TodoDetailView({ todo, profile }: { todo: TodoDetail; profile?: string | null }) {
   const t = useT("todos");
   const { show: showUndo, toast } = useUndoToast();
   const [current, setCurrent] = useState<TodoDetail>(todo);
@@ -159,6 +160,9 @@ export function TodoDetailView({ todo }: { todo: TodoDetail }) {
           <span className="min-w-0 flex-1 break-words">{current.title}</span>
           <RefBadge value={current.ref} />
         </p>
+        {current.origin === "triage" ? (
+          <TriageProvenance todo={current} sender={source?.sender_id?.trim() || source?.sender_name?.trim() || null} at={source?.occurred_at ?? current.created_at} profile={profile} />
+        ) : null}
 
         <dl className="mt-3 grid grid-cols-[112px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs [overflow-wrap:anywhere]">
           <Row label="Stage">{STAGE_LABEL[current.stage]}</Row>
@@ -528,5 +532,49 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <dt className="text-[var(--color-muted)]">{label}</dt>
       <dd className="break-words">{children}</dd>
     </>
+  );
+}
+
+function shortTime(iso: string | null): string | null {
+  if (!iso) return null;
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return null;
+  return when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+/** "From john@acme.com · triaged by CFO · 10:42 · Why this profile?" (FG-03 P7). */
+function TriageProvenance({
+  todo,
+  sender,
+  at,
+  profile,
+}: {
+  todo: TodoDetail;
+  sender: string | null;
+  at: string | null;
+  profile?: string | null;
+}) {
+  const parts = [
+    sender ? `From ${sender}` : null,
+    profile && profile !== "default" ? `triaged by ${profile}` : "triaged",
+    shortTime(at),
+  ].filter(Boolean);
+  return (
+    <p
+      data-testid="todo-provenance"
+      className="mt-1 flex flex-wrap items-center gap-x-1 text-xs font-medium leading-4 text-[var(--color-muted)] [overflow-wrap:anywhere]"
+    >
+      <span>{parts.join(" · ")}</span>
+      {todo.routing_source_id && todo.routing_batch_id ? (
+        <>
+          <span aria-hidden>·</span>
+          <WhyThisProfile
+            sourceId={todo.routing_source_id}
+            batchId={todo.routing_batch_id}
+            profile={profile && profile !== "default" ? profile : null}
+          />
+        </>
+      ) : null}
+    </p>
   );
 }
