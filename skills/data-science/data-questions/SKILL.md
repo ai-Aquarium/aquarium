@@ -75,3 +75,8 @@ Only the source's owner approves; you only add to the draft.
 After proposing, say that the draft waits for the owner's approval under Data
 in agent-home, and that answers keep using the approved version until then.
 Never propose without the person asking or agreeing.
+
+Everything you learn about a source (what its tables and columns mean, their
+values, joins, metrics, where the schema is defined) goes in its dictionary,
+never in a skill: don't create or edit a skill for one source or table
+(`skill_manage` refuses skill text that names the `site_db` tool).
