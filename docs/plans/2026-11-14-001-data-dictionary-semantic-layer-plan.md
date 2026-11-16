@@ -334,7 +334,9 @@ The site-to-schema plan rejected a skill-only design for the same reason.
 - MySQL / SQLite connections: `hermes_cli/db_connections.py` +
   `/api/db/connections` (owner-only, passwords write-only, never
   materialized to agent terminals). SQLite files only under
-  `data_sources.sqlite_roots` (default `<HERMES_HOME>/data-sources`).
+  `data_sources.sqlite_roots` — members only from their own
+  `<root>/<user_id>/` folder, so nobody registers a file someone else keeps
+  private; admins from any root (default `<HERMES_HOME>/data-sources`).
 - `site_db`: `list_sources`; `describe` / `query` take `source=` (slug, `app`,
   `<engine>:<connection>` ref or id) and `params`; `study` / dictionary
   actions work on connection sources. `/api/data/sources/{id}/tables`,

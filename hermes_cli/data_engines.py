@@ -526,7 +526,8 @@ class _LiveAdapter(EngineAdapter):
         for t in tables:
             if words and not _matches(words, t["name"], t.get("comment"), *columns.get(t["name"], [])):
                 continue
-            out.append({k: t.get(k) for k in ("name", "type", "rows", "comment")})
+            out.append({k: t.get(k) for k in ("name", "schema", "type", "rows", "comment")
+                        if k != "schema" or t.get(k)})
         return out[:MAX_TABLES]
 
     def _sync_schema(self) -> Dict[str, Set[str]]:
@@ -898,10 +899,22 @@ class SqliteAdapter(_LiveAdapter):
 # -- sources -> adapters ---------------------------------------------------------------
 
 
-def _owner_principal(user_id: str) -> Any:
-    from hermes_cli.access import Principal
+async def _owner_principal(user_id: str) -> Any:
+    """The data source owner's own principal (their role decides which VPNs they may use)."""
+    from hermes_cli.access import Principal, PrincipalStore
+    from hermes_cli.config import load_config_readonly
+    from hermes_cli.datastore import get_store
 
-    return Principal(user_id=user_id, display=user_id, role="member")
+    try:
+        owner = await PrincipalStore(
+            get_store("supabase-app", "prod", config=load_config_readonly() or {})
+        ).get(user_id)
+    except Exception:  # noqa: BLE001 - no principal store (tests, CLI): their own rows still resolve
+        logger.debug("could not load the data source owner's principal", exc_info=True)
+        owner = None
+    if owner is not None and not owner.active:
+        raise EngineError("the person who added this data source is suspended", 403)
+    return owner or Principal(user_id=user_id, display=user_id, role="member")
 
 
 async def connection_refs(principal: Any) -> List[Dict[str, str]]:
@@ -964,14 +977,14 @@ async def adapter_for(source: Any, principal: Any, *, agent: bool = True, db: An
         if not source.owner_user_id:
             raise EngineError("this data source has no owner", 404)
         if getattr(principal, "user_id", None) != source.owner_user_id:
-            principal = _owner_principal(source.owner_user_id)
+            principal = await _owner_principal(source.owner_user_id)
         return await _connection_adapter(source, principal, agent=agent)
     raise EngineError(f"unknown source kind {source.kind!r}")
 
 
 async def source_schema(source: Any, *, db: Any = None) -> Dict[str, Set[str]]:
     """The live schema of a connection source, read with its owner's login (drift checks)."""
-    adapter = await adapter_for(source, _owner_principal(source.owner_user_id), agent=False, db=db)
+    adapter = await adapter_for(source, await _owner_principal(source.owner_user_id), agent=False, db=db)
     return await adapter.schema()
 
 

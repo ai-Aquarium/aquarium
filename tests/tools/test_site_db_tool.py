@@ -430,3 +430,37 @@ def test_study_reads_named_tables_else_chosen_schemas_undescribed_first():
     assert names(tool.study_order(found, {"dbo.a"})) == ["dbo.b", "hr.c", "dbo.a"]
     assert names(tool.study_order(found, {"dbo.a"}, schemas=["dbo"])) == ["dbo.b", "dbo.a"]
     assert names(tool.study_order(found, set(), schemas=["dbo"], tables=["hr.c", "x"])) == ["hr.c"]
+
+
+def test_dictionary_studies_an_undescribed_table_on_demand(fake_registry, monkeypatch):
+    from hermes_cli import data_dictionary as dd
+    from hermes_cli import data_engines as de
+
+    app = dd.Source(id="s1", kind="app", profile="default", name="Aquarium data")
+
+    async def sync_sources(profile, **_kw):
+        return [app]
+
+    async def resolve_access(source, principal, **_kw):
+        return "read"
+
+    async def dictionary(source, *, draft=False, **_kw):
+        return {"approved": {"version": 3, "entries": {"tables": {"todos": {"meaning": "m"}}}}}
+
+    class Live:
+        async def describe_table(self, name):
+            return {"name": name, "columns": [{"name": "id"}]}
+
+    async def adapter_for(source, principal, **_kw):
+        return Live()
+
+    monkeypatch.setattr(dd, "sync_sources", sync_sources)
+    monkeypatch.setattr(dd, "resolve_access", resolve_access)
+    monkeypatch.setattr(dd, "dictionary", dictionary)
+    monkeypatch.setattr(de, "adapter_for", adapter_for)
+    out = call("reader", "member", action="dictionary", source="app", entity="goals")
+    assert out["approved"]["version"] == 3
+    assert out["studied"]["name"] == "goals" and out["undescribed"] == ["goals"]
+    assert "propose_dictionary" in out["next"]
+    known = call("reader", "member", action="dictionary", source="app", entity="todos")
+    assert "todos" in known["approved"]["entries"]["tables"] and "studied" not in known

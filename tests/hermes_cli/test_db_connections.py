@@ -79,19 +79,30 @@ def test_mysql_needs_password_and_valid_fields():
         run(dbc.save(ALICE, "postgres", "new", mysql_body()))
 
 
-def test_anyone_adds_sqlite_but_only_inside_a_root(root, tmp_path, file_store):
+def test_anyone_adds_sqlite_but_only_their_own_files(root, tmp_path, file_store):
     outside = tmp_path / "other.db"
     sqlite3.connect(outside).close()
     with pytest.raises(EngineError):
         run(dbc.save(BOSS, "sqlite", "other", {"path": str(outside)}))
     with pytest.raises(EngineError):
         run(dbc.save(ALICE, "sqlite", "other", {"path": str(outside)}))
-    saved = run(dbc.save(ALICE, "sqlite", "shop", {"path": str(root / "shop.db")}))
-    assert saved["path"] == str(root / "shop.db")
+    # a member can't register a file someone else keeps under the shared root
+    with pytest.raises(EngineError) as err:
+        run(dbc.save(ALICE, "sqlite", "shop", {"path": str(root / "shop.db")}))
+    assert err.value.status == 403
+    (root / "bob").mkdir()
+    (root / "alice").mkdir()
+    (root / "shop.db").rename(root / "alice" / "shop.db")
+    sqlite3.connect(root / "bob" / "b.db").close()
+    with pytest.raises(EngineError):
+        run(dbc.save(ALICE, "sqlite", "b", {"path": str(root / "bob" / "b.db")}))
+    saved = run(dbc.save(ALICE, "sqlite", "shop", {"path": str(root / "alice" / "shop.db")}))
+    assert saved["path"] == str(root / "alice" / "shop.db")
     tested = run(dbc.run_test(ALICE, "sqlite", "shop"))
     assert tested["test"] == {"ok": True, "tables": 1}
     assert run(dbc.delete(ALICE, "sqlite", "shop")) is True
     assert file_store == [("alice", "sqlite", "shop")]
+    assert run(dbc.save(BOSS, "sqlite", "b", {"path": str(root / "bob" / "b.db")}))["path"]
 
 
 def test_api_routes_act_on_the_caller_only(monkeypatch):

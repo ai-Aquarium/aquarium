@@ -251,16 +251,18 @@ async def _dictionary_action(action: str, principal: Any, args: Mapping[str, Any
     found = await dd.dictionary(source, draft=dd.allows(access, "propose"))
     approved = found["approved"]
     if action == "dictionary":
+        entity = str(args.get("entity") or "").strip()
+        described = ((approved or {}).get("entries") or {}).get("tables") or {}
+        undescribed = bool(entity) and entity not in described
         out: dict[str, Any] = {"source": source.view(access), "approved": approved and {
             "version": approved["version"],
-            **await dds.lookup(source, approved, q=args.get("q"), entity=args.get("entity"),
-                               top_k=int(args.get("top_k") or dds.TOP_K))}}
+            **({} if undescribed else await dds.lookup(
+                source, approved, q=args.get("q"), entity=entity or None,
+                top_k=int(args.get("top_k") or dds.TOP_K)))}}
         if approved and "index" in out["approved"]:
             out["note"] = ("This dictionary is large: call dictionary again with q= (the question) "
                            "or entity= to read the entries you need.")
-        entity = str(args.get("entity") or "").strip()
-        described = ((approved or {}).get("entries") or {}).get("tables") or {}
-        if entity and entity not in described:
+        if undescribed:
             out.update(await _study_on_demand(source, principal, entity))
         if found.get("draft"):
             out["draft"] = {k: found["draft"][k] for k in ("version", "changed_tables")}

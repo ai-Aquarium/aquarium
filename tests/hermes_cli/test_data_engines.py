@@ -126,15 +126,22 @@ def test_connection_access_is_owner_grant_or_admin_read():
 
 def test_everyone_who_may_read_opens_it_with_the_owners_login(monkeypatch):
     opened = []
+    alice_as_owner = Principal(user_id="alice", display="Alice", role="owner")
+
+    async def owner_principal(user_id):
+        assert user_id == "alice"
+        return alice_as_owner
 
     async def connection_adapter(source, principal, *, agent):
         opened.append((principal.user_id, principal.role))
         return de.SqliteAdapter({"path": ":memory:"})
 
+    monkeypatch.setattr(de, "_owner_principal", owner_principal)
     monkeypatch.setattr(de, "_connection_adapter", connection_adapter)
     for who in (ALICE, BOB, BOSS):
         run(de.adapter_for(_connection(), who))
-    assert opened == [("alice", "member")] * 3
+    # the owner's own role (and so the VPNs they may use) is kept for every reader
+    assert opened == [("alice", "member"), ("alice", "owner"), ("alice", "owner")]
     with pytest.raises(de.EngineError):
         run(de.adapter_for(_connection(owner=""), BOSS))
 
@@ -303,3 +310,13 @@ def test_mssql_adapter_against_a_real_server():
     with pytest.raises(de.EngineError):
         run(adapter.query("DELETE FROM dbo.de_orders"))
     assert run(adapter.schema())["dbo.de_orders"] == {"order_no", "customer_id", "amount"}
+
+
+def test_listed_tables_keep_their_schema_for_study_choices(shop):
+    class Schemas(de.SqliteAdapter):
+        def _tables(self, conn):
+            return [{**t, "schema": "main"} for t in super()._tables(conn)]
+
+    tables = run(Schemas({"path": str(shop)}).list_tables())
+    assert tables and {t["schema"] for t in tables} == {"main"}
+    assert "schema" not in run(de.SqliteAdapter({"path": str(shop)}).list_tables())[0]

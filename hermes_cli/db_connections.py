@@ -127,6 +127,25 @@ def sqlite_path(value: Any) -> Path:
     return resolved
 
 
+def _own_sqlite_folder(principal: Any, path: Path) -> None:
+    """Members add only files in their own ``<root>/<user_id>/`` folder; admins any root.
+
+    Otherwise anyone could register a file someone else keeps private.
+    """
+    from hermes_cli import site_sources as ss
+
+    if ss._is_profile_admin(principal):
+        return
+    user_id = str(getattr(principal, "user_id", "") or "")
+    folders = [r / user_id for r in sqlite_roots()] if user_id else []
+    if not any(f in path.parents for f in folders):
+        raise EngineError(
+            "you can add SQLite files from your own folder: "
+            + ", ".join(str(f) for f in folders),
+            403,
+        )
+
+
 # -- store ------------------------------------------------------------------------------
 
 
@@ -209,6 +228,8 @@ async def save(principal: Any, engine: Any, name: Any, body: Mapping[str, Any]) 
     if not isinstance(body, Mapping):
         raise EngineError("body must be an object")
     payload = _payload(engine, body)
+    if engine == "sqlite":
+        _own_sqlite_folder(principal, Path(payload["path"]))
     existing = await find_own(principal, engine, name)
     if engine == "mysql":
         payload = merge_kept_secrets(engine, payload, existing.payload if existing else None)
