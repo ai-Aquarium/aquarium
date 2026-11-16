@@ -4147,11 +4147,12 @@ export class HermesApiClient {
     slug: string,
     taskId: string,
     key: string,
-    decision: "approve" | "deny",
+    decision: "approve" | "deny" | "revise",
+    note?: string,
   ): Promise<import("@/types").ProjectBoardTask> {
     return this.request(
       `/api/registry/projects/${encodeURIComponent(slug)}/cards/${encodeURIComponent(taskId)}/approvals`,
-      { method: "POST", json: { key, decision } },
+      { method: "POST", json: note ? { key, decision, note } : { key, decision } },
     );
   }
 }

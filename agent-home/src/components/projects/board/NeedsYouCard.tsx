@@ -4,7 +4,15 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { ActionButton } from "@/components/projects/ActionButton";
-import { ApprovalDetail } from "@/components/projects/CardApprovals";
+import {
+  ApprovalDetail,
+  OutboundDecision,
+  OutboundProposalView,
+  channelName,
+  describeOutbound,
+  sendFailure,
+  type OutboundDecisionKind,
+} from "@/components/projects/CardApprovals";
 import { CardTile, cardHref } from "@/components/projects/board/CardTile";
 import {
   isTaskRow,
@@ -18,13 +26,14 @@ import type { ProjectBoardTask, ProjectBoardView, ProjectCardApproval } from "@/
 
 export type BoardUpdate = (fn: (board: ProjectBoardView) => ProjectBoardView) => void;
 
-type Verb = "approve" | "unblock" | "allow" | "deny" | "assign" | "archive";
+type Verb = "approve" | "unblock" | "allow" | "deny" | "revise" | "assign" | "archive";
 
 const PENDING: Record<Verb, string> = {
   approve: "Approving…",
   unblock: "Unblocking…",
   allow: "Allowing…",
   deny: "Denying…",
+  revise: "Sending back…",
   assign: "Assigning…",
   archive: "Archiving…",
 };
@@ -34,6 +43,7 @@ const FAILED: Record<Verb, string> = {
   unblock: "Couldn't unblock",
   allow: "Couldn't allow it",
   deny: "Couldn't deny it",
+  revise: "Couldn't send it back",
   assign: "Couldn't assign",
   archive: "Couldn't archive",
 };
@@ -88,6 +98,7 @@ export function NeedsYouCard({
   const [verb, setVerb] = useState<Verb | null>(null);
   const [reasonOpen, setReasonOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [failure, setFailure] = useState<string | null>(null);
   const before = useRef<ProjectBoardTask>(snapshot);
   const optimistic = useRef<((b: ProjectBoardView) => ProjectBoardView) | null>(null);
   const shown = task ?? snapshot;
@@ -119,6 +130,7 @@ export function NeedsYouCard({
       ...request,
       onSuccess: (data) => {
         if (isTaskRow(data)) update((b) => reconcileTask(b, data));
+        request.onSuccess?.(data);
       },
     });
     if (result && !result.ok) rollback();
@@ -145,12 +157,21 @@ export function NeedsYouCard({
       (b) => withStatus(b, id, "ready"),
     );
   const approvals = kind === "unblock" ? shown.pending_approvals ?? [] : [];
-  const decide = (approval: ProjectCardApproval, allow: boolean) => {
+  const decide = (
+    approval: ProjectCardApproval,
+    decision: OutboundDecisionKind,
+    note?: string,
+  ) => {
     const rest = approvals.filter((a) => a.key !== approval.key);
+    setFailure(null);
     return fire(
-      allow ? "allow" : "deny",
+      decision === "approve" ? "allow" : decision,
       `${base}/approvals`,
-      { method: "POST", body: { key: approval.key, decision: allow ? "approve" : "deny" } },
+      {
+        method: "POST",
+        body: note ? { key: approval.key, decision, note } : { key: approval.key, decision },
+        onSuccess: (data) => setFailure(sendFailure(data)),
+      },
       (b) =>
         rest.length === 0
           ? withStatus(b, id, "ready")
@@ -180,44 +201,72 @@ export function NeedsYouCard({
       now={now}
       highlight
     >
-      {approvals.map((approval) => (
-        <div
-          key={approval.key}
-          data-component="CardApproval"
-          data-approval-key={approval.key}
-          className="mt-2 rounded-lg border border-amber-400/40 bg-amber-400/5 px-2 py-1.5 text-xs"
-        >
-          <div className="font-medium">Waiting on you: allow {approval.label}?</div>
-          {approval.detail ? (
-            <details className="mt-0.5">
-              <summary className="cursor-pointer text-[var(--color-muted)]">What it wants to do</summary>
-              <ApprovalDetail approval={approval} />
-            </details>
-          ) : null}
-          {canAct ? (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              <ActionButton
-                busy={pendingVerb === "allow"}
-                disabled={busy}
-                pendingLabel={PENDING.allow}
-                onClick={() => void decide(approval, true)}
-                className={PRIMARY}
-              >
-                Allow on this card
-              </ActionButton>
-              <ActionButton
-                busy={pendingVerb === "deny"}
-                disabled={busy}
-                pendingLabel={PENDING.deny}
-                onClick={() => void decide(approval, false)}
-                className={BTN}
-              >
-                Deny
-              </ActionButton>
+      {approvals.map((approval) => {
+        const outbound = describeOutbound(approval);
+        return (
+          <div
+            key={approval.key}
+            data-component="CardApproval"
+            data-approval-key={approval.key}
+            className="mt-2 rounded-lg border border-amber-400/40 bg-amber-400/5 px-2 py-1.5 text-xs"
+          >
+            <div className="font-medium">
+              {outbound
+                ? `Waiting on you: send this ${channelName(outbound.channel)}?`
+                : `Waiting on you: allow ${approval.label}?`}
             </div>
-          ) : null}
-        </div>
-      ))}
+            {outbound ? (
+              <OutboundProposalView proposal={outbound} />
+            ) : approval.detail ? (
+              <details className="mt-0.5">
+                <summary className="cursor-pointer text-[var(--color-muted)]">What it wants to do</summary>
+                <ApprovalDetail approval={approval} />
+              </details>
+            ) : null}
+            {canAct && outbound ? (
+              <OutboundDecision
+                pending={
+                  pendingVerb === "allow"
+                    ? "approve"
+                    : pendingVerb === "deny" || pendingVerb === "revise"
+                      ? pendingVerb
+                      : null
+                }
+                disabled={busy}
+                onDecide={(decision, note) => void decide(approval, decision, note)}
+                primaryClass={PRIMARY}
+                buttonClass={BTN}
+              />
+            ) : canAct ? (
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <ActionButton
+                  busy={pendingVerb === "allow"}
+                  disabled={busy}
+                  pendingLabel={PENDING.allow}
+                  onClick={() => void decide(approval, "approve")}
+                  className={PRIMARY}
+                >
+                  Allow on this card
+                </ActionButton>
+                <ActionButton
+                  busy={pendingVerb === "deny"}
+                  disabled={busy}
+                  pendingLabel={PENDING.deny}
+                  onClick={() => void decide(approval, "deny")}
+                  className={BTN}
+                >
+                  Deny
+                </ActionButton>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+      {failure ? (
+        <p role="alert" className="mt-2 text-xs text-[var(--color-danger)]">
+          {failure}
+        </p>
+      ) : null}
       <div data-component="NeedsYouActions" className="mt-2 flex flex-wrap items-center gap-1.5">
         {holding && !task ? (
           <span role="status" className="text-xs text-[var(--color-muted)]">

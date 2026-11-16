@@ -1159,6 +1159,40 @@ class EmailAdapter(BasePlatformAdapter):
 # ──────────────────────────────────────────────────────────────────────────
 
 
+#: Total attachment bytes per one-shot email. Base64 grows a payload by a
+#: third, so this stays under the common 25 MB provider ceiling.
+STANDALONE_MAX_ATTACHMENT_BYTES = 18 * 1024 * 1024
+
+
+def _standalone_attachments(media_files) -> List[Tuple[Path, bytes]]:
+    """Read the MEDIA files a one-shot email carries.
+
+    Callers have already run the paths through ``validate_media_delivery_path``;
+    this re-checks what it reads (a regular file, after resolving symlinks) and
+    refuses the whole send when any file is missing or the total is over
+    :data:`STANDALONE_MAX_ATTACHMENT_BYTES`, because an invoice email that
+    silently leaves without its PDF is worse than no email.
+    """
+    out: List[Tuple[Path, bytes]] = []
+    total = 0
+    for item in media_files or []:
+        raw = item[0] if isinstance(item, (tuple, list)) else item
+        try:
+            path = Path(str(raw)).resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            raise ValueError(f"attachment {Path(str(raw)).name!r} is missing")
+        if not path.is_file():
+            raise ValueError(f"attachment {path.name!r} is not a regular file")
+        total += path.stat().st_size
+        if total > STANDALONE_MAX_ATTACHMENT_BYTES:
+            raise ValueError(
+                "attachments are larger than "
+                f"{STANDALONE_MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB in total"
+            )
+        out.append((path, path.read_bytes()))
+    return out
+
+
 async def _standalone_send(
     pconfig,
     chat_id,
@@ -1191,7 +1225,23 @@ async def _standalone_send(
         return {"error": "Email not configured (EMAIL_ADDRESS, EMAIL_PASSWORD, EMAIL_SMTP_HOST required)"}
 
     try:
-        msg = MIMEText(message, "plain", "utf-8")
+        attachments = _standalone_attachments(media_files)
+    except ValueError as e:
+        return {"error": f"Email not sent: {e}"}
+
+    try:
+        if attachments:
+            msg = MIMEMultipart()
+            if message:
+                msg.attach(MIMEText(message, "plain", "utf-8"))
+            for path, data in attachments:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(data)
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", "attachment", filename=path.name)
+                msg.attach(part)
+        else:
+            msg = MIMEText(message, "plain", "utf-8")
         msg["From"] = address
         msg["To"] = chat_id
         msg["Subject"] = extra.get("subject") or "Hermes Agent"
@@ -1202,7 +1252,10 @@ async def _standalone_send(
         server.login(address, password)
         server.send_message(msg)
         server.quit()
-        return {"success": True, "platform": "email", "chat_id": chat_id}
+        result = {"success": True, "platform": "email", "chat_id": chat_id}
+        if attachments:
+            result["attachments"] = [path.name for path, _data in attachments]
+        return result
     except Exception as e:
         try:
             from tools.send_message_tool import _error as _e

@@ -1130,7 +1130,68 @@ def _run(coro) -> int:
         return 1
 
 
+def _cmd_propose_send(args) -> int:
+    """A card worker proposes an outgoing message; a person sends it.
+
+    Writes straight to the worker's own card (like a card approval from
+    ``tools/approval.py``): no principal, nothing sent.
+    """
+    from hermes_cli import card_outbound, kanban_db
+
+    task_id = args.task or os.environ.get("HERMES_KANBAN_TASK")
+    if not task_id:
+        print(
+            "projects: propose-send runs on a project card "
+            "(--task, default $HERMES_KANBAN_TASK)",
+            file=sys.stderr,
+        )
+        return 2
+    if args.body_file:
+        try:
+            body = _read_description(args.body_file)
+        except ValueError:
+            print(
+                "projects: --body-file must be a readable file path or '-' for stdin",
+                file=sys.stderr,
+            )
+            return 2
+    else:
+        body = args.body or ""
+    run_raw = os.environ.get("HERMES_KANBAN_RUN_ID", "")
+    try:
+        with kanban_db.connect_closing() as conn:
+            proposal = card_outbound.propose(
+                conn,
+                task_id,
+                channel=args.channel,
+                target=args.to,
+                account=args.account,
+                subject=args.subject or "",
+                body=body,
+                attach=args.attach,
+                run_id=int(run_raw) if run_raw.isdigit() else None,
+            )
+    except ValueError as error:
+        print(f"projects: {error}", file=sys.stderr)
+        return 1
+    if args.json:
+        _print_json(proposal)
+        return 0
+    attached = proposal.get("attachment") or {}
+    print(f"Proposed ({proposal['key']}): {proposal['label']}"
+          + (f", attaching {attached['name']}" if attached else "") + ".")
+    print(
+        "Nothing was sent. It is waiting for a person to approve it on this "
+        "card. Now call kanban_block with kind=\"needs_input\" and a reason "
+        "that starts \"Approval needed:\" and says what the message is, then "
+        "stop. Do not send it any other way."
+    )
+    return 0
+
+
 async def _dispatch(args: argparse.Namespace) -> int:
+    if args.projects_command == "propose-send":
+        return _cmd_propose_send(args)
     principal = await _resolve_principal(args.actor)
     api = _Api(principal, as_human=getattr(args, "as_human", False))
     try:
@@ -1337,6 +1398,30 @@ def register_projects_subparser(
         help="Promote this to-do into the card (§10)",
     )
     card.add_argument("--json", **json_flag)
+
+    propose = sub.add_parser(
+        "propose-send",
+        help="Propose an outgoing email/WhatsApp from this card; a person "
+        "approves before it is sent",
+    )
+    propose.add_argument("--channel", required=True, choices=["email", "whatsapp"])
+    propose.add_argument("--to", required=True, help="Recipient address or number")
+    propose.add_argument(
+        "--account", required=True,
+        help="Account it leaves from (email account id/address, WhatsApp bridge)",
+    )
+    propose.add_argument("--subject", default=None, help="Email subject")
+    body_src = propose.add_mutually_exclusive_group(required=True)
+    body_src.add_argument("--body", default=None)
+    body_src.add_argument("--body-file", default=None, help="File path or '-'")
+    propose.add_argument(
+        "--attach", default=None,
+        help="A file in the card's workspace to attach (e.g. the invoice PDF)",
+    )
+    propose.add_argument(
+        "--task", default=None, help="Card (default: $HERMES_KANBAN_TASK)"
+    )
+    propose.add_argument("--json", **json_flag)
 
     playbook = sub.add_parser("playbook", help="The plan (prose + step DAG)")
     playbook.add_argument("slug")

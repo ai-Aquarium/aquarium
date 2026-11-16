@@ -32,7 +32,8 @@ import logging
 import shlex
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from hermes_cli.access import Principal
@@ -244,6 +245,68 @@ async def propose(
     )
 
 
+def deliver_message(
+    *,
+    channel: str,
+    target: str,
+    body: str,
+    account: Optional[str] = None,
+    subject: Optional[str] = None,
+    thread: Optional[str] = None,
+    attachments: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Send one approved message through the shared egress (``hermes send``'s
+    ``send_message_tool``): account-aware, so a reply leaves by the account
+    it is meant to. ``attachments`` (and any ``MEDIA:`` line already in
+    ``body``) travel as files; a file the media-path check refuses fails the
+    whole send instead of dropping the attachment silently.
+
+    Returns the tool's result payload (``{"error": ...}`` on a refusal).
+    """
+    from gateway.platforms.base import (
+        BasePlatformAdapter,
+        validate_media_delivery_path,
+    )
+
+    named, _clean = BasePlatformAdapter.extract_media(body or "")
+    files = [str(p) for p, _voice in named] + [str(p) for p in attachments]
+    for path in files:
+        if not validate_media_delivery_path(path):
+            return {
+                "error": f"attachment {Path(path).name!r} was refused by the "
+                "media path check; nothing was sent"
+            }
+    message = body or ""
+    if attachments:
+        message = "\n".join([message, *(f"MEDIA:{p}" for p in attachments)])
+
+    from hermes_cli.send_cmd import _load_hermes_env
+
+    _load_hermes_env()
+    from tools.send_message_tool import send_message_tool
+
+    send_target = channel
+    if target:
+        send_target += f":{target}"
+    if thread:
+        send_target += f":{thread}"
+    send_args: dict[str, Any] = {
+        "action": "send",
+        "target": send_target,
+        "message": message,
+    }
+    if account:
+        send_args["account"] = account
+    if subject:
+        send_args["subject"] = subject
+
+    result_json = send_message_tool(send_args)
+    try:
+        return json.loads(result_json) if result_json else {}
+    except json.JSONDecodeError:
+        return {"error": "invalid JSON from send_message_tool", "raw": result_json}
+
+
 async def execute_proposal(
     store: "TodoStore",
     principal: "Principal",
@@ -287,35 +350,15 @@ async def execute_proposal(
     if not body:
         return {"error": "empty_body", "detail": "The approval has no body to send."}
 
-    # Deliver through the same egress `hermes send` uses — account-aware, so
-    # C4's "reply leaves by the account the message arrived on" is honoured.
-    from hermes_cli.send_cmd import _load_hermes_env
-
-    _load_hermes_env()
-    from tools.send_message_tool import send_message_tool
-
     channel = routing["channel"] or ""
-    send_target = channel
-    if routing["target"]:
-        send_target += f":{routing['target']}"
-    if routing["thread"]:
-        send_target += f":{routing['thread']}"
-
-    _send_args: dict[str, Any] = {
-        "action": "send",
-        "target": send_target,
-        "message": body,
-    }
-    if routing["account"]:
-        _send_args["account"] = routing["account"]
-    if routing["subject"]:
-        _send_args["subject"] = routing["subject"]
-
-    result_json = send_message_tool(_send_args)
-    try:
-        result_payload = json.loads(result_json) if result_json else {}
-    except json.JSONDecodeError:
-        result_payload = {"error": "invalid JSON from send_message_tool", "raw": result_json}
+    result_payload = deliver_message(
+        channel=channel,
+        target=routing["target"] or "",
+        thread=routing["thread"] or None,
+        body=body,
+        account=routing["account"] or None,
+        subject=routing["subject"] or None,
+    )
 
     delivered = not result_payload.get("error")
     event = "sent" if delivered else "failed"

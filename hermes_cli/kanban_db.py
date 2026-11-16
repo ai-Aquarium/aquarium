@@ -590,6 +590,16 @@ def workspaces_root(board: Optional[str] = None) -> Path:
     return board_dir(slug) / "workspaces"
 
 
+def outbound_root() -> Path:
+    """Where a card's proposed outgoing attachments are snapshotted until a
+    person approves the send: ``<root>/kanban/outbound/<task_id>/<id>/``.
+
+    Board-independent and under the shared root, so the worker that proposes
+    and the dashboard that sends resolve the same path; listed as a media
+    delivery root in ``gateway.platforms.base``."""
+    return kanban_home() / "kanban" / "outbound"
+
+
 def attachments_root(board: Optional[str] = None) -> Path:
     """Return the directory under which task file attachments are stored.
 
@@ -3309,6 +3319,25 @@ def decide_task_approval(
             {"key": approval_key, "by": actor},
         )
         return str(row["label"])
+
+
+def reopen_task_approval(
+    conn: sqlite3.Connection, task_id: str, approval_key: str
+) -> bool:
+    """Put an approved request back to ``pending`` (its approved call failed),
+    so the person sees it again and can retry or deny it."""
+    with write_txn(conn):
+        cur = conn.execute(
+            "UPDATE task_approvals SET status = 'pending', decided_at = NULL, "
+            "decided_by = NULL WHERE task_id = ? AND approval_key = ? "
+            "AND status = 'approved'",
+            (task_id, approval_key),
+        )
+        if cur.rowcount:
+            _append_event(
+                conn, task_id, "approval_reopened", {"key": approval_key}
+            )
+        return bool(cur.rowcount)
 
 
 def list_comments(conn: sqlite3.Connection, task_id: str) -> list[Comment]:
