@@ -14,14 +14,16 @@ keys in `/etc/aquarium/aquarium.conf` (`APPS_*`, see `DEFAULTS` in `deploy/aquar
 ## Commands (root only, `/usr/local/sbin/aquarium`)
 
     aquarium apps cluster up|status|down <prod|dev|all>
-    aquarium apps db create|migrate|status|suspend|resume|drop|archive|restore <slug> <prod|dev>
+    aquarium apps db create|migrate|status|suspend|resume|drop|archive|restore [<slug>] <prod|dev>
 
-The `apps db` argv is exactly what the sudoers file from item 1.2 allows the service user to run.
-Anything else the verb needs arrives as one JSON object on **stdin** (never argv, so nothing leaks
-into `ps` or the sudo log):
+The sudoers file from item 1.2 allows the service user exactly `aquarium apps db <verb> <prod|dev>`
+(no wildcards: sudo-rs refuses them), so the slug and anything else the verb needs arrive as one
+JSON object on **stdin** (never argv, so nothing leaks into `ps` or the sudo log). Root may still
+give the slug in argv, but not both ways at once:
 
 | key | used by | meaning |
 |---|---|---|
+| `slug` | every verb, when not in argv | the app |
 | `approval_ref` | every `prod` verb except `status` | id of an `approved` row in `<APPS_APPROVALS_SCHEMA>.approvals` with `target_ref = 'tool:<slug>'`, at most 24 h old; one use per verb |
 | `migrations` | `migrate` | `[{"name": "<digits>_<name>.sql", "sql": "..."}]`, the app's `supabase/migrations/*.sql` at the promoted SHA |
 | `confirm` | `drop` | must equal the slug: the explicit confirmation before irreversible data loss (decision 9) |

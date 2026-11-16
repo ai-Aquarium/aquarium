@@ -99,6 +99,14 @@ def test_refusals_happen_before_any_database_is_touched(tmp_path):
     assert not extra["ok"] and "unexpected" in extra["error"]
     bad = answer(cli(tmp_path, "apps", "db", "create", "../x", "dev", path=empty_path))
     assert not bad["ok"] and "slug" in bad["error"]
+    # The sudoers form: slug on stdin, argv just `<verb> <mode>`.
+    drop = answer(cli(tmp_path, "apps", "db", "drop", "dev", spec={"slug": "notes"}, path=empty_path))
+    assert not drop["ok"] and "confirmation" in drop["error"]
+    for spec in ({"slug": "../x"}, {"slug": 5}, {}, None):
+        bad = answer(cli(tmp_path, "apps", "db", "create", "dev", spec=spec, path=empty_path))
+        assert not bad["ok"] and "slug" in bad["error"]
+    twice = answer(cli(tmp_path, "apps", "db", "status", "notes", "dev", spec={"slug": "other"}, path=empty_path))
+    assert not twice["ok"] and "twice" in twice["error"]
     assert not (tmp_path / "etc/aquarium/apps").exists()
 
 

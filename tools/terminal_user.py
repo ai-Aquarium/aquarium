@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import getpass
 import os
+import re
 import shlex
 import signal as _signal
 import stat
 import subprocess
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Optional, Sequence
 
 SETTING = "terminal.run_as"
 HELPER = "/usr/local/sbin/hermes-tools-exec"
@@ -66,20 +67,30 @@ def _check_helper(user: str) -> None:
         )
 
 
-def command_prefix(user: str) -> list[str]:
-    """argv prefix that runs ``bash <args>`` as *user*; raises if unusable."""
+_ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def command_prefix(user: str, env: Optional[Mapping[str, str]] = None) -> list[str]:
+    """argv prefix that runs ``bash <args>`` as *user* with *env* (default: ours).
+
+    The variables are named in ``--preserve-env=<names>`` rather than ``-E``:
+    sudo-rs (Ubuntu 26.04's sudo) ignores ``-E``, both honour the list under the
+    rule's SETENV, and only names (never values) reach argv. Raises if unusable.
+    """
     _check_helper(user)
-    return ["sudo", "-n", "-E", "-u", user, HELPER, "bash"]
+    names = sorted(n for n in (os.environ if env is None else env) if _ENV_NAME_RE.fullmatch(n))
+    keep = [f"--preserve-env={','.join(names)}"] if names else []
+    return ["sudo", "-n", *keep, "-u", user, HELPER, "bash"]
 
 
-def wrap_bash(argv: Sequence[str], user: str) -> list[str]:
+def wrap_bash(argv: Sequence[str], user: str, env: Optional[Mapping[str, str]] = None) -> list[str]:
     """Turn ``[<any shell>, *args]`` into the helper invocation for *user*."""
-    return command_prefix(user) + list(argv[1:])
+    return command_prefix(user, env) + list(argv[1:])
 
 
-def wrap_command(argv: Sequence[str], user: str) -> list[str]:
+def wrap_command(argv: Sequence[str], user: str, env: Optional[Mapping[str, str]] = None) -> list[str]:
     """Run an arbitrary argv as *user* (``bash -c 'exec ...'``)."""
-    return command_prefix(user) + ["-c", "exec " + shlex.join(argv)]
+    return command_prefix(user, env) + ["-c", "exec " + shlex.join(argv)]
 
 
 def run_quiet(user: str, script: str, timeout: float = 10) -> None:

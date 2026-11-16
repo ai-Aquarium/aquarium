@@ -62,6 +62,7 @@ def h(tmp_path, monkeypatch):
         (bin_dir / name).write_text(body)
         (bin_dir / name).chmod(0o755)
     monkeypatch.setenv("W", str(tmp_path))
+    monkeypatch.setenv("PATH", os.environ["PATH"])  # main() resets PATH; restore after
     real_run = mod.run
 
     def run(cmd, timeout=60, **kw):  # keep $W visible to the fakes
@@ -717,9 +718,11 @@ def aq_db_verbs():
 
 def test_sudoers_db_argv_for_item_1_3():
     db = sorted(r.split("NOPASSWD: ", 1)[1] for r in _rules() if "aquarium apps db" in r)
-    expected = sorted(f"/usr/local/sbin/aquarium apps db {v} * {m}"
+    expected = sorted(f"/usr/local/sbin/aquarium apps db {v} {m}"
                       for v in aq_db_verbs() for m in ("dev", "prod"))
     assert db == expected
+    # Exact argv only: sudo-rs refuses wildcards, and the slug travels on stdin.
+    assert not any("*" in r for r in _rules())
 
 
 @pytest.mark.skipif(shutil.which("visudo") is None and not Path("/usr/sbin/visudo").exists(),

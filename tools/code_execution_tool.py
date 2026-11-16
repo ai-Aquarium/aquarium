@@ -1357,7 +1357,7 @@ def execute_code(
 
         _child_argv = [_child_python, _script_path]
         if _run_as:
-            _child_argv = terminal_user.wrap_command(_child_argv, _run_as)
+            _child_argv = terminal_user.wrap_command(_child_argv, _run_as, child_env)
         proc = subprocess.Popen(
             _child_argv,
             cwd=_child_cwd,

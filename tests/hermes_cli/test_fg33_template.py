@@ -347,7 +347,7 @@ def test_every_template_file_ships_as_package_data() -> None:
 @needs_node
 def test_app_mcp_handler_handshakes_and_enforces_bearer(tmp_path: Path) -> None:
     project = _scaffold_app(tmp_path).root
-    proc = subprocess.run(["node", "--test", "tests/mcp.test.mjs"], cwd=project,
+    proc = subprocess.run(["node", "--test", "--test-reporter=tap", "tests/mcp.test.mjs"], cwd=project,
                           capture_output=True, text=True, timeout=120)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert re.search(r"^# fail 0$", proc.stdout, re.M), proc.stdout

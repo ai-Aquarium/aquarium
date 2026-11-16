@@ -10,8 +10,8 @@ Everything that touches the box goes through two root helpers, called with
   ``sha``/``approval_ref``) and JSON on stdout. Verbs: ``allocate|build|start|
   stop|restart|route|unroute|set-secret|logs|status|remove`` (item 1.2 owns
   the helper; it re-validates every spec and refuses unknown fields).
-* ``/usr/local/sbin/aquarium apps db <verb> <slug> <mode>`` (item 1.3) with an
-  optional JSON object on stdin (``approval_ref``, ``migrations``,
+* ``/usr/local/sbin/aquarium apps db <verb> <mode>`` (item 1.3) with a JSON
+  object on stdin (``slug`` plus ``approval_ref``, ``migrations``,
   ``confirm``, ``backup_ref``), verbs
   ``create|migrate|status|suspend|resume|drop|archive|restore``.
 
@@ -294,14 +294,14 @@ class HelperClient:
             raise ValueError(f"Unknown apps db verb: {verb!r}")
         validate_slug(slug)
         validate_mode(mode)
-        return [*self.sudo, self.provisioner, "apps", "db", verb, slug, mode]
+        return [*self.sudo, self.provisioner, "apps", "db", verb, mode]
 
     def db_spec(
         self, verb: str, slug: str, mode: str, *, approval_ref: Optional[str] = None,
         migrations: Optional[List[Dict[str, str]]] = None, confirm: Optional[str] = None,
         backup_ref: Optional[str] = None,
-    ) -> Optional[str]:
-        spec: Dict[str, Any] = {}
+    ) -> str:
+        spec: Dict[str, Any] = {"slug": validate_slug(slug)}
         if approval_ref is not None:
             if not _REF_RE.fullmatch(approval_ref):
                 raise ValueError(f"Invalid approval_ref: {approval_ref!r}")
@@ -322,9 +322,9 @@ class HelperClient:
             if not _BACKUP_REF_RE.fullmatch(backup_ref):
                 raise ValueError(f"Invalid backup_ref: {backup_ref!r}")
             spec["backup_ref"] = backup_ref
-        if verb == "status" and spec:
+        if verb == "status" and set(spec) != {"slug"}:
             raise ValueError("apps db status takes no fields")
-        return json.dumps(spec, sort_keys=True) if spec else None
+        return json.dumps(spec, sort_keys=True)
 
     # -- calls ---------------------------------------------------------------
 
