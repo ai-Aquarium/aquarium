@@ -16,6 +16,16 @@ into ``NeedsYouEntry`` rows (``agent-home/src/types/landing.ts``):
 * open profile suggestions;
 * data dictionary drafts the caller may approve.
 
+Triage raises to-dos and alerts per user-profile (FG-03 P5), so one arrival
+routed to John@CFO and John@CMO lands as a notification in *each* profile's
+store. Those notifications carry the arrival in their ``dedupe_key``
+(``<base>|arrival:<surface>:<account>:<external id>``, see :func:`arrival_key`);
+the route also collects them from the caller's other profiles, and
+:func:`merge_arrivals` folds every row for one arrival into a single entry
+whose id is the arrival key and whose ``context.profiles`` lists where it was
+raised. :func:`claim_arrival_push` keeps it to one push per arrival per person
+across profiles and channels.
+
 Ids are ``<source>:<native id>`` and stable for the life of the wait, so the
 client can tell what is new since it last looked. Row builders are pure;
 the route does the I/O and scoping.
@@ -183,6 +193,34 @@ def parse_project_key(dedupe_key: Optional[str]) -> Optional[dict]:
     }
 
 
+ARRIVAL_PREFIX = "arrival:"
+_ARRIVAL_MARK = "|" + ARRIVAL_PREFIX
+#: Dedupe-key base of the in-app alert a profile-scoped triage raises when it
+#: escalates an arrival (``custom/shared/triage_handlers``).
+TRIAGE_ALERT = "triage-alert"
+
+
+def arrival_key(surface: Any, account_id: Any, external_id: Any) -> str:
+    """The stable key of one channel arrival, the same in every profile.
+
+    ``arrival:<surface>:<account id>:<external id>``, each part
+    percent-encoded so a ``:`` or ``|`` inside an id cannot shift the parts.
+    """
+    parts = (quote(str(p or ""), safe="") for p in (surface, account_id, external_id))
+    return ARRIVAL_PREFIX + ":".join(parts)
+
+
+def with_arrival(base: str, key: Optional[str]) -> str:
+    """``base`` tagged with an arrival key (``base`` unchanged without one)."""
+    return f"{base}|{key}" if key else base
+
+
+def split_arrival(dedupe_key: Optional[str]) -> tuple[str, Optional[str]]:
+    """``(base, arrival key or None)`` of a notification dedupe key."""
+    base, sep, rest = (dedupe_key or "").partition(_ARRIVAL_MARK)
+    return base, (ARRIVAL_PREFIX + rest) if sep and rest else None
+
+
 def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dict]:
     """Pending notifications addressed to ``user_id``.
 
@@ -197,7 +235,7 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
             continue
         if notification_target_user(n) != user_id:
             continue
-        key = n.dedupe_key or ""
+        key, arrival = split_arrival(n.dedupe_key)
         parsed = parse_project_key(key)
         context: dict = {}
         if parsed:
@@ -214,6 +252,8 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
             source, href, severity = "todo", "/todos", "approval"
         elif key.startswith("todo:"):
             source, href, severity = "todo", "/todos", None
+        elif key == TRIAGE_ALERT:
+            source, href, severity = "notification", "/inbox", "review"
         else:
             source = "notification"
             href = "/inbox"
@@ -227,6 +267,8 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
                 _open_action(href, "Open"),
             ]
             actions[-1]["style"] = "secondary"
+        if arrival:
+            context["arrival_key"] = arrival
         out.append(entry(
             id=f"notif:{n.id}",
             source=source,
@@ -636,11 +678,118 @@ def data_schema_entries(sources: Iterable[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+def _profile_href(href: str, profile: Optional[str]) -> str:
+    if not profile or profile == "default" or "profile=" in href:
+        return href
+    return href + ("&" if "?" in href else "?") + urlencode({"profile": profile})
+
+
+def tag_profile(items: Iterable[dict], profile: str, *, link: bool = False) -> list[dict]:
+    """Stamp ``context.profile`` on arrival entries raised in ``profile``.
+
+    With ``link`` (rows from a profile other than the request's) the entry's
+    links also carry ``?profile=`` so opening it lands in that profile.
+    """
+    out: list[dict] = []
+    for item in items:
+        if not item["context"].get("arrival_key"):
+            continue
+        item = {**item, "context": {**item["context"], "profile": profile}}
+        if link:
+            item["href"] = _profile_href(item["href"], profile)
+            item["actions"] = [
+                {**a, "href": _profile_href(a["href"], profile)} if a.get("href") else a
+                for a in item["actions"]
+            ]
+        out.append(item)
+    return out
+
+
+def merge_arrivals(items: Iterable[dict]) -> list[dict]:
+    """One entry per arrival, however many profiles (or rows) raised it.
+
+    Rows sharing ``context.arrival_key`` collapse onto the most severe (then
+    oldest) one, re-keyed with the arrival key as its id so the entry, its
+    "new" badge and its push stay the same as profiles join or leave. Its
+    ``context.profiles`` lists every profile that raised it. Everything else
+    passes through untouched, in order.
+    """
+    order: list[Any] = []
+    groups: dict[str, list[dict]] = {}
+    for item in items:
+        key = (item.get("context") or {}).get("arrival_key")
+        if not key:
+            order.append(item)
+            continue
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(item)
+    out: list[dict] = []
+    for slot in order:
+        if not isinstance(slot, str):
+            out.append(slot)
+            continue
+        group = groups[slot]
+        primary = min(group, key=lambda i: (_SEVERITY_RANK.get(i["severity"], 99), i["created_at"]))
+        profiles = sorted({i["context"].get("profile") for i in group} - {None})
+        context = {**primary["context"], "profiles": profiles}
+        if len(profiles) != 1:
+            context.pop("profile", None)
+        out.append({
+            **primary,
+            "id": slot,
+            "created_at": min(i["created_at"] for i in group),
+            "context": context,
+        })
+    return out
+
+
+async def arrival_entries_elsewhere(
+    user_id: str, *, registry: Optional[list] = None, current_home: Optional[Path] = None,
+) -> list[dict]:
+    """Arrival-keyed pending notifications for ``user_id`` in their other profiles.
+
+    Enters each served profile but the request's own and asks that profile's
+    notification store, as that profile's principal for ``user_id`` (absent or
+    suspended there: nothing). A profile that cannot be read is skipped.
+    """
+    from hermes_cli.access import PrincipalStore
+    from hermes_cli.config import load_config_readonly
+    from hermes_cli.console_scope import _scoped_to
+    from hermes_cli.datastore import get_store
+    from hermes_cli.human_comms import NotificationStore
+    from hermes_constants import get_hermes_home
+
+    if registry is None:
+        from hermes_cli.profile_registry import get_profile_registry
+
+        registry = get_profile_registry()
+    here = Path(current_home or get_hermes_home()).resolve()
+    out: list[dict] = []
+    for profile in registry:
+        home = Path(profile.hermes_home)
+        if not home.is_dir() or home.resolve() == here:
+            continue
+        try:
+            with _scoped_to(home):
+                config = load_config_readonly() or {}
+                app = get_store("supabase-app", "prod", config=config)
+                principal = await PrincipalStore(app).get(user_id)
+                if principal is None or not getattr(principal, "active", True):
+                    continue
+                rows = await NotificationStore(app, config=config).list_pending(principal)
+            out.extend(tag_profile(notification_entries(rows, user_id), profile.name, link=True))
+        except Exception:
+            logger.debug("needs-you: profile %s unreadable", profile.name, exc_info=True)
+    return out
+
+
 def finalize(items: Iterable[dict]) -> list[dict]:
-    """Drop duplicate ids; severity first, then oldest wait first."""
+    """Merge per-arrival rows, drop duplicate ids; severity first, then oldest wait first."""
     seen: set[str] = set()
     unique: list[dict] = []
-    for item in items:
+    for item in merge_arrivals(items):
         if not item.get("href") or item["id"] in seen:
             continue
         seen.add(item["id"])
@@ -674,11 +823,76 @@ def response(items: list[dict], *, count_only: bool = False) -> dict:
 _LEDGER_TTL_SECONDS = 7 * 24 * 3600
 
 
+def _safe_user(user_id: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in user_id) or "anon"
+
+
+def _arrival_ledger_path(user_id: str) -> Path:
+    """Box-level, not per-profile: one arrival raised in N profiles is one push."""
+    from hermes_constants import get_default_hermes_root
+
+    return Path(get_default_hermes_root()) / "needs_you" / f"arrivals-{_safe_user(user_id)}.json"
+
+
+def _update_arrival_ledger(user_id: str, change) -> Any:
+    import fcntl
+
+    path = _arrival_ledger_path(user_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_suffix(".lock"), "a", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            ledger = json.loads(path.read_text())
+            if not isinstance(ledger, dict):
+                ledger = {}
+        except FileNotFoundError:
+            ledger = {}
+        except Exception:
+            logger.debug("needs-you: unreadable arrival ledger %s", path, exc_info=True)
+            ledger = {}
+        now = time.time()
+        ledger = {k: ts for k, ts in ledger.items() if now - float(ts) < _LEDGER_TTL_SECONDS}
+        outcome = change(ledger, now)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(ledger))
+        os.replace(tmp, path)
+        return outcome
+
+
+def claim_arrival_push(user_id: str, key: str) -> bool:
+    """True the first time ``key`` is pushed to ``user_id`` (within a week).
+
+    Shared by every profile and push channel (the triage to-do Telegram push
+    and the needs-you Web Push), so the person is buzzed once per arrival. A
+    ledger that cannot be read or written fails open (a duplicate push beats
+    a lost one).
+    """
+
+    def claim(ledger: dict, now: float) -> bool:
+        if key in ledger:
+            return False
+        ledger[key] = now
+        return True
+
+    try:
+        return bool(_update_arrival_ledger(user_id, claim))
+    except Exception:
+        logger.warning("needs-you: arrival ledger unavailable for %s", user_id, exc_info=True)
+        return True
+
+
+def release_arrival_push(user_id: str, key: str) -> None:
+    """Undo :func:`claim_arrival_push` after the push itself failed."""
+    try:
+        _update_arrival_ledger(user_id, lambda ledger, now: ledger.pop(key, None))
+    except Exception:
+        logger.debug("needs-you: could not release %s for %s", key, user_id, exc_info=True)
+
+
 def _ledger_path(user_id: str) -> Path:
     from hermes_constants import get_hermes_home
 
-    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in user_id) or "anon"
-    return Path(get_hermes_home()) / "needs_you" / f"pushed-{safe}.json"
+    return Path(get_hermes_home()) / "needs_you" / f"pushed-{_safe_user(user_id)}.json"
 
 
 def claim_new_for_push(user_id: str, items: Iterable[dict]) -> list[dict]:
@@ -722,7 +936,11 @@ def claim_new_for_push(user_id: str, items: Iterable[dict]) -> list[dict]:
     except Exception:
         logger.warning("needs-you: could not write push ledger %s", path, exc_info=True)
         return []
-    return fresh
+    return [
+        i for i in fresh
+        if not i["context"].get("arrival_key")
+        or claim_arrival_push(user_id, i["context"]["arrival_key"])
+    ]
 
 
 async def push_new(user_id: str, items: list[dict]) -> int:

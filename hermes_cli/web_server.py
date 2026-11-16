@@ -13410,6 +13410,20 @@ async def needs_you(request: Request):
         _log.warning("needs-you: notifications source failed", exc_info=True)
     covered = ny.notification_dedupe_keys(items)
 
+    # Triage raises an arrival's to-dos/alerts in each of the caller's chosen
+    # profiles (FG-03 P5): gather those too, so finalize() shows one entry.
+    try:
+        from hermes_cli.profiles import get_active_profile_name
+
+        here = get_active_profile_name()
+        items = [
+            *ny.tag_profile([i for i in items if i["context"].get("arrival_key")], here),
+            *[i for i in items if not i["context"].get("arrival_key")],
+        ]
+        items.extend(await ny.arrival_entries_elsewhere(principal.user_id))
+    except Exception:
+        _log.warning("needs-you: other profiles' arrivals failed", exc_info=True)
+
     runs = {
         run_id: {"session_id": entry["session_id"], "profile": entry.get("profile")}
         for run_id, entry in list(_CHAT_RUNS.items())

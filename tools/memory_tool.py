@@ -590,6 +590,11 @@ class MemoryStore:
                     + self._read_file(inbox_path(get_memory_dir()))
                 )
             )
+        if self._user_id is not None:
+            # The person's own inbox in this profile (FG-03 P5: their mail,
+            # triaged in their user-profile), whatever their role here.
+            own_inbox = self._read_file(inbox_path(get_memory_dir(self._user_id)))
+            inbox_entries = list(dict.fromkeys(inbox_entries + own_inbox))
 
         # Sanitize entries for the system-prompt snapshot only.  Live state
         # (memory_entries / user_entries) keeps the raw text so the user
