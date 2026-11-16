@@ -43,6 +43,7 @@ DEFAULT_SKILL_DIRS: Dict[str, tuple[str, ...]] = {
     "email": ("/opt/data/skills/whatsapp-triage", "/opt/data/skills/email-triage"),
     "whatsapp": ("/opt/data/skills/whatsapp-triage",),
     "calendar": ("/opt/data/skills/calendar-triage",),
+    "telegram": ("/opt/data/skills/telegram-triage",),
 }
 DEFAULT_SKILL_SUBDIRS: tuple[str, ...] = ("custom",)
 
@@ -50,6 +51,7 @@ SOURCE_DIRS: Dict[str, str] = {
     "email": "custom/skills/email-triage",
     "whatsapp": "custom/skills/whatsapp-triage",
     "calendar": "custom/skills/calendar-triage",
+    "telegram": "custom/skills/telegram-triage",
 }
 
 SERVICE_UNITS: Dict[str, tuple[str, ...]] = {
@@ -98,6 +100,11 @@ def whatsapp_config_path() -> Path:
 
 def calendar_config_path() -> Path:
     return Path(os.environ.get("CALENDAR_CONFIG_PATH") or CALENDAR_CONFIG_DEFAULT)
+
+
+def telegram_config_path() -> Path:
+    """Telegram triage (FG-03 P6) has no channel config.json of its own yet."""
+    return Path("/opt/data/telegram-messages/config.json")
 
 
 def calendar_db_path() -> Path:
@@ -537,7 +544,12 @@ class SkillFileError(Exception):
 
 
 def kind_config(kind: str) -> tuple[Path, Optional[Dict[str, Any]]]:
-    path = {"email": email_config_path, "whatsapp": whatsapp_config_path, "calendar": calendar_config_path}[kind]()
+    path = {
+        "email": email_config_path,
+        "whatsapp": whatsapp_config_path,
+        "calendar": calendar_config_path,
+        "telegram": telegram_config_path,
+    }[kind]()
     return path, _read_json(path)
 
 

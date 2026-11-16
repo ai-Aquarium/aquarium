@@ -19,6 +19,13 @@ batch reuses the stored decision), then:
 A profile whose turn fails is retried on the next pass; the batch file keeps
 ``_profiles_done`` so a retry runs only the failed ones. After
 ``MAX_AGENT_ATTEMPTS`` failed passes the batch falls back to legacy triage.
+
+A channel with no legacy triage (Telegram, FG-03 P6) passes
+``legacy_triage=None``: only ``agent`` acts. With no routing decision
+(router off, registry down) the batch stays for the next pass; after
+``MAX_AGENT_ATTEMPTS`` failed passes of either kind it is stored as processed
+and the owner gets one in-app notification that it could not be triaged
+(never a Telegram push).
 """
 
 import copy
@@ -63,8 +70,8 @@ def _clean(batch: Mapping[str, Any]) -> dict:
 
 
 def triage_routed(kind: str, batch: dict, batch_path: str, *,
-                  legacy_triage: Callable[[dict], Optional[dict]],
-                  legacy_act: Callable[[dict, dict], None],
+                  legacy_triage: Optional[Callable[[dict], Optional[dict]]],
+                  legacy_act: Optional[Callable[[dict, dict], None]],
                   get_db: Callable[[], Any],
                   processed_dir: str,
                   config: Optional[Mapping[str, Any]] = None,
@@ -81,6 +88,17 @@ def triage_routed(kind: str, batch: dict, batch_path: str, *,
     else:
         outcome = batch_routing.route(kind, batch, config=config, log=log)
         mode = _agent_mode(kind, config, log)
+
+    if legacy_triage is None:
+        if mode == "agent" and outcome.mode != "off" and outcome.decision is not None:
+            _agent(kind, batch, batch_path, outcome.decision, legacy_triage=None,
+                   legacy_act=None, get_db=get_db, processed_dir=processed_dir,
+                   config=config, log=log)
+        else:
+            _not_routed(kind, batch, batch_path, processed_dir=processed_dir,
+                        why="no routing decision" if mode == "agent" else
+                        f"triage.agent.{kind} is not agent", log=log)
+        return
 
     if mode == "agent" and outcome.mode != "off" and outcome.decision is not None:
         _agent(kind, batch, batch_path, outcome.decision, legacy_triage=legacy_triage,
@@ -156,11 +174,82 @@ def _profile_home(profile: str):
     return Path(get_profile_dir(profile))
 
 
+UNTRIAGED_TITLE = "A {label} message couldn't be triaged"
+_LABELS = {"telegram": "Telegram", "whatsapp": "WhatsApp", "email": "email"}
+
+
+def _not_routed(kind, batch, batch_path, *, processed_dir, why, log) -> None:
+    """No legacy to fall back to: keep the batch, give up after the cap."""
+    attempts = int(batch.get(ATTEMPTS_KEY) or 0) + 1
+    batch[ATTEMPTS_KEY] = attempts
+    if attempts >= MAX_AGENT_ATTEMPTS:
+        log(f"{why} for batch {batch.get('batch_id')} after {attempts} passes; stored only")
+        _give_up(kind, batch, batch_path, profiles=[], owner=_owner(batch, None),
+                 processed_dir=processed_dir, log=log)
+        return
+    _write_json(batch_path, batch)
+    log(f"{why} for batch {batch.get('batch_id')}; will retry later")
+
+
+def _give_up(kind, batch, batch_path, *, profiles, owner, processed_dir, log) -> None:
+    """Store the batch as processed and tell its owner, once, in the app."""
+    _finish(batch_path, processed_dir, batch)
+    try:
+        if not _notify_untriaged(kind, batch, profiles, owner, log):
+            log(f"could not notify {owner or 'the owner'} that batch "
+                f"{batch.get('batch_id')} was not triaged")
+    except Exception as e:
+        log(f"could not notify {owner} that batch {batch.get('batch_id')} "
+            f"was not triaged: {e!r}")
+
+
+def _notify_untriaged(kind, batch, profiles, owner, log) -> bool:
+    """One in-app notification for ``owner``: in the first of ``profiles`` where
+    they are an active person, else in this process's own profile."""
+    if not owner:
+        return False
+    import asyncio
+    from contextlib import nullcontext
+
+    from agent.profile_runtime import profile_runtime_scope
+    from hermes_cli.needs_you import TRIAGE_FAILED
+    from shared import owner_routing
+    from shared.inbound_registration import resolve_person
+
+    label = _LABELS.get(kind, kind)
+    who = batch.get("chat_title") or batch.get("sender_name") or batch.get("sender") or label
+    title = UNTRIAGED_TITLE.format(label=label)
+    text = (f"Messages from {who} could not be triaged after "
+            f"{MAX_AGENT_ATTEMPTS} tries. They are stored; nothing was done with them.")
+    key = f"{TRIAGE_FAILED}:{kind}:{batch.get('batch_id')}"
+    scopes = []
+    for profile in profiles:
+        try:
+            home = _profile_home(profile)
+        except Exception as e:
+            log(f"cannot resolve profile {profile}: {e!r}")
+            home = None
+        if home is not None:
+            scopes.append(home)
+    for home in scopes + [None]:
+        with profile_runtime_scope(home) if home is not None else nullcontext():
+            person = asyncio.run(resolve_person(owner))
+            if person is not None and owner_routing.notify_in_app(
+                    person, title=title, text=text, dedupe_key=key):
+                log(f"told {owner} that batch {batch.get('batch_id')} was not triaged")
+                return True
+    return False
+
+
 def _legacy_fallback(kind, batch, batch_path, *, missing, owner, legacy_triage, legacy_act,
                      get_db, processed_dir, box_done, log) -> None:
     """Legacy triage for the profiles whose agent never succeeded, acted on in
     each of them as the batch owner; ``legacy_act`` only when no profile
-    succeeded and none of them resolves."""
+    succeeded and none of them resolves. No legacy: stored, owner told."""
+    if legacy_triage is None:
+        _give_up(kind, batch, batch_path, profiles=missing, owner=owner,
+                 processed_dir=processed_dir, log=log)
+        return
     clean = _clean(batch)
     result = legacy_triage(clean)
     if not result:
@@ -214,7 +303,8 @@ def _agent(kind, batch, batch_path, decision, *, legacy_triage, legacy_act, get_
     box_done = bool(batch.get(BOX_KEY))
     attempts = int(batch.get(ATTEMPTS_KEY) or 0)
     if attempts >= MAX_AGENT_ATTEMPTS:
-        log(f"agent triage of batch {batch_id} failed {attempts} times; legacy triage")
+        log(f"agent triage of batch {batch_id} failed {attempts} times; "
+            + ("legacy triage" if legacy_triage else "stored only"))
         _legacy_fallback(kind, batch, batch_path,
                          missing=[p for p in selected if p not in done],
                          owner=_owner(batch, decision), legacy_triage=legacy_triage,
@@ -259,7 +349,8 @@ def _agent(kind, batch, batch_path, decision, *, legacy_triage, legacy_act, get_
     _write_json(batch_path, batch)
     if batch[ATTEMPTS_KEY] >= MAX_AGENT_ATTEMPTS:
         log(f"agent triage of batch {batch_id} failed {batch[ATTEMPTS_KEY]} times "
-            f"({', '.join(missing)}); legacy triage")
+            f"({', '.join(missing)}); "
+            + ("legacy triage" if legacy_triage else "stored only"))
         _legacy_fallback(kind, batch, batch_path, missing=missing, owner=owner,
                          legacy_triage=legacy_triage,
                          legacy_act=legacy_act, get_db=get_db, processed_dir=processed_dir,

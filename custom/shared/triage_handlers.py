@@ -8,8 +8,9 @@ LLM's JSON response, and the dispatcher routes each field to its registered
 handler.
 
 Handlers are channel-aware: the batch dict carries a `_channel` key
-('whatsapp', 'email', 'calendar') that determines which SQLite table and
-columns to use.
+('whatsapp', 'email', 'calendar', 'telegram') that determines which SQLite
+table and columns to use. Telegram (FG-03 P6) has no box-wide channel tables:
+its results act only in the chosen user-profiles.
 
 Adding a new output type (e.g., 'deadlines') requires:
 1. Adding the field to response-schema.md (no deploy — LLM starts returning it)
@@ -538,6 +539,16 @@ def _triaged_arrivals(batch):
             for em in batch.get('emails', [])
             if em.get('message_id')
         ]
+    if channel == 'telegram':
+        # The receiving bot and chat: todo_outbound.target_from_arrival() turns
+        # them into the reply route (that bot, that chat).
+        account = batch.get('account_id', '')
+        chat = str(batch.get('chat_id') or '')
+        return [
+            ('telegram', account, f"{chat}:{m['message_id']}")
+            for m in batch.get('messages', [])
+            if chat and m.get('message_id') not in (None, '')
+        ]
     if channel == 'calendar' and batch.get('google_event_id'):
         return [
             ('calendar', batch.get('account_id', ''), batch['google_event_id'])
@@ -647,6 +658,18 @@ def _arrival_fields(batch, arrival):
             'body': m.get('text') or '',
             'occurred_at': m.get('received_at'),
         }
+    if channel == 'telegram':
+        m = next((m for m in batch.get('messages', [])
+                  if f"{batch.get('chat_id')}:{m.get('message_id')}" == external_id), {})
+        return {
+            'conversation': str(batch.get('chat_id') or ''),
+            'conversation_name': batch.get('chat_title'),
+            'sender_id': m.get('sender_id'),
+            'sender_name': m.get('sender_name') or m.get('sender_username'),
+            'body': m.get('text') or '',
+            'occurred_at': m.get('timestamp'),
+            'has_attachments': bool(m.get('media')),
+        }
     return {
         'kind': 'event',
         'subject': batch.get('summary') or batch.get('title'),
@@ -697,7 +720,8 @@ def _raise_profile_alert(result, batch, owner_user_id):
         return
     channel = batch.get('_channel', 'whatsapp')
     who = (batch.get('sender_name') or batch.get('sender')
-           or batch.get('sender_phone') or batch.get('organizer_email') or channel)
+           or batch.get('sender_phone') or batch.get('organizer_email')
+           or batch.get('chat_title') or channel)
     title = f"Needs your attention: {who}"
     text = " — ".join(str(p) for p in (result.get('escalation_reason'),
                                         result.get('summary')) if p)
@@ -777,6 +801,8 @@ def process_result(result, batch, db, *, profile_home=None, owner_user_id=None,
     """
     if (profile_home is None) != (owner_user_id is None):
         raise ValueError("profile_home and owner_user_id must be given together")
+    if batch.get('_channel') == 'telegram':
+        box_writes = False  # no box-wide Telegram channel SQLite
 
     if profile_home is None:
         # Merge result fields into batch so escalation handler can access them

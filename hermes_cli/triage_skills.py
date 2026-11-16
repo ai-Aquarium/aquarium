@@ -1,6 +1,6 @@
 """Layered triage skills per user-profile (FG-03 P3).
 
-Each triage kind (``email``, ``whatsapp``, ``calendar``) reads three layers,
+Each triage kind (``email``, ``whatsapp``, ``calendar``, ``telegram``) reads three layers,
 highest wins, matched by file *key*:
 
 1. **built-in** — the box-wide folders the pipelines read today
@@ -47,7 +47,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from hermes_cli.triage_status import (
     DEFAULT_SKILL_DIRS,
-    KINDS,
+    KINDS as STATUS_KINDS,
     MAX_SKILL_FILE_BYTES,
     SOURCE_DIRS,
     SkillFileError,
@@ -66,8 +66,11 @@ MAX_CARE_BYTES = 4 * 1024
 
 _SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-#: Source-registry channel → triage kind. Telegram has none yet (FG-03 P6).
-CHANNEL_KINDS: Dict[str, str] = {"email": "email", "whatsapp": "whatsapp"}
+#: Triage kinds with layered skills: the status page's three, plus Telegram
+#: (FG-03 P6), which has no box-wide legacy pipeline or status card.
+KINDS: tuple[str, ...] = STATUS_KINDS + ("telegram",)
+#: Source-registry channel → triage kind.
+CHANNEL_KINDS: Dict[str, str] = {"email": "email", "whatsapp": "whatsapp", "telegram": "telegram"}
 
 logger = logging.getLogger(__name__)
 
@@ -651,8 +654,8 @@ async def care_sections_for_source(
     of an enabled source, in profile order: the source owner's "What I care
     about" in that profile (``layer`` says which layer it came from). Only the
     owner's own user layer is read. ``kind`` defaults to the source channel's
-    triage kind; a channel without one (Telegram) or an unknown source gives
-    ``[]``. A routed profile whose home is gone is skipped.
+    triage kind; an unknown source gives ``[]``. A routed profile whose home
+    is gone is skipped.
     """
     from hermes_cli import source_registry as registry
     from hermes_cli.profiles import get_profile_dir

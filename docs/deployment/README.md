@@ -131,6 +131,17 @@ environment variables — see `CALENDAR_IMPLEMENTATION.md`.
 `hermes-embed` is the loopback embedding service the layer-4 memory tier calls;
 see `local-embeddings.md`.
 
+`hermes-telegram-triage` (FG-03 P6) is the Telegram counterpart of
+`hermes-wa-triage`, and is not on the box yet. Install it the way
+`hermes-calendar-triage` was installed: `deploy/hermes-telegram-triage.service`
+into `/etc/systemd/system/`, its `10-unprivileged.conf` drop-in,
+`systemctl enable --now`, then capture. Once it is enabled the deploy restarts it
+with the other `hermes-*` units. It is safe to run while
+`triage.agent.telegram` is `off` (the default): every pass leaves the batch
+files untouched. Setting it to `agent` in `config.yaml` takes effect on the
+next pass. `/opt/data/telegram-messages` is closed to the terminal user by
+`hermes-close-data` like the other raw channel stores.
+
 **`agent-home` is the one service not named `hermes-*`**, which is exactly how it
 spent ten days invisible: until FG-23 phase A0 (2026-08-05) it ran as **root**
 from a *second clone* (`/opt/data/agent-home-app`, frozen at PR #62, serving a

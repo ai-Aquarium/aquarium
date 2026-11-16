@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from hermes_cli import triage_skills
-from hermes_cli.triage_status import KINDS, SkillFileError
+from hermes_cli.triage_skills import KINDS
+from hermes_cli.triage_status import SkillFileError
 
 CLI_AUTHOR = "cli:operator"
 
