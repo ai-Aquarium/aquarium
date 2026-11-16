@@ -23,7 +23,8 @@ propose; only the user may send.
   the company account the proposal named.
 - Deny records the refusal; "revise" denies this draft and puts the note on
   the card so the next worker run drafts a new proposal. A failed send puts
-  the approval back to pending so it can be retried or denied.
+  the approval back to pending so it can be retried or denied; a partly
+  delivered one (text sent, attachment failed) is recorded and not retried.
 """
 
 from __future__ import annotations
@@ -55,7 +56,19 @@ def is_send_key(key: str) -> bool:
 
 def _safe_name(name: str) -> str:
     cleaned = _SAFE_NAME.sub("_", name).strip("._") or "attachment"
-    return cleaned[-120:]
+    return cleaned[-120:].strip("._") or "attachment"
+
+
+_BODY_FILE_TAG = re.compile(r"""media\s*:\s*[`"']?(?:~|/|[A-Za-z]:[/\\])""", re.IGNORECASE)
+
+
+def body_names_files(body: str) -> bool:
+    """Whether ``body`` carries a media directive (in any case or quoting)
+    the egress would turn into an attachment — a file nobody reviewed."""
+    from gateway.platforms.base import BasePlatformAdapter
+
+    text = body or ""
+    return bool(_BODY_FILE_TAG.search(text) or BasePlatformAdapter.extract_media(text)[0])
 
 
 def _workspace(task: kanban_db.Task) -> Path:
@@ -150,7 +163,7 @@ def propose(
         )
     if channel == "email" and not (subject or "").strip():
         raise ValueError("an email needs a subject")
-    if "MEDIA:" in (body or ""):
+    if body_names_files(body):
         raise ValueError("attach files with --attach, not MEDIA: lines in the body")
     if run_id is None:
         run_id = task.current_run_id
@@ -214,7 +227,7 @@ def propose(
 
 def _already_sent(conn: sqlite3.Connection, task_id: str, key: str) -> bool:
     return any(
-        ev.kind == "outbound_sent" and (ev.payload or {}).get("key") == key
+        ev.kind in ("outbound_sent", "outbound_partial") and (ev.payload or {}).get("key") == key
         for ev in kanban_db.list_events(conn, task_id)
     )
 
@@ -224,9 +237,11 @@ def deliver(
 ) -> dict[str, Any]:
     """Send an approved ``send:`` proposal exactly once.
 
-    Returns ``{"event": "sent"|"failed", ...}`` after an attempt, or
-    ``{"error": <code>, "detail": ...}`` on a refusal (nothing attempted).
-    A failed attempt puts the approval back to pending.
+    Returns ``{"event": "sent"|"failed"|"partial", ...}`` after an attempt,
+    or ``{"error": <code>, "detail": ...}`` on a refusal (nothing attempted).
+    A failed attempt puts the approval back to pending. A *partial* one (the
+    channel delivered the text, then the attachment failed) is never
+    retried, so the recipient cannot get the same text twice.
     """
     row = conn.execute(
         "SELECT status, detail FROM task_approvals "
@@ -246,7 +261,9 @@ def deliver(
     attachments: list[str] = []
     att = msg.get("attachment")
     error: Optional[str] = None
-    if att:
+    if body_names_files(str(msg.get("body") or "")):
+        error = "the body names a file that was not attached for review"
+    elif att:
         path = _snapshot_path(task_id, key, _safe_name(str(att.get("name") or "")))
         if not path.is_file():
             error = f"the attachment {att.get('name')!r} is no longer available"
@@ -276,6 +293,10 @@ def deliver(
         "attachment": att.get("name") if att else None,
         "by": actor,
     }
+    if error and isinstance(result, dict) and result.get("partial"):
+        payload["error"] = str(error)[:500]
+        kanban_db.append_event(conn, task_id, "outbound_partial", payload)
+        return {"event": "partial", "error": str(error), "result": result}
     if error:
         payload["error"] = str(error)[:500]
         kanban_db.append_event(conn, task_id, "outbound_failed", payload)

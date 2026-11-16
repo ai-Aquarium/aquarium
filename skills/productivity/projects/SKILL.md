@@ -202,8 +202,9 @@ you, showing recipient, account, subject, body and attachment. Then call
 `kanban_block` with `kind="needs_input"` and a reason starting
 "Approval needed:" and stop. When the card runs again, read its comments:
 `Sent: …` means it went (finish the step); `Changes requested … Note: …`
-means draft a revised message and propose again; `Denied: …` means do not
-send it any other way. One proposal per message — each approval sends once.
+means draft a revised message and propose again; `Partly sent: …` means the
+text went but the file did not (say so; don't resend the text); `Denied: …`
+means do not send it any other way. One proposal per message — each approval sends once.
 
 ### 5. Read the last run's retro and score before starting work
 

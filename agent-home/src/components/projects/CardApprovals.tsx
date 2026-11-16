@@ -259,6 +259,9 @@ export function OutboundDecision({
 /** The server's answer to a send: the reason it did not go, else null. */
 export function sendFailure(task: Pick<ProjectBoardTask, "outbound"> | null | undefined): string | null {
   const outbound = task?.outbound;
+  if (outbound?.event === "partial") {
+    return `Partly sent: the text went out but not the attachment (${outbound.error ?? "the attachment failed"}). It was not retried, so the text is not sent twice.`;
+  }
   if (!outbound || outbound.event !== "failed") return null;
   return `Not sent: ${outbound.error ?? outbound.detail ?? "the send failed"}. It is waiting for approval again.`;
 }

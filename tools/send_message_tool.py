@@ -1120,6 +1120,8 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
                 force_document=force_document,
             )
             if isinstance(result, dict) and result.get("error"):
+                if i:
+                    result["partial"] = True
                 return result
             last_result = result
         return last_result

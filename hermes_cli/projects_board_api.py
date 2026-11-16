@@ -28,7 +28,9 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Request
 
 from hermes_cli import card_outbound, kanban_db, kanban_view, projects_db
+from tools.access_policy import acting_as
 from hermes_cli.projects_api import (
+    _require_human,
     _board_conn,
     _move_card_sync,
     _refuse_if_archived,
@@ -314,6 +316,8 @@ async def decide_card_approval(request: Request, task_id: str) -> dict[str, Any]
         if len(note) > _REASON_MAX_LEN:
             raise HTTPException(status_code=422, detail="note is too long")
     approve = decision == "approve"
+    if is_send and approve:
+        await _require_human(request, "sending a message")
     actor = f"user:{principal.user_id}"
 
     def _comment_for(label: str, outbound: Optional[dict]) -> str:
@@ -333,6 +337,13 @@ async def decide_card_approval(request: Request, task_id: str) -> dict[str, Any]
             if outbound and outbound.get("event") == "sent":
                 return f"Sent: {label}. Approved and sent by {actor}."
             reason = (outbound or {}).get("error") or (outbound or {}).get("detail")
+            if outbound and outbound.get("event") == "partial":
+                return (
+                    f"Partly sent: {label}. The text went out but the attachment "
+                    f"did not ({reason}). It was not retried, so the recipient "
+                    "does not get the text twice; send the file another way or "
+                    "propose it again."
+                )
             return (
                 f"Could not send: {label} ({reason}). Nothing was sent; it is "
                 "waiting for approval again."
@@ -357,7 +368,11 @@ async def decide_card_approval(request: Request, task_id: str) -> dict[str, Any]
                 raise ValueError("nothing is waiting for that approval")
             outbound = None
             if is_send and approve:
-                outbound = card_outbound.deliver(bconn, task_id, key, actor=actor)
+                # The send tool checks bridge ownership against the person a
+                # call runs for; that is the approving person.
+                role = getattr(principal.role, "value", principal.role)
+                with acting_as(principal.user_id, str(role) if role else None):
+                    outbound = card_outbound.deliver(bconn, task_id, key, actor=actor)
             elif decision == "revise":
                 kanban_db.append_event(
                     bconn, task_id, "outbound_revise",
