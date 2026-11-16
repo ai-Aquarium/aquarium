@@ -148,6 +148,7 @@
     "noDictionary": "Based on {source} · no approved dictionary yet",
     "showSql": "Show SQL",
     "hideSql": "Hide SQL",
+    "sqlTitle": "SQL query",
     "wasRight": "Was this right?",
     "yes": "Yes, save as example",
     "saving": "Saving…",

@@ -8,6 +8,7 @@ import { elapsedLabel, type LiveTask } from "@/components/projects/live/liveStat
 import { useCardActivity } from "@/components/projects/useCardActivity";
 import { useCardLive } from "@/components/projects/useCardLive";
 import { useTimeLabel } from "@/components/projects/useTimeLabel";
+import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import type { ProjectCardDetail } from "@/types";
 
 /** Within this many pixels of the bottom, the output keeps following new lines. */
@@ -26,13 +27,14 @@ export function TaskLiveCard({ slug, task }: { slug: string; task: LiveTask }) {
   const [card, setCard] = useState<ProjectCardDetail | null>(null);
   useCardLive(slug, task.id, "running", setCard);
   const [expanded, setExpanded] = useState(true);
+  const [maximized, setMaximized] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
 
   useEffect(() => {
     const el = outputRef.current;
     if (el && follow.current) el.scrollTop = el.scrollHeight;
-  }, [activity.reasoning, activity.tools, card, expanded]);
+  }, [activity.reasoning, activity.tools, card, expanded, maximized]);
 
   const heard = lastHeardAt(activity.lastAt, card, task.startedAt);
   const outputId = `task-live-output-${task.id}`;
@@ -48,11 +50,15 @@ export function TaskLiveCard({ slug, task }: { slug: string; task: LiveTask }) {
   const streaming = !activity.ended;
 
   return (
-    <section
-      data-component="TaskLiveCard"
+    <Maximizable
+      title={task.title}
+      status={`Now running${step ? ` · ${step}` : ""}`}
+      component="TaskLiveCard"
       data-task-id={task.id}
       aria-label={`Now running: ${task.title}`}
       className="rounded-2xl border border-sky-500/40 bg-sky-500/5 p-3"
+      maximized={maximized}
+      onMaximizedChange={setMaximized}
     >
       <div className="flex items-start gap-2">
         <span aria-hidden className="mt-1.5 inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-sky-400" />
@@ -65,11 +71,15 @@ export function TaskLiveCard({ slug, task }: { slug: string; task: LiveTask }) {
             {meta.join(" · ")}
           </p>
         </div>
+        {expanded ? <MaximizeToggle className="shrink-0 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs" /> : null}
         <button
           type="button"
           aria-expanded={expanded}
           aria-controls={outputId}
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => {
+            if (expanded) setMaximized(false);
+            setExpanded(!expanded);
+          }}
           className="shrink-0 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs"
         >
           {expanded ? "Hide output" : "Show output"}
@@ -83,11 +93,12 @@ export function TaskLiveCard({ slug, task }: { slug: string; task: LiveTask }) {
           aria-live="polite"
           aria-label="Card output"
           data-component="TaskLiveOutput"
+          tabIndex={maximized ? 0 : undefined}
           onScroll={(e) => {
             const el = e.currentTarget;
             follow.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
           }}
-          className="mt-2 max-h-56 overflow-y-auto overscroll-contain rounded-xl bg-[var(--color-surface-2)] p-2.5 text-xs leading-relaxed sm:max-h-80"
+          className={`mt-2 ${maximized ? "min-h-0 flex-1" : "max-h-56 sm:max-h-80"} overflow-y-auto overscroll-contain rounded-xl bg-[var(--color-surface-2)] p-2.5 text-xs leading-relaxed`}
         >
           {activity.reasoning ? (
             <p data-output="reasoning" className="whitespace-pre-wrap break-words">
@@ -131,6 +142,6 @@ export function TaskLiveCard({ slug, task }: { slug: string; task: LiveTask }) {
           Open card ›
         </Link>
       </div>
-    </section>
+    </Maximizable>
   );
 }

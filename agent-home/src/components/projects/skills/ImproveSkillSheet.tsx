@@ -282,7 +282,7 @@ export function ImproveSkillSheet({
                 {added || removed ? t("skillImprove.changes", { added, removed }) : t("skillImprove.noChanges")}
               </span>
             </div>
-            <DiffPreview ops={ops} changed={changed} full={fullDiff} />
+            <DiffPreview ops={ops} changed={changed} full={fullDiff} title={t("skillImprove.proposed")} />
             {saved ? (
               <InlineAlert
                 tone="success"

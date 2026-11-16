@@ -152,3 +152,18 @@ describe("SoftwareUpgradeView", () => {
     expect(screen.queryByTestId("upgrade-checkout")).toBeNull();
   });
 });
+
+describe("technical log", () => {
+  it("maximizes the log without its height cap and Esc minimizes it", () => {
+    render(<SoftwareUpgradeView initial={{ ...STATUS, job: JOB }} />);
+    const pre = screen.getByText("== backup ==");
+    const panel = pre.closest<HTMLElement>('[data-component="UpgradeLog"]')!;
+    expect(pre.className).toContain("max-h-48");
+    fireEvent.click(screen.getByRole("button", { name: "Maximize Technical log" }));
+    expect(screen.getByRole("dialog", { name: "Technical log" })).toBe(panel);
+    expect(pre.className).not.toContain("max-h-");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(panel.getAttribute("data-maximized")).toBe("false");
+    expect(pre.className).toContain("max-h-48");
+  });
+});

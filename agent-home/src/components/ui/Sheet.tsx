@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 
 import { useT } from "@/i18n";
 import { useHydrated } from "@/lib/use-hydrated";
+import { lockBodyScroll } from "@/lib/body-scroll-lock";
 
 /**
  * A dismissable modal panel: a bottom sheet on phones, a centred dialog from
@@ -48,11 +49,7 @@ export function Sheet({
     onCloseRef.current = onClose;
   }, [onClose]);
   useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
+    return lockBodyScroll();
   }, []);
 
   // Modal focus: move into the panel, keep Tab inside it, return to the opener.
@@ -67,6 +64,9 @@ export function Sheet({
       if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus();
     });
     function onKey(e: KeyboardEvent) {
+      // A maximized panel inside this sheet is the top layer: it takes Esc
+      // (minimize first) and keeps Tab inside itself.
+      if (panelRef.current?.querySelector('[data-maximized="true"]')) return;
       if (e.key === "Escape") {
         onCloseRef.current();
         return;

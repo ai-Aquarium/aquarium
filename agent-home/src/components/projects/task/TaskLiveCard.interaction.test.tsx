@@ -101,6 +101,43 @@ describe("TaskLiveCard", () => {
     expect(screen.getByRole("log", { name: "Card output" })).toBeTruthy();
   });
 
+  it("maximizes the output to full height and minimizes back with the button or Esc", async () => {
+    stubStreams();
+    render(<TaskLiveCard slug="crm" task={TASK} />);
+    const card = () => document.querySelector<HTMLElement>('[data-component="TaskLiveCard"]')!;
+    const log = () => screen.getByRole("log", { name: "Card output" });
+    await waitFor(() => expect(screen.getByText(/Looking up HubSpot pricing/)).toBeTruthy());
+    expect(log().className).toContain("max-h-56");
+    expect(card().getAttribute("data-task-id")).toBe("t_find");
+
+    fireEvent.click(screen.getByRole("button", { name: "Maximize Find the options" }));
+    expect(card().getAttribute("data-maximized")).toBe("true");
+    expect(card().getAttribute("role")).toBe("dialog");
+    expect(log().className).not.toMatch(/max-h-/);
+    expect(log().className).toContain("flex-1");
+    expect(log().getAttribute("tabindex")).toBe("0");
+    expect(screen.getByText(/Looking up HubSpot pricing/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Minimize Find the options" }));
+    expect(card().getAttribute("data-maximized")).toBe("false");
+    expect(log().className).toContain("max-h-56");
+
+    fireEvent.click(screen.getByRole("button", { name: "Maximize Find the options" }));
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(card().getAttribute("data-maximized")).toBe("false");
+  });
+
+  it("hiding the output while maximized also minimizes, and Maximize leaves with the output", () => {
+    stubStreams();
+    render(<TaskLiveCard slug="crm" task={TASK} />);
+    const card = () => document.querySelector<HTMLElement>('[data-component="TaskLiveCard"]')!;
+    fireEvent.click(screen.getByRole("button", { name: "Maximize Find the options" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide output" }));
+    expect(card().getAttribute("data-maximized")).toBe("false");
+    expect(screen.queryByRole("log")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Maximize Find the options" })).toBeNull();
+  });
+
   it("says it is waiting before the worker's first update", () => {
     stubStreams("");
     render(<TaskLiveCard slug="crm" task={TASK} />);

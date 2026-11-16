@@ -183,6 +183,9 @@ export const MessageBubble = memo(function MessageBubble({
   msgIndex?: number;
   highlightTerm?: string;
 }) {
+  // A maximized panel inside the row must escape it: content-visibility
+  // containment would make the row its containing block and clip it.
+  const [maximized, setMaximized] = useState(false);
   const isUser = message.role === "user";
   const split = splitCompactionContent(message.content ?? "");
   const data = isUser ? null : splitDataAnswer(split.display);
@@ -206,7 +209,7 @@ export const MessageBubble = memo(function MessageBubble({
         data-msg-index={msgIndex}
         data-role={message.role}
         data-sent-while-working={isUser && message.sentWhileWorking ? "true" : undefined}
-        style={ROW_STYLE}
+        style={maximized ? undefined : ROW_STYLE}
         className={`group flex gap-1 ${isUser ? "justify-end" : "justify-start"}`}
       >
         <div
@@ -232,7 +235,7 @@ export const MessageBubble = memo(function MessageBubble({
                 </details>
               ) : null}
               <RichText content={content} />
-              {dataAnswer ? <DataAnswerFooter answer={dataAnswer} /> : null}
+              {dataAnswer ? <DataAnswerFooter answer={dataAnswer} onMaximizedChange={setMaximized} /> : null}
             </>
           )}
         </div>

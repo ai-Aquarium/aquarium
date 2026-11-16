@@ -16,6 +16,7 @@ import {
 } from "react";
 
 import { useT } from "@/i18n";
+import { lockBodyScroll } from "@/lib/body-scroll-lock";
 import { isEditable, keyboardOpen } from "@/lib/use-keyboard-viewport";
 
 /**
@@ -170,8 +171,7 @@ export function Maximizable({
     if (!maximized) return;
     const frame = panelRef.current;
     openStack.push(id);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockBodyScroll();
     let blocked = false;
     const isTop = () => openStack[openStack.length - 1] === id;
     // Capture runs before any other window listener, so a Sheet that is about
@@ -235,7 +235,7 @@ export function Maximizable({
       document.removeEventListener("focusout", fitLater);
       frame?.style.removeProperty("height");
       frame?.style.removeProperty("top");
-      document.body.style.overflow = previous;
+      unlock();
       const at = openStack.lastIndexOf(id);
       if (at >= 0) openStack.splice(at, 1);
     };

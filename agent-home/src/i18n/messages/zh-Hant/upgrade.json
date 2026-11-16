@@ -77,6 +77,7 @@
   "carriesOn": "升級在伺服器上獨立執行，即使關閉此分頁也會繼續。",
   "reconnecting": "重新連接中… 服務正在重新啟動，頁面會自動恢復。",
   "showLog": "顯示技術記錄",
+  "logTitle": "技術記錄",
   "noLog": "暫時沒有輸出。",
   "finished": "升級完成",
   "finishedRollback": "回復完成",

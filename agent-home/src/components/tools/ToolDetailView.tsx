@@ -6,6 +6,7 @@ import { AppSecretsForm } from "@/components/apps-secrets/AppSecretsForm";
 import type { AppSecretMeta } from "@/components/apps-secrets/rules";
 import { ActionButton } from "@/components/projects/ActionButton";
 import { useProjectAction } from "@/components/projects/useProjectAction";
+import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import { useT } from "@/i18n/client";
 import type { Tool } from "@/types";
 
@@ -57,15 +58,27 @@ function LogsTail({ tool }: { tool: Tool }) {
     }
   };
   return (
-    <div data-component="ToolLogsTail" className="flex flex-col gap-2">
-      <button type="button" aria-busy={loading || undefined} className="min-h-[44px] self-start rounded-xl border border-[var(--color-border)] px-4 text-sm" onClick={() => void load()} disabled={loading}>
-        {loading ? t("detail.logsLoading") : lines ? t("detail.logsReload") : t("detail.logsShow")}
-      </button>
-      {error ? <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p> : null}
-      {lines ? (
-        <pre className="max-h-72 overflow-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-mono text-xs text-[var(--color-fg)] [overflow-wrap:anywhere] whitespace-pre-wrap">{lines.join("\n") || t("detail.logsEmpty")}</pre>
-      ) : null}
-    </div>
+    <Maximizable component="ToolLogsTail" title={t("detail.logs")} className="flex flex-col gap-2">
+      {({ maximized }) => (
+        <>
+          <div className="flex items-start gap-2">
+            <button type="button" aria-busy={loading || undefined} className="min-h-[44px] rounded-xl border border-[var(--color-border)] px-4 text-sm" onClick={() => void load()} disabled={loading}>
+              {loading ? t("detail.logsLoading") : lines ? t("detail.logsReload") : t("detail.logsShow")}
+            </button>
+            {lines ? (
+              <>
+                <span className="flex-1" />
+                <MaximizeToggle />
+              </>
+            ) : null}
+          </div>
+          {error ? <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p> : null}
+          {lines ? (
+            <pre tabIndex={maximized ? 0 : undefined} aria-label={maximized ? t("detail.logs") : undefined} className={`${maximized ? "min-h-0 flex-1" : "max-h-72"} overflow-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-mono text-xs text-[var(--color-fg)] [overflow-wrap:anywhere] whitespace-pre-wrap`}>{lines.join("\n") || t("detail.logsEmpty")}</pre>
+          ) : null}
+        </>
+      )}
+    </Maximizable>
   );
 }
 

@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { Maximizable, MaximizeToggle } from "./Maximizable";
 import { Sheet } from "./Sheet";
 
 afterEach(cleanup);
@@ -83,5 +84,40 @@ describe("Sheet", () => {
     await flushFrame();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("Sheet with a maximized panel inside", () => {
+  function WithPanel() {
+    const [open, setOpen] = useState(true);
+    return open ? (
+      <Sheet title="File" onClose={() => setOpen(false)}>
+        <Maximizable title="notes.txt">
+          <MaximizeToggle />
+          <pre>text</pre>
+        </Maximizable>
+      </Sheet>
+    ) : null;
+  }
+
+  it("Esc minimizes the panel first, then closes the sheet", async () => {
+    render(<WithPanel />);
+    await flushFrame();
+    fireEvent.click(screen.getByRole("button", { name: "Maximize notes.txt" }));
+    expect(screen.getByRole("dialog", { name: "notes.txt" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "notes.txt" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "File" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("gives page scrolling back when the sheet unmounts with the panel still maximized", async () => {
+    const { unmount } = render(<WithPanel />);
+    await flushFrame();
+    fireEvent.click(screen.getByRole("button", { name: "Maximize notes.txt" }));
+    expect(document.body.style.overflow).toBe("hidden");
+    unmount();
+    expect(document.body.style.overflow).toBe("");
   });
 });

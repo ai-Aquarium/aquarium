@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useTimeLabel } from "@/components/projects/useTimeLabel";
 import { ActionButton } from "@/components/ui/ActionButton";
+import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import { useT } from "@/i18n";
 import { useAction } from "@/lib/use-action";
 import { useHydrated } from "@/lib/use-hydrated";
@@ -628,9 +629,18 @@ function JobPanel({
         </ul>
         <details className="mt-2" open={!job.running && !ok}>
           <summary className="cursor-pointer text-xs">{t("showLog")}</summary>
-          <pre className="mt-2 max-h-48 overflow-auto rounded-xl bg-[var(--color-bg)] p-3 font-mono text-xs leading-relaxed text-[var(--color-bg)]">
-            {job.log.length ? job.log.join("\n") : t("noLog")}
-          </pre>
+          <Maximizable component="UpgradeLog" title={t("logTitle")} className="mt-2 flex flex-col gap-1">
+            {({ maximized }) => (
+              <>
+                <div className="flex justify-end">
+                  <MaximizeToggle />
+                </div>
+                <pre tabIndex={maximized ? 0 : undefined} aria-label={maximized ? t("logTitle") : undefined} className={`${maximized ? "min-h-0 flex-1" : "max-h-48"} overflow-auto rounded-xl bg-[var(--color-bg)] p-3 font-mono text-xs leading-relaxed text-[var(--color-bg)]`}>
+                  {job.log.length ? job.log.join("\n") : t("noLog")}
+                </pre>
+              </>
+            )}
+          </Maximizable>
         </details>
         {!job.running ? (
           <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-[var(--color-border)] pt-4">

@@ -7,6 +7,7 @@ import { accentChipClass, chipClass, toolButtonClass } from "@/components/skills
 import { ActionButton } from "@/components/ui/ActionButton";
 import { FolderIcon, PlusIcon, SparklesIcon } from "@/components/ui/icons";
 import { InlineAlert } from "@/components/ui/InlineAlert";
+import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import { Spinner } from "@/components/ui/Spinner";
 import { ProjectEvidenceChip } from "@/components/skills/ProjectEvidenceChip";
 import { useLabChat } from "@/components/skills/useLabChat";
@@ -482,7 +483,18 @@ export function SkillImprovePanel({
   );
 }
 
-export function DiffPreview({ ops, changed, full }: { ops: ReturnType<typeof diffLines>; changed: ReturnType<typeof diffLines>; full: boolean }) {
+export function DiffPreview({
+  ops,
+  changed,
+  full,
+  title = "Proposed SKILL.md",
+}: {
+  ops: ReturnType<typeof diffLines>;
+  changed: ReturnType<typeof diffLines>;
+  full: boolean;
+  /** Heading of the maximized view. */
+  title?: string;
+}) {
   const line = (op: ReturnType<typeof diffLines>[number], key: string | number) => (
     <div
       key={key}
@@ -501,21 +513,30 @@ export function DiffPreview({ ops, changed, full }: { ops: ReturnType<typeof dif
     return <p className="rounded-xl bg-[var(--color-surface-2)] p-2.5 text-xs text-[var(--color-muted)]">Same as the active version.</p>;
   }
   return (
-    <div className="max-h-96 overflow-auto rounded-xl bg-[var(--color-surface-2)] py-2 font-mono text-[12px] leading-5">
-      {full
-        ? hunks(ops, 3).map((h, i) =>
-            "skipped" in h ? (
-              <div key={`s${i}`} className="px-2 text-[var(--color-muted)]">
-                ⋯ {h.skipped} unchanged {h.skipped === 1 ? "line" : "lines"}
-              </div>
-            ) : (
-              h.ops.map((op, j) => line(op, `${i}-${j}`))
-            ),
-          )
-        : changed.slice(0, PREVIEW_LINES).map((op, i) => line(op, i))}
-      {!full && changed.length > PREVIEW_LINES ? (
-        <div className="px-2 text-[var(--color-muted)]">… {changed.length - PREVIEW_LINES} more changed lines</div>
-      ) : null}
-    </div>
+    <Maximizable component="SkillDiffPreview" title={title} className="flex flex-col gap-1">
+      {({ maximized }) => (
+        <>
+          <div className="flex justify-end">
+            <MaximizeToggle />
+          </div>
+          <div tabIndex={maximized ? 0 : undefined} aria-label={maximized ? title : undefined} className={`${maximized ? "min-h-0 flex-1" : "max-h-96"} overflow-auto rounded-xl bg-[var(--color-surface-2)] py-2 font-mono text-[12px] leading-5`}>
+            {full
+              ? hunks(ops, 3).map((h, i) =>
+                  "skipped" in h ? (
+                    <div key={`s${i}`} className="px-2 text-[var(--color-muted)]">
+                      ⋯ {h.skipped} unchanged {h.skipped === 1 ? "line" : "lines"}
+                    </div>
+                  ) : (
+                    h.ops.map((op, j) => line(op, `${i}-${j}`))
+                  ),
+                )
+              : changed.slice(0, PREVIEW_LINES).map((op, i) => line(op, i))}
+            {!full && changed.length > PREVIEW_LINES ? (
+              <div className="px-2 text-[var(--color-muted)]">… {changed.length - PREVIEW_LINES} more changed lines</div>
+            ) : null}
+          </div>
+        </>
+      )}
+    </Maximizable>
   );
 }
