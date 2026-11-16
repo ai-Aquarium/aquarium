@@ -611,10 +611,28 @@ class EmailAdapter(BasePlatformAdapter):
             logger.error("[Email] SMTP connection failed: %s", e)
             return False
 
+        await self._warn_if_pipeline_reads_mailbox()
         self._running = True
         self._poll_task = asyncio.create_task(self._poll_loop())
         print(f"[Email] Connected as {self._address}")
         return True
+
+    async def _warn_if_pipeline_reads_mailbox(self) -> None:
+        """Warn when the email pipeline also reads this mailbox (FG-03 P2)."""
+        try:
+            from hermes_cli.source_polling import pipeline_reads_mailbox
+
+            source = await pipeline_reads_mailbox(self._address)
+        except Exception:
+            return
+        if source:
+            logger.warning(
+                "[Email] %s is also read by the email pipeline (source %s); a mailbox "
+                "should have one reader. Remove it from the gateway (EMAIL_ADDRESS) or "
+                "unroute the source.",
+                self._address,
+                source,
+            )
 
     async def disconnect(self) -> None:
         """Stop polling and disconnect."""

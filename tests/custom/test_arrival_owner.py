@@ -66,7 +66,7 @@ def test_running_batcher_picks_up_a_reassignment(batcher, monkeypatch):  # noqa:
     seen = []
     monkeypatch.setattr(
         module, "process_message",
-        lambda msg, phone, bridge_port=None, owner_user_id=None: seen.append(owner_user_id),
+        lambda msg, phone, bridge_port=None, owner_user_id=None, **_: seen.append(owner_user_id),
     )
 
     class _Stop(BaseException):

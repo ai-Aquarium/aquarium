@@ -946,6 +946,13 @@ DEFAULT_CONFIG = {
     "fallback_providers": [],
     "credential_pool_strategies": {},
     "toolsets": ["hermes-cli"],
+    "source_registry": {
+        # Where the email poller and WhatsApp batcher get the sources to read
+        # (FG-03 P2): "registry" (the box source registry; the box-wide
+        # /opt/data config.json only when the registry is unreachable or has
+        # no source for the channel), "registry_only", or "config" (legacy).
+        "pollers": "registry",
+    },
     "datastore": {
         # Local authoring surfaces can opt into dev; channel sessions are
         # always forced to prod by hermes_cli.datastore.resolve_mode.

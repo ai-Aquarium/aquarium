@@ -26,6 +26,7 @@ unlinks or disappears goes quiet without a gateway restart.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import subprocess
 import time
@@ -48,10 +49,46 @@ class PersonBridgeSpec:
     port: int
     own_number: str
     session_path: str
+    # "only=self" while the pipeline batcher reads this bridge (one reader).
+    messages_query: str = ""
 
     @property
     def account_id(self) -> str:
         return f"{ACCOUNT_PREFIX}{self.name}"
+
+
+def apply_one_reader(
+    desired: Dict[str, PersonBridgeSpec],
+    pipeline_source: Callable[[PersonBridgeSpec], Optional[str]],
+    supports_split: Callable[[PersonBridgeSpec], bool],
+) -> tuple[Dict[str, PersonBridgeSpec], Dict[str, str]]:
+    """One reader per bridge (FG-03 P2): the pipeline reads a bridge's external
+    messages, the gateway only the owner's self-chat.
+
+    A bridge the pipeline reads (``pipeline_source`` names its source) gets a
+    self-chat-only listener when the bridge can split its queue, else none at
+    all. Returns the specs to run and, per account, why one changed.
+    """
+    specs: Dict[str, PersonBridgeSpec] = {}
+    notes: Dict[str, str] = {}
+    for account_id, spec in desired.items():
+        source = pipeline_source(spec)
+        if source is None:
+            specs[account_id] = spec
+        elif supports_split(spec):
+            specs[account_id] = dataclasses.replace(spec, messages_query="only=self")
+            notes[account_id] = (
+                f"WhatsApp bridge {spec.name!r} (port {spec.port}) is read by the pipeline "
+                f"(source {source}); the gateway reads only its owner's self-chat"
+            )
+        else:
+            notes[account_id] = (
+                f"WhatsApp bridge {spec.name!r} (port {spec.port}) is configured for both the "
+                f"gateway person bridge and the pipeline (source {source}); the pipeline is its "
+                f"one reader, so the gateway listener is not started. Restart the bridge with "
+                f"the current bridge.js to give the gateway its owner's self-chat back"
+            )
+    return specs, notes
 
 
 def _unit_active(name: str) -> bool:
@@ -92,6 +129,21 @@ def desired_person_bridges(
         spec = PersonBridgeSpec(name, rec["user_id"], port, number, str(session))
         specs[spec.account_id] = spec
     return specs
+
+
+async def _bridge_splits_queue(port: int) -> bool:
+    """Whether the bridge on ``port`` serves ``GET /messages?only=self``."""
+    import aiohttp
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"http://127.0.0.1:{port}/health", timeout=aiohttp.ClientTimeout(total=3)
+            ) as resp:
+                data = await resp.json() if resp.status == 200 else {}
+    except Exception:
+        return False
+    return "self" in (data.get("queues") or []) if isinstance(data, dict) else False
 
 
 class PersonWhatsAppBridgesMixin:
@@ -166,6 +218,7 @@ class PersonWhatsAppBridgesMixin:
         except Exception:
             logger.warning("Could not read per-person WhatsApp bridges", exc_info=True)
             return
+        desired = await self._person_wa_one_reader(desired, main_port)
         specs = self._person_wa_specs()
         for account_id in list(specs):
             if desired.get(account_id) != specs[account_id]:
@@ -174,10 +227,53 @@ class PersonWhatsAppBridgesMixin:
             if account_id not in self._person_wa_adapters():
                 await self._start_person_wa(spec)
 
+    async def _person_wa_one_reader(
+        self, desired: Dict[str, PersonBridgeSpec], main_port: Optional[int]
+    ) -> Dict[str, PersonBridgeSpec]:
+        """Hand bridges the pipeline reads to it, keeping the owner's self-chat."""
+        from hermes_cli import source_polling
+        from hermes_cli import wa_bridge_owners as owners
+
+        try:
+            plan = await source_polling.load_poll_plan_async("whatsapp")
+            ports = await asyncio.to_thread(owners.bridge_ports)
+            phones = (await asyncio.to_thread(source_polling.load_fallback_config, "whatsapp")).get("phones", [])
+        except Exception:
+            logger.warning("Could not read which WhatsApp bridges the pipeline reads", exc_info=True)
+            return desired
+
+        def pipeline_source(spec: PersonBridgeSpec) -> Optional[str]:
+            return source_polling.pipeline_reads_bridge(
+                plan, port=spec.port, own_number=spec.own_number, bridge_name=spec.name,
+                bridge_ports=ports, fallback_phones=phones,
+            )
+
+        split = {spec.port: await _bridge_splits_queue(spec.port)
+                 for spec in desired.values() if pipeline_source(spec)}
+        specs, notes = apply_one_reader(desired, pipeline_source, lambda spec: split.get(spec.port, False))
+        if main_port:
+            main_source = source_polling.pipeline_reads_bridge(
+                plan, port=main_port, bridge_ports=ports, fallback_phones=phones)
+            if main_source:
+                notes["main"] = (
+                    f"WhatsApp bridge on port {main_port} is read by both the gateway's main "
+                    f"WhatsApp adapter and the pipeline (source {main_source}); the bridge queue "
+                    f"drains on read, so each message reaches only one of them"
+                )
+        logged = getattr(self, "_person_wa_reader_notes", None)
+        if logged is None:
+            logged = self._person_wa_reader_notes = {}
+        for key, note in notes.items():
+            if logged.get(key) != note:
+                (logger.info if specs.get(key) else logger.warning)(note)
+        self._person_wa_reader_notes = notes
+        return specs
+
     async def _start_person_wa(self, spec: PersonBridgeSpec) -> bool:
         config = PlatformConfig(
             enabled=True,
             extra={
+                "messages_query": spec.messages_query,
                 "account_id": spec.account_id,
                 "bridge_name": spec.name,
                 "bridge_port": spec.port,

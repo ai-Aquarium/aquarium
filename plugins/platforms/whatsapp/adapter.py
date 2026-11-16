@@ -398,6 +398,9 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             WhatsAppAdapter._DEFAULT_BRIDGE_DIR = resolve_whatsapp_bridge_dir()
         self._bridge_process: Optional[subprocess.Popen] = None
         self._bridge_port: int = config.extra.get("bridge_port", 3000)
+        # "only=self" when the pipeline batcher reads this bridge's external
+        # messages (FG-03 one reader per source); see GET /messages in bridge.js.
+        self._messages_query: str = str(config.extra.get("messages_query") or "")
         self._bridge_script: Optional[str] = config.extra.get(
             "bridge_script",
             str(self._DEFAULT_BRIDGE_DIR / "bridge.js"),
@@ -1267,7 +1270,8 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 break
             try:
                 async with self._http_session.get(
-                    f"http://127.0.0.1:{self._bridge_port}/messages",
+                    f"http://127.0.0.1:{self._bridge_port}/messages"
+                    + (f"?{self._messages_query}" if self._messages_query else ""),
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as resp:
                     if resp.status == 200:
