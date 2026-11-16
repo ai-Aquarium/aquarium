@@ -19,6 +19,7 @@ import type {
 } from "@/types";
 
 import { formatUiContext, getUiContext } from "@/lib/app-mcp/state";
+import { chatContextLine, getChatDataSource } from "@/lib/chat/data-source";
 import { isInputMode } from "@/lib/chat/pending-inputs";
 
 export interface ChatStreamHandlers {
@@ -185,7 +186,7 @@ export async function streamChatTurn(
       message: params.message,
       attachments: params.attachments,
       profile: params.profile,
-      uiContext: formatUiContext(getUiContext()) ?? undefined,
+      uiContext: chatContextLine(formatUiContext(getUiContext()), getUiContext()?.path ?? null, getChatDataSource()) ?? undefined,
     }),
     signal: params.signal,
   });

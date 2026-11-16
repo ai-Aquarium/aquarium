@@ -10,9 +10,22 @@ export interface SchemaDriftItem {
   detail?: { columns?: string[]; added?: string[]; removed?: string[] };
 }
 
+/** Engine of a connected database (`kind: "connection"`, plan Phase 7). */
+export type DataEngine = "mssql" | "mysql" | "postgres" | "sqlite";
+
+/** Whether the agent can reach a source right now. */
+export interface DataSourceHealth {
+  state: "ok" | "attention" | "untested" | "builtin";
+  checked_at?: string | null;
+  detail?: string | null;
+}
+
 export interface DataSource {
   id: string;
-  kind: "app" | "site";
+  kind: "app" | "site" | "connection";
+  engine?: DataEngine | null;
+  connection_name?: string | null;
+  health?: DataSourceHealth | null;
   name: string;
   owner_user_id: string;
   site_id: string | null;
