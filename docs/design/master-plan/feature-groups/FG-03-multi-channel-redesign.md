@@ -167,8 +167,11 @@ triage:
   (registry down) or `triage.router.mode: off` → legacy triage. A profile whose
   turn fails is retried on the next pass; the batch file keeps
   `_profiles_done` / `_agent_attempts` so only the failed ones rerun, and after
-  3 failed passes the batch falls back to legacy triage (without repeating the
-  box-wide rows when a profile already wrote them).
+  3 failed passes the batch falls back to legacy triage. The legacy result is
+  acted on only in the profiles that never succeeded, as the batch owner
+  (box-wide rows still once); a profile that no longer exists is skipped. Only
+  when no profile succeeded and none resolves does the legacy result go to the
+  default profile as before.
 - The shortcuts (email newsletter, WhatsApp seminar survey and media-only)
   never route and never run a turn. Calendar stays legacy: its events carry no
   `source_id` and are not routed yet (P4 did not wire calendar).
