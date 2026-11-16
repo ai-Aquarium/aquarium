@@ -49,6 +49,7 @@ CREDENTIALS_TABLE = "credentials"
 #: pollers consume an entry only when the matching flag is set (R5).
 SERVICES: Tuple[str, ...] = (
     "email", "calendar", "drive", "workspace", "mssql", "winrm", "mysql", "sqlite",
+    "postgres",
 )
 
 #: Inner spaces allowed (VPN names like "Office files"); no other whitespace,
@@ -372,8 +373,17 @@ CREDENTIAL_KINDS: Dict[str, KindSpec] = {
         materialize=False,
         validator=_validate_mssql,
     ),
-    # MySQL / SQLite data-source connections (hermes_cli/db_connections.py).
-    # Never materialized: only server-side adapters read them.
+    # PostgreSQL / MySQL / SQLite data-source connections
+    # (hermes_cli/db_connections.py). Never materialized: only server-side
+    # adapters read them.
+    "postgres": KindSpec(
+        name="postgres",
+        required=("host", "database", "username", "password"),
+        optional=("port", "tls", "vpn", "label"),
+        secret_fields=("password",),
+        keep_secrets_on_put=True,
+        materialize=False,
+    ),
     "mysql": KindSpec(
         name="mysql",
         required=("host", "database", "username", "password"),

@@ -56,6 +56,16 @@ def mysql_body(**over):
     return {"host": "db.example", "database": "shop", "username": "reader", "password": SECRET, **over}
 
 
+def test_postgres_connection_is_private_with_the_postgres_port():
+    saved = run(dbc.save(ALICE, "postgres", "crm", mysql_body(vpn="")))
+    assert saved["engine"] == "postgres" and saved["port"] == 5432
+    assert saved["password_set"] is True and SECRET not in str(saved)
+    assert [c["name"] for c in run(dbc.list_mine(ALICE)) if c["engine"] == "postgres"] == ["crm"]
+    assert run(dbc.list_mine(BOB)) == []
+    with pytest.raises(EngineError):
+        run(dbc.save(ALICE, "postgres", "bad", mysql_body(password="")))
+
+
 def test_mysql_connection_is_private_and_password_write_only():
     saved = run(dbc.save(ALICE, "mysql", "shop", mysql_body()))
     assert saved["password_set"] is True and SECRET not in str(saved)
@@ -76,7 +86,7 @@ def test_mysql_needs_password_and_valid_fields():
     with pytest.raises(EngineError):
         run(dbc.save(ALICE, "mysql", "new", mysql_body(tls="maybe")))
     with pytest.raises(EngineError):
-        run(dbc.save(ALICE, "postgres", "new", mysql_body()))
+        run(dbc.save(ALICE, "oracle", "new", mysql_body()))
 
 
 def test_anyone_adds_sqlite_but_only_their_own_files(root, tmp_path, file_store):

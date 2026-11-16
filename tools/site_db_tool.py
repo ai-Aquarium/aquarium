@@ -58,7 +58,7 @@ SCHEMA = {
         "columns and the rows this person can see; app_query (areas, sql) — one SELECT over "
         "private copies of those areas, each a table named after its area, at most 500 rows. "
         "Data sources beyond sites: list_sources — every source this person can see: sites, "
-        "app, and databases connected in Settings (SQL Server, MySQL, SQLite) with ref "
+        "app, and databases connected in Settings (SQL Server, PostgreSQL, MySQL, SQLite) with ref "
         "<engine>:<connection>; describe / query also take source= (site slug, app, ref or id) "
         "instead of site=, and query takes params {name: value} for :name placeholders — put "
         "values in params, never paste them into sql. Admins and everyone a connection is shared "
