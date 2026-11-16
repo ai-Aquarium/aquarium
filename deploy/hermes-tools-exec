@@ -7,10 +7,11 @@
 # With `terminal.run_as: hermes-tools` the local terminal backend starts its
 # shell through this helper instead:
 #
-#   sudo -n -E -u hermes-tools /usr/local/sbin/hermes-tools-exec bash -c '<cmd>'
+#   sudo -n --preserve-env=<names> -u hermes-tools /usr/local/sbin/hermes-tools-exec bash -c '<cmd>'
 #
 # sudo switches to hermes-tools (never root), keeps the already-filtered
-# terminal environment (-E; the rule carries SETENV), and this script only
+# terminal environment (named in --preserve-env, which classic sudo and sudo-rs
+# both honour; sudo-rs ignores -E. The rule carries SETENV), and this script only
 # checks who it runs as and hands the arguments to bash. sudo may only ever run
 # a root-owned copy of this file, never the one in the checkout:
 #

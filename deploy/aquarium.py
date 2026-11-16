@@ -1535,8 +1535,8 @@ def _restore_apply(cfg: Dict[str, str], manifest: Dict, staging: Path, args: arg
 # Every local app gets one database per mode on a dedicated Postgres cluster (B2, decisions 1/2):
 # `prod` databases on the apps cluster, `dev` databases on the separate dev instance (decision 18).
 # Nothing here touches Aquarium's own database except reading one approval row. The service user
-# reaches these verbs only through the sudoers argv `aquarium apps db <verb> <slug> <mode>`; any
-# other input is a JSON object on stdin. See deploy/install/apps-db/README.md.
+# reaches these verbs only through the sudoers argv `aquarium apps db <verb> <mode>`, with the slug
+# and any other input in a JSON object on stdin (root may also pass the slug in argv). See deploy/install/apps-db/README.md.
 
 APP_SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{0,39}$")
 APP_MODES = ("prod", "dev")
@@ -1931,12 +1931,19 @@ def set_conn_limit(target: Dict[str, str], db: str, limit: int) -> None:
     apps_sql_ok(target["container"], sql, what="changing the connection limit")
 
 
-def apps_db_verb(cfg: Dict[str, str], verb: str, slug: str, mode: str) -> Dict:
-    slug, mode = apps_slug(slug), apps_mode(mode)
-    allowed = {"create": ["approval_ref"], "migrate": ["approval_ref", "migrations"], "status": [],
+def apps_db_verb(cfg: Dict[str, str], verb: str, slug: Optional[str], mode: str) -> Dict:
+    mode = apps_mode(mode)
+    allowed = ["slug"] + {"create": ["approval_ref"], "migrate": ["approval_ref", "migrations"], "status": [],
                "suspend": ["approval_ref"], "resume": ["approval_ref"], "drop": ["approval_ref", "confirm"],
                "archive": ["approval_ref"], "restore": ["approval_ref", "backup_ref"]}[verb]
     spec = read_apps_spec(allowed)
+    if slug is not None and "slug" in spec:
+        raise Fail("the slug was given twice", "Pass it either in argv or as \"slug\" on stdin.")
+    if slug is None:
+        slug = spec.pop("slug", None)
+        if not isinstance(slug, str):
+            raise Fail("no app slug", "Pass it as \"slug\" in the JSON object on stdin.")
+    slug = apps_slug(slug)
     target = apps_target(cfg, mode)
     db = app_db_name(slug, mode)
     if verb == "status":
@@ -3974,9 +3981,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--mode", choices=list(APP_MODES), help="with --app: prod (default) or dev")
     p = sub.add_parser("apps", help="local app databases (FG-33): clusters and per-app provisioning")
     apps = p.add_subparsers(dest="area", required=True)
-    q = apps.add_parser("db", help="one app's database: aquarium apps db <verb> <slug> <prod|dev>")
+    q = apps.add_parser("db", help="one app's database: aquarium apps db <verb> [<slug>] <prod|dev>")
     q.add_argument("verb", choices=list(APP_DB_VERBS))
-    q.add_argument("slug")
+    q.add_argument("slug", nargs="?", help='omit to pass it as "slug" in the JSON on stdin (the sudoers form)')
     q.add_argument("mode", choices=list(APP_MODES))
     q = apps.add_parser("copies", help="app database copies in <APPS_BASE>/db-backups/ (root timer prunes daily)")
     q.add_argument("verb", choices=["prune"])
