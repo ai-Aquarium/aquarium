@@ -92,7 +92,10 @@ export function SourcesView({
           <p className="mx-auto mt-1 max-w-md text-sm text-[var(--color-muted)]">{t("emptyBody")}</p>
         </div>
       ) : (
-        <section className={`sm:${CARD.split(" ").join(" sm:")}`} aria-label={t("title")}>
+        <section
+          className="sm:rounded-[var(--radius-lg)] sm:border sm:border-[var(--color-border)] sm:bg-[var(--color-surface)]"
+          aria-label={t("title")}
+        >
           <header className="hidden flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-2.5 text-xs text-[var(--color-muted)] sm:flex">
             <span>{t("count", { count: list.sources.length })}</span>
             <span>{t("readsIt")}</span>
@@ -168,11 +171,13 @@ export function SourcesView({
   );
 }
 
-const sm = (cls: string) => cls.split(" ").map((c) => `sm:${c}`).join(" ");
 /** Phone rows use accent text links (Figma 2a phone); desktop keeps the table's buttons. */
 const PHONE_LINK = "inline-flex min-h-9 items-center text-sm font-medium text-[var(--color-accent)]";
-const SM_GHOST = sm(BTN_GHOST);
-const SM_SECONDARY = sm(BTN_SECONDARY);
+// Literal strings: Tailwind only emits classes it can see in source.
+const SM_GHOST =
+  "sm:inline-flex sm:min-h-9 sm:items-center sm:justify-center sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-1.5 sm:text-sm sm:font-normal sm:text-[var(--color-muted)] sm:hover:text-[var(--color-fg)]";
+const SM_SECONDARY =
+  "sm:inline-flex sm:min-h-9 sm:items-center sm:justify-center sm:gap-2 sm:rounded-[var(--radius-lg)] sm:border sm:border-[var(--color-border)] sm:bg-[var(--color-surface)] sm:px-3 sm:py-1.5 sm:text-sm sm:font-medium sm:text-[var(--color-fg)] sm:hover:bg-[var(--color-surface-2)]";
 
 function sourceMeta(t: ReturnType<typeof useT>, source: Source, telegramOn: boolean): string {
   if (source.channel === "telegram") return t(telegramOn ? "meta.telegram" : "meta.telegramOff");
