@@ -101,8 +101,14 @@ def mark_importance(
     importance: str = "",
     attention_reason: Optional[str] = None,
     attention_priority: Optional[str] = None,
+    owner_user_id: Optional[str] = None,
 ) -> bool:
     """Stamp a triage verdict onto an arrival. Never raises.
+
+    ``owner_user_id`` stamps only that person's copy, resolved in the current
+    profile scope (profile-scoped triage, FG-03 P5); an inactive or unknown
+    person stamps nothing. Without it the arrival's registered people are
+    stamped, as the install owner sees them.
 
     Separate from :func:`register_item` because triage runs long after the
     message landed and holds only the classification — re-registering from
@@ -117,19 +123,25 @@ def mark_importance(
     try:
         from hermes_cli.inbound_registry import default_registry
 
-        async def _do() -> bool:
+        async def _people(registry) -> list:
+            if owner_user_id:
+                person = await resolve_person(owner_user_id)
+                return [person] if person is not None else []
             owner = await _resolve_owner()
             if owner is None:
-                return False
-            registry = default_registry("prod")
-            stamped = False
-            for principal in await arrival_people(
+                return []
+            return await arrival_people(
                 owner,
                 surface=surface,
                 external_id=external_id,
                 account_id=account_id or "",
                 registry=registry,
-            ):
+            )
+
+        async def _do() -> bool:
+            registry = default_registry("prod")
+            stamped = False
+            for principal in await _people(registry):
                 if importance:
                     set_ = await registry.set_importance(
                         principal,

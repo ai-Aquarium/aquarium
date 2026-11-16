@@ -323,6 +323,7 @@
   "PUT /api/sources/[sourceId]/routes/[profile]": "signed-in",
   "GET /api/sources/conflicts": "signed-in",
   "GET /api/sources/decisions": "signed-in",
+  "GET /api/sources/comparisons": "signed-in",
   "GET /api/mssql/connections": "signed-in",
   "PUT /api/mssql/connections/[name]": "signed-in",
   "DELETE /api/mssql/connections/[name]": "signed-in",

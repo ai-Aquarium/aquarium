@@ -151,8 +151,17 @@ def register_todo(
     source_note: Optional[str] = None,
     actor: str = "skill:triage",
     origin: str = "triage",
+    owner_user_id: Optional[str] = None,
+    arrival_key: Optional[str] = None,
 ) -> Optional[dict]:
     """Record one to-do. Never raises.
+
+    ``owner_user_id`` (profile-scoped triage, FG-03 P5) files it for that
+    person, resolved in the current profile scope, instead of the arrival's
+    registered people as the install owner sees them; an inactive or unknown
+    person gets nothing (``None``). ``arrival_key`` tags its announcement and
+    push with the arrival, so several profiles raising the same arrival show
+    once in "Needs you" and buzz the person once.
 
     Returns ``{"id", "stage", "created"}`` when written and ``None`` otherwise.
     ``created`` is ``False`` when this collapsed onto a live to-do that already
@@ -171,11 +180,23 @@ def register_todo(
         from hermes_cli.todo_notifier import announce, default_stores
 
         async def _do() -> Optional[dict]:
-            principal = await resolve_owner()
+            if owner_user_id:
+                from shared.inbound_registration import resolve_person
+
+                principal = await resolve_person(owner_user_id)
+            else:
+                principal = await resolve_owner()
             if principal is None:
                 return None
             source_ref = None
-            if surface and external_id:
+            if owner_user_id and surface and external_id:
+                source_ref = await _lookup_arrival(
+                    principal,
+                    surface=surface,
+                    account_id=account_id or "",
+                    external_id=external_id,
+                )
+            elif surface and external_id:
                 from shared.inbound_registration import arrival_people
 
                 try:
@@ -220,9 +241,15 @@ def register_todo(
                 # Announcing inline is the fast path: the sweep in the digest
                 # would find this row anyway, but an hour later, and "reply by
                 # noon" is not useful at one.
-                result = await announce(store, notifications, principal, todo)
+                result = await announce(
+                    store, notifications, principal, todo, arrival_key=arrival_key
+                )
                 pushed = result.should_push and push_todo(
-                    todo.title, result, person=principal
+                    todo.title,
+                    result,
+                    person=principal,
+                    scoped=bool(owner_user_id),
+                    arrival_key=arrival_key,
                 )
             return {
                 "id": todo.id,
@@ -239,12 +266,19 @@ def register_todo(
         return None
 
 
-def push_todo(title: str, announcement, person=None) -> bool:
+def push_todo(
+    title: str, announcement, person=None, *, scoped: bool = False,
+    arrival_key: Optional[str] = None,
+) -> bool:
     """Push a high-priority to-do to its person's Telegram now. Never raises.
 
     ``person`` is the to-do's owner: it goes to their linked Telegram, or the
     box chat when they are the install owner. Anyone else without a linked
     Telegram already has it in their agent-home notifications (FG-38 P3).
+
+    ``scoped`` (profile-scoped triage): only the person's own linked Telegram,
+    never the box chat. ``arrival_key``: at most one push per arrival per
+    person, however many profiles raise it (``needs_you.claim_arrival_push``).
 
     Reuses the escalation pusher's sender rather than adding a second Telegram
     client: same bot, same chat, same failure handling. Whether a push is
@@ -262,9 +296,18 @@ def push_todo(title: str, announcement, person=None) -> bool:
         from shared import owner_routing
 
         chat = owner_routing.telegram_chat(
-            person, getattr(_owner_principal, "user_id", None)
+            person, None if scoped else getattr(_owner_principal, "user_id", None)
         )
         if not chat:
+            return False
+        if arrival_key:
+            from hermes_cli.needs_you import claim_arrival_push, release_arrival_push
+
+            if not claim_arrival_push(person.user_id, arrival_key):
+                return False
+            if send_telegram(text, parse_mode="HTML", chat_id=chat):
+                return True
+            release_arrival_push(person.user_id, arrival_key)
             return False
         return bool(send_telegram(text, parse_mode="HTML", chat_id=chat))
     except Exception as exc:

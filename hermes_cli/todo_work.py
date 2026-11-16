@@ -47,11 +47,11 @@ MAX_DRAFT_CHARS = 50_000
 MAX_SUMMARY_CHARS = 2_000
 
 
-def draft_dir_for(todo_id: str) -> Path:
-    """The per-to-do drafts directory under HERMES_HOME."""
+def draft_dir_for(todo_id: str, home: Optional[Path | str] = None) -> Path:
+    """The per-to-do drafts directory under ``home`` (default HERMES_HOME)."""
     from hermes_constants import get_hermes_home
 
-    return Path(get_hermes_home()) / "drafts" / f"todo_{todo_id}"
+    return Path(home or get_hermes_home()) / "drafts" / f"todo_{todo_id}"
 
 
 def _shared_draft_perms(draft_dir: Path) -> None:
@@ -395,13 +395,19 @@ def launch_todo_work(
     arrival: Optional[Mapping[str, Any]] = None,
     extra_context: Optional[str] = None,
     revision: bool = False,
+    profile_home: Optional[Path | str] = None,
 ) -> str:
     """Spawn the work session detached; return its session id.
 
     The caller has already moved the to-do to ``working``. The thread owns
     the rest: run, capture, review-stage, notify, propose.
+
+    ``profile_home`` is the profile the to-do lives in (default: this
+    process's ``get_hermes_home()``). A caller acting for another profile —
+    profile-scoped triage (FG-03 P5) — passes it, and the whole thread
+    (session, drafts, the store writes after it) runs in that profile.
     """
-    draft_dir = draft_dir_for(todo.id)
+    draft_dir = draft_dir_for(todo.id, profile_home)
     try:
         prepare_draft_dir(draft_dir)
     except OSError as exc:
@@ -421,10 +427,19 @@ def launch_todo_work(
 
     from hermes_constants import get_hermes_home
 
-    _profile_home = str(get_hermes_home())
+    _profile_home = str(profile_home or get_hermes_home())
     _todo_id = todo.id
 
     def _spawn() -> None:
+        if profile_home is None:
+            _run()
+            return
+        from agent.profile_runtime import profile_runtime_scope
+
+        with profile_runtime_scope(_profile_home):
+            _run()
+
+    def _run() -> None:
         from agent.seeded_session import spawn_seeded_session
 
         outcome = spawn_seeded_session(
