@@ -14,8 +14,9 @@ import { useLocale, useT } from "@/i18n";
 import type { DirectoryEntry } from "@/types";
 import type { DataSourceDoc, DictionaryEntry, DictionaryVersion } from "@/types/data";
 
+import { BuildSheet } from "./BuildSheet";
 import { ShareSheet } from "./ShareSheet";
-import { allows, columnsToText, dataPath, entryOf, textToColumns } from "./format";
+import { allows, columnsToText, dataPath, entryOf, searchEntries, textToColumns } from "./format";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -36,28 +37,37 @@ export function DictionaryDetail({
   versions,
   directory,
   directoryError = false,
+  view = "all",
 }: {
   doc: DataSourceDoc;
   versions: DictionaryVersion[];
   directory: DirectoryEntry[];
   directoryError?: boolean;
+  /** One tab of the data source page, or everything (default). */
+  view?: "all" | "dictionary" | "history";
 }) {
   const t = useT("data");
   const locale = useLocale();
   const router = useRouter();
   const { source, approved, draft } = doc;
   const people = Object.fromEntries(directory.map((p) => [p.user_id, p.display || p.user_id]));
-  const tables = useMemo(() => Object.keys(approved?.entries?.tables ?? {}).sort(), [approved]);
-  const [picked, setPicked] = useState<string>(tables[0] ?? "");
+  const allTables = useMemo(() => Object.keys(approved?.entries?.tables ?? {}).sort(), [approved]);
+  const [picked, setPicked] = useState<string>(allTables[0] ?? "");
   const [editing, setEditing] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [restoring, setRestoring] = useState<number | null>(null);
+  const [building, setBuilding] = useState(false);
+  const [q, setQ] = useState("");
+  const [only, setOnly] = useState<"all" | "stale">("all");
+  const showDictionary = view !== "history";
+  const showHistory = view !== "dictionary";
   const [error, setError] = useState<string | null>(null);
   const canPropose = allows(source.access, "propose");
   const canManage = allows(source.access, "manage");
   const drift = source.schema_drift ?? [];
+  const staleTables = new Set(drift.map((d) => d.table));
+  const tables = (q.trim() ? searchEntries(approved?.entries, q) : allTables).filter((n) => only === "all" || staleTables.has(n));
   const entry = picked ? entryOf(approved?.entries, picked) : null;
-  const buildPrompt = t("build.prompt", { source: source.kind === "app" ? "app" : source.name });
 
   async function restore(version: number) {
     setError(null);
@@ -73,7 +83,7 @@ export function DictionaryDetail({
   return (
     <div data-component="DictionaryDetail" className="flex flex-col gap-4 pb-24 lg:pb-8">
       {error ? <InlineAlert tone="danger">{error}</InlineAlert> : null}
-      {drift.length ? (
+      {showDictionary && drift.length ? (
         <InlineAlert
           tone="warn"
           title={t(drift.length === 1 ? "detail.driftTitleOne" : "detail.driftTitle", { n: drift.length })}
@@ -86,6 +96,8 @@ export function DictionaryDetail({
           <p className="mt-1 text-xs">{t("detail.driftHint")}</p>
         </InlineAlert>
       ) : null}
+      {showDictionary ? (
+      <>
       <div data-component="VersionBar" className="flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm">
         {approved ? (
           <>
@@ -104,13 +116,9 @@ export function DictionaryDetail({
           </Link>
         ) : null}
         {canPropose ? (
-          <Link
-            href={`/chat?new=1&draft=${encodeURIComponent(buildPrompt)}`}
-            title={t("build.hint")}
-            className={`${secondaryButtonClass} inline-flex min-h-9 items-center`}
-          >
+          <button type="button" title={t("build.hint")} className={`${secondaryButtonClass} min-h-9`} onClick={() => setBuilding(true)}>
             {t("build.label")}
-          </Link>
+          </button>
         ) : null}
         {canManage ? (
           <button type="button" className={`${secondaryButtonClass} min-h-9`} onClick={() => setSharing(true)}>
@@ -119,7 +127,31 @@ export function DictionaryDetail({
         ) : null}
       </div>
 
-      {tables.length === 0 ? (
+      {allTables.length ? (
+        <div className="flex flex-col gap-2">
+          <label>
+            <span className="sr-only">{t("detail.search")}</span>
+            <input className={inputClass} value={q} placeholder={t("detail.searchPlaceholder", { n: allTables.length })} onChange={(e) => setQ(e.target.value)} />
+          </label>
+          {drift.length ? (
+            <div className="flex flex-wrap gap-2">
+              {(["all", "stale"] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  aria-pressed={only === f}
+                  onClick={() => setOnly(f)}
+                  className={`min-h-8 rounded-full border px-3 py-1 text-xs ${only === f ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "border-[var(--color-border)] text-[var(--color-muted)]"}`}
+                >
+                  {t(`detail.only.${f}`)}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {q.trim() && tables.length === 0 ? <p className="text-sm text-[var(--color-muted)]">{t("detail.noMatch")}</p> : null}
+        </div>
+      ) : null}
+      {allTables.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[var(--color-border)] p-6 text-center">
           <p className="font-medium">{t("detail.emptyTitle")}</p>
           <p className="mt-1 text-sm text-[var(--color-muted)]">{canPropose ? t("detail.emptyBody") : t("detail.emptyBodyRead")}</p>
@@ -210,6 +242,10 @@ export function DictionaryDetail({
         </div>
       )}
 
+      </>
+      ) : null}
+
+      {showHistory ? (
       <section aria-labelledby="dd-history" className="flex flex-col gap-2">
         <h2 id="dd-history" className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
           {t("history.title")}
@@ -237,6 +273,8 @@ export function DictionaryDetail({
         </ul>
         {canManage && draft ? <p className="text-xs text-[var(--color-muted)]">{t("history.restoreBlocked")}</p> : null}
       </section>
+      ) : null}
+      {building ? <BuildSheet source={source} tables={[...allTables, ...drift.map((d) => d.table)]} onClose={() => setBuilding(false)} /> : null}
 
       {editing ? (
         <EditSheet

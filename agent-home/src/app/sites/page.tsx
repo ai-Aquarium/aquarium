@@ -6,6 +6,8 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { getT } from "@/i18n/server";
 import { apiClientForRequest, requirePrincipal } from "@/lib/auth/principal";
 
+import type { DataSource } from "@/types/data";
+
 import { loadDirectory } from "./data";
 
 export const dynamic = "force-dynamic";
@@ -23,9 +25,15 @@ export default async function Page() {
   let canCreate = false;
   let error: string | null = null;
   let people: Record<string, string> = {};
+  let dataSources: Record<string, DataSource> = {};
   try {
     const client = await apiClientForRequest();
-    const [doc, directory] = await Promise.all([client.sites(), loadDirectory(client)]);
+    const [doc, directory, data] = await Promise.all([
+      client.sites(),
+      loadDirectory(client),
+      client.dataSources().catch(() => ({ sources: [] })),
+    ]);
+    dataSources = Object.fromEntries(data.sources.filter((s) => s.site_id).map((s) => [s.site_id as string, s]));
     canCreate = doc.can_create;
     people = Object.fromEntries(directory.map((p) => [p.user_id, p.display || p.user_id]));
     items = await Promise.all(
@@ -59,7 +67,7 @@ export default async function Page() {
           <ErrorState kind="error" details={error} />
         </div>
       ) : (
-        <SitesList items={items} people={people} me={principal.user_id} canCreate={canCreate} />
+        <SitesList items={items} people={people} me={principal.user_id} canCreate={canCreate} dataSources={dataSources} />
       )}
     </MobileShell>
   );

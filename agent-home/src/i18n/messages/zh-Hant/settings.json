@@ -22,7 +22,7 @@
   "section.notifications": "通知",
   "section.notifications.hint": "這部裝置上的推送通知。",
   "section.in-out": "收發渠道",
-  "section.in-out.hint": "Google 帳戶、電郵、VPN、SQL Server、Windows 伺服器、WhatsApp 及 Telegram。",
+  "section.in-out.hint": "Google 帳戶、電郵、VPN、Windows 伺服器、WhatsApp 及 Telegram。",
   "section.uploads": "上載",
   "section.uploads.hint": "可上載檔案的大小上限。",
   "section.apps": "應用程式",
@@ -234,5 +234,9 @@
   "accounts.unreadable": "無法讀取：{sources}",
   "accounts.loadFailed": "無法載入帳戶：{error}",
   "accounts.saveFailed": "無法儲存：{error}",
-  "accounts.saved": "已儲存。此帳戶的新項目會歸入 {name}。"
+  "accounts.saved": "已儲存。此帳戶的新項目會歸入 {name}。",
+  "dataSources": {
+    "title": "數據來源",
+    "body": "SQL Server 及其他資料庫、網站和 Aquarium 數據在「數據」頁管理，包括狀態、存取權及字典。"
+  }
 }

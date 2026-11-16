@@ -9,7 +9,9 @@ import { DataList } from "@/components/data/DataList";
 import { DictionaryDetail } from "@/components/data/DictionaryDetail";
 import { ReviewDraft } from "@/components/data/ReviewDraft";
 import { ShareSheet } from "@/components/data/ShareSheet";
-import { fieldDiff, textToColumns } from "@/components/data/format";
+import { BuildSheet } from "@/components/data/BuildSheet";
+import { DataSourceDetail } from "@/components/data/DataSourceDetail";
+import { fieldDiff, searchEntries, textToColumns } from "@/components/data/format";
 import type { DataSource, DataSourceDoc, DictionaryEntry } from "@/types/data";
 
 afterEach(() => {
@@ -38,10 +40,33 @@ function doc(access: DataSource["access"]): DataSourceDoc {
 }
 
 describe("data pages", () => {
-  it("links managers with a draft to review and others to the dictionary", () => {
-    render(<DataList sources={[source(), source({ id: "s2", access: "read" })]} people={{ leo: "Leo" }} />);
+  it("links managers with a draft to review, others to the source, and both to chat", () => {
+    render(<DataList sources={[source(), source({ id: "s2", access: "read" })]} people={{ leo: "Leo" }} me="leo" />);
     const links = screen.getAllByRole("link").map((a) => a.getAttribute("href"));
-    expect(links).toEqual(["/data/s1/review", "/data/s2"]);
+    expect(links).toEqual(["/data/s1", "/chat?new=1&source=s1", "/data/s1/review", "/data/s2", "/chat?new=1&source=s2", "/data/s2"]);
+  });
+
+  it("filters by needs-you, mine and type, and shows connection health", () => {
+    render(
+      <DataList
+        me="leo"
+        people={{ mei: "Mei" }}
+        sources={[
+          source({ id: "a", name: "Shop", status: "approved", draft_version: null }),
+          source({ id: "b", name: "ERP", kind: "connection", engine: "mssql", owner_user_id: "mei", access: "read", status: "approved", health: { state: "attention", detail: "login failed" } }),
+          source({ id: "c", name: "Aquarium data", kind: "app", owner_user_id: "", status: "not_described" }),
+        ]}
+      />,
+    );
+    expect(screen.getByText("Needs attention")).toBeTruthy();
+    expect(screen.getByText("Built in")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: /Needs you/ }));
+    expect(screen.queryByText("Shop")).toBeNull();
+    expect(screen.getByText("Aquarium data")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: /^All/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Type" }), { target: { value: "mssql" } });
+    expect(screen.getByText("ERP")).toBeTruthy();
+    expect(screen.queryByText("Shop")).toBeNull();
   });
 
   it("approves the draft version without rejected tables, once", async () => {
@@ -69,7 +94,7 @@ describe("data pages", () => {
     render(<DictionaryDetail doc={{ ...d, draft: undefined }} versions={[]} directory={[]} />);
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Build dictionary" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Build dictionary" })).toBeNull();
     expect(screen.getAllByText("Orders").length).toBeGreaterThan(0);
   });
 
@@ -80,6 +105,35 @@ describe("data pages", () => {
     expect(screen.getByRole("option", { name: "People list unavailable" })).toBeTruthy();
     expect(screen.queryByText("Everyone already has access")).toBeNull();
     await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+  });
+
+  it("builds a schema-scoped, on-demand study request", () => {
+    const d = doc("manage");
+    render(<BuildSheet source={{ ...d.source, name: "ERP" }} tables={["sales.orders", "sales.lines", "hr.staff"]} onClose={() => {}} />);
+    expect(screen.queryByText(/Tables not described yet/)).toBeNull();
+    const open = screen.getByRole("link", { name: "Open chat" });
+    const draft = new URL(open.getAttribute("href") ?? "", "http://x").searchParams.get("draft") ?? "";
+    expect(draft).toContain("schemas sales, hr only");
+    expect(draft).toContain("study one the first time someone asks");
+    fireEvent.click(screen.getByRole("checkbox", { name: "hr" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Study on demand/ }));
+    const next = new URL(screen.getByRole("link", { name: "Open chat" }).getAttribute("href") ?? "", "http://x").searchParams.get("draft") ?? "";
+    expect(next).toContain("schemas sales only");
+    expect(next).not.toContain("first time someone asks");
+  });
+
+  it("opens the tab from the URL and switches tabs", () => {
+    render(<DataSourceDetail doc={doc("manage")} versions={[]} directory={[]} me="leo" initialTab="access" />);
+    expect(screen.getByRole("tab", { name: "Access" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: /Dictionary/ }));
+    expect(router.replace).toHaveBeenCalledWith("/data/s1?tab=dictionary", { scroll: false });
+    expect(screen.getAllByText("Orders").length).toBeGreaterThan(0);
+    expect(screen.getByRole("tab", { name: "Website" })).toBeTruthy();
+  });
+
+  it("searches the dictionary by meaning and column text", () => {
+    expect(searchEntries({ tables: { orders: ENTRY, lines: { ...ENTRY, meaning: "Order lines", columns: { refund: "HKD back" } } }, glossary: [] }, "refund")).toEqual(["lines"]);
   });
 
   it("parses columns and diffs fields", () => {

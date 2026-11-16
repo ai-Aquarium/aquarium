@@ -22,7 +22,7 @@
   "section.notifications": "Notifications",
   "section.notifications.hint": "Push notifications on this device.",
   "section.in-out": "In&Out",
-  "section.in-out.hint": "Google accounts, email, VPN, SQL Server, Windows servers, WhatsApp and Telegram.",
+  "section.in-out.hint": "Google accounts, email, VPN, Windows servers, WhatsApp and Telegram.",
   "section.uploads": "Uploads",
   "section.uploads.hint": "The largest file people can upload.",
   "section.apps": "Apps",
@@ -234,5 +234,9 @@
   "accounts.unreadable": "Couldn't read: {sources}",
   "accounts.loadFailed": "Couldn't load the accounts: {error}",
   "accounts.saveFailed": "Couldn't save: {error}",
-  "accounts.saved": "Saved. New items from this account go to {name}."
+  "accounts.saved": "Saved. New items from this account go to {name}.",
+  "dataSources": {
+    "title": "Data sources",
+    "body": "SQL Server and other databases, websites and Aquarium data are managed in Data, with their health, access and dictionary."
+  }
 }
