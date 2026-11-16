@@ -212,6 +212,9 @@ def test_disable_enable_care_and_refusals(box):
                   json={"kind": KIND, "layer": "user", "key": OTHER, "disabled": False})
     assert r.status_code == 200
     assert listed(mary)[0][OTHER]["disabled"] is False
+    r = mary.post("/api/triage/layers/disable?profile=cfo",
+                  json={"kind": KIND, "layer": "user", "key": "email-triage/no-such.md", "disabled": True})
+    assert r.status_code == 404
 
     # Off in the template: Mary can't just turn it on (409), only save her own.
     r = admin.post("/api/triage/layers/disable?profile=cfo",
@@ -303,13 +306,19 @@ def test_cli(box, capsys):
     assert _cli(["reset", *base, "--user", "john"], capsys)["reset"] == [KEY, triage_skills.CARE_KEY]
     assert _cli(["show", KEY, *base, "--user", "john"], capsys)["content"] == "# template via cli\n"
 
+    err = ""
     for argv in (
         ["care", *base, "--user", "john", "--text", "  "],
         ["edit", "../x.md", *base, "--user", "john", "--text", "x"],
         ["list", "--kind", KIND, "--profile", "nope"],
+        ["disable", "email-triage/no-such.md", *base, "--user", "mary"],
+        ["enable", OTHER, *base, "--user", "mary"],
     ):
+        if argv[0] == "enable":
+            _cli(["disable", OTHER, *base, "--template"], capsys)
         args = _parser().parse_args(["triage", "skills", *argv])
         with pytest.raises(SystemExit):
             args.func(args)
-    err = capsys.readouterr().err
-    assert "(422)" in err and "(400)" in err and "(404)" in err
+        err += capsys.readouterr().err
+    assert "(422)" in err and "(400)" in err and "(404)" in err and "(409)" in err
+    assert err.count("(404)") == 2
