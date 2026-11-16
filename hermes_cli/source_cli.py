@@ -160,6 +160,9 @@ def register_source_subparser(subparsers: argparse._SubParsersAction) -> None:
         ),
     )
     sub = parser.add_subparsers(dest="source_command", required=True)
+    from hermes_cli.source_migrate import add_migrate_parser
+
+    add_migrate_parser(sub)
 
     def common(p: argparse.ArgumentParser, *, actor: bool = True) -> None:
         p.add_argument("--json", action="store_true", help="Print JSON")

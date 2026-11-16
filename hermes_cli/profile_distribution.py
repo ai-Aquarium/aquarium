@@ -116,6 +116,8 @@ USER_OWNED_EXCLUDE: frozenset = frozenset({
     "hermes-agent", ".worktrees", "profiles", "bin", "node_modules",
     # User customization namespace
     "local",
+    # Each enrolled person's own version of the profile (FG-03 P1)
+    "users",
 })
 
 
