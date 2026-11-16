@@ -150,10 +150,12 @@ import type {
   EmailMailboxInput,
   Source,
   SourceClaimConflict,
+  SourceConflictAction,
   RoutingDecision,
   TriageComparison,
   SourceInput,
   SourceRoute,
+  SourceUpdate,
   MssqlConnection,
   MssqlConnectionInput,
   DbConnection,
@@ -3510,6 +3512,14 @@ export class HermesApiClient {
     );
   }
 
+  /** FG-03 P7: pause/resume or relabel a source (its owner, or box owner/admin). */
+  async updateSource(sourceId: string, body: SourceUpdate): Promise<{ source: Source }> {
+    return this.request(`/api/sources/${encodeURIComponent(sourceId)}`, {
+      method: "PATCH",
+      json: body,
+    });
+  }
+
   async deleteSource(sourceId: string): Promise<{ deleted: boolean }> {
     return this.request(`/api/sources/${encodeURIComponent(sourceId)}`, {
       method: "DELETE",
@@ -3518,6 +3528,17 @@ export class HermesApiClient {
 
   async sourceConflicts(all = false): Promise<{ conflicts: SourceClaimConflict[] }> {
     return this.request(`/api/sources/conflicts${all ? "?all=1" : ""}`);
+  }
+
+  /** FG-03 P7: settle a claim conflict (box owner/admin). */
+  async resolveSourceConflict(
+    conflictId: number,
+    action: SourceConflictAction,
+  ): Promise<{ conflict: SourceClaimConflict }> {
+    return this.request(
+      `/api/sources/conflicts/${encodeURIComponent(String(conflictId))}/resolve`,
+      { method: "POST", json: { action } },
+    );
   }
 
   /** FG-03 P4: the caller's routing decisions, newest first (`all`: box owner/admin). */

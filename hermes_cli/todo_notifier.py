@@ -103,7 +103,7 @@ async def announce(
     the arrival it came from, so "Needs you" folds the same arrival's asks
     from several profiles into one entry.
     """
-    from hermes_cli.needs_you import with_arrival
+    from hermes_cli.needs_you import routing_context, with_arrival
 
     body = format_body(todo)
     result = await notifications.create(
@@ -117,6 +117,7 @@ async def announce(
         visibility=todo.visibility,
         dedupe_key=with_arrival(f"todo:{todo.id}", arrival_key),
         now=now,
+        context=routing_context(todo.routing_source_id, todo.routing_batch_id),
     )
     won = await store.mark_notified(principal, todo.id)
     return Announcement(

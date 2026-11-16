@@ -36,6 +36,8 @@ const BASE: Todo = {
   work_result: null,
   created_at: null,
   updated_at: null,
+  routing_source_id: null,
+  routing_batch_id: null,
 };
 
 const FACETS: TodosFacets = {
