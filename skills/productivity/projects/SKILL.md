@@ -70,6 +70,9 @@ hermes projects runs      <slug> [--limit 10] [--json]
 hermes projects retro     <slug> <run_no> [--write] [--propose KIND=BODY]… [--json]
 hermes projects summarise <slug>          # rolling "where this stands" — reads stdin
 hermes projects doctor    [--slug s] [--json]
+hermes projects propose-send --channel email|whatsapp --to <recipient> --account <account>
+                                 [--subject "…"] --body "…"|--body-file <file|-> [--attach <file>]
+                                 [--task <card>] [--json]   # on a card; a person sends it
 ```
 
 ## Short refs
@@ -173,6 +176,34 @@ releases it. Your move when a project needs one of these is to ask the user,
 never to claim `--as-human` yourself — that flag is the operator's, for the
 moment they are making the judgement in person. Autonomy only ever moves
 down from `supervised`, and only with the user's explicit say-so.
+
+### 4b. Outgoing messages are proposed, never sent — a person approves each one
+
+A card worker has no way to send email or WhatsApp itself, and must not look
+for one. A playbook step that ends in a message (an invoice, a reminder, a
+reply) drafts it, then proposes it from its card:
+
+```
+hermes projects propose-send --channel email --to ap@client.example \
+  --account acme --subject "Invoice INV-0042" --body-file draft.txt \
+  --attach INV-0042.pdf
+```
+
+- `--account` is required: the company account it leaves from (an email
+  account id or address from the email accounts config, or a WhatsApp bridge
+  name such as `connectar`). Pick the one the project's guidance names.
+- `--attach` is a file inside the card's workspace (≤ 15 MB). It is copied
+  when proposed, so what the person reviews is exactly what is sent. Never
+  put `MEDIA:` lines in the body.
+- Email needs `--subject`; the body is plain text, up to 4000 characters.
+
+Nothing is sent. The proposal waits on the card under the project's Needs
+you, showing recipient, account, subject, body and attachment. Then call
+`kanban_block` with `kind="needs_input"` and a reason starting
+"Approval needed:" and stop. When the card runs again, read its comments:
+`Sent: …` means it went (finish the step); `Changes requested … Note: …`
+means draft a revised message and propose again; `Denied: …` means do not
+send it any other way. One proposal per message — each approval sends once.
 
 ### 5. Read the last run's retro and score before starting work
 
