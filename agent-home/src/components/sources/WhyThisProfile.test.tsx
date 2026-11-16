@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { decision } from "@/components/sources/fixtures";
-import { WhyThisProfile } from "@/components/sources/WhyThisProfile";
+import { sourceRoutingHref, WhyThisProfile } from "@/components/sources/WhyThisProfile";
 
 function reply(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -67,12 +67,12 @@ describe("WhyThisProfile", () => {
         sourceId="src-mail"
         batchId="b-1"
         profile="CFO"
-        recentRoutingHref={(id) => `/sources/${id}`}
+        recentRoutingHref={sourceRoutingHref}
       />,
     );
     await press(link());
     expect(screen.getByRole("link", { name: "Recent routing for john@acme.com" }).getAttribute("href")).toBe(
-      "/sources/src-mail",
+      "/settings/sources/src-mail/routing",
     );
     expect(screen.getByRole("link", { name: "Edit what CFO cares about" }).getAttribute("href")).toBe(
       "/profiles/CFO/triage?kind=email",

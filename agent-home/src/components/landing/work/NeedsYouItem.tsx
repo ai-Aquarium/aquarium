@@ -10,7 +10,7 @@ import type { NeedsYouAction, NeedsYouEntry } from "@/types/landing";
 
 import { AlertIcon, BellIcon, CheckIcon } from "@/components/ui/icons";
 import { SEVERITY_TONE } from "./tone";
-import { WhyThisProfile } from "@/components/sources/WhyThisProfile";
+import { sourceRoutingHref, WhyThisProfile } from "@/components/sources/WhyThisProfile";
 
 export type PrimaryAction =
   | { kind: "one-tap"; action: NeedsYouAction & { endpoint: string } }
@@ -109,6 +109,7 @@ export function NeedsYouItem({
           batchId={entry.context.routing_batch_id}
           profile={entry.context.profile}
           align="end"
+          recentRoutingHref={sourceRoutingHref}
         />
         <div className="pt-1">
           {primary.kind === "one-tap" ? (
