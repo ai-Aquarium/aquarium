@@ -30,6 +30,14 @@ Batch file (one chat per batch, written atomically, complete when it appears)::
       ]
     }
 
+``chat_type`` is ``dm`` for a private chat and ``group`` for a group or
+supergroup. Each ``media`` descriptor is ``{"type": "photo" | "video" |
+"audio" | "voice" | "document" | "sticker", "file_id", "file_unique_id",
+optional "mime_type" / "file_name" / "file_size"}`` (download it through the
+receiving bot) or ``{"type": "location", "latitude", "longitude"}``; nothing is
+downloaded at capture time. Edits of an already captured message are not
+captured again.
+
 Replies always go back through the receiving bot (``account_id``) to
 ``chat_id`` and need the owner's approval; auto-send stays off.
 """
@@ -48,6 +56,13 @@ ACCOUNT_PREFIX = "tgbot:"
 BASE_DIR = Path("/opt/data/telegram-messages")
 BATCH_DIR = BASE_DIR / "batches"
 PROCESSED_DIR = BASE_DIR / "processed"
+
+#: Gateway capture (``gateway/person_telegram_bots.py``): a chat's batch is
+#: written after this many quiet seconds, so a burst becomes one batch ...
+CAPTURE_QUIET_SECONDS = 20.0
+#: ... but never later than this after its first message, or past this size.
+CAPTURE_MAX_SECONDS = 120.0
+CAPTURE_MAX_MESSAGES = 50
 
 
 def mode(config: Optional[Mapping[str, Any]] = None) -> str:
