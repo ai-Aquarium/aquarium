@@ -9,6 +9,7 @@ import { skillHref } from "@/components/skills/skill-links";
 import { ActionButton } from "@/components/ui/ActionButton";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { InlineAlert } from "@/components/ui/InlineAlert";
+import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import { primaryButtonClass } from "@/components/ui/Sheet";
 import { errorText, getJson, profileQuery, sendJson } from "@/lib/admin-fetch";
 import {
@@ -204,6 +205,7 @@ export function SkillVersionsPanel({ name, profile }: { name: string; profile: s
   const parsed = diff && diff.key === pairKey && diff.text !== undefined ? parseUnifiedDiff(diff.text) : null;
   const tag = (v: SkillVersionMeta | null) =>
     v ? `v${v.n}${v.status === "active" ? " (active)" : v.status === "draft" ? " (draft)" : ""}` : "";
+  const compareTitle = a && b ? `Compare ${tag(a)} → ${tag(b)}` : "Compare versions";
 
   return (
     <div data-component="SkillVersionsPanel" className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
@@ -277,7 +279,7 @@ export function SkillVersionsPanel({ name, profile }: { name: string; profile: s
       <div className="flex min-w-0 flex-col gap-3">
         <div className="flex flex-wrap items-start gap-2">
           <div className="min-w-0 flex-1">
-            <h3 className="text-base font-semibold">{a && b ? `Compare ${tag(a)} → ${tag(b)}` : "Compare versions"}</h3>
+            <h3 className="text-base font-semibold">{compareTitle}</h3>
             {parsed ? (
               <p className="text-xs text-[var(--color-muted)]">
                 +{parsed.added} −{parsed.removed} lines
@@ -353,36 +355,50 @@ export function SkillVersionsPanel({ name, profile }: { name: string; profile: s
           ) : parsed.rows.length === 0 ? (
             <p className="p-3.5 text-sm text-[var(--color-muted)]">These versions are identical.</p>
           ) : (
-            <div className="max-h-[60vh] overflow-auto bg-[var(--color-surface-2)] py-1.5 font-mono text-[12.5px] leading-relaxed">
-              {parsed.rows.map((r, k) =>
-                r.kind === "file" || r.kind === "hunk" || r.kind === "note" ? (
-                  <div key={k} data-row={r.kind} className="px-3 py-0.5 text-[var(--color-muted)]">
-                    {r.kind === "file" ? r.text : r.kind === "hunk" ? `⋯ ${r.text}` : r.text}
+            <Maximizable
+              component="SkillVersionDiffBody"
+              title={compareTitle}
+              status={`+${parsed.added} −${parsed.removed} lines`}
+              className="flex flex-col"
+            >
+              {({ maximized }) => (
+                <>
+                  <div className="flex justify-end border-b border-[var(--color-border)] px-2 py-1.5">
+                    <MaximizeToggle />
                   </div>
-                ) : (
-                  <div
-                    key={k}
-                    data-op={r.kind}
-                    className={`grid grid-cols-[3.25rem_1rem_minmax(0,1fr)] ${
-                      r.kind === "add"
-                        ? "bg-[color-mix(in_srgb,var(--color-success)_14%,transparent)]"
-                        : r.kind === "del"
-                          ? "bg-[color-mix(in_srgb,var(--color-danger)_14%,transparent)]"
-                          : ""
-                    }`}
-                  >
-                    <span className="select-none pr-2 text-right text-[var(--color-muted)]">{r.newNo ?? r.oldNo}</span>
-                    <span
-                      aria-hidden
-                      className={`select-none ${r.kind === "add" ? "text-[var(--color-success)]" : r.kind === "del" ? "text-[var(--color-danger)]" : ""}`}
-                    >
-                      {r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "}
-                    </span>
-                    <span className="whitespace-pre-wrap pr-3 [overflow-wrap:anywhere]">{r.text}</span>
+                  <div className={`${maximized ? "min-h-0 flex-1" : "max-h-[60vh]"} overflow-auto bg-[var(--color-surface-2)] py-1.5 font-mono text-[12.5px] leading-relaxed`}>
+                    {parsed.rows.map((r, k) =>
+                      r.kind === "file" || r.kind === "hunk" || r.kind === "note" ? (
+                        <div key={k} data-row={r.kind} className="px-3 py-0.5 text-[var(--color-muted)]">
+                          {r.kind === "file" ? r.text : r.kind === "hunk" ? `⋯ ${r.text}` : r.text}
+                        </div>
+                      ) : (
+                        <div
+                          key={k}
+                          data-op={r.kind}
+                          className={`grid grid-cols-[3.25rem_1rem_minmax(0,1fr)] ${
+                            r.kind === "add"
+                              ? "bg-[color-mix(in_srgb,var(--color-success)_14%,transparent)]"
+                              : r.kind === "del"
+                                ? "bg-[color-mix(in_srgb,var(--color-danger)_14%,transparent)]"
+                                : ""
+                          }`}
+                        >
+                          <span className="select-none pr-2 text-right text-[var(--color-muted)]">{r.newNo ?? r.oldNo}</span>
+                          <span
+                            aria-hidden
+                            className={`select-none ${r.kind === "add" ? "text-[var(--color-success)]" : r.kind === "del" ? "text-[var(--color-danger)]" : ""}`}
+                          >
+                            {r.kind === "add" ? "+" : r.kind === "del" ? "−" : " "}
+                          </span>
+                          <span className="whitespace-pre-wrap pr-3 [overflow-wrap:anywhere]">{r.text}</span>
+                        </div>
+                      ),
+                    )}
                   </div>
-                ),
+                </>
               )}
-            </div>
+            </Maximizable>
           )}
         </div>
 

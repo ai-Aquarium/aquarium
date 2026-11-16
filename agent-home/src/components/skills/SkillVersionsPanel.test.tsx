@@ -241,3 +241,20 @@ describe("SkillEditor in draft mode", () => {
     expect(router.push).toHaveBeenCalledWith("/skills/q?profile=coder&tab=versions");
   });
 });
+
+describe("SkillVersionsPanel diff maximize", () => {
+  it("maximizes the diff with the compare title and its line counts, then minimizes", async () => {
+    serve({ "GET /api/skills/versions": LIST, "GET /api/skills/versions/diff": { a: "v2", b: "v3", diff: DIFF } });
+    render(<SkillVersionsPanel name="quote-builder" profile="default" />);
+    await screen.findByText("+1 −1 lines in SKILL.md");
+    const box = document.querySelector<HTMLElement>('[data-op="add"]')!.parentElement!;
+    expect(box.className).toContain("max-h-[60vh]");
+    fireEvent.click(screen.getByRole("button", { name: "Maximize Compare v2 (active) → v3 (draft)" }));
+    const dialog = screen.getByRole("dialog", { name: "Compare v2 (active) → v3 (draft)" });
+    expect(dialog.textContent).toContain("+1 −1 lines");
+    expect(box.className).not.toContain("max-h-");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(box.className).toContain("max-h-[60vh]");
+  });
+});

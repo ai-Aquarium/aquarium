@@ -184,6 +184,24 @@ describe("SkillImprovePanel", () => {
     expect(onOpenTab).toHaveBeenCalledWith("versions");
   });
 
+  it("maximizes the proposed diff without its height cap and Esc minimizes it", async () => {
+    routes["POST /api/skills/improve/start"] = ok({ session_id: "imp-new" });
+    routes["POST /api/skills/improve/message"] = ok({ reply: "Try this:\n```skill-draft\n" + PROPOSED + "```", draft: PROPOSED });
+    panel();
+    fireEvent.change(composer(), { target: { value: "Handle USD quotes" } });
+    fireEvent.keyDown(composer(), { key: "Enter" });
+    const card = await screen.findByRole("region", { name: "Proposed SKILL.md" });
+    const box = card.querySelector<HTMLElement>('[data-diff="add"]')!.parentElement!;
+    expect(box.className).toContain("max-h-96");
+    fireEvent.click(within(card).getByRole("button", { name: "Maximize Proposed SKILL.md" }));
+    expect(screen.getByRole("dialog", { name: "Proposed SKILL.md" }).contains(box)).toBe(true);
+    expect(box.className).not.toContain("max-h-");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(box.className).toContain("max-h-96");
+    expect(within(card).getByRole("button", { name: /Save as draft/ })).toBeTruthy();
+  });
+
   it("keeps a failed turn retryable", async () => {
     let attempts = 0;
     routes["POST /api/skills/improve/start"] = ok({ session_id: "imp-new" });

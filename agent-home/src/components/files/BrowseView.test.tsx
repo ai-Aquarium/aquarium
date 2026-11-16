@@ -242,3 +242,36 @@ describe("sorting and pages", () => {
     expect(document.querySelector('[data-component="BrowseSkeleton"]')).toBeNull();
   });
 });
+
+describe("text preview", () => {
+  it("maximizes to the full screen without the height cap and Esc minimizes back", async () => {
+    const listing = LISTINGS["net-jensen:"];
+    LISTINGS["net-jensen:"] = [
+      entry({ name: "Offers", path: "Offers", kind: "directory", size: null }),
+      entry({ name: "notes.txt", path: "notes.txt", size: 12 }),
+    ];
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) =>
+      url.startsWith("/api/browse/file") ? new Response("line 1\nline 2") : base(url, init),
+    );
+    try {
+      await openJensen();
+      fireEvent.click(screen.getAllByRole("button", { name: /notes\.txt/ })[0]);
+      const pre = await screen.findByText(/line 1/);
+      const panel = pre.closest<HTMLElement>('[data-component="BrowseFilePreview"]')!;
+      expect(panel.closest('[data-component="BrowseFilePanel"]')).not.toBeNull();
+      expect(pre.className).toContain("max-h-72");
+      fireEvent.click(within(panel).getByRole("button", { name: "Maximize notes.txt" }));
+      expect(panel.getAttribute("data-maximized")).toBe("true");
+      expect(screen.getByRole("dialog", { name: "notes.txt" })).toBe(panel);
+      expect(pre.className).not.toContain("max-h-");
+      expect(pre.className).toContain("flex-1");
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(panel.getAttribute("data-maximized")).toBe("false");
+      expect(pre.className).toContain("max-h-72");
+      expect(screen.getByRole("button", { name: "Ask the agent about this file" })).toBeTruthy();
+    } finally {
+      LISTINGS["net-jensen:"] = listing;
+    }
+  });
+});
