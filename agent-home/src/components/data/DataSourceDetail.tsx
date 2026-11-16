@@ -13,6 +13,7 @@ import type { DirectoryEntry } from "@/types";
 import type { DataSourceDoc, DictionaryVersion } from "@/types/data";
 
 import { DictionaryPill, HealthPill, TypeBadge, askHref } from "./DataList";
+import { ConnectionHealth } from "./ConnectionHealth";
 import { DictionaryDetail } from "./DictionaryDetail";
 import { ShareSheet } from "./ShareSheet";
 import { DATA_TABS, allows, healthOf, type DataTab } from "./format";
@@ -215,13 +216,14 @@ export function DataSourceDetail({
                 title={t("tabs.connection")}
                 foot={
                   manage ? (
-                    <Link href="/data/new" className={`${secondaryButtonClass} inline-flex min-h-9 items-center`}>
+                    <Link href={`/data/new#${source.engine === "mssql" ? "sql-server" : (source.engine ?? "sql-server")}`} className={`${secondaryButtonClass} inline-flex min-h-9 items-center`}>
                       {t("source.manageConnection")}
                     </Link>
                   ) : null
                 }
               >
                 <p className="text-sm">{source.connection ?? source.name}</p>
+                {manage && source.owner_user_id === me ? <ConnectionHealth source={source} /> : null}
                 <p className="text-xs text-[var(--color-muted)]">{manage ? t("source.connectionBody") : t("source.connectionOwnerOnly", { who: owner })}</p>
               </Card>
             ) : null}

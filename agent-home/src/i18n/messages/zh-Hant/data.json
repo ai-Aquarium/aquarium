@@ -272,7 +272,8 @@
     "siteBody": "設計、更新記錄及排程留在網站頁面；字典、存取權及提問在這裡。",
     "manageConnection": "管理連線",
     "connectionBody": "伺服器、登入、VPN 及測試在「新增數據來源」內。",
-    "connectionOwnerOnly": "只有 {who} 可以查看連線設定。"
+    "connectionOwnerOnly": "只有 {who} 可以查看連線設定。",
+    "testNow": "立即測試"
   },
   "add": {
     "title": "新增數據來源",
@@ -301,5 +302,59 @@
     "autoHint": "代理會從你可用的數據來源中選擇，不確定時會問你。",
     "pinnedHint": "回答會使用其已批准的字典。",
     "title": "詢問哪個數據來源"
+  },
+  "db": {
+    "title": {
+      "mysql": "MySQL 資料庫",
+      "sqlite": "SQLite 檔案"
+    },
+    "description": {
+      "mysql": "你自己的 MySQL / MariaDB 連線。分享數據來源前只屬於你；獲分享的人經此唯讀登入提問，永遠看不到密碼。",
+      "sqlite": "此伺服器上的 SQLite 檔案，唯讀。只能加入 config.yaml（data_sources.sqlite_roots）所設資料夾內的檔案。"
+    },
+    "add": {
+      "mysql": "新增 MySQL 資料庫",
+      "sqlite": "新增 SQLite 檔案"
+    },
+    "driverMissing": "伺服器尚未安裝此引擎的驅動程式。",
+    "sqliteAdminOnly": "只有擁有人或管理員可以新增 SQLite 檔案。",
+    "errLoad": "無法載入你的連線。",
+    "errTest": "無法進行測試。",
+    "errSave": "無法儲存：{reason}",
+    "errRemove": "無法移除。",
+    "errRequired": "請填寫所有必填欄位。",
+    "errName": "請使用英文字母、數字、空格、點、連字號或底線（最多 64 個）。",
+    "errPort": "連接埠必須是 1 至 65535 的數字。",
+    "errPassword": "請輸入密碼。",
+    "loading": "載入中…",
+    "viaVpn": "經 {vpn}",
+    "readOnly": "唯讀",
+    "testOk": "已連接 · {n} 個資料表",
+    "testFail": "失敗：{reason}",
+    "test": "測試",
+    "testing": "測試中…",
+    "edit": "編輯",
+    "remove": "移除",
+    "name": "名稱",
+    "namePlaceholder": "例如 CRM",
+    "label": "顯示名稱（選填）",
+    "path": "檔案路徑",
+    "pathPlaceholder": "/srv/data/prices.sqlite",
+    "host": "伺服器",
+    "port": "連接埠",
+    "database": "資料庫",
+    "username": "登入名稱",
+    "password": "密碼",
+    "passwordKept": "留空即保留已儲存的密碼。",
+    "tls": "加密",
+    "tlsVerify": "開啟，檢查憑證",
+    "tlsOn": "開啟，不檢查憑證",
+    "tlsOff": "關閉",
+    "vpn": "經 VPN",
+    "vpnNone": "不使用 VPN",
+    "readOnlyNote": "請使用唯讀登入：代理只會讀取此資料庫。",
+    "saveTest": "儲存並測試",
+    "removeTitle": "移除 {name}？",
+    "removeBody": "代理會停止使用它，其數據來源及字典亦會從「數據」頁移除。"
   }
 }

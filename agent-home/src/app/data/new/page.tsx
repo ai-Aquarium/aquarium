@@ -17,7 +17,7 @@ export default async function Page() {
   }
   return (
     <MobileShell title={t("add.title")} subtitle={t("add.subtitle")} wide>
-      <AddDataSource canAddSite={canAddSite} isOwner={principal.is_owner} />
+      <AddDataSource canAddSite={canAddSite} isOwner={principal.is_owner} isAdmin={principal.is_owner || principal.role === "admin"} />
     </MobileShell>
   );
 }

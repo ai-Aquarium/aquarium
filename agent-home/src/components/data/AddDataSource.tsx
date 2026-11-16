@@ -8,6 +8,7 @@ import { Pill } from "@/components/ui/Pill";
 import { ChevronRightIcon } from "@/components/ui/icons";
 import { useT } from "@/i18n";
 
+import { DbConnections } from "./DbConnections";
 import { SOURCE_GLYPH, type SourceType } from "./format";
 
 function Choice({ type, title, body, href, note }: { type: SourceType | "sheet" | "api"; title: string; body: string; href?: string; note?: string }) {
@@ -38,10 +39,10 @@ function Choice({ type, title, body, href, note }: { type: SourceType | "sheet" 
 }
 
 /**
- * Add data source (mockup v2): connect a database (SQL Server today; the other
- * engines' forms follow with their backend) or turn a website into tables.
+ * Add data source (mockup v2): connect a database (SQL Server, MySQL, SQLite;
+ * PostgreSQL once it has a connection API) or turn a website into tables.
  */
-export function AddDataSource({ canAddSite, isOwner }: { canAddSite: boolean; isOwner: boolean }) {
+export function AddDataSource({ canAddSite, isOwner, isAdmin = isOwner }: { canAddSite: boolean; isOwner: boolean; isAdmin?: boolean }) {
   const t = useT("data");
   const h2 = "text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]";
   return (
@@ -50,9 +51,9 @@ export function AddDataSource({ canAddSite, isOwner }: { canAddSite: boolean; is
         <h2 className={h2}>{t("add.connect")}</h2>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           <Choice type="mssql" title={t("type.mssql")} body={t("add.mssqlBody")} href="#sql-server" />
-          <Choice type="mysql" title={t("type.mysql")} body={t("add.mysqlBody")} note={t("add.soon")} />
+          <Choice type="mysql" title={t("type.mysql")} body={t("add.mysqlBody")} href="#mysql" />
           <Choice type="postgres" title={t("type.postgres")} body={t("add.postgresBody")} note={t("add.soon")} />
-          <Choice type="sqlite" title={t("type.sqlite")} body={t("add.sqliteBody")} note={t("add.soon")} />
+          <Choice type="sqlite" title={t("type.sqlite")} body={t("add.sqliteBody")} href="#sqlite" />
         </div>
       </section>
       <section className="flex flex-col gap-2">
@@ -71,6 +72,12 @@ export function AddDataSource({ canAddSite, isOwner }: { canAddSite: boolean; is
       </section>
       <section id="sql-server" className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <SqlServerConnections isOwner={isOwner} />
+      </section>
+      <section id="mysql" className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <DbConnections engine="mysql" />
+      </section>
+      <section id="sqlite" className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <DbConnections engine="sqlite" canAdd={isAdmin} />
       </section>
       <InlineAlert tone="info">{t("add.privateNote")}</InlineAlert>
     </div>
