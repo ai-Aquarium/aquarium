@@ -434,7 +434,7 @@ export function ProjectDetailView({
             );
           })}
           {group === "overview" && !project.archived ? (
-            <AskOrChangeBox project={project} onChangeRequest={openChange} />
+            <AskOrChangeBox project={project} onChangeRequest={openChange} status={statusLine} />
           ) : null}
         </div>
       </div>

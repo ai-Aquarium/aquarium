@@ -15,6 +15,7 @@ import { ActionButton } from "@/components/projects/ActionButton";
 import {
   ASK_SUGGESTIONS,
   CHANGE_KINDS,
+  MAX_TURNS,
   QUESTION_MAX,
   capTurns,
   historyFor,
@@ -36,6 +37,7 @@ import {
   useProjectAction,
   type ActionResult,
 } from "@/components/projects/useProjectAction";
+import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import type { AskProjectResponse, AskProjectSource, ProjectDetail } from "@/types";
 
 type Mode = "ask" | "change";
@@ -76,11 +78,14 @@ export function AskOrChangeBox({
   project,
   onChangeRequest,
   onNavigate,
+  status,
 }: {
   project: ProjectDetail;
   onChangeRequest: (initialText?: string) => void;
   /** Switch tab in place for sources that live on a tab; without it they link to `?tab=`. */
   onNavigate?: (tab: ProjectTab) => void;
+  /** Live status line for the maximized header strip, e.g. "Run 3 running · 2 need you". */
+  status?: string;
 }) {
   const slug = project.slug;
   const [mode, setMode] = useState<Mode>("ask");
@@ -212,149 +217,166 @@ export function AskOrChangeBox({
   const tooLong = text.trim().length > QUESTION_MAX;
   const lastErrorId = [...turns].reverse().find((t) => t.status === "error")?.id;
 
+  const strip = [project.ref, project.name, status, `keeps the last ${MAX_TURNS} questions`]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <section
-      data-component="AskOrChangeBox"
+    <Maximizable
+      title="Ask about this project"
+      status={strip}
+      component="AskOrChangeBox"
       aria-label="Ask or change"
       className="flex flex-col gap-2 rounded-2xl border-2 border-[var(--color-accent)] bg-[var(--color-surface)] p-3"
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <div
-          role="group"
-          aria-label="Mode"
-          className="inline-flex rounded-xl bg-[var(--color-surface-2)] p-0.5"
-        >
-          {(
-            [
-              ["ask", "💬 Ask about this project"],
-              ["change", "＋ Add requirement / change"],
-            ] as const
-          ).map(([m, label]) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={mode === m}
-              data-mode={m}
-              onClick={() => setMode(m)}
-              className={`rounded-lg px-2.5 py-1.5 text-xs sm:text-sm ${
-                mode === m
-                  ? "bg-[var(--color-surface)] font-semibold shadow-sm"
-                  : "text-[var(--color-muted)]"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <p data-hint className="text-xs text-[var(--color-muted)]">
-          {HINT[mode]}
-        </p>
-      </div>
-
-      {mode === "ask" && turns.length > 0 ? (
-        <div
-          ref={threadRef}
-          data-thread
-          aria-live="polite"
-          className="flex max-h-72 flex-col gap-2 overflow-y-auto"
-        >
-          {turns.map((turn) => (
-            <AskTurnView
-              key={turn.id}
-              turn={turn}
-              slug={slug}
-              onNavigate={onNavigate}
-              onTurnInto={() => onChangeRequest(suggestedRequirement(turn))}
-              retry={
-                turn.id === lastErrorId && turn.id === activeId
-                  ? { busy: action.busy, run: () => void retry() }
-                  : null
-              }
-            />
-          ))}
-          <div className="flex justify-end">
-            <button
-              type="button"
-              disabled={action.busy}
-              onClick={() => setTurns(() => [])}
-              className="text-xs text-[var(--color-muted)] underline disabled:opacity-50"
-            >
-              Clear
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      <textarea
-        aria-label={mode === "ask" ? "Your question" : "What should change"}
-        value={text}
-        rows={2}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder={PLACEHOLDER[mode]}
-        className="w-full resize-y rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
-      />
-      {tooLong ? (
-        <p role="alert" className="text-xs text-[var(--color-danger)]">
-          Keep it under {QUESTION_MAX} characters.
-        </p>
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        {mode === "ask" ? (
-          <>
-            <span className="text-xs text-[var(--color-muted)]">Try:</span>
-            {ASK_SUGGESTIONS.map((s) => (
-              <button
-                key={s.label}
-                type="button"
-                data-suggestion
-                disabled={action.busy}
-                onClick={() => void ask(s.question)}
-                className={chipClass(false)}
+      {({ maximized }) => (
+        <>
+          <div className="flex items-start gap-2">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <div
+                role="group"
+                aria-label="Mode"
+                className="inline-flex rounded-xl bg-[var(--color-surface-2)] p-0.5"
               >
-                {s.label}
-              </button>
-            ))}
-          </>
-        ) : (
-          CHANGE_KINDS.map((k) => (
-            <button
-              key={k.id}
-              type="button"
-              data-kind={k.id}
-              aria-pressed={kind === k.id}
-              onClick={() => setKind((cur) => (cur === k.id ? null : k.id))}
-              className={chipClass(kind === k.id)}
+                {(
+                  [
+                    ["ask", "💬 Ask about this project"],
+                    ["change", "＋ Add requirement / change"],
+                  ] as const
+                ).map(([m, label]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={mode === m}
+                    data-mode={m}
+                    onClick={() => setMode(m)}
+                    className={`rounded-lg px-2.5 py-1.5 text-xs sm:text-sm ${
+                      mode === m
+                        ? "bg-[var(--color-surface)] font-semibold shadow-sm"
+                        : "text-[var(--color-muted)]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p data-hint className="text-xs text-[var(--color-muted)]">
+                {HINT[mode]}
+              </p>
+            </div>
+            <MaximizeToggle />
+          </div>
+
+          {mode === "ask" && turns.length > 0 ? (
+            <div
+              ref={threadRef}
+              data-thread
+              aria-live="polite"
+              className={`flex flex-col gap-2 overflow-y-auto ${maximized ? "min-h-0 flex-1" : "max-h-72"}`}
             >
-              <span aria-hidden>{k.icon}</span>
-              {k.label}
-            </button>
-          ))
-        )}
-        <span className="flex-1" />
-        {mode === "ask" ? (
-          <ActionButton
-            busy={action.busy}
-            pendingLabel="Asking…"
-            disabled={!text.trim() || tooLong}
-            onClick={() => void ask(text)}
-            className="rounded-xl bg-[var(--color-accent)] px-4 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
-          >
-            Ask
-          </ActionButton>
-        ) : (
-          <button
-            type="button"
-            disabled={!text.trim() && !kind}
-            onClick={handOver}
-            className="rounded-xl bg-[var(--color-accent)] px-4 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
-          >
-            Continue ›
-          </button>
-        )}
-      </div>
-    </section>
+              {turns.map((turn) => (
+                <AskTurnView
+                  key={turn.id}
+                  turn={turn}
+                  slug={slug}
+                  onNavigate={onNavigate}
+                  onTurnInto={() => onChangeRequest(suggestedRequirement(turn))}
+                  retry={
+                    turn.id === lastErrorId && turn.id === activeId
+                      ? { busy: action.busy, run: () => void retry() }
+                      : null
+                  }
+                />
+              ))}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  disabled={action.busy}
+                  onClick={() => setTurns(() => [])}
+                  className="text-xs text-[var(--color-muted)] underline disabled:opacity-50"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          ) : maximized ? (
+            <div className="flex-1" />
+          ) : null}
+
+          <textarea
+            aria-label={mode === "ask" ? "Your question" : "What should change"}
+            value={text}
+            rows={2}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={PLACEHOLDER[mode]}
+            className={`w-full resize-y rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)] ${
+              maximized ? "max-h-[40vh] min-h-15 shrink-0" : ""
+            }`}
+          />
+          {tooLong ? (
+            <p role="alert" className="text-xs text-[var(--color-danger)]">
+              Keep it under {QUESTION_MAX} characters.
+            </p>
+          ) : null}
+
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+            {mode === "ask" ? (
+              <>
+                <span className="text-xs text-[var(--color-muted)]">Try:</span>
+                {ASK_SUGGESTIONS.map((s) => (
+                  <button
+                    key={s.label}
+                    type="button"
+                    data-suggestion
+                    disabled={action.busy}
+                    onClick={() => void ask(s.question)}
+                    className={chipClass(false)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </>
+            ) : (
+              CHANGE_KINDS.map((k) => (
+                <button
+                  key={k.id}
+                  type="button"
+                  data-kind={k.id}
+                  aria-pressed={kind === k.id}
+                  onClick={() => setKind((cur) => (cur === k.id ? null : k.id))}
+                  className={chipClass(kind === k.id)}
+                >
+                  <span aria-hidden>{k.icon}</span>
+                  {k.label}
+                </button>
+              ))
+            )}
+            <span className="flex-1" />
+            {mode === "ask" ? (
+              <ActionButton
+                busy={action.busy}
+                pendingLabel="Asking…"
+                disabled={!text.trim() || tooLong}
+                onClick={() => void ask(text)}
+                className="rounded-xl bg-[var(--color-accent)] px-4 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
+              >
+                Ask
+              </ActionButton>
+            ) : (
+              <button
+                type="button"
+                disabled={!text.trim() && !kind}
+                onClick={handOver}
+                className="rounded-xl bg-[var(--color-accent)] px-4 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
+              >
+                Continue ›
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </Maximizable>
   );
 }
 
