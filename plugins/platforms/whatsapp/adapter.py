@@ -1585,6 +1585,13 @@ async def _standalone_send(
         media = media_files or []
         text = message or ""
         last_message_id = None
+        text_sent = False
+
+        def _fail(error: str) -> Dict[str, Any]:
+            # After the text went out, a failure is partial: the caller must
+            # not resend the whole message (the recipient has the text).
+            return {"error": error, "partial": True} if text_sent else {"error": error}
+
         async with aiohttp.ClientSession() as session:
             # 1) Text first (skip the /send call when this chunk is media-only).
             if text.strip():
@@ -1598,6 +1605,7 @@ async def _standalone_send(
                         return {"error": f"WhatsApp bridge error ({resp.status}): {body}"}
                     data = await resp.json()
                     last_message_id = data.get("messageId")
+                    text_sent = True
 
             # 2) Each media file as a native attachment via /send-media. The
             # bridge maps mediaType -> image/video/audio/document message kinds
@@ -1615,7 +1623,7 @@ async def _standalone_send(
                 )
             for media_path, is_voice in media:
                 if not os.path.exists(media_path):
-                    return {"error": f"WhatsApp media file not found: {media_path}"}
+                    return _fail(f"WhatsApp media file not found: {media_path}")
                 media_type = _bridge_media_type(media_path, is_voice, force_document)
                 with staged_for_bridge(media_path, media_dir) as bridge_path:
                     payload: Dict[str, Any] = {
@@ -1632,7 +1640,7 @@ async def _standalone_send(
                     ) as resp:
                         if resp.status != 200:
                             body = await resp.text()
-                            return {"error": f"WhatsApp media error ({resp.status}): {body}"}
+                            return _fail(f"WhatsApp media error ({resp.status}): {body}")
                         data = await resp.json()
                         last_message_id = data.get("messageId") or last_message_id
 
@@ -1643,7 +1651,10 @@ async def _standalone_send(
             "message_id": last_message_id,
         }
     except Exception as e:
-        return {"error": f"WhatsApp send failed: {e}"}
+        out: Dict[str, Any] = {"error": f"WhatsApp send failed: {e}"}
+        if locals().get("text_sent"):
+            out["partial"] = True
+        return out
 
 
 def interactive_setup() -> None:

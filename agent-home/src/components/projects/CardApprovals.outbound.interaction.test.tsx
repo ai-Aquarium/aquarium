@@ -173,6 +173,22 @@ describe("a proposed message on the card", () => {
     expect(within(row(view)).getByRole("alert").textContent).toContain("Not sent: SMTP down");
   });
 
+  it("says so when only the text went out", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        okJson({ ...blocked(), outbound: { event: "partial", error: "WhatsApp media error (500)" } }),
+      ),
+    );
+    const view = render(<CardDetailView slug="p22" card={blocked()} />);
+    await act(async () => {
+      fireEvent.click(within(row(view)).getByText("Approve and send"));
+    });
+    const alert = within(row(view)).getByRole("alert").textContent ?? "";
+    expect(alert).toContain("Partly sent");
+    expect(alert).toContain("WhatsApp media error (500)");
+  });
+
   it("an archived project shows the message but no buttons", () => {
     const view = render(<CardDetailView slug="p22" archived card={blocked()} />);
     expect(row(view).querySelector('[data-field="to"]')?.textContent).toBe("ap@client.example");

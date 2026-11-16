@@ -118,7 +118,7 @@ def test_deliver_message_adds_allowed_attachments(tmp_path, monkeypatch, capture
     )
     assert result == {"success": True}
     [args] = captured
-    assert args["message"].splitlines() == ["Invoice attached.", f"MEDIA:{pdf}"]
+    assert args["message"].splitlines() == ["Invoice attached.", f'MEDIA:"{pdf}"']
     assert args["account"] == "acme" and args["subject"] == "INV-7"
 
 
@@ -131,4 +131,34 @@ def test_deliver_message_refuses_a_path_the_media_check_rejects(captured, monkey
         body="Invoice\nMEDIA:/nonexistent/INV-7.pdf", account="acme",
     )
     assert "refused" in result["error"]
+    assert captured == []
+
+
+def test_deliver_message_attaches_files_of_any_extension(tmp_path, monkeypatch, captured):
+    from gateway.platforms.base import BasePlatformAdapter
+    from hermes_cli import todo_outbound
+
+    monkeypatch.setenv("HERMES_MEDIA_ALLOW_DIRS", str(tmp_path))
+    files = [tmp_path / "invite.ics", tmp_path / "ledger.bin"]
+    for f in files:
+        f.write_bytes(b"x")
+    assert todo_outbound.deliver_message(
+        channel="email", target="a@b.example", body="Files.", account="acme",
+        attachments=[str(f) for f in files],
+    ) == {"success": True}
+    media, cleaned = BasePlatformAdapter.extract_media(captured[0]["message"])
+    assert [p for p, _ in media] == [str(f) for f in files]
+    assert cleaned.strip() == "Files."
+
+
+def test_deliver_message_refuses_an_attachment_that_cannot_be_extracted(tmp_path, monkeypatch, captured):
+    from hermes_cli import todo_outbound
+
+    monkeypatch.setenv("HERMES_MEDIA_ALLOW_DIRS", str(tmp_path))
+    odd = tmp_path / 'quote"d.pdf'
+    odd.write_bytes(PDF)
+    result = todo_outbound.deliver_message(
+        channel="email", target="a@b.example", body="x", account="acme", attachments=[str(odd)],
+    )
+    assert "could not be attached" in result["error"]
     assert captured == []

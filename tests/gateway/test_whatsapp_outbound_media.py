@@ -144,3 +144,57 @@ def test_staged_name_never_carries_the_original_name(tmp_path):
     with staged_for_bridge(str(weird), str(media_dir)) as staged:
         assert "." not in os.path.basename(staged)
     assert os.listdir(media_dir) == []
+
+
+def _failing_media_bridge():
+    async def start():
+        texts = []
+
+        async def health(_request):
+            return web.json_response({"status": "connected"})
+
+        async def send(request):
+            texts.append((await request.json())["message"])
+            return web.json_response({"success": True, "messageId": "t1"})
+
+        async def send_media(_request):
+            return web.Response(status=500, text="upload failed")
+
+        app = web.Application()
+        app.router.add_get("/health", health)
+        app.router.add_post("/send", send)
+        app.router.add_post("/send-media", send_media)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        return runner, site._server.sockets[0].getsockname()[1], texts
+
+    return start()
+
+
+def test_media_failing_after_the_text_is_reported_partial(tmp_path):
+    """The text already reached the chat, so the result says ``partial``:
+    a caller must not resend the whole message."""
+    pdf = tmp_path / "INV-7.pdf"
+    pdf.write_bytes(b"%PDF")
+
+    async def run():
+        runner, port, texts = await _failing_media_bridge()
+        try:
+            res = await _standalone_send(
+                PlatformConfig(enabled=True, extra={"bridge_port": port}),
+                "12345", "Invoice attached.", media_files=[(str(pdf), False)],
+            )
+            media_only = await _standalone_send(
+                PlatformConfig(enabled=True, extra={"bridge_port": port}),
+                "12345", "", media_files=[(str(pdf), False)],
+            )
+        finally:
+            await runner.cleanup()
+        return res, media_only, texts
+
+    res, media_only, texts = asyncio.run(run())
+    assert texts == ["Invoice attached."]
+    assert res["partial"] is True and "500" in res["error"]
+    assert "partial" not in media_only and "500" in media_only["error"]

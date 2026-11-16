@@ -21,6 +21,7 @@ from hermes_cli import card_outbound, kanban_db
 from hermes_cli.projects_cli import _cmd_propose_send
 
 from tests.hermes_cli.test_projects_board_api import (  # noqa: F401 - fixture
+    OWNER,
     PREFIX,
     _card,
     _project,
@@ -44,6 +45,10 @@ def card(env, tmp_path, monkeypatch):  # noqa: F811 - pytest fixture
                 "UPDATE tasks SET workspace_path = ? WHERE id = ?", (str(ws), task_id)
             )
     monkeypatch.setenv("HERMES_KANBAN_TASK", task_id)
+    # Approving a send is a human act: the approver has a verified session.
+    monkeypatch.setattr(
+        "hermes_cli.web_server._comms_session_subject", lambda request: OWNER.user_id
+    )
     cfg = tmp_path / "email-config.json"
     cfg.write_text(json.dumps({"accounts": [{
         "id": "acme",
@@ -248,6 +253,8 @@ def test_the_workspace_file_is_snapshotted_when_proposed(env, card, capsys, smtp
         ({"channel": "sms"}, "channel"),
         ({"to": ""}, "somewhere to go"),
         ({"body": "hi\nMEDIA:/etc/passwd"}, "--attach"),
+        ({"body": "hi\nmedia:/etc/hosts.pdf"}, "--attach"),
+        ({"body": "hi\nMedia: \"/srv/x.ics\""}, "--attach"),
         ({"body": "x" * 4001}, "4000"),
     ],
 )
@@ -300,7 +307,7 @@ def test_whatsapp_leaves_by_the_named_bridge_with_the_file(env, card, capsys, mo
     assert args["account"] == "connectar"
     assert "subject" not in args
     media = [ln for ln in args["message"].splitlines() if ln.startswith("MEDIA:")]
-    assert len(media) == 1 and media[0].endswith("/INV-0042.pdf")
+    assert len(media) == 1 and media[0].endswith('/INV-0042.pdf"')
     assert str(kanban_db.outbound_root()) in media[0]
 
 
@@ -308,3 +315,131 @@ def test_the_cli_tells_the_worker_to_block_and_not_send(env, card, capsys):  # n
     assert _cmd_propose_send(_args(json=False)) == 0
     out = capsys.readouterr().out
     assert "Nothing was sent" in out and "kanban_block" in out
+
+
+def test_approving_a_send_needs_a_verified_session(env, card, capsys, smtp, monkeypatch):  # noqa: F811
+    key = _propose(capsys)["key"]
+    _set_status(card["task_id"], "blocked")
+    monkeypatch.setattr("hermes_cli.web_server._comms_session_subject", lambda request: "")
+    resp = _answer(env, card, key, "approve")
+    assert resp.status_code == 403
+    assert smtp.sent == []
+    assert [p["key"] for p in _pending(env, card)] == [key]
+    # Deny and revise send nothing, so they need no session.
+    assert _answer(env, card, key, "deny").status_code == 200
+
+
+def test_a_stored_body_naming_a_file_is_not_sent(env, card, capsys, smtp):  # noqa: F811
+    key = _propose(capsys, attach=None)["key"]
+    with kanban_db.connect_closing() as conn:
+        with kanban_db.write_txn(conn):
+            row = conn.execute(
+                "SELECT detail FROM task_approvals WHERE approval_key = ?", (key,)
+            ).fetchone()
+            detail = json.loads(row["detail"])
+            detail["body"] += "\nmedia:/etc/hosts.pdf"
+            conn.execute(
+                "UPDATE task_approvals SET detail = ? WHERE approval_key = ?",
+                (json.dumps(detail), key),
+            )
+    _set_status(card["task_id"], "blocked")
+    out = _answer(env, card, key, "approve").json()["outbound"]
+    assert out["event"] == "failed" and "not attached for review" in out["error"]
+    assert smtp.sent == []
+
+
+@pytest.mark.parametrize("name", ["invite.ics", "ledger.bin"])
+def test_any_kind_of_file_is_attached_not_pasted(env, card, capsys, smtp, name):  # noqa: F811
+    (card["ws"] / name).write_bytes(b"BEGIN:VCALENDAR\nEND:VCALENDAR\n")
+    key = _propose(capsys, attach=name)["key"]
+    _set_status(card["task_id"], "blocked")
+    assert _answer(env, card, key, "approve").json()["outbound"] == {"event": "sent"}
+    parsed = email.message_from_bytes(smtp.sent[0].as_bytes())
+    assert [p.get_filename() for p in parsed.walk() if p.get_filename()] == [name]
+    body = next(p for p in parsed.walk() if p.get_content_type() == "text/plain")
+    assert "MEDIA" not in body.get_payload(decode=True).decode()
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["a_" + "b" * 115 + ".pdf", "x" * 30 + "._" + "y" * 116 + ".pdf", "..report.pdf", "日本.pdf"],
+)
+def test_snapshot_names_are_stable(name):
+    once = card_outbound._safe_name(name)
+    assert card_outbound._safe_name(once) == once
+    assert once and not once.startswith((".", "_")) and len(once) <= 120
+
+
+def test_a_long_attachment_name_still_sends(env, card, capsys, smtp):  # noqa: F811
+    name = "a_" + "b" * 115 + ".pdf"
+    (card["ws"] / name).write_bytes(PDF)
+    key = _propose(capsys, attach=name)["key"]
+    _set_status(card["task_id"], "blocked")
+    assert _answer(env, card, key, "approve").json()["outbound"] == {"event": "sent"}
+
+
+@pytest.fixture
+def bridge(monkeypatch):
+    """A WhatsApp bridge ``amy`` on port 3001; only its network send is faked."""
+    from gateway.platform_registry import platform_registry
+    from hermes_cli.plugins import discover_plugins
+    from tools.access_policy import current_principal
+
+    monkeypatch.setenv("WHATSAPP_BRIDGES", "amy:3001")
+    discover_plugins()
+    entry = platform_registry.get("whatsapp")
+    state = {"calls": [], "result": {"success": True}}
+
+    async def _send(pconfig, chat_id, message, *, thread_id=None, media_files=None, **kw):
+        state["calls"].append({
+            "port": (pconfig.extra or {}).get("bridge_port"),
+            "chat_id": chat_id,
+            "message": message,
+            "media": [p for p, _ in media_files or []],
+            "as": current_principal()[0],
+        })
+        return dict(state["result"])
+
+    monkeypatch.setattr(entry, "standalone_sender_fn", _send)
+    return state
+
+
+def test_an_owned_bridge_sends_for_its_owner(env, card, capsys, bridge):  # noqa: F811
+    from hermes_cli import wa_bridge_owners
+
+    wa_bridge_owners.record_owner("amy", OWNER.user_id, port=3001)
+    key = _propose(capsys, channel="whatsapp", to="+85291234567", account="amy", subject=None)["key"]
+    _set_status(card["task_id"], "blocked")
+    resp = _answer(env, card, key, "approve")
+    assert resp.json()["outbound"] == {"event": "sent"}, resp.json()
+    [call] = bridge["calls"]
+    assert call["port"] == 3001 and call["as"] == OWNER.user_id
+    assert call["media"] and call["media"][0].endswith("/INV-0042.pdf")
+
+
+def test_someone_elses_bridge_is_refused(env, card, capsys, bridge):  # noqa: F811
+    from hermes_cli import wa_bridge_owners
+
+    wa_bridge_owners.record_owner("amy", "someone-else", port=3001)
+    key = _propose(capsys, channel="whatsapp", to="+85291234567", account="amy", subject=None)["key"]
+    _set_status(card["task_id"], "blocked")
+    out = _answer(env, card, key, "approve").json()["outbound"]
+    assert out["event"] == "failed" and "belongs to another person" in out["error"]
+    assert bridge["calls"] == []
+    assert [p["key"] for p in _pending(env, card)] == [key]
+
+
+def test_a_partly_sent_message_is_never_resent(env, card, capsys, bridge):  # noqa: F811
+    bridge["result"] = {"error": "WhatsApp media error (500): boom", "partial": True}
+    key = _propose(capsys, channel="whatsapp", to="+85291234567", account="amy", subject=None)["key"]
+    _set_status(card["task_id"], "blocked")
+    resp = _answer(env, card, key, "approve").json()
+    assert resp["outbound"]["event"] == "partial"
+    assert resp["pending_approvals"] == []
+    assert _answer(env, card, key, "approve").status_code == 409
+    with kanban_db.connect_closing() as conn:
+        assert card_outbound.deliver(conn, card["task_id"], key, actor="u")["error"] == "already_sent"
+        comments = [c.body for c in kanban_db.list_comments(conn, card["task_id"])]
+    assert len(bridge["calls"]) == 1
+    assert "outbound_partial" in _events(card["task_id"])
+    assert any(c.startswith("Partly sent:") for c in comments)

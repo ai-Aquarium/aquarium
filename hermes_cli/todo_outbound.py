@@ -278,7 +278,17 @@ def deliver_message(
             }
     message = body or ""
     if attachments:
-        message = "\n".join([message, *(f"MEDIA:{p}" for p in attachments)])
+        # Quoted, so a file of any extension is extracted as a file, then
+        # checked: an attachment that would not survive extraction refuses
+        # the send instead of leaving as a literal path in the text.
+        message = "\n".join([message, *(f'MEDIA:"{p}"' for p in attachments)])
+        extracted = {str(p) for p, _voice in BasePlatformAdapter.extract_media(message)[0]}
+        for path in attachments:
+            if str(path) not in extracted:
+                return {
+                    "error": f"attachment {Path(path).name!r} could not be "
+                    "attached; nothing was sent"
+                }
 
     from hermes_cli.send_cmd import _load_hermes_env
 

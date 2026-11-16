@@ -2564,7 +2564,7 @@ export interface ProjectBoardTask {
    * the project board read. */
   pending_approvals?: ProjectCardApproval[];
   /** Set on the answer to a proposed message's approval: whether it went. */
-  outbound?: { event: "sent" | "failed"; error?: string; detail?: string };
+  outbound?: { event: "sent" | "failed" | "partial"; error?: string; detail?: string };
   /** Pinned model for this card's worker (`-m` at dispatch) — the card
    * ignores the main model while this is set. Null/absent = follows main. */
   model_override?: string | null;
