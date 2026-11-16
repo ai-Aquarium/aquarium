@@ -1734,7 +1734,7 @@ export interface TriageCareSection {
   key: string;
   layer: TriageLayer;
   content: string;
-  /** The profile template's own text (template, else built-in), when Hermes sends it. */
+  /** The profile template's own text (template, else built-in); never another user's version. */
   template?: { layer: TriageLayer; content: string };
 }
 
