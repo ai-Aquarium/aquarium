@@ -947,6 +947,16 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         ),
         "options": ["stash", "discard"],
     },
+    "source_registry.pollers": {
+        "type": "select",
+        "description": (
+            "Where the email poller and WhatsApp batcher find sources to read. "
+            "'registry' reads the box source registry and falls back to the "
+            "box-wide config.json only when the registry is unreachable or "
+            "empty; 'registry_only' never falls back; 'config' is legacy."
+        ),
+        "options": ["registry", "registry_only", "config"],
+    },
 }
 
 # Categories with fewer fields get merged into "general" to avoid tab sprawl.
@@ -981,6 +991,8 @@ _CATEGORY_MERGE: Dict[str, str] = {
     "computer_use": "agent",
     # `email_poller.config_path` is the only email_poller field.
     "email_poller": "general",
+    # `source_registry.pollers` is the only source_registry field.
+    "source_registry": "general",
 }
 
 # Display order for tabs — unlisted categories sort alphabetically after these.
