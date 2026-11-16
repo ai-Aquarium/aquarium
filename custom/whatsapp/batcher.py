@@ -4,7 +4,7 @@ WhatsApp Unified Batcher
 
 Polls both Bridge A (port 3000) and Bridge B (port 3001) for messages.
 - Writes raw messages to SQLite immediately
-- Groups messages by sender+source_phone with 5s debounce window
+- Groups messages by sender+source_phone+source with 5s debounce window
 - Emits completed batches as JSON files for downstream triage
 - Updates contacts table
 """
@@ -66,7 +66,12 @@ def get_db():
 
 # Batching state
 _batch_lock = threading.Lock()
-_pending_batches = {}  # key: "sender_phone:source_phone" -> { batch_id, messages, timer, ... }
+_pending_batches = {}  # key: batch_key(...) -> { batch_id, messages, timer, ... }
+
+
+def batch_key(sender_phone, source_phone, source_id=None, owner_user_id=None):
+    """One pending batch per sender on one source: never mixes two sources."""
+    return f"{sender_phone}:{source_phone}:{source_id or ''}:{owner_user_id or ''}"
 
 
 def extract_sender_phone(msg):
@@ -402,10 +407,10 @@ def process_message(msg, source_phone, bridge_port=None, owner_user_id=None, sou
         pass
     
     # Add to batch
-    batch_key = f"{sender_phone}:{source_phone}"
+    key = batch_key(sender_phone, source_phone, source_id, owner_user_id)
     with _batch_lock:
-        if batch_key in _pending_batches:
-            batch = _pending_batches[batch_key]
+        if key in _pending_batches:
+            batch = _pending_batches[key]
             batch['messages'].append({
                 'msg_id': msg_id, 'text': text, 'media_type': media_type,
                 'timestamp': timestamp, 'sender_name': sender_name,
@@ -414,18 +419,20 @@ def process_message(msg, source_phone, bridge_port=None, owner_user_id=None, sou
             # Cancel old timer, start new one
             if batch.get('timer'):
                 batch['timer'].cancel()
-            batch['timer'] = threading.Timer(BATCH_WINDOW_SEC, flush_batch, args=[batch_key])
+            batch['timer'] = threading.Timer(BATCH_WINDOW_SEC, flush_batch, args=[key])
             batch['timer'].daemon = True
             batch['timer'].start()
         else:
             batch_id = str(uuid.uuid4())
-            timer = threading.Timer(BATCH_WINDOW_SEC, flush_batch, args=[batch_key])
+            timer = threading.Timer(BATCH_WINDOW_SEC, flush_batch, args=[key])
             timer.daemon = True
             timer.start()
-            _pending_batches[batch_key] = {
+            _pending_batches[key] = {
                 'batch_id': batch_id,
                 'sender_phone': sender_phone,
                 'source_phone': source_phone,
+                'source_id': source_id,
+                'owner_user_id': owner_user_id,
                 'messages': [{
                     'msg_id': msg_id, 'text': text, 'media_type': media_type,
                     'timestamp': timestamp, 'sender_name': sender_name,
@@ -438,10 +445,10 @@ def process_message(msg, source_phone, bridge_port=None, owner_user_id=None, sou
     print(f"[batcher] {source_phone} <- {sender_phone}: {(text or '[media]')[:60]}")
 
 
-def flush_batch(batch_key):
+def flush_batch(key):
     """Flush a completed batch to file."""
     with _batch_lock:
-        batch = _pending_batches.pop(batch_key, None)
+        batch = _pending_batches.pop(key, None)
     
     if not batch:
         return
@@ -450,6 +457,8 @@ def flush_batch(batch_key):
         'batch_id': batch['batch_id'],
         'sender_phone': batch['sender_phone'],
         'source_phone': batch['source_phone'],
+        'source_id': batch.get('source_id'),
+        'owner_user_id': batch.get('owner_user_id'),
         'message_count': len(batch['messages']),
         'messages': batch['messages'],
         'started_at': batch['started_at'],

@@ -2,8 +2,9 @@
 """
 Email Batcher for Hermes Agent
 
-Groups incoming emails by sender+account with a 30-second debounce window.
-Thread-aware: emails in the same thread within the window are batched together.
+Groups incoming emails by sender+account+source with a 30-second debounce window.
+Thread-aware: emails in the same thread within the window are batched together,
+but a batch never mixes two registry sources (or owners).
 Outputs batch JSON files to /opt/data/email-messages/batches/
 """
 
@@ -50,33 +51,36 @@ def get_unbatched_emails(db):
     ).fetchall()
     return [dict(r) for r in rows]
 
+def source_key(email_row):
+    """Which registry source (and owner) a stored email was read from."""
+    return f"{email_row.get('source_id') or ''}|{email_row.get('owner_user_id') or ''}"
+
+
 def group_emails(emails):
-    """Group emails by sender+account, with thread awareness."""
+    """Group emails by sender+account+source, with thread awareness."""
     groups = defaultdict(list)
-    
+
     for email_row in emails:
-        # Primary grouping key: sender + account
-        key = f"{email_row['from_addr']}|{email_row['account_id']}"
-        
-        # Check if this email belongs to an existing thread in another group
+        source = source_key(email_row)
+        key = f"{email_row['from_addr']}|{email_row['account_id']}|{source}"
+
+        # Join a group already holding this thread, if it is from the same source
         thread_id = email_row.get('thread_id')
         if thread_id:
-            # Check if any existing group has emails from this thread
             found_thread_group = None
             for gkey, gemails in groups.items():
                 for ge in gemails:
-                    if ge.get('thread_id') == thread_id:
+                    if ge.get('thread_id') == thread_id and source_key(ge) == source:
                         found_thread_group = gkey
                         break
                 if found_thread_group:
                     break
-            
+
             if found_thread_group and found_thread_group != key:
-                # Add to existing thread group instead
                 key = found_thread_group
-        
+
         groups[key].append(email_row)
-    
+
     return groups
 
 def write_batch(group_key, emails, batch_id):
@@ -89,6 +93,8 @@ def write_batch(group_key, emails, batch_id):
         'batch_id': batch_id,
         'channel': 'email',
         'account_id': account_id,
+        'source_id': emails[0].get('source_id'),
+        'owner_user_id': emails[0].get('owner_user_id'),
         'sender': sender_addr,
         'sender_name': sender_name,
         'email_count': len(emails),
