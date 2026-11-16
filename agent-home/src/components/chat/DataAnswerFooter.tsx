@@ -6,6 +6,7 @@ import { dataPath } from "@/components/data/format";
 import { JSON_HEADERS, readJson } from "@/components/sites/format";
 import { ActionButton } from "@/components/ui/ActionButton";
 import { InlineAlert } from "@/components/ui/InlineAlert";
+import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import { useT } from "@/i18n";
 import type { DataAnswer } from "@/lib/chat/data-answer";
 
@@ -58,9 +59,22 @@ export function DataAnswerFooter({ answer }: { answer: DataAnswer }) {
         </button>
       </p>
       {sqlOpen ? (
-        <pre className="max-h-64 overflow-auto rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-mono text-xs whitespace-pre-wrap text-[var(--color-muted)]">
-          {answer.sql}
-        </pre>
+        <Maximizable title={t("answer.sqlTitle")} component="DataAnswerSql" className="flex flex-col gap-1">
+          {({ maximized }) => (
+            <>
+              {maximized ? null : (
+                <div className="flex justify-end">
+                  <MaximizeToggle />
+                </div>
+              )}
+              <pre
+                className={`${maximized ? "min-h-0 flex-1" : "max-h-64"} overflow-auto rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-mono text-xs whitespace-pre-wrap text-[var(--color-muted)]`}
+              >
+                {answer.sql}
+              </pre>
+            </>
+          )}
+        </Maximizable>
       ) : null}
       {answer.undescribed.length ? (
         <InlineAlert tone="warn">{t("answer.undescribed", { tables: answer.undescribed.join(", ") })}</InlineAlert>

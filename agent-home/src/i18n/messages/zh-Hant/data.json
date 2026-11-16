@@ -148,6 +148,7 @@
     "noDictionary": "根據 {source} · 尚未有已核准的資料字典",
     "showSql": "顯示 SQL",
     "hideSql": "隱藏 SQL",
+    "sqlTitle": "SQL 查詢",
     "wasRight": "這個答案正確嗎？",
     "yes": "正確，儲存為範例",
     "saving": "儲存中…",
