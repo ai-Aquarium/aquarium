@@ -15,6 +15,7 @@ import {
   serializeFiltersOpen,
 } from "@/components/chat/ChatFiltersPanel";
 import { ChatConversationView } from "@/components/chat/ChatConversationView";
+import { DataSourcePicker } from "@/components/chat/DataSourcePicker";
 import { InSessionSearch } from "@/components/chat/InSessionSearch";
 import { SessionModal } from "@/components/chat/SessionModal";
 import { TagFilterBar } from "@/components/chat/TagFilterBar";
@@ -60,6 +61,8 @@ export interface ChatPaneProps {
   /** Words to highlight on arrival (`?find=`): a message-search result opened
    * from another chat. */
   initialHighlight?: string;
+  /** `?source=<id>`: the data source the "Ask about" picker starts on. */
+  initialDataSourceId?: string;
 }
 
 /**
@@ -77,6 +80,7 @@ export function ChatPane({
   initialDraft,
   autoSend = false,
   initialHighlight,
+  initialDataSourceId,
 }: ChatPaneProps) {
   const router = useRouter();
   // Every client read below carries the selected profile, because a profile is
@@ -545,6 +549,7 @@ export function ChatPane({
         composerInitialText={autoSend ? undefined : initialDraft}
         sessionRef={sessions.find((s) => s.id === sessionId)?.ref}
         compactOnPhone
+        aboveComposer={<DataSourcePicker initialId={initialDataSourceId} />}
       />
 
 

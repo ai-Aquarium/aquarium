@@ -25,7 +25,6 @@ import { useGoogleClientT } from "@/components/settings/googleClientStrings";
 import { TelegramLinks } from "@/components/settings/TelegramLinks";
 import { TelegramBotSetup } from "@/components/settings/TelegramBotSetup";
 import { EmailMailboxes } from "@/components/settings/EmailMailboxes";
-import { SqlServerConnections } from "@/components/settings/SqlServerConnections";
 import { WindowsServerConnections } from "@/components/settings/WindowsServerConnections";
 import { VpnConnections } from "@/components/settings/VpnConnections";
 import { WhatsAppBridges } from "@/components/settings/WhatsAppBridges";
@@ -390,9 +389,8 @@ function InOutSection({
       <h2 className="text-base font-semibold">{t("inOut")}</h2>
       <p className="mb-4 text-xs text-[var(--color-muted)]">
         Where messages, mail and calendar events come in and go out: Google
-        accounts, email, private networks (VPN), SQL Server databases, Windows
-        servers (PowerShell), WhatsApp
-        bridges and Telegram.
+        accounts, email, private networks (VPN), Windows servers (PowerShell),
+        WhatsApp bridges and Telegram. Databases are data sources, under Data.
       </p>
       <div className="space-y-6 border-t border-[var(--color-border)] pt-4">
         {isOwner && (
@@ -411,7 +409,17 @@ function InOutSection({
         <ConnectedAccounts />
         <EmailMailboxes />
         <VpnConnections />
-        <SqlServerConnections isOwner={isOwner} />
+        <Link
+          href="/data"
+          data-component="DataSourcesLink"
+          className="flex min-h-11 items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg)] p-3"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold">{t("dataSources.title")}</span>
+            <span className="block text-xs text-[var(--color-muted)]">{t("dataSources.body")}</span>
+          </span>
+          <ChevronRightIcon size={16} aria-hidden className="shrink-0 text-[var(--color-muted)]" />
+        </Link>
         <WindowsServerConnections />
         <WhatsAppBridges />
         <TelegramBotSetup />
