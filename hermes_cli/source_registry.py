@@ -361,7 +361,10 @@ async def initialize_box(connection: "asyncpg.Connection") -> None:
     profile has claimed (a ``schema_owner`` table in it): that would mean a
     profile is writing its app tables here.
     """
+    from hermes_cli import triage_router
+
     await connection.execute(DDL)
+    await triage_router.ensure_schema(connection)
     await _refuse_profile_claim(connection)
     await connection.execute(
         f"INSERT INTO {BOX_SCHEMA}.box_marker (singleton, kind) VALUES (TRUE, $1) "
@@ -1027,10 +1030,17 @@ async def remove_sources_for_user(connection: "asyncpg.Connection", *, user_id: 
     """Delete every source ``user_id`` owns (routes cascade); the count removed.
 
     Called when the person is removed from the box (no profile enrols them).
+    Their routing decisions (FG-03 P4) go too.
     """
     status = await connection.execute(
         f"DELETE FROM {BOX_SCHEMA}.sources WHERE owner_user_id = $1", user_id
     )
+    if await connection.fetchval(
+        "SELECT to_regclass($1)", f"{BOX_SCHEMA}.routing_decisions"
+    ) is not None:
+        await connection.execute(
+            f"DELETE FROM {BOX_SCHEMA}.routing_decisions WHERE owner_user_id = $1", user_id
+        )
     return _count(status)
 
 

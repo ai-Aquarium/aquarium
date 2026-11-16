@@ -232,6 +232,7 @@ SIGNED_IN = {
     "PUT /api/sources/{source_id}/routes/{profile}",
     "DELETE /api/sources/{source_id}",
     "GET /api/sources/conflicts",
+    "GET /api/sources/decisions",
     # data_dictionary_api: the handler checks the caller's access to the source (404 otherwise)
     "GET /api/data/sources",
     "GET /api/data/sources/{source_id}",

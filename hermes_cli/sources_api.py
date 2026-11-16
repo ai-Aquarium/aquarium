@@ -4,7 +4,8 @@ Each source (mailbox, WhatsApp number, Telegram bot) has one owner; every
 write is the owner's own, except transfer (box owner/admin). Listing every
 source on the box (``?all=1``) is box owner/admin only. The store is
 :mod:`hermes_cli.source_registry`; no secret ever passes through here
-(``credential_ref`` is a pointer).
+(``credential_ref`` is a pointer). Routing decisions (FG-03 P4) are the
+owner's own; ``?all=1`` (box owner/admin) is for support.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from hermes_cli import source_registry as registry
+from hermes_cli import triage_router
 
 router = APIRouter(prefix="/api/sources")
 
@@ -164,3 +166,34 @@ async def conflicts(request: Request, all: bool = False):
         return [c.as_dict() for c in rows]
 
     return {"conflicts": await _with_box(run)}
+
+
+@router.get("/decisions")
+async def decisions(
+    request: Request,
+    source_id: Optional[str] = None,
+    batch_id: Optional[str] = None,
+    limit: int = 50,
+    all: bool = False,
+):
+    """Why each of the caller's batches went to which profile (newest first).
+
+    Only the caller's own decisions; ``?all=1`` lists everyone's for the box
+    owner/admin. No batch text is stored, only the router's reasons.
+    """
+    principal = await _caller(request)
+    user_id = principal.user_id
+    if all and not await registry.is_box_admin(user_id):
+        raise HTTPException(status_code=403, detail="Only the box owner or an admin can list every decision.")
+
+    async def run(connection):
+        rows = await triage_router.list_decisions(
+            connection,
+            owner_user_id=None if all else user_id,
+            source_id=source_id or None,
+            batch_id=batch_id or None,
+            limit=limit,
+        )
+        return [d.as_dict() for d in rows]
+
+    return {"decisions": await _with_box(run)}

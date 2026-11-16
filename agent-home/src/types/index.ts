@@ -1543,6 +1543,30 @@ export interface SourceClaimConflict {
   resolved_at: string | null;
 }
 
+/** FG-03 P4: the router's call on one profile for one batch. */
+export interface RouteChoice {
+  profile: string;
+  selected: boolean;
+  reason: string;
+}
+
+/** FG-03 P4: which of the owner's profiles got one batch, and why. */
+export interface RoutingDecision {
+  decision_id: number | null;
+  batch_id: string;
+  source_id: string;
+  channel: SourceChannel;
+  owner_user_id: string;
+  choices: RouteChoice[];
+  selected: string[];
+  model: string | null;
+  attempts: number;
+  /** The router failed every attempt, so every routed profile got the batch. */
+  fallback: boolean;
+  error: string | null;
+  decided_at: string | null;
+}
+
 export interface SourceInput {
   channel: SourceChannel;
   address: string;

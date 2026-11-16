@@ -15,6 +15,7 @@ import sys
 from typing import Any, Awaitable, Callable
 
 from hermes_cli import source_registry as registry
+from hermes_cli import triage_router
 
 
 def _owner_user_id() -> str:
@@ -151,6 +152,47 @@ def source_conflicts_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _describe_decision(decision: triage_router.RoutingDecision) -> str:
+    picked = ", ".join(decision.selected) or "none"
+    flags = []
+    if decision.fallback:
+        flags.append(f"fallback after {decision.attempts} attempts")
+    if decision.error:
+        flags.append(f"error: {decision.error}")
+    extra = f"  [{'; '.join(flags)}]" if flags else ""
+    when = f"{decision.decided_at:%Y-%m-%d %H:%M} " if decision.decided_at else ""
+    lines = [
+        f"{when}{decision.channel:9} batch {decision.batch_id} -> {picked}{extra}",
+        f"          source {decision.source_id}  owner {decision.owner_user_id}"
+        f"  model {decision.model or '-'}",
+    ]
+    for choice in decision.choices:
+        mark = "+" if choice.selected else "-"
+        lines.append(f"          {mark} {choice.profile}: {choice.reason or '-'}")
+    return "\n".join(lines)
+
+
+def source_decisions_command(args: argparse.Namespace) -> int:
+    owner = None if args.all else _actor(args)
+
+    async def run(connection):
+        source_id = None
+        if args.source:
+            source_id = (await _resolve(connection, args.source)).source_id
+        return await triage_router.list_decisions(
+            connection, owner_user_id=owner, source_id=source_id,
+            batch_id=args.batch, limit=args.limit,
+        )
+
+    rows = _run(run)
+    _emit(
+        args,
+        {"decisions": [d.as_dict() for d in rows]},
+        "\n".join(_describe_decision(d) for d in rows) or "No routing decisions.",
+    )
+    return 0
+
+
 def register_source_subparser(subparsers: argparse._SubParsersAction) -> None:
     """Register ``hermes source`` and its sub-actions."""
     parser = subparsers.add_parser(
@@ -207,3 +249,13 @@ def register_source_subparser(subparsers: argparse._SubParsersAction) -> None:
     con.add_argument("--resolved", action="store_true", help="Include resolved ones")
     common(con, actor=False)
     con.set_defaults(func=source_conflicts_command)
+
+    dec = sub.add_parser(
+        "decisions", help="Why each batch went to which profile (the triage router)"
+    )
+    dec.add_argument("--source", default=None, help="Source id or channel:address")
+    dec.add_argument("--batch", default=None, help="One batch id")
+    dec.add_argument("--limit", type=int, default=50, help="Newest N (default 50)")
+    dec.add_argument("--all", action="store_true", help="Every owner's decisions")
+    common(dec)
+    dec.set_defaults(func=source_decisions_command)
