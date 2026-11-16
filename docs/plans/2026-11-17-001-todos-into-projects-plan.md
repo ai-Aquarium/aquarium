@@ -1,6 +1,6 @@
 ---
 title: "plan: move To-dos into Projects, then remove To-dos in stages"
-status: draft — Leo decided Q3, Q4 and Q6 (2026-11-17); Q1, Q2 and Q5 still open
+status: draft — Leo decided Q1–Q4 and Q6 (2026-11-17); Q5 still open
 date: 2026-11-17
 type: plan
 origin: >
@@ -45,10 +45,12 @@ stage, and old links keep working.
 
 ## Where triage asks land — default and alternatives
 
-**Default (A): one private "Inbox" project per person, asks land in its Triage column.**
-Created automatically the first time triage finds an ask for that person. Private (only the
-owner sees it; see risk 1 about admins), autonomy **Manual** so nothing runs until the
-person taps Work on this, no schedule, no plan. It looks like any other project, so there
+**Chosen (A, Leo Q1): one private "Inbox" project per person, asks land in its Triage column.**
+Created automatically the first time triage finds an ask for that person. Each card's
+**responder** is the person the ask is for. The box owner and admins can always see all
+data (Leo Q2), but by default every board shows only the cards where *you* are the
+responder; owner and admins get a **Mine / Everyone** switch. Autonomy **Manual** so nothing
+runs until the person taps Work on this, no schedule, no plan. It looks like any other project, so there
 is nothing new to learn.
 
 Alternatives considered:
@@ -125,8 +127,9 @@ to-do columns are just no longer written.
 ## Risks
 
 1. **Privacy.** A to-do is private to its person; only the box **owner** can see everyone's.
-   Cards are wider: a private card is visible to its person, the box owner **and box admins**. Moving asks there means admins
-   could read other people's triaged mail asks unless we keep admins out of Inbox projects.
+   Cards are wider: box **admins** can see them too, which is what Leo wants (Q2). The UI must
+   still default to "Mine" everywhere (board, Needs you, badge, search), so nobody stumbles
+   on someone else's asks; "Everyone" is a deliberate switch for owner and admins only.
 2. **Volume.** Triage makes a lot of asks; a busy Inbox board, and Needs you (which now
    lists every new ask), can get long. Mitigations:
    the 3-per-batch cap, 14-day auto-archive of silent asks, and filters on the board.
@@ -140,15 +143,9 @@ to-do columns are just no longer written.
 
 ## Open questions for Leo
 
-1. **Where asks land.** Default A (private Inbox project per person). OK, or do you want
-   B (route into matching projects) or C (shared triage project per team mailbox) now?
-   *Example:* Ada emails sales@ about the tender deadline. A: a card in Leo's Inbox › Triage.
-   B: a card in the *Tender 2027* project's Triage column (Ada is a contact there).
-   C: a card in a shared *sales@ triage* project that the whole sales team sees.
-2. **Admin visibility.** Should admins be able to see other people's Inbox cards (as with
-   private cards today), or only the person (plus the box owner, as with To-dos)?
-   *Example:* triage makes Leo a card "Reply to the bank about the loan rate". Can Grace,
-   a box admin, open it?
+1. ~~Where asks land~~ — **decided:** A, a private Inbox project per person.
+2. ~~Admin visibility~~ — **decided:** owner and admins can always see all data; by default
+   the UI shows only cards where you are the immediate responder.
 3. ~~Silent vs urgent~~ — **decided:** every new ask shows in Needs you.
 4. ~~Old data~~ — **decided:** migrate all to-dos, including done and dismissed.
 5. **Name.** The new project's name. "Inbox" is already the Apps tile for all messages, so
