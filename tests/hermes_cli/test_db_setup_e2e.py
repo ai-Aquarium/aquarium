@@ -188,7 +188,7 @@ def _migrate(owner_dsn: str) -> None:
     db_setup._setup_allowed.clear()
     rows = db_migrate.migrate(owner_dsn, config=_config("${DATABASE_URL}"))
     assert [r for r in rows if r[2]] == []
-    assert {mode for mode, _, _ in rows} == {"prod", "dev"}
+    assert {mode for mode, _, _ in rows} == {"prod", "dev", "box"}  # box: source registry
 
 
 def test_owner_login_still_sets_tables_up_on_first_use(postgres_dsn: str) -> None:
