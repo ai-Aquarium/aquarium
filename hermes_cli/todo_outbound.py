@@ -106,12 +106,31 @@ def target_from_arrival(item: Mapping[str, Any]) -> dict[str, Optional[str]]:
     in a private chat with its author answers a different question than the one
     that was asked.
     """
+    channel = str(item.get("surface") or "")
+    if channel == "email":
+        # An email arrival's conversation is its thread / Message-ID, not an
+        # address: the reply goes to the sender, threaded under the message.
+        return {
+            "channel": channel,
+            "target": str(item.get("sender_id") or ""),
+            "account_id": (str(item["account_id"]) if item.get("account_id") else None),
+            "thread_id": (str(item["external_id"]) if item.get("external_id") else None),
+            "subject": reply_subject(item.get("subject")),
+        }
     target = str(item.get("conversation") or item.get("sender_id") or "")
     return {
-        "channel": str(item.get("surface") or ""),
+        "channel": channel,
         "target": target,
         "account_id": (str(item["account_id"]) if item.get("account_id") else None),
     }
+
+
+def reply_subject(subject: Any) -> Optional[str]:
+    """``Re: <subject>`` for an email reply (never ``Re: Re: ...``)."""
+    text = str(subject or "").strip()
+    if not text:
+        return None
+    return text if text.lower().startswith("re:") else f"Re: {text}"
 
 
 def parse_action(
@@ -140,10 +159,14 @@ def parse_action(
         channel=channel,
         target=target,
         body=body[:MAX_BODY_CHARS],
-        subject=str(payload.get("subject") or "").strip()[:MAX_SUBJECT_CHARS],
+        subject=str(
+            payload.get("subject") or defaults.get("subject") or ""
+        ).strip()[:MAX_SUBJECT_CHARS],
         account_id=str(account_id) if account_id else None,
         thread_id=(
-            str(payload["thread_id"]) if payload.get("thread_id") else None
+            str(payload.get("thread_id") or defaults.get("thread_id"))
+            if (payload.get("thread_id") or defaults.get("thread_id"))
+            else None
         ),
     )
 
@@ -317,6 +340,23 @@ def deliver_message(
         return {"error": "invalid JSON from send_message_tool", "raw": result_json}
 
 
+async def _arrival_for(store, principal, todo_id: str) -> Optional[dict[str, Any]]:
+    """The arrival behind ``todo_id`` (its ``source_ref``), when it has one."""
+    getter = getattr(store, "get", None)
+    if getter is None:
+        return None
+    try:
+        todo = await getter(principal, todo_id)
+    except Exception as exc:  # noqa: BLE001 - no to-do row: nothing to compare
+        log.debug("todo_outbound: to-do %s unavailable (%s)", todo_id, exc)
+        return None
+    if todo is None or not getattr(todo, "source_ref", None):
+        return None
+    from hermes_cli.todo_work import _load_arrival
+
+    return await _load_arrival(store, principal, todo)
+
+
 async def execute_proposal(
     store: "TodoStore",
     principal: "Principal",
@@ -361,14 +401,40 @@ async def execute_proposal(
         return {"error": "empty_body", "detail": "The approval has no body to send."}
 
     channel = routing["channel"] or ""
-    result_payload = deliver_message(
-        channel=channel,
-        target=routing["target"] or "",
-        thread=routing["thread"] or None,
-        body=body,
-        account=routing["account"] or None,
-        subject=routing["subject"] or None,
-    )
+    # FG-03 P6: the reply leaves by the arrival's own account, and only its
+    # source's owner may send from it — checked at send time, not just when
+    # the proposal was made.
+    from hermes_cli.reply_accounts import ReplyRefused, check_reply
+    from tools.access_policy import acting_as
+
+    arrival = await _arrival_for(store, principal, todo_id)
+    try:
+        await check_reply(
+            principal.user_id,
+            channel,
+            routing["account"] or None,
+            target=routing["target"] or "",
+            arrival=arrival,
+        )
+    except ReplyRefused as refused:
+        return {"error": refused.code, "detail": refused.detail}
+
+    thread, subject = routing["thread"] or None, routing["subject"] or None
+    if channel == "email" and arrival:
+        # Thread under the arrival even when the proposal predates threading.
+        defaults = target_from_arrival(arrival)
+        thread = thread or defaults.get("thread_id")
+        subject = subject or defaults.get("subject")
+
+    with acting_as(principal.user_id, getattr(principal, "role", None)):
+        result_payload = deliver_message(
+            channel=channel,
+            target=routing["target"] or "",
+            thread=thread,
+            body=body,
+            account=routing["account"] or None,
+            subject=subject,
+        )
 
     delivered = not result_payload.get("error")
     event = "sent" if delivered else "failed"
