@@ -132,6 +132,18 @@ deploy procedure. Do not use the old Alibaba box.
      role passwords, so run migrate as, or readable by, the hermes service user.
    - Check that every step reports OK. A "schema owner" error means the
      admin address wasn't used.
+   - **Close pg_net** (`deploy/hermes-lock-pg-net`, as root). Supabase's
+     pg_net extension grants PUBLIC usage on schema `net` and every right on
+     `net.http_request_queue` / `net._http_response`, so on a stock install the
+     sandbox login can reach those two tables and every app-data question is
+     refused. Only `supabase_admin` owns them, so the script runs
+     `docker exec supabase-db psql -U supabase_admin`: it revokes every grant
+     on `net` and its tables, sequences and functions from PUBLIC and any role
+     but `postgres`, `service_role` and `supabase_functions_admin` (database
+     webhooks run as it), then re-grants those three. `install-aquarium.sh`,
+     `hermes-deploy.sh` and `aquarium update` run it after migrating (a pg_net
+     upgrade re-adds the PUBLIC grants); it does nothing without pg_net or the
+     container.
 3. **Restart the web server.** The hourly schema-change sweep
    (`schema_check_loop`) starts in its lifespan when
    `site_sources.scheduler_enabled` is true (the site database is configured

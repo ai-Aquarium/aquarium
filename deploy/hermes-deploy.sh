@@ -328,6 +328,12 @@ for cfg in ${HERMES_HOME_GLOB:-/opt/data/hermes-home*/config.yaml}; do
 done
 unset dsn
 
+# pg_net's install (and each upgrade) opens schema net to every login; only
+# supabase_admin can close it, through the database container.
+echo "== locking down pg_net =="
+bash "$REPO/deploy/hermes-lock-pg-net" \
+  || echo "WARNING: could not lock down pg_net; app-data questions stay refused" >&2
+
 # The agent's terminal runs as hermes-tools: raw mail/WhatsApp/calendar stores
 # and old database copies stay closed to it (FG-38).
 echo "== closing raw data stores =="
