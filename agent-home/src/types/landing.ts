@@ -50,6 +50,11 @@ export interface NeedsYouEntry {
     session_id?: string | null;
     run_id?: string | null;
     profile?: string | null;
+    /** Triage arrival this entry is about (`arrival:<surface>:<account>:<id>`);
+     *  rows from several profiles for one arrival are merged into one entry. */
+    arrival_key?: string | null;
+    /** Every profile that raised this arrival's to-do/alert. */
+    profiles?: string[] | null;
   };
   created_at: number;
   href: string;

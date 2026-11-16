@@ -95,8 +95,16 @@ async def announce(
     todo: "Todo",
     *,
     now: Optional[datetime] = None,
+    arrival_key: Optional[str] = None,
 ) -> Announcement:
-    """Raise one proactive ask for ``todo``. Idempotent per to-do."""
+    """Raise one proactive ask for ``todo``. Idempotent per to-do.
+
+    ``arrival_key`` (``hermes_cli.needs_you.arrival_key``) tags the row with
+    the arrival it came from, so "Needs you" folds the same arrival's asks
+    from several profiles into one entry.
+    """
+    from hermes_cli.needs_you import with_arrival
+
     body = format_body(todo)
     result = await notifications.create(
         kind="proactive_ask",
@@ -107,7 +115,7 @@ async def announce(
         command="",
         reversible=True,
         visibility=todo.visibility,
-        dedupe_key=f"todo:{todo.id}",
+        dedupe_key=with_arrival(f"todo:{todo.id}", arrival_key),
         now=now,
     )
     won = await store.mark_notified(principal, todo.id)

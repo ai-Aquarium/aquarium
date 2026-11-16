@@ -34,6 +34,7 @@ import json
 import os
 import re
 import time
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -156,11 +157,21 @@ def _take_legacy_entries(shared_file):
     return legacy, kept
 
 
-def remember_facts(facts, *, source, sender, config_path=None):
+def remember_facts(facts, *, source, sender, config_path=None, memory_dir=None):
     """Append facts to the inbox-facts file using the § delimiter.
 
     Each fact is a self-contained statement. The owner's next session shows
     them in the untrusted inbox block of its system prompt.
+
+    ``memory_dir`` (profile-scoped triage, FG-03 P5) is one person's
+    participation dir in one profile (``tools.memory_tool.get_memory_dir(uid)``
+    = ``memories/users/<uid>/``): the facts go to ``INBOX_FACTS.md`` there,
+    which only that person's sessions in that profile render, under the same
+    untrusted header. Never their ``MEMORY.md`` (that renders as trusted
+    memory, which would undo F6), and never the profile's own inbox (that is
+    the *profile owner's*: John's mail would reach the CFO profile's owner).
+    The ``memory_file`` override and the legacy MEMORY.md migration do not
+    apply to it.
 
     Args:
         facts: list of {"fact": str, "category": str} dicts
@@ -180,7 +191,10 @@ def remember_facts(facts, *, source, sender, config_path=None):
     max_facts = _get_max_facts(config_path)
     facts = facts[:max_facts]  # cap to prevent flooding
 
-    memory_file = _get_memory_file(config_path)
+    memory_file = (
+        Path(memory_dir) / INBOX_FILENAME if memory_dir is not None
+        else _get_memory_file(config_path)
+    )
 
     # Ensure the directory exists
     memory_file.parent.mkdir(parents=True, exist_ok=True)
@@ -214,11 +228,13 @@ def remember_facts(facts, *, source, sender, config_path=None):
     if not entries:
         return 0
 
-    shared_file = _get_memory_dir() / 'MEMORY.md'
+    shared_file = _get_memory_dir() / 'MEMORY.md' if memory_dir is None else None
     # Lock order: inbox, then shared. The memory tool only ever holds one.
     try:
-        with file_lock(memory_file), file_lock(shared_file):
-            legacy, shared_kept = _take_legacy_entries(shared_file)
+        with file_lock(memory_file), (file_lock(shared_file) if shared_file else nullcontext()):
+            legacy, shared_kept = (
+                _take_legacy_entries(shared_file) if shared_file else ([], None)
+            )
             existing = read_entries(memory_file)
             combined = list(dict.fromkeys(legacy + existing + entries))
             combined = _fit_to_budget(combined, _get_max_file_chars(config_path))
