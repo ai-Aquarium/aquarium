@@ -277,7 +277,7 @@ def test_helper_spec_only_carries_helper_keys(file_store):
         "routes": ["10.20.0.0/16"],
         "share_path": "//fileserver01/Shared",
         "share_password": "s3cret-share",
-        "idle_minutes": 30,
+        "idle_minutes": 0,
     }
 
 
@@ -292,7 +292,7 @@ def test_view_never_contains_secrets(file_store, helper):
     assert (
         view["port"] == 443
         and view["auto_connect"] is True
-        and view["idle_minutes"] == 30
+        and view["idle_minutes"] == 0
     )
 
 
@@ -734,7 +734,7 @@ def test_connection_only_payload_validates_and_spec_has_no_routes(file_store):
     validate_payload("fortinet-vpn", dict(BARE))
     spec = vpn.helper_spec(put(file_store, OWNER, payload=BARE), "office-files")
     assert "routes" not in spec and "share_path" not in spec
-    assert spec["username"] == "alice" and spec["idle_minutes"] == 30
+    assert spec["username"] == "alice" and spec["idle_minutes"] == 0
 
 
 def test_connection_only_vpn_over_http(client, helper):

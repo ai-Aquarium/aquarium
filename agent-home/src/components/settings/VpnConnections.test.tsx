@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   VpnConnections,
   buildPayload,
+  formError,
   formatLocalTime,
   groupFingerprint,
 } from "@/components/settings/VpnConnections";
@@ -123,6 +124,7 @@ describe("helpers", () => {
         username: "leolau",
         password: "",
         realm: "",
+        idleMinutes: "45",
         visibility: "private",
       },
       {
@@ -139,6 +141,22 @@ describe("helpers", () => {
     expect(payload.trusted_cert).toBe(SHA);
     expect(payload.idle_minutes).toBe(45);
     expect(payload.auto_connect).toBe(true);
+  });
+});
+
+describe("buildPayload idle timeout", () => {
+  const values = {
+    name: "Office", host: "vpn.example.com", port: "443", username: "u",
+    password: "p", realm: "", idleMinutes: "0", visibility: "private" as const,
+  };
+  it("defaults a new VPN to never disconnecting", () => {
+    expect(buildPayload(values, {}).idle_minutes).toBe(0);
+    expect(buildPayload({ ...values, idleMinutes: "" }, {}).idle_minutes).toBe(0);
+  });
+  it("uses the minutes entered at setup", () => {
+    expect(buildPayload({ ...values, idleMinutes: "120" }, { idle_minutes: 30 }).idle_minutes).toBe(120);
+    expect(formError({ ...values, idleMinutes: "-1" }, "add")).toMatch(/Disconnect when idle/);
+    expect(formError({ ...values, idleMinutes: "2000" }, "add")).toMatch(/Disconnect when idle/);
   });
 });
 
@@ -315,6 +333,7 @@ describe("VpnConnections", () => {
       "Username",
       "Password",
       "Realm (optional)",
+      "Disconnect when idle (minutes, 0 = never)",
       "Who can use it",
     ]);
     expect(form.textContent).not.toMatch(/Addresses to reach|Files location|Share login/);
@@ -365,7 +384,7 @@ describe("VpnConnections", () => {
         username: "leolau",
         password: "s3cret",
         auto_connect: true,
-        idle_minutes: 30,
+        idle_minutes: 0,
       },
     });
     const putIdx = calls.indexOf(put);

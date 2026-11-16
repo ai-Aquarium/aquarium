@@ -280,9 +280,9 @@ def validate_spec(raw):
     spec["share_password"] = _plain(
         raw.get("share_password"), "share_password", required=False
     )
-    idle = raw.get("idle_minutes", 30)
+    idle = raw.get("idle_minutes", 0)
     if idle is None:
-        idle = 30
+        idle = 0
     if isinstance(idle, bool) or not isinstance(idle, int) or not 0 <= idle <= 1440:
         raise InputError("idle_minutes must be an integer 0-1440")
     spec["idle_minutes"] = idle

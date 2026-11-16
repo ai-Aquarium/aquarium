@@ -1549,3 +1549,10 @@ def test_main_route_commands(h, monkeypatch, capsys):
     path = write_spec(h, route_spec(), name="spec-route.json")
     assert h.main(["unroute", path]) == 0
     assert json.loads(capsys.readouterr().out)["routed"] is False
+
+
+def test_spec_without_idle_minutes_never_disconnects():
+    h = load_helper()
+    spec = base_spec()
+    del spec["idle_minutes"]
+    assert h.validate_spec(spec)["idle_minutes"] == 0
