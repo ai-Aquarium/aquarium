@@ -9,22 +9,27 @@ import { useLocale, useT } from "@/i18n";
 import type { DbConnectionTest, MssqlConnection } from "@/types";
 import type { DataSource } from "@/types/data";
 
+import { healthOf } from "./format";
+
 type Result = { ok: boolean | null; at?: string | null; detail?: string | null };
 
 /**
- * Connection tab of the owner's own connected database: its last test and
- * "Test now" (SQL Server keeps its last test; MySQL / SQLite test on demand).
+ * Connection tab of the owner's own connected database: Hermes' last hourly
+ * check (or SQL Server's last test) and "Test now".
  */
-export function ConnectionHealth({ source }: { source: Pick<DataSource, "engine" | "connection"> }) {
+export function ConnectionHealth({ source }: { source: DataSource }) {
   const t = useT("data");
   const locale = useLocale();
   const engine = source.engine;
   const name = source.connection ?? "";
-  const [result, setResult] = useState<Result>({ ok: null });
+  const [result, setResult] = useState<Result>(() => {
+    const h = healthOf(source);
+    return h.state === "untested" ? { ok: null } : { ok: h.state !== "attention", at: h.checked_at, detail: h.detail };
+  });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (engine !== "mssql" || !name) return;
+    if (engine !== "mssql" || !name || source.health) return;
     let live = true;
     fetch("/api/mssql/connections", { cache: "no-store" })
       .then((r) => (r.ok ? (r.json() as Promise<{ connections: MssqlConnection[] }>) : { connections: [] }))
@@ -36,7 +41,7 @@ export function ConnectionHealth({ source }: { source: Pick<DataSource, "engine"
     return () => {
       live = false;
     };
-  }, [engine, name]);
+  }, [engine, name, source.health]);
 
   if (!name || !engine || engine === "postgres") return null;
 

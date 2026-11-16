@@ -12,7 +12,7 @@ import { ShareSheet } from "@/components/data/ShareSheet";
 import { BuildSheet } from "@/components/data/BuildSheet";
 import { toDbInput } from "@/components/data/DbConnections";
 import { DataSourceDetail } from "@/components/data/DataSourceDetail";
-import { fieldDiff, searchEntries, textToColumns } from "@/components/data/format";
+import { fieldDiff, healthOf, searchEntries, textToColumns } from "@/components/data/format";
 import type { DataSource, DataSourceDoc, DictionaryEntry } from "@/types/data";
 
 afterEach(() => {
@@ -123,6 +123,28 @@ describe("data pages", () => {
     expect(next).not.toContain("first time someone asks");
   });
 
+  it("offers a connection source only the schemas Hermes reports and saves the pick first", async () => {
+    const d = doc("manage");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) =>
+      init?.method === "PUT"
+        ? new Response(JSON.stringify({ chosen: ["sales"] }), { status: 200 })
+        : new Response(JSON.stringify({ available: ["sales"], chosen: ["ghost"] }), { status: 200 }),
+    );
+    render(
+      <BuildSheet
+        source={{ ...d.source, kind: "connection", engine: "mysql", name: "ERP" }}
+        tables={["sales.orders", "hr.staff"]}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "sales" })).toBeTruthy());
+    expect(screen.queryByRole("checkbox", { name: "hr" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open chat" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalled());
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(put?.[1]?.body))).toEqual({ schemas: ["sales"] });
+  });
+
   it("opens the tab from the URL and switches tabs", () => {
     render(<DataSourceDetail doc={doc("manage")} versions={[]} directory={[]} me="leo" initialTab="access" />);
     expect(screen.getByRole("tab", { name: "Access" }).getAttribute("aria-selected")).toBe("true");
@@ -154,7 +176,17 @@ describe("toDbInput", () => {
     expect(toDbInput("mysql", { ...base, password: "" }, true)).toEqual({ body: { host: "db1", port: 3306, database: "crm", username: "ro", tls: "verify", vpn: "" } });
   });
   it("needs only a path for SQLite", () => {
+    expect(toDbInput("postgres", { ...base, port: "5432" }, false)).toEqual({ body: { host: "db1", port: 5432, database: "crm", username: "ro", password: "pw", tls: "verify", vpn: "" } });
     expect(toDbInput("sqlite", { ...base, path: "/srv/p.db", label: "Prices" }, false)).toEqual({ body: { label: "Prices", path: "/srv/p.db" } });
     expect(toDbInput("sqlite", { ...base, path: "" }, false)).toEqual({ problem: "errRequired" });
+  });
+});
+
+describe("healthOf with Hermes' hourly check", () => {
+  const conn = { id: "c", kind: "connection", name: "ERP", owner_user_id: "u", site_id: null, access: "manage" } as const;
+  it("maps ok / failed / not yet checked", () => {
+    expect(healthOf({ ...conn, health: { status: "ok", checked_at: "2026-11-16T10:00:00Z" } })).toEqual({ state: "ok", checked_at: "2026-11-16T10:00:00Z" });
+    expect(healthOf({ ...conn, health: { status: "failed", error: "timeout", checked_at: null } })).toEqual({ state: "attention", checked_at: null, detail: "timeout" });
+    expect(healthOf({ ...conn, health: { status: null } })).toEqual({ state: "untested" });
   });
 });

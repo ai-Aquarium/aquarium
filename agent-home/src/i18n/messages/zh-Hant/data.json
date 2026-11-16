@@ -118,7 +118,10 @@
       "schemas": "請研究 {source} 數據來源，只限結構 {schemas}，為其中尚未描述的資料表草擬字典條目。提出前如有不清楚的地方請先問我。",
       "changed": "{source} 的結構有變。請重新研究以下資料表並草擬更新的字典條目：{tables}。提出前如有不清楚的地方請先問我。"
     },
-    "onDemandPrompt": "其他資料表暫時不用研究；有人首次問及時才研究。"
+    "onDemandPrompt": "其他資料表暫時不用研究；有人首次問及時才研究。",
+    "schemasLoading": "正在載入數據來源的結構…",
+    "schemasSaved": "你的選擇會儲存為此數據來源首次研究的結構。",
+    "saveFailed": "無法儲存所選結構。"
   },
   "field": {
     "meaning": "此資料表是甚麼",
@@ -283,7 +286,6 @@
     "mysqlBody": "MySQL 5.7 或以上及 MariaDB。",
     "postgresBody": "PostgreSQL 11 或以上。",
     "sqliteBody": "「檔案」內的 .sqlite 或 .db 檔案，唯讀。",
-    "soon": "即將推出",
     "website": "把網站轉成資料表",
     "siteBody": "代理研究網站，提出資料表供你批准，然後保持更新。接著在網站 › 新增網站繼續。",
     "siteLocked": "你的角色不可使用",
@@ -305,19 +307,21 @@
   },
   "db": {
     "title": {
+      "postgres": "PostgreSQL 資料庫",
       "mysql": "MySQL 資料庫",
       "sqlite": "SQLite 檔案"
     },
     "description": {
+      "postgres": "你自己的 PostgreSQL 連線。分享數據來源前只屬於你；獲分享的人經此唯讀登入提問，永遠看不到密碼。",
       "mysql": "你自己的 MySQL / MariaDB 連線。分享數據來源前只屬於你；獲分享的人經此唯讀登入提問，永遠看不到密碼。",
-      "sqlite": "此伺服器上的 SQLite 檔案，唯讀。只能加入 config.yaml（data_sources.sqlite_roots）所設資料夾內的檔案。"
+      "sqlite": "此伺服器上的 SQLite 檔案，唯讀。任何人都可新增：檔案必須位於 config.yaml（data_sources.sqlite_roots）設定的資料夾內，成員的檔案須在其中自己的資料夾。"
     },
     "add": {
+      "postgres": "新增 PostgreSQL 資料庫",
       "mysql": "新增 MySQL 資料庫",
       "sqlite": "新增 SQLite 檔案"
     },
     "driverMissing": "伺服器尚未安裝此引擎的驅動程式。",
-    "sqliteAdminOnly": "只有擁有人或管理員可以新增 SQLite 檔案。",
     "errLoad": "無法載入你的連線。",
     "errTest": "無法進行測試。",
     "errSave": "無法儲存：{reason}",

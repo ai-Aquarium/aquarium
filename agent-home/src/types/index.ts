@@ -1895,7 +1895,7 @@ export interface MssqlConnection extends MssqlSettings {
 }
 
 /** Engines behind `/api/db/connections` (SQL Server has its own routes). */
-export type DbEngine = "mysql" | "sqlite";
+export type DbEngine = "postgres" | "mysql" | "sqlite";
 export type DbTls = "verify" | "on" | "off";
 
 /** One of the caller's MySQL / SQLite connections; the password is never returned. */

@@ -118,7 +118,10 @@
       "schemas": "Study the {source} data source, schemas {schemas} only, and draft dictionary entries for their tables that aren't described yet. Ask me about anything unclear before proposing.",
       "changed": "The {source} schema changed. Re-study these tables and draft updated dictionary entries: {tables}. Ask me about anything unclear before proposing."
     },
-    "onDemandPrompt": "Leave the other tables for now; study one the first time someone asks about it."
+    "onDemandPrompt": "Leave the other tables for now; study one the first time someone asks about it.",
+    "schemasLoading": "Loading the source's schemas…",
+    "schemasSaved": "Your pick is saved as this source's first-study schemas.",
+    "saveFailed": "Couldn't save the chosen schemas."
   },
   "field": {
     "meaning": "What this table is",
@@ -283,7 +286,6 @@
     "mysqlBody": "MySQL 5.7+ and MariaDB.",
     "postgresBody": "PostgreSQL 11+.",
     "sqliteBody": "A .sqlite or .db file in Files, read-only.",
-    "soon": "Coming next",
     "website": "Turn a website into tables",
     "siteBody": "The agent studies the site, proposes tables for you to approve, then keeps them up to date. Continues in Sites › Add site.",
     "siteLocked": "Not for your role",
@@ -305,19 +307,21 @@
   },
   "db": {
     "title": {
+      "postgres": "PostgreSQL databases",
       "mysql": "MySQL databases",
       "sqlite": "SQLite files"
     },
     "description": {
+      "postgres": "Your own PostgreSQL connections. Private to you until you share the data source; people you share with ask through this read-only login and never see the password.",
       "mysql": "Your own MySQL / MariaDB connections. Private to you until you share the data source; people you share with ask through this read-only login and never see the password.",
-      "sqlite": "SQLite files on this server, read-only. Only files under the folders set in config.yaml (data_sources.sqlite_roots) can be added."
+      "sqlite": "SQLite files on this server, read-only. Anyone can add one: it must sit under the folders set in config.yaml (data_sources.sqlite_roots), and a member's under their own folder there."
     },
     "add": {
+      "postgres": "Add PostgreSQL database",
       "mysql": "Add MySQL database",
       "sqlite": "Add SQLite file"
     },
     "driverMissing": "The driver for this engine isn't installed on the server yet.",
-    "sqliteAdminOnly": "Only the owner or an admin can add SQLite files.",
     "errLoad": "Couldn't load your connections.",
     "errTest": "Couldn't run the test.",
     "errSave": "Couldn't save: {reason}",

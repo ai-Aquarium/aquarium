@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Add data source → MySQL / SQLite: the signed-in person's own connections
+ * Add data source → PostgreSQL / MySQL / SQLite: the signed-in person's own connections
  * (`/api/db/connections`, private to them until shared from Data › Access;
  * the password is write-only). "Save and test" saves, then opens the
- * connection and counts its tables. SQLite files are owner/admin only.
+ * connection and counts its tables. Hermes checks each one hourly after that.
  */
 import { useCallback, useEffect, useState } from "react";
 
@@ -27,9 +27,12 @@ export interface DbFormValues {
 }
 
 const EMPTY: DbFormValues = {
-  name: "", label: "", host: "", port: "3306", database: "", username: "", password: "",
+  name: "", label: "", host: "", port: "", database: "", username: "", password: "",
   tls: "verify", vpn: "", path: "",
 };
+
+const DEFAULT_PORT: Partial<Record<DbEngine, string>> = { postgres: "5432", mysql: "3306" };
+const HOST_PLACEHOLDER: Partial<Record<DbEngine, string>> = { postgres: "pg01.yourcompany.local", mysql: "mysql01.yourcompany.local" };
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 
@@ -87,7 +90,7 @@ async function readError(res: Response): Promise<string> {
 
 const path = (engine: DbEngine, name: string) => `/api/db/connections/${engine}/${encodeURIComponent(name)}`;
 
-export function DbConnections({ engine, canAdd = true }: { engine: DbEngine; canAdd?: boolean }) {
+export function DbConnections({ engine }: { engine: DbEngine }) {
   const t = useT("data");
   const [connections, setConnections] = useState<DbConnection[] | null>(null);
   const [driver, setDriver] = useState(true);
@@ -115,7 +118,7 @@ export function DbConnections({ engine, canAdd = true }: { engine: DbEngine; can
   useEffect(() => {
     const timer = setTimeout(() => {
       void load();
-      if (engine === "mysql") {
+      if (engine !== "sqlite") {
         fetch("/api/vpn", { cache: "no-store" })
           .then((r) => (r.ok ? (r.json() as Promise<{ vpns?: VpnView[] }>) : { vpns: [] }))
           .then((doc) => setVpns((doc.vpns ?? []).filter((v) => v && v.name).map((v) => v.name)))
@@ -195,7 +198,6 @@ export function DbConnections({ engine, canAdd = true }: { engine: DbEngine; can
       <h2 className="text-sm font-semibold">{t(`db.title.${engine}`)}</h2>
       <p className="mb-3 text-xs text-[var(--color-muted)]">{t(`db.description.${engine}`)}</p>
       {!driver && <p className="mb-2 text-xs text-[var(--color-danger)]">{t("db.driverMissing")}</p>}
-      {!canAdd && <p className="mb-2 text-xs text-[var(--color-muted)]">{t("db.sqliteAdminOnly")}</p>}
       {error && (
         <p role="alert" className="mb-2 text-xs text-[var(--color-danger)]">
           {error}
@@ -228,11 +230,9 @@ export function DbConnections({ engine, canAdd = true }: { engine: DbEngine; can
                   <button type="button" className={btnCls} disabled={!!busy} aria-busy={busy === c.name} onClick={() => void runTest(c.name)}>
                     {busy === c.name ? t("db.testing") : t("db.test")}
                   </button>
-                  {canAdd ? (
-                    <button type="button" className={btnCls} disabled={!!busy} onClick={() => setForm({ values: fromConnection(c), editing: true })}>
-                      {t("db.edit")}
-                    </button>
-                  ) : null}
+                  <button type="button" className={btnCls} disabled={!!busy} onClick={() => setForm({ values: fromConnection(c), editing: true })}>
+                    {t("db.edit")}
+                  </button>
                   <button type="button" className={`${btnCls} text-[var(--color-danger)]`} disabled={!!busy} onClick={() => setRemoving(c.name)}>
                     {t("db.remove")}
                   </button>
@@ -242,8 +242,8 @@ export function DbConnections({ engine, canAdd = true }: { engine: DbEngine; can
           })}
         </ul>
       )}
-      {connections && !form && canAdd && (
-        <button type="button" className={btnCls} disabled={!!busy} onClick={() => setForm({ values: EMPTY, editing: false })}>
+      {connections && !form && (
+        <button type="button" className={btnCls} disabled={!!busy} onClick={() => setForm({ values: { ...EMPTY, port: DEFAULT_PORT[engine] ?? "" }, editing: false })}>
           {t(`db.add.${engine}`)}
         </button>
       )}
@@ -274,7 +274,7 @@ export function DbConnections({ engine, canAdd = true }: { engine: DbEngine; can
               <>
                 <label className={labelCls}>
                   <span>{t("db.host")}</span>
-                  <input className={inputCls} placeholder="mysql01.yourcompany.local" value={v.host} onChange={(e) => setField("host", e.target.value)} />
+                  <input className={inputCls} placeholder={HOST_PLACEHOLDER[engine]} value={v.host} onChange={(e) => setField("host", e.target.value)} />
                 </label>
                 <label className={labelCls}>
                   <span>{t("db.port")}</span>
