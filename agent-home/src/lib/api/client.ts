@@ -150,6 +150,7 @@ import type {
   EmailMailboxInput,
   Source,
   SourceClaimConflict,
+  RoutingDecision,
   SourceInput,
   SourceRoute,
   MssqlConnection,
@@ -3513,6 +3514,19 @@ export class HermesApiClient {
 
   async sourceConflicts(all = false): Promise<{ conflicts: SourceClaimConflict[] }> {
     return this.request(`/api/sources/conflicts${all ? "?all=1" : ""}`);
+  }
+
+  /** FG-03 P4: the caller's routing decisions, newest first (`all`: box owner/admin). */
+  async sourceDecisions(
+    query: { sourceId?: string; batchId?: string; limit?: number; all?: boolean } = {},
+  ): Promise<{ decisions: RoutingDecision[] }> {
+    const params = new URLSearchParams();
+    if (query.sourceId) params.set("source_id", query.sourceId);
+    if (query.batchId) params.set("batch_id", query.batchId);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.all) params.set("all", "1");
+    const qs = params.toString();
+    return this.request(`/api/sources/decisions${qs ? `?${qs}` : ""}`);
   }
 
   /** Log into IMAP and SMTP with the saved settings (no mail is sent). */

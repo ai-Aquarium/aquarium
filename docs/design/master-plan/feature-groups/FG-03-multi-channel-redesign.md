@@ -288,6 +288,8 @@ Tests green + baseline green (session-key lock intact) + `ruff`/`ty` clean; Shap
   - [x] Profile lifecycle: `--clone` / `--clone-all` / export carry `triage-skills/` (no `.versions/` on `--clone`), never `users/`; skill discovery never loads `triage-skills/` (`tests/hermes_cli/test_triage_skills_profiles.py`)
   - [ ] API/CLI + agent-home "My triage skills" (P7)
 - [ ] P4 — router (one cheap call per batch, retry ×3 then all)
+  - [x] Core `hermes_cli/triage_router.py`: `auxiliary.triage_router` call, byte-stable system prompt (routes + care only), strict JSON reply (unknown profiles dropped), `triage.router` {mode shadow|off|enforce, retries 3, retry_delay_seconds 5} then all routed profiles `fallback=true`; `aquarium_box.routing_decisions` (reasons only, no batch text; idempotent per source+batch; owner-only, box admin `all=1`); `hermes source decisions`, `GET /api/sources/decisions` + agent-home BFF; real-Postgres E2E (`tests/hermes_cli/test_triage_router_e2e.py`)
+  - [ ] Pipelines call `route_batch_sync` (shadow first)
 - [ ] P5 — full triage in chosen user-profiles' agents (per-channel switch)
 - [ ] P6 — Telegram triage source; replies from receiving account
 - [ ] P7 — UI (Figma mockups first)
