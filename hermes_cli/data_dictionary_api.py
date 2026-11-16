@@ -199,6 +199,27 @@ async def source_table(source_id: str, table: str, request: Request):
     return {"source": source.view(access), "table": await _run(adapter.describe_table(table))}
 
 
+@router.get("/sources/{source_id}/study-schemas")
+async def study_schemas(source_id: str, request: Request):
+    """The schemas a first study covers, and every schema the source has."""
+    from hermes_cli import data_engines as de
+
+    principal, source, access = await _source_for(request, source_id)
+    adapter = await _run(de.adapter_for(source, principal, agent=False))
+    tables = await _run(adapter.list_tables())
+    available = sorted({t["schema"] for t in tables if t.get("schema")})
+    return {"source": source.view(access), "chosen": source.study_schemas or [],
+            "available": available}
+
+
+@router.put("/sources/{source_id}/study-schemas")
+async def put_study_schemas(source_id: str, request: Request):
+    _p, source, access = await _source_for(request, source_id, "manage")
+    body = await _body(request)
+    chosen = await _run(dd.set_study_schemas(source, body.get("schemas")))
+    return {"source": source.view(access), "chosen": chosen}
+
+
 @router.post("/sources/{source_id}/check")
 async def check_schema(source_id: str, request: Request):
     _principal, source, access = await _source_for(request, source_id, "manage")

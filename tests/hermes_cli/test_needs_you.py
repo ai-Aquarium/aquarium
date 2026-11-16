@@ -489,6 +489,23 @@ def test_schema_drift_cards_are_listed_only_for_managers_with_drift():
     assert item["created_at"] == datetime(2026, 11, 15, 9, tzinfo=timezone.utc).timestamp()
 
 
+def test_failed_health_checks_raise_a_blocking_card_for_the_owner():
+    failed = {"status": "failed", "error": "could not connect: timeout",
+              "checked_at": "2026-11-15T09:00:00+00:00"}
+    rows = [
+        {"id": "c1", "name": "ERP", "access": "manage", "health": failed},
+        {"id": "c2", "name": "Shared", "access": "read", "health": failed},
+        {"id": "c3", "name": "Fine", "access": "manage", "health": {"status": "ok"}},
+        {"id": "s1", "name": "Site", "access": "manage", "health": None},
+    ]
+    [item] = ny.data_health_entries(rows)
+    assert item["id"] == "data_health:c1"
+    assert item["severity"] == "blocking"
+    assert item["href"] == "/data/c1"
+    assert item["detail"] == "could not connect: timeout"
+    assert item["i18n"]["title"] == [{"key": "titles.dataHealth", "vars": {"source": "ERP"}}]
+
+
 # ---------------------------------------------------------------------------
 # One arrival raised in several profiles (FG-03 P5)
 # ---------------------------------------------------------------------------

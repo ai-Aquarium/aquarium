@@ -1,15 +1,15 @@
 """Database engines behind one adapter interface (data-dictionary plan, Phase 7).
 
 Every data source — a site schema, Aquarium's own data, or a database someone
-connected in Settings (SQL Server, MySQL, SQLite) — is read through one
+connected in Settings (SQL Server, PostgreSQL, MySQL, SQLite) — is read through one
 :class:`EngineAdapter`: list tables, describe a table (keys, comments, row
 estimate, sample values), run one bounded read-only parameterised query, and
 a schema fingerprint for drift checks.
 
 Credentials stay server-side: an adapter is built here from the stored
-connection and only ever hands back rows. A Settings connection keeps its
-rule that only the person who set it up can use it; sharing a connection
-source shares its dictionary, not the login.
+connection and only ever hands back rows. A Settings connection is always
+opened with its owner's saved read-only login; sharing it never shares the
+login itself.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from hermes_cli.site_sources import SiteError
 logger = logging.getLogger(__name__)
 
 ENGINES = ("postgres", "mssql", "mysql", "sqlite")
-CONNECTION_ENGINES = ("mssql", "mysql", "sqlite")
+CONNECTION_ENGINES = ("mssql", "postgres", "mysql", "sqlite")
 MAX_ROWS = 500
 QUERY_TIMEOUT = 30
 MAX_BYTES = 200_000
@@ -425,7 +425,7 @@ class AppAdapter(EngineAdapter):
         return {name: set(cols) for name, cols in app_data.schema().items()}
 
 
-# -- live engines: SQL Server, MySQL, SQLite -------------------------------------------
+# -- live engines: SQL Server, PostgreSQL, MySQL, SQLite -------------------------------
 
 
 class _LiveAdapter(EngineAdapter):
@@ -526,7 +526,8 @@ class _LiveAdapter(EngineAdapter):
         for t in tables:
             if words and not _matches(words, t["name"], t.get("comment"), *columns.get(t["name"], [])):
                 continue
-            out.append({k: t.get(k) for k in ("name", "type", "rows", "comment")})
+            out.append({k: t.get(k) for k in ("name", "schema", "type", "rows", "comment")
+                        if k != "schema" or t.get(k)})
         return out[:MAX_TABLES]
 
     def _sync_schema(self) -> Dict[str, Set[str]]:
@@ -716,6 +717,174 @@ class MssqlAdapter(_LiveAdapter):
         return primary, list(foreign.values())
 
 
+class _PgCursor:
+    """The DB-API cursor surface :class:`_LiveAdapter` uses, over pg8000's native API."""
+
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+        self._rows: List[Any] = []
+        self.description: Optional[List[Tuple[str]]] = None
+
+    def execute(self, sql: str, params: Any = None) -> None:
+        if params:
+            ctx = self._conn.execute_unnamed(sql, vals=tuple(params))
+        else:
+            ctx = self._conn.execute_simple(sql)
+        self._rows = list(ctx.rows or [])
+        self.description = [(c["name"],) for c in ctx.columns] if ctx.columns else None
+
+    def fetchall(self) -> List[Any]:
+        return list(self._rows)
+
+    def fetchmany(self, n: int) -> List[Any]:
+        return self._rows[:n]
+
+    def close(self) -> None:
+        self._rows = []
+
+
+class _PgConn:
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    def cursor(self) -> _PgCursor:
+        return _PgCursor(self._conn)
+
+    def rollback(self) -> None:
+        self._conn.run("ROLLBACK")
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+class PostgresAdapter(_LiveAdapter):
+    """An external PostgreSQL connection from Settings (pg8000, the ``postgres`` extra).
+
+    Every session is read-only (``default_transaction_read_only`` plus a
+    read-only transaction) with a statement timeout; a query is wrapped in a
+    ``LIMIT`` so the server never sends more than the row cap.
+    """
+
+    engine = "postgres"
+
+    def __init__(self, payload: Mapping[str, Any], *, ip: Optional[str] = None, label: str = "") -> None:
+        super().__init__(payload, label=label)
+        self.ip = ip
+
+    def _connect(self) -> Any:
+        from hermes_cli import db_connections
+
+        pg8000 = db_connections.postgres_driver()
+        p = self.payload
+        conn = pg8000.native.Connection(
+            user=p["username"],
+            password=p.get("password") or "",
+            host=self.ip or p["host"],
+            port=int(p.get("port") or db_connections.DEFAULT_PORTS["postgres"]),
+            database=p["database"],
+            ssl_context=db_connections.tls_context(p),
+            timeout=QUERY_TIMEOUT + 5,
+            application_name="Hermes",
+        )
+        try:
+            for stmt in (
+                "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
+                f"SET statement_timeout = {QUERY_TIMEOUT * 1000}",
+                "SET idle_in_transaction_session_timeout = 60000",
+                "START TRANSACTION READ ONLY",
+            ):
+                conn.run(stmt)
+        except BaseException:
+            with contextlib.suppress(Exception):
+                conn.close()
+            raise
+        return _PgConn(conn)
+
+    def _error(self, exc: BaseException) -> str:
+        text = str(exc)
+        secret = str(self.payload.get("password") or "")
+        if secret:
+            text = text.replace(secret, "***")
+        return f"{type(exc).__name__}: {text}"[:500]
+
+    def _ref(self, table: Mapping[str, Any]) -> str:
+        return f"{self._quote(table['schema'])}.{self._quote(table['table'])}"
+
+    def _sync_query(self, sql: str, params: Any, max_rows: int) -> Dict[str, Any]:
+        return super()._sync_query(f"SELECT * FROM (\n{sql}\n) AS q LIMIT {max_rows + 1}",
+                                   params, max_rows)
+
+    _USER_FILTER = (
+        "c.relkind IN ('r', 'p', 'v', 'm', 'f') AND NOT c.relispartition "
+        "AND n.nspname NOT IN ('pg_catalog', 'information_schema') "
+        "AND n.nspname NOT LIKE 'pg\\_toast%' AND n.nspname NOT LIKE 'pg\\_temp%' "
+        "AND has_table_privilege(c.oid, 'SELECT')"
+    )
+    _USER_RELATIONS = (
+        "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE " + _USER_FILTER
+    )
+
+    def _tables(self, conn: Any) -> List[Dict[str, Any]]:
+        rows = self._fetch(conn, (
+            "SELECT n.nspname, c.relname, c.relkind, "
+            "CASE WHEN c.reltuples >= 0 THEN c.reltuples::bigint END, "
+            f"obj_description(c.oid, 'pg_class') {self._USER_RELATIONS} ORDER BY 1, 2"
+        ))
+        return [
+            {"name": f"{s}.{t}", "schema": s, "table": t,
+             "type": "view" if kind in ("v", "m") else "table",
+             "rows": int(n) if n is not None else None, "comment": c or ""}
+            for s, t, kind, n, c in rows
+        ]
+
+    def _all_columns(self, conn: Any) -> Dict[str, List[str]]:
+        out: Dict[str, List[str]] = {}
+        for s, t, col in self._fetch(conn, (
+            "SELECT n.nspname, c.relname, a.attname FROM pg_attribute a "
+            "JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
+            f"WHERE a.attnum > 0 AND NOT a.attisdropped AND {self._USER_FILTER} "
+            "ORDER BY n.nspname, c.relname, a.attnum"
+        )):
+            out.setdefault(f"{s}.{t}", []).append(col)
+        return out
+
+    def _columns(self, conn: Any, table: Mapping[str, Any]) -> List[Dict[str, Any]]:
+        rows = self._fetch(conn, (
+            "SELECT a.attname, format_type(a.atttypid, a.atttypmod), NOT a.attnotnull, "
+            "col_description(a.attrelid, a.attnum) FROM pg_attribute a "
+            "WHERE a.attrelid = $1::regclass AND a.attnum > 0 AND NOT a.attisdropped "
+            "ORDER BY a.attnum"
+        ), [self._ref(table)])
+        return [
+            {"name": n, "type": t, "nullable": bool(nullable), "comment": c or ""}
+            for n, t, nullable, c in rows
+        ]
+
+    def _keys(self, conn: Any, table: Mapping[str, Any]) -> Tuple[List[str], List[Dict[str, Any]]]:
+        ref = [self._ref(table)]
+        primary = [r[0] for r in self._fetch(conn, (
+            "SELECT a.attname FROM pg_index i "
+            "CROSS JOIN LATERAL unnest(i.indkey::int2[]) WITH ORDINALITY AS k(col, ord) "
+            "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.col "
+            "WHERE i.indrelid = $1::regclass AND i.indisprimary ORDER BY k.ord"
+        ), ref)]
+        foreign: Dict[str, Dict[str, Any]] = {}
+        for fk, col, rs, rt, rc in self._fetch(conn, (
+            "SELECT con.conname, a.attname, rn.nspname, rcl.relname, ra.attname "
+            "FROM pg_constraint con "
+            "CROSS JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS k(col, ref, ord) "
+            "JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.col "
+            "JOIN pg_class rcl ON rcl.oid = con.confrelid "
+            "JOIN pg_namespace rn ON rn.oid = rcl.relnamespace "
+            "JOIN pg_attribute ra ON ra.attrelid = con.confrelid AND ra.attnum = k.ref "
+            "WHERE con.contype = 'f' AND con.conrelid = $1::regclass ORDER BY con.conname, k.ord"
+        ), ref):
+            item = foreign.setdefault(fk, {"columns": [], "to_table": f"{rs}.{rt}", "to_columns": []})
+            item["columns"].append(col)
+            item["to_columns"].append(rc)
+        return primary, list(foreign.values())
+
+
 class MysqlAdapter(_LiveAdapter):
     """A MySQL / MariaDB connection (PyMySQL, the ``mysql`` extra)."""
 
@@ -898,10 +1067,22 @@ class SqliteAdapter(_LiveAdapter):
 # -- sources -> adapters ---------------------------------------------------------------
 
 
-def _owner_principal(user_id: str) -> Any:
-    from hermes_cli.access import Principal
+async def _owner_principal(user_id: str) -> Any:
+    """The data source owner's own principal (their role decides which VPNs they may use)."""
+    from hermes_cli.access import Principal, PrincipalStore
+    from hermes_cli.config import load_config_readonly
+    from hermes_cli.datastore import get_store
 
-    return Principal(user_id=user_id, display=user_id, role="member")
+    try:
+        owner = await PrincipalStore(
+            get_store("supabase-app", "prod", config=load_config_readonly() or {})
+        ).get(user_id)
+    except Exception:  # noqa: BLE001 - no principal store (tests, CLI): their own rows still resolve
+        logger.debug("could not load the data source owner's principal", exc_info=True)
+        owner = None
+    if owner is not None and not owner.active:
+        raise EngineError("the person who added this data source is suspended", 403)
+    return owner or Principal(user_id=user_id, display=user_id, role="member")
 
 
 async def connection_refs(principal: Any) -> List[Dict[str, str]]:
@@ -939,6 +1120,9 @@ async def _connection_adapter(source: Any, principal: Any, *, agent: bool) -> En
     if source.engine == "mysql":
         ip = await db_connections.route_for(principal, entry, agent=agent)
         return MysqlAdapter(entry.payload, ip=ip, label=name)
+    if source.engine == "postgres":
+        ip = await db_connections.route_for(principal, entry, agent=agent)
+        return PostgresAdapter(entry.payload, ip=ip, label=name)
     if source.engine == "sqlite":
         return SqliteAdapter(entry.payload, label=name)
     raise EngineError(f"unknown engine {source.engine!r}")
@@ -947,9 +1131,11 @@ async def _connection_adapter(source: Any, principal: Any, *, agent: bool) -> En
 async def adapter_for(source: Any, principal: Any, *, agent: bool = True, db: Any = None) -> EngineAdapter:
     """The adapter that reads ``source`` for ``principal``.
 
-    The caller has already checked the principal may see the source. A
-    Settings connection is only ever opened with its owner's own stored
-    login: anyone else it is shared with gets its dictionary, not its data.
+    The caller has already checked the principal may read the source. A
+    Settings data source is always opened with its owner's saved read-only
+    login, also for admins and the people it is shared with, who never see
+    that login; writes ("Allow changes") are never shared — every adapter
+    query is one read-only statement.
     """
     if source.kind == "site":
         site = await ss.get_site(source.site_id, db=db) if source.site_id else None
@@ -959,19 +1145,17 @@ async def adapter_for(source: Any, principal: Any, *, agent: bool = True, db: An
     if source.kind == "app":
         return AppAdapter(principal)
     if source.kind == "connection":
+        if not source.owner_user_id:
+            raise EngineError("this data source has no owner", 404)
         if getattr(principal, "user_id", None) != source.owner_user_id:
-            raise EngineError(
-                "only the person who set up this connection in Settings can read its data; "
-                "its dictionary is shared with you",
-                403,
-            )
+            principal = await _owner_principal(source.owner_user_id)
         return await _connection_adapter(source, principal, agent=agent)
     raise EngineError(f"unknown source kind {source.kind!r}")
 
 
 async def source_schema(source: Any, *, db: Any = None) -> Dict[str, Set[str]]:
     """The live schema of a connection source, read with its owner's login (drift checks)."""
-    adapter = await adapter_for(source, _owner_principal(source.owner_user_id), agent=False, db=db)
+    adapter = await adapter_for(source, await _owner_principal(source.owner_user_id), agent=False, db=db)
     return await adapter.schema()
 
 
@@ -1002,6 +1186,19 @@ async def run_query(
             f"v{dictionary_version}" if dictionary_version else "none", rows, status,
             int((time.monotonic() - started) * 1000),
         )
+
+
+async def remember_connection(principal: Any) -> None:
+    """Make sure the caller's Settings connections are data sources (best effort).
+
+    Run after a save so admins see a new source before its owner opens Data.
+    """
+    from hermes_cli import data_dictionary as dd
+
+    try:
+        await dd.sync_connection_sources(principal, ss.current_profile())
+    except Exception:  # noqa: BLE001 - saving the connection itself already succeeded
+        logger.warning("could not record the data source for a saved connection", exc_info=True)
 
 
 async def forget_connection(owner_user_id: str, engine: str, name: str) -> None:

@@ -71,7 +71,9 @@
     "dataDraft": "{source} 的字典草稿 v{v} 可以審閱了",
     "dataDraftUnnamed": "一個數據來源的字典草稿 v{v} 可以審閱了",
     "dataSchema": "{source} 的結構有變 — 字典需要更新",
-    "dataSchemaUnnamed": "一個數據來源的結構有變 — 字典需要更新"
+    "dataSchemaUnnamed": "一個數據來源的結構有變 — 字典需要更新",
+    "dataHealth": "無法連線到 {source} — 每小時檢查失敗",
+    "dataHealthUnnamed": "無法連線到一個數據來源 — 每小時檢查失敗"
   },
   "details": {
     "changesOne": "1 項修改",

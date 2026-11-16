@@ -343,7 +343,7 @@ export function VpnConnections() {
     });
     // The form opens inside this VPN's card; bring it into view.
     requestAnimationFrame(() =>
-      document.querySelector('[data-vpn-form="edit"]')?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+      document.querySelector('[data-vpn-form="edit"]')?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }),
     );
   }, []);
 

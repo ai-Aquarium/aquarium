@@ -421,3 +421,93 @@ def test_dictionary_search_and_describe_ranking(fake_registry, monkeypatch):
     described = call("reader", "member", action="describe", site="shop", q="refund")
     assert described["tables"][0]["name"] == "refunds"
     assert call("stranger", "member", action="describe", site="shop", q="refund").get("success") is False
+
+
+def test_study_reads_named_tables_else_chosen_schemas_undescribed_first():
+    found = [{"name": "dbo.a", "schema": "dbo"}, {"name": "dbo.b", "schema": "dbo"},
+             {"name": "hr.c", "schema": "hr"}]
+    names = lambda ts: [t["name"] for t in ts]  # noqa: E731
+    assert names(tool.study_order(found, {"dbo.a"})) == ["dbo.b", "hr.c", "dbo.a"]
+    assert names(tool.study_order(found, {"dbo.a"}, schemas=["dbo"])) == ["dbo.b", "dbo.a"]
+    assert names(tool.study_order(found, set(), schemas=["dbo"], tables=["hr.c", "x"])) == ["hr.c"]
+
+
+def test_dictionary_studies_an_undescribed_table_on_demand(fake_registry, monkeypatch):
+    from hermes_cli import data_dictionary as dd
+    from hermes_cli import data_engines as de
+
+    app = dd.Source(id="s1", kind="app", profile="default", name="Aquarium data")
+
+    async def sync_sources(profile, **_kw):
+        return [app]
+
+    async def resolve_access(source, principal, **_kw):
+        return "read"
+
+    async def dictionary(source, *, draft=False, **_kw):
+        return {"approved": {"version": 3, "entries": {"tables": {"todos": {"meaning": "m"}}}}}
+
+    class Live:
+        async def describe_table(self, name, samples=5):
+            return {"name": name, "columns": [{"name": "id"}]}
+
+    async def adapter_for(source, principal, **_kw):
+        return Live()
+
+    monkeypatch.setattr(dd, "sync_sources", sync_sources)
+    monkeypatch.setattr(dd, "resolve_access", resolve_access)
+    monkeypatch.setattr(dd, "dictionary", dictionary)
+    monkeypatch.setattr(de, "adapter_for", adapter_for)
+    out = call("reader", "member", action="dictionary", source="app", entity="goals")
+    assert out["approved"]["version"] == 3
+    assert out["studied"]["name"] == "goals" and out["undescribed"] == ["goals"]
+    assert "propose_dictionary" in out["next"]
+    known = call("reader", "member", action="dictionary", source="app", entity="todos")
+    assert "todos" in known["approved"]["entries"]["tables"] and "studied" not in known
+
+
+def test_data_only_grantees_get_a_sites_structure_but_never_its_values(fake_registry, monkeypatch):
+    """Data › Access shares the dictionary; a site's rows stay with Sites › Sharing."""
+    from hermes_cli import data_dictionary as dd
+
+    shop = dd.Source(id="s2", kind="site", profile="default", name="shop", site_id=SITE.id)
+    sampled = []
+
+    async def sync_sources(profile, **_kw):
+        return [shop]
+
+    async def resolve_access(source, principal, **_kw):
+        return {"reader": "read", "datareader": "propose"}.get(principal.user_id)
+
+    async def dictionary(source, *, draft=False, **_kw):
+        return {"approved": None}
+
+    async def get_site(site_id, **_kw):
+        return SITE
+
+    async def describe_entity(site, name, *, samples=5, **_kw):
+        sampled.append(samples)
+        return {"name": name, "rows": 3, "key": ["id"], "columns": [
+            {"name": "email", "type": "text", "filled": 3, "distinct": 3,
+             "common_values": [["ann@example.com", 1]] if samples else []}]}
+
+    async def table_summaries(site, **_kw):
+        return [{"name": "customers"}]
+
+    monkeypatch.setattr(dd, "sync_sources", sync_sources)
+    monkeypatch.setattr(dd, "resolve_access", resolve_access)
+    monkeypatch.setattr(dd, "dictionary", dictionary)
+    monkeypatch.setattr(ss, "get_site", get_site)
+    monkeypatch.setattr(ss, "describe_entity", describe_entity)
+    monkeypatch.setattr(ss, "table_summaries", table_summaries)
+
+    for action in ("dictionary", "study"):
+        out = call("datareader", "member", action=action, source="s2", entity="customers")
+        table = out["studied"] if action == "dictionary" else out["tables"][0]
+        assert "ann@example.com" not in json.dumps(out)
+        assert table["columns"] == [{"name": "email", "type": "text"}]
+        assert "rows" not in table and table["values_hidden"]
+    assert sampled == [0, 0]
+    # someone the site is shared with (Sites › Sharing) still sees its values
+    out = call("reader", "member", action="dictionary", source="s2", entity="customers")
+    assert out["studied"]["columns"][0]["common_values"] == [["ann@example.com", 1]]
