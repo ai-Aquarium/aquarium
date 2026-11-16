@@ -10,9 +10,13 @@ import { useT } from "@/i18n/client";
 export function RegisterSourceLink() {
   const t = useT("sources");
   return (
-    <Link href="/settings/sources?register=1" scroll={false} data-action="register-source" className={BTN_PRIMARY}>
+    <Link href="/settings/sources?register=1" scroll={false} data-action="register-source"
+      aria-label={t("register")}
+      className={`${BTN_PRIMARY} shrink-0 whitespace-nowrap px-3 sm:px-4`}
+    >
       <PlusIcon size={16} />
-      {t("register")}
+      <span className="sm:hidden">{t("registerShort")}</span>
+      <span className="hidden sm:inline">{t("register")}</span>
     </Link>
   );
 }
