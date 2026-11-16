@@ -1519,6 +1519,8 @@ export interface SourceCredentialRef {
   kind?: string;
   name?: string;
   provider?: string;
+  /** `wa-bridge`: the bridge's name (as listed by `/api/wa-bridges`). */
+  bridge?: string;
 }
 
 /** One incoming source (mailbox / WhatsApp number / Telegram bot) and its single owner. */
@@ -1605,12 +1607,30 @@ export interface TriageComparison {
   created_at: string | null;
 }
 
-export interface SourceInput {
-  channel: SourceChannel;
-  address: string;
-  display?: string | null;
-  credential_ref?: SourceCredentialRef | null;
-}
+/**
+ * `POST /api/sources`. Email needs `address`. WhatsApp / Telegram may omit it
+ * and name the caller's own credential — `{ kind: "wa-bridge", bridge }` or
+ * `{ kind: "telegram-bot" }` — and Hermes reads the number / bot id itself.
+ */
+export type SourceInput =
+  | {
+      channel: SourceChannel;
+      address: string;
+      display?: string | null;
+      credential_ref?: SourceCredentialRef | null;
+    }
+  | {
+      channel: "whatsapp";
+      address?: undefined;
+      display?: string | null;
+      credential_ref: { kind: "wa-bridge"; bridge: string };
+    }
+  | {
+      channel: "telegram";
+      address?: undefined;
+      display?: string | null;
+      credential_ref: { kind: "telegram-bot"; name?: string };
+    };
 
 /** One of the caller's own IMAP/SMTP mailboxes. Never carries the password. */
 export interface EmailMailbox extends EmailServerSettings {

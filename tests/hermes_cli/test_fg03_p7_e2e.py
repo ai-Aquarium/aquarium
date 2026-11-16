@@ -265,3 +265,103 @@ def test_initialize_box_adds_the_p7_columns_to_an_old_box(box):
     _box(box["dsn"], lambda c: registry.list_sources(c))
     columns = asyncio.run(downgrade_and_reconnect())
     assert {"message_count", "first_sender", "resolution"} <= columns
+
+
+# -- register WhatsApp / Telegram from the caller's own credential ---------------------
+
+JOHN_NUMBER = "85291234567"
+JOHN_TOKEN = "12345:john-bot-secret"
+
+
+def _own_credentials(box, hermes_root):  # noqa: F811
+    """John's bridge ``johnwa`` (linked) and ``spare`` (not linked), Mary's bridge
+    ``marywa`` on John's number, and John's saved Telegram bot, all in the default
+    profile (the request's)."""
+    from hermes_cli import wa_bridge_owners as owners
+    from hermes_cli.access import PrincipalStore
+    from hermes_cli.console_scope import _scoped_to
+    from hermes_cli.credential_store import SupabaseCredentialStore
+    from hermes_cli.datastore import get_store
+    from tests.hermes_cli._pg_fixture import pg_config
+
+    for name, user, number in (("johnwa", "john", JOHN_NUMBER), ("spare", "john", None),
+                               ("marywa", "mary", JOHN_NUMBER)):
+        owners.record_owner(name, user, port=3101 if name == "johnwa" else None)
+        session = owners.session_dir(name)
+        session.mkdir(parents=True, exist_ok=True)
+        if number:
+            (session / "creds.json").write_text(json.dumps({"me": {"id": f"{number}:7@s.whatsapp.net"}}))
+
+    async def init():
+        with _scoped_to(box["homes"]["default"]):
+            app = get_store("supabase-app", "prod", config=pg_config(box["dsn"]))
+            store = SupabaseCredentialStore(app)
+            await store.initialize()
+            john = await PrincipalStore(app).get("john")
+            await store.put(john, provider="telegram", name="bot", kind="telegram-bot",
+                            payload={"token": JOHN_TOKEN, "bot_username": "johns_bot"})
+
+    asyncio.run(init())
+
+
+def test_register_whatsapp_and_telegram_from_the_callers_own_credential(
+    box, hermes_root, monkeypatch,  # noqa: F811
+):
+    _own_credentials(box, hermes_root)
+    _session_as(monkeypatch, "john")
+    john = _client("john")
+
+    r = john.post("/api/sources", json={
+        "channel": "whatsapp", "credential_ref": {"kind": "wa-bridge", "bridge": "johnwa"}})
+    assert r.status_code == 200, r.text
+    wa = r.json()["source"]
+    assert (wa["channel"], wa["address"], wa["owner_user_id"], wa["display"]) == (
+        "whatsapp", JOHN_NUMBER, "john", "johnwa")
+    assert wa["credential_ref"] == {"profile": "default", "kind": "wa-bridge", "bridge": "johnwa",
+                                    "owner_user_id": "john", "port": 3101}
+
+    r = john.post("/api/sources", json={"channel": "telegram",
+                                        "credential_ref": {"kind": "telegram-bot"}})
+    assert r.status_code == 200, r.text
+    tg = r.json()["source"]
+    assert (tg["address"], tg["display"]) == ("12345", "@johns_bot")
+    assert tg["credential_ref"] == {"profile": "default", "kind": "telegram-bot",
+                                    "provider": "telegram", "name": "bot", "owner_user_id": "john"}
+    assert "secret" not in r.text
+
+    # Refusals: wrong kind/channel, unlinked or unknown bridges, no address for email.
+    for body, status in (
+        ({"channel": "whatsapp", "credential_ref": {"kind": "telegram-bot"}}, 400),
+        ({"channel": "whatsapp", "credential_ref": {"kind": "wa-bridge", "bridge": "spare"}}, 409),
+        ({"channel": "whatsapp", "credential_ref": {"kind": "wa-bridge", "bridge": "nope"}}, 404),
+        ({"channel": "whatsapp", "credential_ref": {"kind": "wa-bridge", "bridge": "../x"}}, 400),
+        ({"channel": "email", "credential_ref": {"kind": "email-imap"}}, 400),
+        ({"channel": "whatsapp"}, 400),
+    ):
+        assert john.post("/api/sources", json=body).status_code == status, body
+
+    # Someone else's credential is refused, and nothing leaks the number or token.
+    _session_as(monkeypatch, "mary")
+    mary = _client("mary")
+    for body, status in (
+        ({"channel": "whatsapp", "credential_ref": {"kind": "wa-bridge", "bridge": "johnwa"}}, 403),
+        ({"channel": "telegram", "credential_ref": {"kind": "telegram-bot"}}, 404),
+        # Mary's own bridge, linked to John's number: the one-owner rule, masked.
+        ({"channel": "whatsapp", "credential_ref": {"kind": "wa-bridge", "bridge": "marywa"}}, 409),
+    ):
+        r = mary.post("/api/sources", json=body)
+        assert r.status_code == status, (body, r.text)
+        assert JOHN_NUMBER not in r.text and "secret" not in r.text and "12345" not in r.text
+    _session_as(monkeypatch, "leo")  # the owner can see John's credential row, but not use it
+    r = _client("leo").post("/api/sources", json={"channel": "telegram",
+                                                  "credential_ref": {"kind": "telegram-bot"}})
+    assert r.status_code in (403, 404) and "secret" not in r.text
+
+    # The email address path is unchanged.
+    _session_as(monkeypatch, "john")
+    r = john.post("/api/sources", json={"channel": "email", "address": "John@Example.com"})
+    assert r.status_code == 200 and r.json()["source"]["address"] == MAILBOX
+    owners = {s["address"]: s["owner_user_id"]
+              for s in _box(box["dsn"], lambda c: registry.list_sources(c))
+              for s in [s.as_dict()]}
+    assert owners == {JOHN_NUMBER: "john", "12345": "john", MAILBOX: "john"}

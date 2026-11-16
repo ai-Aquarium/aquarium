@@ -12,6 +12,7 @@ the box admin's.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -25,9 +26,108 @@ router = APIRouter(prefix="/api/sources")
 
 class RegisterBody(BaseModel):
     channel: str
-    address: str
+    #: Required for email. WhatsApp / Telegram may leave it out and name the
+    #: caller's own credential instead (see :func:`_from_own_credential`).
+    address: Optional[str] = None
     display: Optional[str] = None
     credential_ref: Optional[dict[str, Any]] = None
+
+
+#: Credential kinds whose address the server reads itself, and their channel.
+_DERIVED = {"wa-bridge": "whatsapp", "telegram-bot": "telegram"}
+_BRIDGE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
+_TAKEN = (
+    "This {label} is already registered to another user. "
+    "Ask the box owner if you think it should be yours."
+)
+
+
+async def _from_own_credential(principal, channel: str, ref: Optional[dict[str, Any]]):
+    """``(address, credential_ref, display)`` read from the caller's OWN credential.
+
+    The agent-home wizard only sees masked WhatsApp numbers and no bot ids, so
+    for ``{"kind": "wa-bridge", "bridge": <name>}`` (a bridge the caller added
+    in this profile) and ``{"kind": "telegram-bot"[, "name"]}`` (their saved
+    bot) the address comes from the bridge's linked session / the bot token
+    here. Someone else's credential is refused; neither the number nor the
+    token is ever put in an error.
+    """
+    from hermes_cli.profiles import get_active_profile_name
+
+    kind = str((ref or {}).get("kind") or "")
+    expected = _DERIVED.get(kind)
+    if expected is None:
+        raise HTTPException(
+            status_code=400,
+            detail="address is required, or a credential_ref of kind wa-bridge or telegram-bot",
+        )
+    if channel != expected:
+        raise HTTPException(status_code=400, detail=f"A {kind} credential is a {expected} source.")
+    profile = get_active_profile_name()
+    if kind == "wa-bridge":
+        return await _own_bridge(principal, profile, ref or {})
+    return await _own_bot(principal, profile, ref or {})
+
+
+async def _own_bridge(principal, profile: str, ref: dict[str, Any]):
+    from hermes_cli import wa_bridge_owners as owners
+
+    name = str(ref.get("bridge") or "").strip().lower()
+    if not _BRIDGE_NAME.fullmatch(name):
+        raise HTTPException(status_code=400, detail="credential_ref.bridge must be a bridge name")
+    person = owners.bridge_person(name)
+    if person is None:
+        if not owners.session_dir(name).is_dir():
+            raise HTTPException(status_code=404, detail="No such WhatsApp bridge.")
+        # A bridge nobody recorded belongs to the install owner (wa_bridge_owners).
+        from hermes_cli.access import PrincipalStore
+        from hermes_cli.datastore import get_store
+
+        install = await PrincipalStore(get_store("supabase-app", "prod")).get_owner()
+        person = install.user_id if install is not None else None
+    if person != principal.user_id:
+        raise HTTPException(
+            status_code=403, detail="Only the person who added this WhatsApp bridge can register it."
+        )
+    number = owners.own_number(name)
+    if number is None:
+        raise HTTPException(
+            status_code=409, detail="This WhatsApp bridge is not linked to a phone yet."
+        )
+    out: dict[str, Any] = {"profile": profile, "kind": "wa-bridge", "bridge": name,
+                           "owner_user_id": principal.user_id}
+    port = owners.recorded_port(name)
+    if port:
+        out["port"] = port
+    return number, out, name
+
+
+async def _own_bot(principal, profile: str, ref: dict[str, Any]):
+    from agent.secret_scope import load_env_file
+    from hermes_cli.credentials_api import _store
+    from hermes_cli.telegram_bot_api import KIND, NAME, PROVIDER, bot_id_of
+    from hermes_constants import get_hermes_home
+
+    name = str(ref.get("name") or NAME).strip()
+    cred = await _store().get(principal, PROVIDER, name)
+    if cred is None or cred.kind != KIND:
+        raise HTTPException(status_code=404, detail="You have no Telegram bot saved.")
+    if cred.owner_user_id != principal.user_id:
+        raise HTTPException(status_code=403, detail="Only the bot's owner can register it.")
+    token = str((cred.payload or {}).get("token") or "")
+    bot_id = bot_id_of(token) if token else ""
+    if not bot_id.isdigit():
+        raise HTTPException(status_code=409, detail="This Telegram bot has no valid token saved.")
+    install = str(load_env_file(get_hermes_home() / ".env").get("TELEGRAM_BOT_TOKEN") or "")
+    if install and bot_id_of(install) == bot_id:
+        raise HTTPException(
+            status_code=409,
+            detail="This is the profile's own Telegram bot, not one person's source.",
+        )
+    username = (cred.payload or {}).get("bot_username")
+    out = {"profile": profile, "kind": KIND, "provider": PROVIDER, "name": name,
+           "owner_user_id": principal.user_id}
+    return bot_id, out, f"@{username}" if username else None
 
 
 class RouteBody(BaseModel):
@@ -94,17 +194,38 @@ async def list_my_sources(request: Request, all: bool = False):
 
 @router.post("")
 async def register(request: Request, body: RegisterBody):
+    """Register a source to the caller.
+
+    Email: ``{channel, address, display?, credential_ref?}``. WhatsApp /
+    Telegram may instead send ``{channel, credential_ref: {kind: "wa-bridge",
+    bridge}}`` or ``{channel, credential_ref: {kind: "telegram-bot"}}`` with
+    no address: it is read from the caller's own credential.
+    """
     principal = await _caller(request)
+    address, ref, display, derived = body.address, body.credential_ref, body.display, False
+    if not (address or "").strip():
+        try:
+            channel = registry.normalize_channel(body.channel)
+        except registry.SourceRegistryError as error:
+            raise _http(error) from error
+        address, ref, default_display = await _from_own_credential(principal, channel, ref)
+        display, derived = display or default_display, True
 
     async def run(connection):
-        source = await registry.register_source(
-            connection,
-            channel=body.channel,
-            address=body.address,
-            owner_user_id=principal.user_id,
-            display=body.display,
-            credential_ref=body.credential_ref,
-        )
+        try:
+            source = await registry.register_source(
+                connection,
+                channel=body.channel,
+                address=address,
+                owner_user_id=principal.user_id,
+                display=display,
+                credential_ref=ref,
+            )
+        except registry.SourceOwnedByAnotherUser as error:
+            if not derived:
+                raise
+            label = "WhatsApp number" if error.channel == "whatsapp" else "Telegram bot"
+            raise HTTPException(status_code=409, detail=_TAKEN.format(label=label)) from None
         return {"source": source.as_dict()}
 
     return await _with_box(run)
