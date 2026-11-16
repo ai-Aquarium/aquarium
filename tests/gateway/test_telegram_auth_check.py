@@ -394,3 +394,92 @@ async def test_unmentioned_group_location_from_removed_user_not_observed():
     await adapter._handle_location_message(update, SimpleNamespace())
 
     assert observed == []
+
+
+# -- refused-message sink (FG-03 P6 person-bot capture) -----------------------
+
+
+def _with_sink(adapter):
+    offered = []
+
+    async def sink(record):
+        offered.append(record)
+
+    adapter.set_refused_message_sink(sink)
+    adapter._build_message_event = lambda *a, **kw: pytest.fail("refused message reached event building")
+    return offered
+
+
+def _update(message):
+    return SimpleNamespace(update_id=1, message=message, effective_message=None)
+
+
+@pytest.mark.asyncio
+async def test_refused_dm_and_group_messages_go_to_the_sink_only():
+    from datetime import datetime, timezone
+
+    adapter = _make_adapter(allow_from=["222"])
+    offered = _with_sink(adapter)
+    dm = _make_message("hi there", from_user_id=111, chat_id=111, chat_type="private")
+    dm.from_user.username = "sam"
+    dm.date = datetime(2026, 11, 16, 8, 0, tzinfo=timezone.utc)
+    group = _make_message("no mention here", from_user_id=333, chat_id=-100, chat_type="supergroup")
+    await adapter._handle_text_message(_update(dm), SimpleNamespace())
+    await adapter._handle_text_message(_update(group), SimpleNamespace())
+    await adapter._handle_command(_update(_make_message("/start", from_user_id=111, chat_id=111,
+                                                        chat_type="private")), SimpleNamespace())
+
+    assert offered[0] == {
+        "chat_id": "111", "chat_type": "dm", "chat_title": "Test", "message_id": "42",
+        "sender_id": "111", "sender_name": "Test User", "sender_username": "@sam",
+        "text": "hi there", "timestamp": "2026-11-16T08:00:00+00:00", "media": [],
+    }
+    assert (offered[1]["chat_type"], offered[1]["chat_id"], offered[1]["sender_id"]) == ("group", "-100", "333")
+    assert offered[2]["text"] == "/start"
+    adapter._message_handler.assert_not_called()
+    assert adapter._pending_text_batches == {}
+
+
+@pytest.mark.asyncio
+async def test_refused_media_is_described_not_downloaded():
+    adapter = _make_adapter(allow_from=["222"])
+    offered = _with_sink(adapter)
+    msg = _make_message(None, from_user_id=111, chat_id=111, chat_type="private")
+    msg.caption = "the invoice"
+    msg.photo = [SimpleNamespace(file_id="small", file_unique_id="s", file_size=10),
+                 SimpleNamespace(file_id="big", file_unique_id="b", file_size=99)]
+    msg.document = SimpleNamespace(file_id="doc", file_unique_id="d", mime_type="application/pdf",
+                                   file_name="inv.pdf", file_size=5)
+    await adapter._handle_media_message(_update(msg), SimpleNamespace())
+    (record,) = offered
+    assert record["text"] == "the invoice"
+    assert record["media"] == [
+        {"type": "photo", "file_id": "big", "file_unique_id": "b", "file_size": 99},
+        {"type": "document", "file_id": "doc", "file_unique_id": "d", "mime_type": "application/pdf",
+         "file_name": "inv.pdf", "file_size": 5},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sink_never_sees_allowed_users_bots_channels_or_edits():
+    adapter = _make_adapter(allow_from=["222"])
+    offered = _with_sink(adapter)
+    adapter._build_message_event = lambda *a, **kw: SimpleNamespace(text="x", source=None)
+    bot = _make_message(from_user_id=444, chat_id=444, chat_type="private")
+    bot.from_user.is_bot = True
+    own = _make_message(from_user_id=999, chat_id=-100)
+    channel = _make_message(from_user_id=555, chat_id=-200, chat_type="channel")
+    edited = _make_message(from_user_id=111, chat_id=111, chat_type="private")
+    edited.edit_date = 1
+    for msg in (bot, own, channel, edited):
+        await adapter._offer_refused_message(msg)
+    assert offered == []
+
+
+@pytest.mark.asyncio
+async def test_without_a_sink_refused_messages_are_dropped_as_before():
+    adapter = _make_adapter(allow_from=["222"])
+    adapter._build_message_event = lambda *a, **kw: pytest.fail("refused message reached event building")
+    await adapter._handle_text_message(
+        _update(_make_message(from_user_id=111, chat_id=111, chat_type="private")), SimpleNamespace())
+    adapter._message_handler.assert_not_called()

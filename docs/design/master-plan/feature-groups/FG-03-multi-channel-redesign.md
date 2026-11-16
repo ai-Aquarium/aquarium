@@ -351,6 +351,7 @@ Tests green + baseline green (session-key lock intact) + `ruff`/`ty` clean; Shap
   - [x] Pipelines: `triage.agent.<channel>` legacy|shadow|agent in the email and WhatsApp triage scripts (`custom/shared/profile_triage.py`, `batch_routing.route`), per-profile retry with `_profiles_done`, legacy fallback after 3 failed passes; calendar stays legacy (not routed); real-path E2E `tests/custom/test_fg03_profile_triage_e2e.py`
   - [ ] Comparison period per channel (runbook above), then cut over
 - [ ] P6 — Telegram triage source; replies from receiving account
+  - [x] (A) Gateway capture (`gateway/person_telegram_bots.py`): with `triage.agent.telegram: agent` and the person bot an enabled, routed `telegram` source in `aquarium_box`, other senders' DMs and group messages (refused by the adapter's `allow_from`, handed to `TelegramAdapter.set_refused_message_sink`) are written as `hermes_cli/telegram_triage.py` batch files — never an agent turn, never a reply; one chat per batch, written after `CAPTURE_QUIET_SECONDS` (20 s) quiet, at most `CAPTURE_MAX_SECONDS` / `CAPTURE_MAX_MESSAGES`; registry answer cached 60 s, fails closed (others ignored); owner DM unchanged; install bot unchanged; no raw box-wide mirror (WhatsApp's is a standalone-service SQLite path, not a gateway one). Media are described (file ids), not downloaded. Real-Postgres E2E `tests/gateway/test_person_telegram_capture_e2e.py`
 - [ ] P7 — UI (Figma mockups first)
 - [ ] P8 — E2E, browser and approved production verification
 
