@@ -283,6 +283,10 @@ Tests green + baseline green (session-key lock intact) + `ruff`/`ty` clean; Shap
 - [ ] P1 — user-profile folders `<profile>/users/<uid>/`
 - [ ] P2 — box-level source registry, one owner per source, routes
 - [ ] P3 — triage skill layers per user-profile
+  - [x] Layers built-in → template `<profile>/triage-skills/<kind>/` → user `<profile>/users/<uid>/triage-skills/<kind>/` (`hermes_cli/triage_skills.py`): add/override/disable, reset + history, required "What I care about" (≤4 KB, user → template → built-in); email built-ins keep both `whatsapp-triage/` and `email-triage/` keys; symlinks cannot escape a layer
+  - [x] Router input for P4: `triage_skills.care_sections_for_source(conn, source_id)` — one care entry per enabled route, the source owner's own layer (Telegram: none yet); real-Postgres E2E (John's mailbox → John@CFO + John@CMO, never Mary's)
+  - [x] Profile lifecycle: `--clone` / `--clone-all` / export carry `triage-skills/` (no `.versions/` on `--clone`), never `users/`; skill discovery never loads `triage-skills/` (`tests/hermes_cli/test_triage_skills_profiles.py`)
+  - [ ] API/CLI + agent-home "My triage skills" (P7)
 - [ ] P4 — router (one cheap call per batch, retry ×3 then all)
 - [ ] P5 — full triage in chosen user-profiles' agents (per-channel switch)
 - [ ] P6 — Telegram triage source; replies from receiving account
