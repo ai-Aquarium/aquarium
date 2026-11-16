@@ -182,8 +182,9 @@ triage:
    `hermes source decisions` picks the right user-profiles.
 2. Set `triage.agent.<channel>: shadow`; restart that channel's triage
    service (it reads `config.yaml` at start).
-3. Review for a few days: `hermes source comparisons` (filters by owner,
-   source, batch) — escalate/classification agreement, extracted to-dos, and
+3. Review for a few days: `hermes source comparisons --as <user> --source
+   <channel>:<address>` (or `--all` as box admin; `/api/sources/comparisons`
+   in agent-home) — escalate/classification agreement, extracted to-dos, and
    failed turns. Ask each owner to fix their "What I care about" or triage
    skills where the agent is wrong.
 4. Cut over: `triage.agent.<channel>: agent`, restart. Watch the first
@@ -342,8 +343,8 @@ Tests green + baseline green (session-key lock intact) + `ruff`/`ty` clean; Shap
   - [x] Core `hermes_cli/triage_router.py`: `auxiliary.triage_router` call, byte-stable system prompt (routes + care only), strict JSON reply (unknown profiles dropped), `triage.router` {mode shadow|off|enforce, retries 3, retry_delay_seconds 5} then all routed profiles `fallback=true`; `aquarium_box.routing_decisions` (reasons only, no batch text; idempotent per source+batch; owner-only, box admin `all=1`); `hermes source decisions`, `GET /api/sources/decisions` + agent-home BFF; real-Postgres E2E (`tests/hermes_cli/test_triage_router_e2e.py`)
   - [ ] Pipelines call `route_batch_sync` (shadow first)
 - [ ] P5 — full triage in chosen user-profiles' agents (per-channel switch)
-  - [ ] Per-profile agent turn + comparisons store, `hermes source comparisons` (`hermes_cli/triage_agent.py`)
-  - [ ] Handlers act in a given profile for a given owner, box-wide SQLite once (`box_writes`), Needs You dedupe (`custom/shared/triage_handlers.py`)
+  - [x] Per-profile agent turn + comparisons store, `hermes source comparisons` (`hermes_cli/triage_agent.py`)
+  - [x] Handlers act in a given profile for a given owner, box-wide SQLite once (`box_writes`), Needs You dedupe (`custom/shared/triage_handlers.py`)
   - [x] Pipelines: `triage.agent.<channel>` legacy|shadow|agent in the email and WhatsApp triage scripts (`custom/shared/profile_triage.py`, `batch_routing.route`), per-profile retry with `_profiles_done`, legacy fallback after 3 failed passes; calendar stays legacy (not routed); real-path E2E `tests/custom/test_fg03_profile_triage_e2e.py`
   - [ ] Comparison period per channel (runbook above), then cut over
 - [ ] P6 — Telegram triage source; replies from receiving account

@@ -8,26 +8,49 @@ it themselves. Only the models are stand-ins: the cheap router model, the
 profile agent's turn, and DeepSeek.
 """
 
+import asyncio
 import json
 import sqlite3
 import sys
+from pathlib import Path
 
+import asyncpg
 import pytest
 import yaml
 
-from hermes_cli import source_registry as registry
-from hermes_cli import triage_agent as ta
-from hermes_cli import triage_router as tr
-from hermes_cli import triage_skills as tsk
-from tests.custom.test_fg03_batch_routing import (  # noqa: F401 — pytest fixture
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "custom"))
+
+import hermes_cli.datastore as datastore  # noqa: E402
+from hermes_cli import needs_you as ny  # noqa: E402
+from hermes_cli import source_registry as registry  # noqa: E402
+from hermes_cli import triage_agent as ta  # noqa: E402
+from hermes_cli import triage_router as tr  # noqa: E402
+from hermes_cli import triage_skills as tsk  # noqa: E402
+from hermes_cli.access import PrincipalStore  # noqa: E402
+from hermes_cli.console_scope import _scoped_to  # noqa: E402
+from hermes_cli.datastore import app_schema, get_store  # noqa: E402
+from hermes_cli.human_comms import NotificationStore  # noqa: E402
+from hermes_cli.inbound_registry import InboundRegistry  # noqa: E402
+from hermes_cli.todo_store import TodoStore  # noqa: E402
+from tests.custom.test_fg03_batch_routing import (  # noqa: E402,F401 — pytest fixture
     EMAIL_TRIAGE,
     WA_TRIAGE,
     _exec,
     credit,
 )
-from tests.hermes_cli._pg_fixture import hermes_root, postgres_dsn  # noqa: F401 — pytest fixtures
-from tests.hermes_cli.test_source_registry_e2e import _box, _seed, box  # noqa: F401 — pytest fixture
-from tests.hermes_cli.test_triage_router_e2e import KeywordModel
+from tests.hermes_cli._pg_fixture import hermes_root, pg_config, postgres_dsn  # noqa: E402,F401
+from tests.hermes_cli.test_source_registry_e2e import (  # noqa: E402,F401 — pytest fixture
+    _box,
+    _client,
+    _seed,
+    _session_as,
+    box,
+)
+from tests.hermes_cli.test_triage_router_e2e import KeywordModel  # noqa: E402
+
+JOHN_CHAT = "777"
+BOX_CHAT = "111"
 
 ADDRESS = {"email": "john@example.com", "whatsapp": "85291234567"}
 TEXT = {
@@ -43,7 +66,8 @@ LEGACY = {"classification": "legacy", "summary": "legacy verdict", "escalate": T
 def agent_reply(profile):
     return {"classification": f"agent-{profile}", "summary": f"{profile} verdict",
             "escalate": True, "escalation_reason": "invoice", "escalation_priority": "high",
-            "tasks": [{"description": "pay INV-77"}], "notes": [{"content": "INV-77 overdue"}]}
+            "tasks": [{"description": "pay INV-77"}], "notes": [{"content": "INV-77 overdue"}],
+            "todos": [{"title": "Pay INV-77", "priority": "high", "notify": True}]}
 
 
 class DeepSeek:
@@ -133,7 +157,8 @@ class Channel:
             batch = {"batch_id": batch_id, "channel": "email", "account_id": ADDRESS["email"],
                      "source_id": source_id, "owner_user_id": "john", "sender": sender,
                      "sender_name": "Supplier", "email_count": 1,
-                     "emails": [{"id": f"{batch_id}-e1", "from_addr": sender,
+                     "emails": [{"id": f"{batch_id}-e1", "message_id": f"<{batch_id}@x>",
+                                 "from_addr": sender,
                                  "subject": "Re: things", "body_text": text}]}
         else:
             batch = {"batch_id": batch_id, "sender_phone": "+85211112222",
@@ -142,7 +167,7 @@ class Channel:
                      "messages": [{"msg_id": f"{batch_id}-m1", "text": text,
                                    "sender_name": "Supplier", "chat_id": "111@lid",
                                    "is_group": False}]}
-        path = self.batch_dir and __import__("pathlib").Path(self.batch_dir) / f"{batch_id}.json"
+        path = Path(self.batch_dir) / f"{batch_id}.json"
         path.write_text(json.dumps(batch))
         return path
 
@@ -153,8 +178,6 @@ class Channel:
             self.module.process_batch_file(str(path))
 
     def done(self, path):
-        from pathlib import Path
-
         return Path(self.processed, path.name).exists() and not path.exists()
 
     def rows(self, table):
@@ -185,12 +208,65 @@ def _configure(hermes_root, router, agent):  # noqa: F811
     path.write_text(yaml.safe_dump(config))
 
 
+def _stores(box, monkeypatch):  # noqa: F811
+    """Each profile's to-do, inbox and notification stores; John's Telegram in CFO and CMO."""
+    config = pg_config(box["dsn"])
+
+    async def init(home, link):
+        with _scoped_to(home):
+            app = get_store("supabase-app", "prod", config=config)
+            await InboundRegistry(app).initialize()
+            await TodoStore(app).initialize()
+            await NotificationStore(app, config=config).initialize()
+            if link:
+                await PrincipalStore(app).link_channel("john", "telegram", JOHN_CHAT)
+
+    for profile in ("default", "cfo", "cmo"):
+        asyncio.run(init(box["homes"][profile], profile != "default"))
+    datastore._verified_schemas.clear()
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USERS", BOX_CHAT)
+    from shared import escalation_pusher_v2, inbound_registration, todo_registration
+
+    for module in (inbound_registration, todo_registration):
+        monkeypatch.setattr(module, "_owner_principal", None)
+        monkeypatch.setattr(module, "_owner_resolved", False)
+        monkeypatch.setattr(module, "_owner_last_attempt", float("-inf"))
+    sent = []
+    monkeypatch.setattr(escalation_pusher_v2, "send_telegram",
+                        lambda text, parse_mode="HTML", chat_id=None: sent.append(chat_id) or True)
+    return sent
+
+
+def _profile_rows(box):  # noqa: F811
+    """Per profile: (owner, title) of every to-do and (owner, base key) of every notification."""
+    async def read():
+        conn = await asyncpg.connect(box["dsn"], ssl=False)
+        try:
+            out = {}
+            for profile in ("default", "cfo", "cmo"):
+                schema = app_schema("prod", profile=profile)
+                out[profile] = {
+                    "todos": [tuple(r) for r in await conn.fetch(
+                        f"SELECT owner_user_id, title FROM {schema}.tasks ORDER BY created_at")],
+                    "notifications": sorted(tuple(r) for r in await conn.fetch(
+                        f"SELECT owner_user_id, split_part(dedupe_key, ':', 1) "
+                        f"FROM {schema}.notifications")),
+                }
+            return out
+        finally:
+            await conn.close()
+
+    return asyncio.run(read())
+
+
+NOTHING = {"todos": [], "notifications": []}
+
+
 def _people(box, kind):  # noqa: F811
     """John and Mary in CFO and CMO; John's source routed to both."""
     homes = box["homes"]
     _box(box["dsn"], lambda c: registry.list_sources(c))  # box schema
-    import asyncio
-
     asyncio.run(_seed(homes["cmo"], box["dsn"], [("mary", "member", True)]))
     for profile in ("cfo", "cmo"):
         for user in ("john", "mary"):
@@ -227,6 +303,7 @@ def _decisions(box):  # noqa: F811
 def setup(request, box, hermes_root, tmp_path, monkeypatch, credit):  # noqa: F811
     """``setup(router, agent)`` -> (channel, source_id, router model, turns)."""
     kind = request.param
+    sent = _stores(box, monkeypatch)
 
     def make(router="enforce", agent="legacy", fail=()):
         source_id = _people(box, kind)
@@ -235,7 +312,9 @@ def setup(request, box, hermes_root, tmp_path, monkeypatch, credit):  # noqa: F8
         monkeypatch.setattr(tr, "_AuxiliaryLLM", lambda: model)
         turns = Turns(fail)
         monkeypatch.setattr(ta, "_default_runner", turns)
-        return Channel(kind, tmp_path, monkeypatch), source_id, model, turns
+        channel = Channel(kind, tmp_path, monkeypatch)
+        channel.sent = sent
+        return channel, source_id, model, turns
 
     return make
 
@@ -271,6 +350,8 @@ def test_shadow_acts_on_legacy_and_stores_comparisons(setup, box):  # noqa: F811
     assert all(c["legacy_result"]["classification"] == "legacy" for c in stored)
     assert [c["agent_result"]["classification"] for c in stored] == [
         "agent-cfo", "agent-cfo", "agent-cmo"]
+    rows = _profile_rows(box)
+    assert rows["cfo"] == NOTHING and rows["cmo"] == NOTHING  # agent results never acted on
     assert all(ch.done(p) for p in paths)
 
 
@@ -313,3 +394,108 @@ def test_agent_unsourced_batch_is_legacy(setup, box):  # noqa: F811
     ch.run(path)
     assert ch.done(path) and turns.calls == [] and model.calls == []
     assert ch.rows("escalations") == ["legacy verdict"]
+
+
+def _arrival_entries(monkeypatch, user):
+    _session_as(monkeypatch, user)
+    body = _client(user).get("/api/needs-you").json()
+    return [i for i in body["items"] if i["context"].get("arrival_key")]
+
+
+def _verdict_once(ch, profile="cfo"):
+    return {"escalations": [f"{profile} verdict"], ch.tasks: ["pay INV-77"],
+            ch.notes: ["INV-77 overdue"]}
+
+
+def test_agent_one_profile(setup, box):  # noqa: F811
+    ch, source_id, model, turns = setup(router="enforce", agent="agent")
+    path = ch.write("b-invoice", source_id)
+    ch.run(path)
+    assert ch.done(path) and len(model.calls) == 1
+    assert turns.calls == [("cfo", "john", f"triage_{ch.kind}_b-invoice_cfo")]
+    assert ch.deepseek.calls == []
+    assert ch.box_rows() == _verdict_once(ch)
+    rows = _profile_rows(box)
+    assert rows["cfo"]["todos"] == [("john", "Pay INV-77")]
+    assert {owner for owner, _ in rows["cfo"]["notifications"]} == {"john"}
+    assert rows["cmo"] == NOTHING and rows["default"] == NOTHING
+    assert _comparisons(box) == []
+
+
+def test_agent_two_profiles(setup, box, monkeypatch):  # noqa: F811
+    ch, source_id, model, turns = setup(router="shadow", agent="agent")
+    path = ch.write("b-launch", source_id)
+    ch.run(path)
+    assert ch.done(path) and len(model.calls) == 1
+    assert turns.profiles() == ["cfo", "cmo"] and ch.deepseek.calls == []
+    assert ch.box_rows() == _verdict_once(ch)  # box-wide SQLite written once
+    rows = _profile_rows(box)
+    assert rows["cfo"]["todos"] == [("john", "Pay INV-77")] == rows["cmo"]["todos"]
+    assert rows["default"] == NOTHING
+    for profile in ("cfo", "cmo"):
+        assert {owner for owner, _ in rows[profile]["notifications"]} == {"john"}  # nothing for Mary
+    assert ch.sent == [JOHN_CHAT]  # one push per arrival per person, never the box chat
+
+    [entry] = _arrival_entries(monkeypatch, "john")  # one Needs You entry
+    assert entry["context"]["profiles"] == ["cfo", "cmo"]
+    assert _arrival_entries(monkeypatch, "mary") == []
+
+
+def test_agent_retry_runs_only_the_failed_profile(setup, box):  # noqa: F811
+    ch, source_id, model, turns = setup(router="enforce", agent="agent", fail={"cmo"})
+    path = ch.write("b-launch", source_id)
+    ch.run(path)
+    assert not ch.done(path)
+    batch = json.loads(path.read_text())
+    assert batch["_profiles_done"] == ["cfo"] and batch["_agent_attempts"] == 1
+    turns.fail.clear()
+    ch.run(path)
+    assert ch.done(path) and turns.profiles() == ["cfo", "cmo", "cmo"]
+    assert len(model.calls) == 1  # the retry reused the stored decision
+    assert ch.box_rows() == _verdict_once(ch)
+    rows = _profile_rows(box)
+    assert rows["cfo"]["todos"] == [("john", "Pay INV-77")] == rows["cmo"]["todos"]
+    assert ch.deepseek.calls == []
+
+
+def test_agent_falls_back_to_legacy_after_three_failed_passes(setup, box):  # noqa: F811
+    ch, source_id, model, turns = setup(router="enforce", agent="agent", fail={"cmo"})
+    path = ch.write("b-launch", source_id)
+    for attempt in (1, 2):
+        ch.run(path)
+        assert not ch.done(path)
+        assert json.loads(path.read_text())["_agent_attempts"] == attempt
+    assert ch.deepseek.calls == []
+    ch.run(path)
+    assert ch.done(path)
+    assert turns.profiles() == ["cfo", "cmo", "cmo", "cmo"]
+    assert len(ch.deepseek.calls) == 1 and len(model.calls) == 1
+    # CFO's result already wrote the box-wide rows; legacy does not repeat them.
+    assert ch.box_rows() == _verdict_once(ch)
+    rows = _profile_rows(box)
+    assert rows["cfo"]["todos"] == [("john", "Pay INV-77")] and rows["cmo"] == NOTHING
+    assert "_agent_attempts" in json.loads(Path(ch.processed, path.name).read_text())
+
+
+def test_agent_all_failed_falls_back_to_legacy_box_rows(setup, box):  # noqa: F811
+    ch, source_id, model, turns = setup(router="enforce", agent="agent", fail={"cfo", "cmo"})
+    path = ch.write("b-launch", source_id)
+    for _ in range(3):
+        ch.run(path)
+    assert ch.done(path) and len(ch.deepseek.calls) == 1 and len(model.calls) == 1
+    assert ch.box_rows() == {"escalations": ["legacy verdict"], ch.tasks: ["legacy task"],
+                             ch.notes: ["legacy note"]}
+    rows = _profile_rows(box)
+    assert rows["cfo"] == NOTHING and rows["cmo"] == NOTHING
+
+
+def test_agent_shortcuts_never_route_or_run_a_turn(setup, box):  # noqa: F811
+    ch, source_id, model, turns = setup(router="enforce", agent="agent")
+    if ch.kind == "email":
+        path = ch.write("b-news", source_id, sender="newsletter@shop.example",
+                        text="Deals! Click to unsubscribe")
+    else:
+        path = ch.write("b-media", source_id, text="")
+    ch.run(path)
+    assert ch.done(path)
+    assert model.calls == [] and turns.calls == [] and ch.deepseek.calls == []
