@@ -53,14 +53,17 @@ export function BuildSheet({ source, tables, onClose }: { source: DataSource; ta
   const router = useRouter();
   const study = useStudySchemas(source);
   const local = schemasOf(tables);
-  const schemas = study.available.length
+  // A connection source's study only matches schemas Hermes reports, so offer only those.
+  const schemas = study.remote
     ? study.available.map((name) => local.find((s) => s.name === name) ?? { name, count: 0 })
     : local;
   const changed = (source.schema_drift ?? []).map((d) => d.table);
   const [kindPick, setKind] = useState<BuildScope["kind"] | null>(null);
   const kind = kindPick ?? (schemas.length ? "schemas" : "undescribed");
   const [pickedState, setPicked] = useState<string[] | null>(null);
-  const picked = pickedState ?? (study.chosen.length ? study.chosen : (source.study_schemas?.length ? source.study_schemas : schemas.slice(0, 2).map((s) => s.name)));
+  const offered = (names: string[] | undefined) => (names ?? []).filter((n) => schemas.some((s) => s.name === n));
+  const saved = offered(study.chosen).length ? offered(study.chosen) : offered(source.study_schemas);
+  const picked = pickedState ?? (saved.length ? saved : schemas.slice(0, 2).map((s) => s.name));
   const [saveError, setSaveError] = useState(false);
   const [onDemand, setOnDemand] = useState(true);
   const scope: BuildScope = kind === "schemas" ? { kind, schemas: picked } : kind === "changed" ? { kind, tables: changed } : { kind };

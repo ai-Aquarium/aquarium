@@ -123,6 +123,28 @@ describe("data pages", () => {
     expect(next).not.toContain("first time someone asks");
   });
 
+  it("offers a connection source only the schemas Hermes reports and saves the pick first", async () => {
+    const d = doc("manage");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) =>
+      init?.method === "PUT"
+        ? new Response(JSON.stringify({ chosen: ["sales"] }), { status: 200 })
+        : new Response(JSON.stringify({ available: ["sales"], chosen: ["ghost"] }), { status: 200 }),
+    );
+    render(
+      <BuildSheet
+        source={{ ...d.source, kind: "connection", engine: "mysql", name: "ERP" }}
+        tables={["sales.orders", "hr.staff"]}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "sales" })).toBeTruthy());
+    expect(screen.queryByRole("checkbox", { name: "hr" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open chat" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalled());
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(put?.[1]?.body))).toEqual({ schemas: ["sales"] });
+  });
+
   it("opens the tab from the URL and switches tabs", () => {
     render(<DataSourceDetail doc={doc("manage")} versions={[]} directory={[]} me="leo" initialTab="access" />);
     expect(screen.getByRole("tab", { name: "Access" }).getAttribute("aria-selected")).toBe("true");
