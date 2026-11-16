@@ -454,3 +454,66 @@ def test_stop_also_writes_a_chat_that_arrives_while_another_chats_write_is_runni
     asyncio.run(go())
     assert [p.name for p in capture.batches()] == ["tg_111111111_7001_10.json", "tg_111111111_m1009_5.json"]
     assert runner.handled == []
+
+
+def test_a_batch_that_failed_many_times_is_still_retried_at_the_max_delay(monkeypatch, capture):
+    import gateway.person_telegram_bots as bots
+
+    runner = started(monkeypatch)
+    delays = []
+
+    async def later(failed, delay):
+        delays.append(delay)
+
+    monkeypatch.setattr(runner, "_retry_person_bot_batch_later", later)
+
+    async def go():
+        failed = bots._FailedBatch("tgbot:111111111", {"batch_id": "tg_1_2_3"}, attempts=5000)
+        runner._queue_person_bot_batch_retry(failed)
+        assert failed.task is not None
+        await failed.task
+
+    asyncio.run(go())
+    assert delays == [bots._RETRY_MAX_SECONDS]
+    assert bots._retry_delay(1) == bots._RETRY_FIRST_SECONDS
+
+
+def test_stop_writes_each_batch_exactly_once_even_when_a_retry_comes_due_mid_drain(monkeypatch, capture):
+    import threading
+
+    import gateway.person_telegram_bots as bots
+
+    monkeypatch.setattr(bots, "_RETRY_FIRST_SECONDS", 0.3)
+    real = telegram_triage.write_batch
+    calls, writing, release = [], threading.Event(), threading.Event()
+
+    def write(batch, *, batch_dir=None):
+        calls.append(batch["batch_id"])
+        if len(calls) == 1:
+            raise OSError("disk full")
+        if batch["chat_id"] == "-1009":
+            writing.set()
+            assert release.wait(5)
+        return real(batch, batch_dir=batch_dir)
+
+    monkeypatch.setattr(telegram_triage, "write_batch", write)
+    runner = started(monkeypatch)
+
+    async def go():
+        sink = runner._make_person_bot_capture("tgbot:111111111")
+        await runner._reconcile_person_telegram_bots()
+        await sink(record())
+        await asyncio.sleep(0.15)  # chat A's write failed; its retry is due at ~0.35 s
+        assert len(runner._person_bot_capture_state()["retry"]) == 1
+        monkeypatch.setattr(telegram_triage, "CAPTURE_QUIET_SECONDS", 60)
+        await sink(record(sender=OTHER, chat="-1009", chat_type="group", title="Suppliers", message_id="5"))
+        stop = asyncio.create_task(runner._stop_all_person_bots())
+        while not writing.is_set():
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.4)  # chat A's retry comes due while chat B's write is suspended
+        release.set()
+        await stop
+
+    asyncio.run(go())
+    assert calls == ["tg_111111111_7001_10", "tg_111111111_m1009_5", "tg_111111111_7001_10"]
+    assert [p.name for p in capture.batches()] == ["tg_111111111_7001_10.json", "tg_111111111_m1009_5.json"]
