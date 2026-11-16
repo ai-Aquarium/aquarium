@@ -88,7 +88,8 @@ def test_agent_mode_defaults_to_legacy_and_reads_each_channel():
 
     assert {c: ta.agent_mode(c, DEFAULT_CONFIG) for c in ta.CHANNELS} == dict.fromkeys(ta.CHANNELS, "legacy")
     config = {"triage": {"agent": {"email": "Shadow", "whatsapp": "agent", "calendar": "bogus"}}}
-    assert [ta.agent_mode(c, config) for c in ta.CHANNELS] == ["shadow", "agent", "legacy"]
+    assert [ta.agent_mode(c, config) for c in ("email", "whatsapp", "calendar")] == [
+        "shadow", "agent", "legacy"]
     assert ta.agent_mode("email", {}) == "legacy"
     assert ta.agent_mode("email", {"triage": None}) == "legacy"
     assert ta.agent_mode("telegram", config) == "legacy"
@@ -97,7 +98,7 @@ def test_agent_mode_defaults_to_legacy_and_reads_each_channel():
 # -- prompt ---------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("kind", ta.CHANNELS)
+@pytest.mark.parametrize("kind", [c for c in ta.CHANNELS if c in LEGACY])  # Telegram has none
 def test_instructions_are_todays_legacy_wording(kind):
     source = LEGACY[kind].read_text()
     assert ta._LEGACY_INTRO[kind] in source
@@ -137,7 +138,7 @@ def test_batch_rendering_matches_the_legacy_shape(homes):
     cal = ta.build_triage_prompt("calendar", CALENDAR, home=homes["cfo"], owner_user_id="john")
     assert cal.rstrip().endswith("- John <john@example.com> [accepted] (you)")
     with pytest.raises(ValueError):
-        ta.build_triage_prompt("telegram", {}, home=homes["cfo"], owner_user_id="john")
+        ta.build_triage_prompt("sms", {}, home=homes["cfo"], owner_user_id="john")
 
 
 # -- reply ----------------------------------------------------------------------
@@ -197,7 +198,7 @@ def test_failures_are_reported_not_raised(profiles):
     boom = ta.run_profile_triage("email", EMAIL, profile="cfo", owner_user_id="john",
                                  runner=Runner(ConnectionError("provider 503")))
     assert boom.error == "ConnectionError: provider 503" and boom.result is None
-    kind = ta.run_profile_triage("telegram", EMAIL, profile="cfo", owner_user_id="john", runner=Runner())
+    kind = ta.run_profile_triage("sms", EMAIL, profile="cfo", owner_user_id="john", runner=Runner())
     assert kind.error.startswith("ValueError")
 
 

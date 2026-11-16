@@ -198,6 +198,10 @@ _ARRIVAL_MARK = "|" + ARRIVAL_PREFIX
 #: Dedupe-key base of the in-app alert a profile-scoped triage raises when it
 #: escalates an arrival (``custom/shared/triage_handlers``).
 TRIAGE_ALERT = "triage-alert"
+#: ... and when a batch of a channel with no legacy triage (Telegram, FG-03
+#: P6) could not be triaged at all and was only stored
+#: (``triage-failed:<kind>:<batch id>``).
+TRIAGE_FAILED = "triage-failed"
 
 
 def arrival_key(surface: Any, account_id: Any, external_id: Any) -> str:
@@ -252,7 +256,7 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
             source, href, severity = "todo", "/todos", "approval"
         elif key.startswith("todo:"):
             source, href, severity = "todo", "/todos", None
-        elif key == TRIAGE_ALERT:
+        elif key == TRIAGE_ALERT or key.startswith(TRIAGE_FAILED + ":"):
             source, href, severity = "notification", "/inbox", "review"
         else:
             source = "notification"

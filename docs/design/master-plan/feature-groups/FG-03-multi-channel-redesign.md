@@ -339,7 +339,7 @@ Tests green + baseline green (session-key lock intact) + `ruff`/`ty` clean; Shap
 - [ ] P2 — box-level source registry, one owner per source, routes
 - [ ] P3 — triage skill layers per user-profile
   - [x] Layers built-in → template `<profile>/triage-skills/<kind>/` → user `<profile>/users/<uid>/triage-skills/<kind>/` (`hermes_cli/triage_skills.py`): add/override/disable, reset + history, required "What I care about" (≤4 KB, user → template → built-in); email built-ins keep both `whatsapp-triage/` and `email-triage/` keys; symlinks cannot escape a layer
-  - [x] Router input for P4: `triage_skills.care_sections_for_source(conn, source_id)` — one care entry per enabled route, the source owner's own layer (Telegram: none yet); real-Postgres E2E (John's mailbox → John@CFO + John@CMO, never Mary's)
+  - [x] Router input for P4: `triage_skills.care_sections_for_source(conn, source_id)` — one care entry per enabled route, the source owner's own layer (Telegram since P6); real-Postgres E2E (John's mailbox → John@CFO + John@CMO, never Mary's)
   - [x] Profile lifecycle: `--clone` / `--clone-all` / export carry `triage-skills/` (no `.versions/` on `--clone`), never `users/`; skill discovery never loads `triage-skills/` (`tests/hermes_cli/test_triage_skills_profiles.py`)
   - [ ] API/CLI + agent-home "My triage skills" (P7)
 - [ ] P4 — router (one cheap call per batch, retry ×3 then all)
@@ -351,6 +351,7 @@ Tests green + baseline green (session-key lock intact) + `ruff`/`ty` clean; Shap
   - [x] Pipelines: `triage.agent.<channel>` legacy|shadow|agent in the email and WhatsApp triage scripts (`custom/shared/profile_triage.py`, `batch_routing.route`), per-profile retry with `_profiles_done`, legacy fallback after 3 failed passes; calendar stays legacy (not routed); real-path E2E `tests/custom/test_fg03_profile_triage_e2e.py`
   - [ ] Comparison period per channel (runbook above), then cut over
 - [ ] P6 — Telegram triage source; replies from receiving account
+  - [x] (B) Telegram triage pipeline: `custom/telegram/triage_agent.py` reads `telegram_triage.BATCH_DIR` → `PROCESSED_DIR` only when `triage.agent.telegram: agent` (off → files untouched); one router call per batch (`batch_text("telegram")`), then the owner's picked user-profiles' agents via `profile_triage.triage_routed(legacy_triage=None)`: no decision (router off, registry down) or a failed profile → kept for the next pass; after 3 passes stored as processed + one in-app `triage-failed:<kind>:<batch id>` notice for the owner (no Telegram push). Telegram is a triage-skills kind (`CHANNEL_KINDS`, built-ins `custom/skills/telegram-triage/`, `triage-care/telegram.md`) but not a status-page card. Arrivals: surface `telegram`, account `tgbot:<bot id>`, conversation = chat id, external id `<chat id>:<message id>` → `todo_outbound.target_from_arrival()` is the reply route. No box-wide Telegram SQLite rows (`box_writes` off). Real-path E2E `tests/custom/test_fg03_telegram_triage_e2e.py`
 - [ ] P7 — UI (Figma mockups first)
 - [ ] P8 — E2E, browser and approved production verification
 

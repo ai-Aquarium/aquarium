@@ -75,7 +75,9 @@ def test_johns_mailbox_gives_one_care_section_per_routed_profile(box):  # noqa: 
     assert [(e["profile"], e["user_id"], e["care"]) for e in mary] == [
         ("cfo", "mary", "Mary@CFO: board papers")]
     assert disabled == []
-    assert telegram == []
+    assert [(e["profile"], e["user_id"], e["layer"]) for e in telegram] == [  # FG-03 P6
+        ("cfo", "john", "builtin")]
+    assert telegram[0]["care"].startswith("Telegram messages")
     assert wrong_kind == 400
     assert missing == []
 

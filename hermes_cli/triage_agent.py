@@ -33,7 +33,7 @@ from hermes_cli.source_registry import BOX_SCHEMA
 logger = logging.getLogger(__name__)
 
 MODES = ("legacy", "shadow", "agent")
-CHANNELS = ("email", "whatsapp", "calendar")
+CHANNELS = ("email", "whatsapp", "calendar", "telegram")
 DEFAULT_MODE = "legacy"
 DEFAULT_MAX_ITERATIONS = 2
 MAX_LIST_LIMIT = 500
@@ -132,6 +132,13 @@ _LEGACY_INTRO = {
 3. Extract any notes worth remembering
 4. Determine if this batch should be escalated (pushed immediately to the user)
 5. Extract any facts worth persisting to long-term memory""",
+    # Telegram (FG-03 P6) has no legacy script; same shape as WhatsApp's.
+    "telegram": """You are a Telegram message triage agent. Your job is to analyze incoming messages and:
+1. Classify the overall batch
+2. Extract any tasks or action items
+3. Extract any notes worth remembering
+4. Determine if this batch should be escalated (pushed immediately to the user)
+5. Extract any facts worth persisting to long-term memory""",
     "calendar": """You are a calendar triage agent. Your job is to analyze a calendar event and:
 1. Classify its importance (critical, normal, or low)
 2. Detect scheduling conflicts (if any other events overlap)
@@ -143,6 +150,7 @@ _LEGACY_INTRO = {
 _LEGACY_CLOSING = {
     "email": "Analyze the batch and respond according to the response schema defined in the skills above.",
     "whatsapp": "Analyze the batch and respond according to the response schema defined in the skills above.",
+    "telegram": "Analyze the batch and respond according to the response schema defined in the skills above.",
     "calendar": "Analyze the event and respond according to the response schema defined in the skills above.",
 }
 
@@ -253,7 +261,34 @@ Attendees ({len(attendees)}):
 """
 
 
-_RENDERERS = {"email": _render_email, "whatsapp": _render_whatsapp, "calendar": _render_calendar}
+def _render_telegram(batch: Mapping[str, Any]) -> str:
+    messages = list(batch.get("messages") or [])
+    lines = []
+    for m in messages:
+        handle = str(m.get("sender_username") or "").lstrip("@")
+        who = m.get("sender_name") or (f"@{handle}" if handle else m.get("sender_id")) or "Unknown"
+        if handle and m.get("sender_name"):
+            who = f"{who} (@{handle})"
+        text = m.get("text", "") or "[media]"
+        if m.get("media") and m.get("text"):
+            text += " [media]"
+        lines.append(f"- [{m.get('timestamp', '')}] {who}: {text}")
+    chat_type = "group" if batch.get("chat_type") == "group" else "direct message"
+    messages_text = "\n".join(lines) + ("\n" if lines else "")
+
+    return f"""Triage this message batch:
+
+Chat: {batch.get('chat_title') or batch.get('chat_id', '')} ({chat_type})
+Receiving Bot: {batch.get('account_id', '')}
+Message Count: {len(messages)}
+
+Messages:
+{messages_text}
+"""
+
+
+_RENDERERS = {"email": _render_email, "whatsapp": _render_whatsapp, "calendar": _render_calendar,
+              "telegram": _render_telegram}
 
 
 def _kind(kind: str) -> str:
