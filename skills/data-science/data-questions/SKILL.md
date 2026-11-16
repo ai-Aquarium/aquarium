@@ -1,7 +1,7 @@
 ---
 name: data-questions
 description: "Answer questions from Supabase data using the dictionary."
-version: 1.0.0
+version: 1.1.0
 author: Leo Lau (leolau), Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -26,9 +26,17 @@ person asking: they only ever see rows they may see.
    e.g. `mssql:erp` (`list_sources` lists every source with its ref and id).
    Only the person who connected a database can read its rows; others it is
    shared with see its dictionary only — say so instead of retrying.
-2. **Read the dictionary**: `site_db action=dictionary source=…`. It says
-   what each table and column means, the grain, the joins and the agreed
-   metric definitions. Use those definitions; never invent a different one for
+2. **Read the dictionary**: `site_db action=dictionary source=… q="<the
+   question>"`. It says what each table and column means, the grain, the joins
+   and the agreed metric definitions. A small dictionary comes back whole
+   (`search.mode` `all`). A large one comes back as the entries that best match
+   `q` (`search.mode` `semantic`, or `keyword` when embeddings are off;
+   `top_k` sets how many tables, default 8), or without `q` as an `index` of
+   table names. On a large one, search first: read what `q` found, then fetch
+   any other table you need with `entity=<table>` or a narrower `q` (names in
+   `search.more` matched but didn't fit). If nothing matches, rephrase in the
+   dictionary's words or pick from the `index`. Not sure which source?
+   `source=all q=…` lists matching tables in every source shared with you. Use those definitions; never invent a different one for
    a metric it defines. If you get an error or nothing is approved, carry on
    from the structure and say in your answer that the tables aren't described.
    **Stale entries**: when the source shows `schema_drift`, the schema changed
@@ -36,7 +44,8 @@ person asking: they only ever see rows they may see.
    match (a removed column, new columns still undocumented). Warn the person
    when answering from stale text, and offer to update it: `study` the drifted
    tables, then `propose_dictionary` once they agree.
-3. **Look before you write SQL**: `describe` (site, entity?, q?) for a site,
+3. **Look before you write SQL**: `describe` (site, entity?, q?) for a site
+   (with `q` it also lists the tables the dictionary ranks highest),
    `app_describe` for app data, `describe` (source, entity?, q?) for a
    connection. Check column names, fill and common values.
 4. **Ask when it's unclear.** If the question could mean two things (which
@@ -82,3 +91,8 @@ Only the source's owner approves; you only add to the draft.
 After proposing, say that the draft waits for the owner's approval under Data
 in agent-home, and that answers keep using the approved version until then.
 Never propose without the person asking or agreeing.
+
+Everything you learn about a source (what its tables and columns mean, their
+values, joins, metrics, where the schema is defined) goes in its dictionary,
+never in a skill: don't create or edit a skill for one source or table
+(`skill_manage` refuses skill text that names the `site_db` tool).

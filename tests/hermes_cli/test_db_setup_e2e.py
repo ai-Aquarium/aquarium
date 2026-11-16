@@ -340,7 +340,8 @@ def test_migrate_lets_least_privilege_app_login_create_sites(
             ):
                 await conn.execute(f'DROP SCHEMA "{schema}" CASCADE')
             await conn.execute(
-                "DROP TABLE IF EXISTS public.data_dictionary_versions, public.data_source_grants, "
+                "DROP TABLE IF EXISTS public.data_dictionary_index, public.data_dictionary_index_state, "
+                "public.data_dictionary_versions, public.data_source_grants, "
                     "public.data_sources, public.site_source_grants, public.site_sources"
             )
             roles = [r for (r,) in await conn.fetch(
@@ -359,11 +360,24 @@ def test_migrate_lets_least_privilege_app_login_create_sites(
     _migrate(postgres_dsn)
     asyncio.run(_app_login(postgres_dsn))
     assert ss._role_password(ss.SITE_ADMIN_ROLE, create=False)
+    import hermes_cli.data_dictionary as dd
+    import hermes_cli.data_dictionary_search as dds
+    from plugins.memory.supabase_pgvector.embedding import HashingEmbedder
+
+    monkeypatch.setattr(dd, "_ready", set())
+    monkeypatch.setattr(dds, "_ready", set())
+    monkeypatch.setattr(dds, "get_embedder", lambda: None)
     ss.set_database(ss.SiteDatabase(_app_dsn(postgres_dsn)))
     owner = Principal(user_id="owner-1", display="Owner", role="owner")
 
     async def run() -> tuple:
         site = await ss.create_site(owner, {"name": "Shop", "base_url": "https://shop.example"})
+        # The dictionary search index is usable by the app login after migrate.
+        source = next(x for x in await dd.sync_sources("default") if x.kind == "app")
+        draft = await dd.propose(source, tables={"todos": {"meaning": "To-dos"}}, by="owner-1")
+        await dd.approve(source, draft["version"], by="owner-1")
+        indexed = await dds.reindex(source, embedder=HashingEmbedder(16))
+        assert indexed["embedding_model"] == "hashing:16" and indexed["entries"] == 1
         conn = await asyncpg.connect(_app_dsn(postgres_dsn), ssl=False)
         try:
             app = await conn.fetchrow(

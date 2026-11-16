@@ -144,7 +144,8 @@ def test_schema_check_flags_drift_and_approve_rechecks(env):
     run(dd.propose(
         source,
         tables={
-            "orders": {**ORDERS, "columns": {**ORDERS["columns"], "coupon": "Coupon code"}},
+            "orders": {**ORDERS, "columns": {**ORDERS["columns"], "order_no": "Order number",
+                                              "coupon": "Coupon code"}},
             "customers": {"meaning": "Each customer", "columns": {"id": "Customer id"}},
         },
         by="alice",

@@ -86,6 +86,17 @@ class EngineAdapter(ABC):
     async def fingerprint(self) -> str:
         return schema_fingerprint(await self.schema())
 
+    async def find_tables(
+        self, q: Optional[str] = None, names: Optional[Sequence[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """``list_tables(q)`` plus the tables in ``names`` (in that order) it missed."""
+        found = await self.list_tables(q)
+        if not names:
+            return found
+        have = {t.get("name") or t.get("table") for t in found}
+        everything = {t.get("name") or t.get("table"): t for t in await self.list_tables()}
+        return found + [everything[n] for n in dict.fromkeys(names) if n in everything and n not in have]
+
 
 def _clamp_rows(max_rows: Any) -> int:
     try:
@@ -333,6 +344,11 @@ class SiteAdapter(EngineAdapter):
 
     async def list_tables(self, q: Optional[str] = None) -> List[Dict[str, Any]]:
         return await ss.table_summaries(self.site, q=q, db=self.db)
+
+    async def find_tables(
+        self, q: Optional[str] = None, names: Optional[Sequence[str]] = None
+    ) -> List[Dict[str, Any]]:
+        return await ss.table_summaries(self.site, q=q, names=names, db=self.db)
 
     async def describe_table(self, name: str, *, samples: int = SAMPLE_VALUES) -> Dict[str, Any]:
         return await ss.describe_entity(self.site, name, samples=samples, db=self.db)

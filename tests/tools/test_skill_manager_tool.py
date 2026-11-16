@@ -1431,3 +1431,51 @@ class TestSkillWriteGateFailsClosed:
         assert result["success"] is False
         assert "gate could not load" in result["error"]
         assert not (tmp_path / "my-skill").exists()
+
+
+# ---------------------------------------------------------------------------
+# Data-dictionary guard (data-dictionary plan D3: no skill per source/table)
+# ---------------------------------------------------------------------------
+
+APP_DATA_SKILL = """\
+---
+name: aquarium-app-data
+description: Study and describe Aquarium's own app data source via site_db.
+---
+
+# Aquarium app data
+
+1. `site_db action=study source=app`, then read the code for the enums.
+2. `site_db action=propose_dictionary source=app tables=... origin=study`.
+"""
+
+
+class TestDataDictionaryGuard:
+    def test_create_per_source_skill_refused(self, tmp_path):
+        with _skill_dir(tmp_path):
+            result = _create_skill("aquarium-app-data", APP_DATA_SKILL, category="data-science")
+        assert result["success"] is False
+        assert "propose_dictionary" in result["error"]
+        assert not (tmp_path / "data-science" / "aquarium-app-data").exists()
+
+    def test_dictionary_text_cannot_be_added_to_existing_skill(self, tmp_path):
+        with _skill_dir(tmp_path):
+            _create_skill("my-skill", VALID_SKILL_CONTENT)
+            skill_md = tmp_path / "my-skill" / "SKILL.md"
+            refused = [
+                _write_file("my-skill", "references/todos.md", "Run `app_query` with areas=todos."),
+                _patch_skill("my-skill", "Do the thing.", "Call site_db action=dictionary first."),
+                _edit_skill("my-skill", VALID_SKILL_CONTENT_2 + "\nUse app_describe.\n"),
+            ]
+        assert all(r["success"] is False for r in refused)
+        assert skill_md.read_text() == VALID_SKILL_CONTENT
+        assert not (tmp_path / "my-skill" / "references" / "todos.md").exists()
+
+    def test_procedure_skill_and_unrelated_skills_still_writable(self, tmp_path):
+        procedure = APP_DATA_SKILL.replace("aquarium-app-data", "data-questions")
+        with _skill_dir(tmp_path):
+            _create_skill("data-questions", VALID_SKILL_CONTENT)
+            ok_procedure = _edit_skill("data-questions", procedure)
+            ok_other = _create_skill("weekly-report", VALID_SKILL_CONTENT.replace("test-skill", "weekly-report"))
+        assert ok_procedure["success"] is True
+        assert ok_other["success"] is True

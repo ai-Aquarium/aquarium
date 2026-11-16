@@ -2164,18 +2164,28 @@ def _matches(entity: Mapping[str, Any], words: Sequence[str]) -> bool:
 
 
 async def table_summaries(
-    site: Site, *, q: Optional[str] = None, db: Optional[SiteDatabase] = None
+    site: Site,
+    *,
+    q: Optional[str] = None,
+    names: Optional[Sequence[str]] = None,
+    db: Optional[SiteDatabase] = None,
 ) -> List[Dict[str, Any]]:
     """The approved design's entities with row counts.
 
-    ``q`` keeps only tables whose name, reason or column names hold every word.
+    ``q`` keeps only tables whose name, reason or column names hold every word;
+    ``names`` adds these tables (in this order) after the ``q`` matches.
     """
     current = await approved_design(site, db=db)
     if current is None:
         return []
     _, design, _ = current
     words = (q or "").lower().split()
-    entities = [e for e in validate_design(design)["entities"] if _matches(e, words)]
+    all_entities = validate_design(design)["entities"]
+    entities = [e for e in all_entities if _matches(e, words)]
+    if names:
+        by_name = {e["name"]: e for e in all_entities}
+        have = {e["name"] for e in entities}
+        entities += [by_name[n] for n in dict.fromkeys(names) if n in by_name and n not in have]
     out: List[Dict[str, Any]] = []
     if not entities:
         return out
