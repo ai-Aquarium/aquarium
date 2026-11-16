@@ -102,6 +102,8 @@ interface FormValues {
   username: string;
   password: string;
   realm: string;
+  /** Minutes with no traffic before disconnecting; "0" or blank = never. */
+  idleMinutes: string;
   visibility: "private" | "shared";
 }
 
@@ -112,6 +114,7 @@ const EMPTY_FORM: FormValues = {
   username: "",
   password: "",
   realm: "",
+  idleMinutes: "0",
   visibility: "private",
 };
 
@@ -129,6 +132,10 @@ export function formError(values: FormValues, mode: "add" | "edit"): string | nu
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     return "Port must be a number from 1 to 65535.";
   }
+  const idle = Number(values.idleMinutes.trim() || "0");
+  if (!Number.isInteger(idle) || idle < 0 || idle > 1440) {
+    return "Disconnect when idle must be 0 (never) or a number of minutes up to 1440.";
+  }
   if (!values.username.trim()) return "Enter the VPN username.";
   if (mode === "add" && !values.password) return "Enter the VPN password.";
   return null;
@@ -136,7 +143,7 @@ export function formError(values: FormValues, mode: "add" | "edit"): string | nu
 
 /**
  * The PUT payload. Starts from the stored (secret-free) payload so fields
- * the form doesn't show (trusted_cert, auto_connect, idle_minutes) survive
+ * the form doesn't show (trusted_cert, auto_connect) survive
  * an Edit; a blank password is left out so Hermes keeps the stored one.
  * Legacy route/share fields are never sent — Hermes keeps them on the entry.
  */
@@ -155,7 +162,7 @@ export function buildPayload(
   else delete payload.realm;
   if (values.password) payload.password = values.password;
   if (payload.auto_connect === undefined) payload.auto_connect = true;
-  if (payload.idle_minutes === undefined) payload.idle_minutes = 30;
+  payload.idle_minutes = Number(values.idleMinutes.trim() || "0");
   return payload as unknown as FortinetVpnPayload;
 }
 
@@ -330,6 +337,7 @@ export function VpnConnections() {
         username: str("username"),
         password: "",
         realm: str("realm"),
+        idleMinutes: String(stored.idle_minutes ?? vpn.idle_minutes ?? 0),
         visibility: vpn.visibility.startsWith("private") ? "private" : "shared",
       },
     });
@@ -482,6 +490,15 @@ export function VpnConnections() {
           onChange={(e) => setField("realm", e.target.value)}
           placeholder="leave blank unless FortiClient asks for one"
           className={inputCls}
+        />
+      </label>
+      <label className={labelCls}>
+        <span>Disconnect when idle (minutes, 0 = never)</span>
+        <input
+          value={form.values.idleMinutes}
+          onChange={(e) => setField("idleMinutes", e.target.value)}
+          inputMode="numeric"
+          className={`${inputCls} w-24`}
         />
       </label>
       <label className={labelCls}>
@@ -773,7 +790,9 @@ function VpnCard({
         Let agents connect on their own when they need these files
       </label>
       <p className="text-[var(--color-muted)]">
-        Disconnects after {vpn.idle_minutes} minutes with no file access.
+        {vpn.idle_minutes > 0
+          ? `Disconnects after ${vpn.idle_minutes} minutes with no traffic.`
+          : "Stays connected until you disconnect it."}
       </p>
 
       <div className="mt-2 flex flex-wrap gap-2">

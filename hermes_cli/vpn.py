@@ -47,7 +47,7 @@ PROVIDER = "fortinet"
 HELPER_PATH = "/usr/local/sbin/hermes-vpn-helper"
 MOUNT_ROOT = "/opt/data/vpn-files"
 DEFAULT_PORT = 443
-DEFAULT_IDLE_MINUTES = 30
+DEFAULT_IDLE_MINUTES = 0  # 0 = stay connected until disconnected
 HELPER_TIMEOUT = 150
 STATES = ("connected", "connecting", "disconnected", "error", "needs_cert")
 

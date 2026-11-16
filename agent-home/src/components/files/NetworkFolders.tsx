@@ -410,7 +410,7 @@ export function NetworkFolders() {
         <p className="mt-1 text-xs text-[var(--color-muted)]">
           Folders on an office file server, read-only. These stay available to
           the agent when this page is closed. The VPN connects when the agent
-          opens one and disconnects after its idle time.
+          opens one and stays connected unless the VPN has an idle timeout.
         </p>
 
         {loadError ? <p className="mt-2 text-xs text-[var(--color-danger)]">{loadError}</p> : null}
