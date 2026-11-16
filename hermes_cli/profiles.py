@@ -142,6 +142,10 @@ _CLONE_ALL_MEMORY_EXCLUDE = ("memories", "users")
 #: else's version of it, so this root-level directory never leaves the box.
 _USER_FOLDERS_EXCLUDE_ROOT = USERS_DIRNAME
 
+#: ``<home>/triage-skills/`` — the profile's own triage skills (FG-03 P3);
+#: ``--clone`` copies it with the template files.
+_TRIAGE_SKILLS_DIRNAME = "triage-skills"
+
 # Marker file written by `hermes profile create --no-skills`.  When present in
 # a profile's root, callers of seed_profile_skills() (fresh-create, `hermes
 # update`'s all-profile sync, the web dashboard) skip bundled-skill seeding
@@ -1196,6 +1200,19 @@ def create_profile(
             source_skills = source_dir / "skills"
             if source_skills.is_dir():
                 shutil.copytree(source_skills, profile_dir / "skills", dirs_exist_ok=True)
+
+            # The profile's own triage skills (FG-03 P3) are part of the
+            # template; their edit history and the per-user versions under
+            # ``users/`` are not.
+            source_triage = source_dir / _TRIAGE_SKILLS_DIRNAME
+            if source_triage.is_dir():
+                shutil.copytree(
+                    source_triage,
+                    profile_dir / _TRIAGE_SKILLS_DIRNAME,
+                    ignore=shutil.ignore_patterns(".versions", ".*.tmp"),
+                    symlinks=True,
+                    dirs_exist_ok=True,
+                )
 
             # Clone memory and other subdirectory files
             for relpath in _CLONE_SUBDIR_FILES:

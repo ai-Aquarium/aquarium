@@ -36,6 +36,7 @@ clone/export (P1).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import tempfile
@@ -45,6 +46,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from hermes_cli.triage_status import (
+    DEFAULT_SKILL_DIRS,
     KINDS,
     MAX_SKILL_FILE_BYTES,
     SOURCE_DIRS,
@@ -64,6 +66,10 @@ MAX_CARE_BYTES = 4 * 1024
 
 _SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+#: Source-registry channel → triage kind. Telegram has none yet (FG-03 P6).
+CHANNEL_KINDS: Dict[str, str] = {"email": "email", "whatsapp": "whatsapp"}
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -116,6 +122,8 @@ def validate_key(key: str) -> str:
         or any(p.startswith(".") or p == VERSIONS_DIR for p in parts)
     ):
         raise SkillFileError(400, f"invalid triage skill key: {key!r}")
+    if key == CARE_KEY:
+        raise SkillFileError(400, f'{CARE_KEY!r} is the "What I care about" section, not a skill file')
     return key
 
 
@@ -126,17 +134,25 @@ def template_dir(kind: str, home: Path) -> Path:
 def user_dir(kind: str, home: Path, user_id: str) -> Path:
     from hermes_cli.user_profile_dirs import user_profile_dir
 
-    return user_profile_dir(user_id, Path(home)) / TRIAGE_SKILLS_DIRNAME / validate_kind(kind)
+    try:
+        folder = user_profile_dir(user_id, Path(home))
+    except ValueError as exc:
+        raise SkillFileError(400, str(exc)) from exc
+    return folder / TRIAGE_SKILLS_DIRNAME / validate_kind(kind)
 
 
 def layer_dir(kind: str, layer: str, home: Path, user_id: Optional[str]) -> Path:
     if layer == "template":
-        return template_dir(kind, home)
-    if layer == "user":
+        root = template_dir(kind, home)
+    elif layer == "user":
         if not user_id:
             raise SkillFileError(400, "the user layer needs a user id")
-        return user_dir(kind, home, user_id)
-    raise SkillFileError(400, f"layer {layer!r} is not editable here")
+        root = user_dir(kind, home, user_id)
+    else:
+        raise SkillFileError(400, f"layer {layer!r} is not editable here")
+    if not _inside(root, Path(home)):
+        raise SkillFileError(400, f"the {layer} triage skills folder escapes the profile home")
+    return root
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -147,13 +163,16 @@ def _inside(path: Path, root: Path) -> bool:
     return True
 
 
+def _contained(path: Path, root: Path, what: str) -> Path:
+    """``path`` if it is no symlink and resolves inside ``root`` (it may not exist yet)."""
+    if path.is_symlink() or not _inside(path, root):
+        raise SkillFileError(400, f"{what!r} escapes its layer folder")
+    return path
+
+
 def _layer_file(root: Path, key: str) -> Path:
-    if key == CARE_KEY:
-        # Only write_care/reset_care touch it (they refuse empty text).
-        raise SkillFileError(400, f'{key!r} is the "What I care about" section; edit it as such')
-    file = root / validate_key(key)
-    if root.exists() and file.exists() and not _inside(file, root):
-        raise SkillFileError(400, f"{key!r} escapes its layer folder")
+    file = _contained(root / validate_key(key), root, key)
+    _contained(Path(str(file) + DISABLED_SUFFIX), root, key)
     return file
 
 
@@ -175,8 +194,12 @@ def builtin_files(kind: str, config: Optional[Dict[str, Any]] = None) -> List[tu
         for f in source["files"]:
             out.append((f"{prefix}/{Path(f['path']).name}", Path(f["path"])))
     if not out:
-        src = _REPO_ROOT / SOURCE_DIRS[kind]
-        out = [(f"{src.name}/{f.name}", f) for f in sorted(src.glob("*.md"))]
+        # Same folders the pipeline falls back to (email also reads WhatsApp's).
+        shipped = {Path(d).name for d in SOURCE_DIRS.values()}
+        for name in (Path(d).name for d in DEFAULT_SKILL_DIRS[kind]):
+            src = _REPO_ROOT / Path(SOURCE_DIRS[kind]).parent / name
+            if name in shipped:
+                out.extend((f"{name}/{f.name}", f) for f in sorted(src.glob("*.md")))
     return out
 
 
@@ -360,14 +383,19 @@ def care_section(kind: str, home: Path, user_id: Optional[str] = None) -> Dict[s
 
 
 def _history_file(root: Path, key: str) -> Path:
-    return root / VERSIONS_DIR / (key.replace("/", "__") + ".jsonl")
+    versions = _contained(root / VERSIONS_DIR, root, VERSIONS_DIR)
+    return _contained(versions / (key.replace("/", "__") + ".jsonl"), root, key)
 
 
 def history(kind: str, layer: str, key: str, home: Path, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Saved versions of one key in one layer, newest first."""
     if key != CARE_KEY:
         validate_key(key)
-    hist = _history_file(layer_dir(kind, layer, home, user_id), key)
+    return _history_records(_history_file(layer_dir(kind, layer, home, user_id), key))
+
+
+def _history_records(hist: Path) -> List[Dict[str, Any]]:
+    """Newest first; unreadable lines are skipped."""
     try:
         lines = hist.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -449,11 +477,8 @@ def _apply(root: Path, key: str, *, action: str, content: Optional[str], author:
 
 
 def history_from_root(root: Path, key: str) -> List[Dict[str, Any]]:
-    hist = _history_file(root, key)
-    try:
-        return [json.loads(l) for l in hist.read_text(encoding="utf-8").splitlines() if l.strip()]
-    except (OSError, ValueError):
-        return []
+    """Saved versions of one key in one layer folder, oldest first."""
+    return list(reversed(_history_records(_history_file(root, key))))
 
 
 def _atomic_write(file: Path, content: str) -> None:
@@ -515,12 +540,18 @@ def set_disabled(kind: str, layer: str, key: str, disabled: bool, *, home: Path,
     root = layer_dir(kind, layer, home, user_id)
     file = _layer_file(root, key)
     marker = Path(str(file) + DISABLED_SUFFIX)
-    if not disabled and not marker.exists():
-        view = resolve(kind, home, user_id if layer == "user" else None, config=config, with_content=False)
-        f = next((f for f in view if f.key == key), None)
-        if f is not None and f.disabled:
+    view = resolve(kind, home, user_id if layer == "user" else None, config=config, with_content=False)
+    f = next((f for f in view if f.key == key), None)
+    if f is None:
+        raise SkillFileError(404, f"no triage skill {key!r} for {kind}")
+    if not disabled:
+        # Without this layer's marker, would a lower layer still turn it off?
+        below = None if layer == "template" else next(
+            (t for t in resolve(kind, home, None, config=config, with_content=False) if t.key == key), None)
+        if not file.is_file() and below is not None and below.disabled:
             raise SkillFileError(409, f"{key!r} is turned off in the template; save your own version to use it")
-        return {"action": "enable", "noop": True}
+        if not marker.exists():
+            return {"action": "enable", "noop": True}
     if disabled and marker.exists():
         return {"action": "disable", "noop": True}
     before = _read(file) if file.is_file() else None
@@ -539,7 +570,7 @@ def set_disabled(kind: str, layer: str, key: str, disabled: bool, *, home: Path,
 
 def reset_file(kind: str, key: str, *, home: Path, user_id: str, author: str) -> Dict[str, Any]:
     """Reset to template: drop this user's override/marker for ``key``."""
-    root = user_dir(kind, home, user_id)
+    root = layer_dir(kind, "user", home, user_id)
     file = _layer_file(root, key)
     marker = Path(str(file) + DISABLED_SUFFIX)
     if not file.exists() and not marker.exists():
@@ -556,7 +587,7 @@ def reset_file(kind: str, key: str, *, home: Path, user_id: str, author: str) ->
 
 def reset_all(kind: str, *, home: Path, user_id: str, author: str) -> List[str]:
     """Reset every key this user changed for ``kind``; returns the keys reset."""
-    root = user_dir(kind, home, user_id)
+    root = layer_dir(kind, "user", home, user_id)
     done = []
     for key in sorted(_scan_layer(root)):
         if not reset_file(kind, key, home=home, user_id=user_id, author=author).get("noop"):
@@ -576,18 +607,18 @@ def write_care(kind: str, content: str, *, layer: str, home: Path,
     if len(content.encode("utf-8")) > MAX_CARE_BYTES:
         raise SkillFileError(413, '"What I care about" is too long (4 KB max)')
     root = layer_dir(kind, layer, home, user_id)
-    file = root / CARE_KEY
+    file = _contained(root / CARE_KEY, root, CARE_KEY)
     before = care_section(kind, home, user_id if layer == "user" else None)["content"]
     return _apply(root, CARE_KEY, action="edit", content=content, author=author,
                   message="Edited", before=before, change=lambda: _atomic_write(file, content))
 
 
 def reset_care(kind: str, *, home: Path, user_id: str, author: str) -> Dict[str, Any]:
-    root = user_dir(kind, home, user_id)
+    root = layer_dir(kind, "user", home, user_id)
     file = root / CARE_KEY
-    if not file.exists():
+    if not file.exists() and not file.is_symlink():
         return {"action": "reset", "noop": True}
-    before = _read(file)
+    before = _read(file) if file.is_file() and not file.is_symlink() else None
     return _apply(root, CARE_KEY, action="reset", content=None, author=author,
                   message="Reset to template", before=before,
                   change=lambda: file.unlink(missing_ok=True))
@@ -606,3 +637,46 @@ def can_edit_layer(layer: str, principal: Any, user_id: Optional[str] = None) ->
         me = getattr(principal, "user_id", None)
         return bool(me) and me == user_id
     return False
+
+
+# -- router input (FG-03 P4) -----------------------------------------------------
+
+
+async def care_sections_for_source(
+    connection: Any, source_id: str, kind: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """What the router reads for one batch from ``source_id``.
+
+    One ``{"profile", "user_id", "home", "care", "layer"}`` per enabled route
+    of an enabled source, in profile order: the source owner's "What I care
+    about" in that profile (``layer`` says which layer it came from). Only the
+    owner's own user layer is read. ``kind`` defaults to the source channel's
+    triage kind; a channel without one (Telegram) or an unknown source gives
+    ``[]``. A routed profile whose home is gone is skipped.
+    """
+    from hermes_cli import source_registry as registry
+    from hermes_cli.profiles import get_profile_dir
+
+    source = await registry.get_source(connection, source_id)
+    if source is None:
+        return []
+    channel_kind = CHANNEL_KINDS.get(source.channel)
+    if kind is not None and kind != channel_kind:
+        raise SkillFileError(400, f"a {source.channel} source has no {kind!r} triage")
+    if channel_kind is None:
+        return []
+    out: List[Dict[str, Any]] = []
+    for profile in await registry.routed_profiles(connection, source.source_id):
+        home = get_profile_dir(profile)
+        if not home.is_dir():
+            logger.warning("triage routing: profile %r has no home at %s; skipped", profile, home)
+            continue
+        care = care_section(channel_kind, home, source.owner_user_id)
+        out.append({
+            "profile": profile,
+            "user_id": source.owner_user_id,
+            "home": str(home),
+            "care": care["content"],
+            "layer": care["layer"],
+        })
+    return out
