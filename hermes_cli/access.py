@@ -1351,6 +1351,16 @@ class TransferResult:
     change_ref: str
 
 
+async def _disable_source_routes(store: object, conn: object, user_id: str) -> None:
+    """FG-03: a person leaving (or suspended from) a profile stops its source routes."""
+    schema = getattr(store, "schema", None)
+    if not isinstance(schema, str):
+        return
+    from hermes_cli import source_registry
+
+    await source_registry.on_principal_removed(conn, schema=schema, user_id=user_id)
+
+
 class PrincipalStore:
     """Async CRUD + owner-transfer over the Supabase ``principals`` table.
 
@@ -1635,6 +1645,8 @@ class PrincipalStore:
                 user_id,
                 active,
             )
+            if not active:
+                await _disable_source_routes(self._store, conn, user_id)
             channels = await self._channels_for(conn, user_id)
             return _row_to_principal(row, channels)
         finally:
@@ -1704,6 +1716,7 @@ class PrincipalStore:
             await conn.execute(
                 "DELETE FROM principals WHERE user_id = $1", user_id
             )
+            await _disable_source_routes(self._store, conn, user_id)
             return True
         finally:
             if own_connection:

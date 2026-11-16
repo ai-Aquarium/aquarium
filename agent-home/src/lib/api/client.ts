@@ -148,6 +148,10 @@ import type {
   CredentialEntry,
   EmailMailbox,
   EmailMailboxInput,
+  Source,
+  SourceClaimConflict,
+  SourceInput,
+  SourceRoute,
   MssqlConnection,
   MssqlConnectionInput,
   WinrmConnection,
@@ -3420,6 +3424,40 @@ export class HermesApiClient {
     return this.request(`/api/email/mailboxes/${encodeURIComponent(address)}`, {
       method: "DELETE",
     });
+  }
+
+  /** FG-03: the caller's incoming sources and routes (`all`: box owner/admin). */
+  async sources(all = false): Promise<{
+    sources: Source[];
+    profiles: string[];
+    is_box_admin: boolean;
+  }> {
+    return this.request(`/api/sources${all ? "?all=1" : ""}`);
+  }
+
+  async registerSource(body: SourceInput): Promise<{ source: Source }> {
+    return this.request("/api/sources", { method: "POST", json: body });
+  }
+
+  async putSourceRoute(
+    sourceId: string,
+    profile: string,
+    enabled: boolean,
+  ): Promise<{ route: SourceRoute }> {
+    return this.request(
+      `/api/sources/${encodeURIComponent(sourceId)}/routes/${encodeURIComponent(profile)}`,
+      { method: "PUT", json: { enabled } },
+    );
+  }
+
+  async deleteSource(sourceId: string): Promise<{ deleted: boolean }> {
+    return this.request(`/api/sources/${encodeURIComponent(sourceId)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async sourceConflicts(all = false): Promise<{ conflicts: SourceClaimConflict[] }> {
+    return this.request(`/api/sources/conflicts${all ? "?all=1" : ""}`);
   }
 
   /** Log into IMAP and SMTP with the saved settings (no mail is sent). */

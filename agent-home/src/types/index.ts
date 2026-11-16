@@ -1497,6 +1497,59 @@ export interface EmailServerSettings {
   smtp_security: EmailSecurity;
 }
 
+/** FG-03: an incoming channel a source belongs to. */
+export type SourceChannel = "email" | "whatsapp" | "telegram";
+
+/** One route from a source to one of its owner's user-profiles. */
+export interface SourceRoute {
+  source_id: string;
+  profile: string;
+  enabled: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** Where a source's secret lives; a pointer, never the secret. */
+export interface SourceCredentialRef {
+  profile?: string;
+  kind?: string;
+  name?: string;
+  provider?: string;
+}
+
+/** One incoming source (mailbox / WhatsApp number / Telegram bot) and its single owner. */
+export interface Source {
+  source_id: string;
+  channel: SourceChannel;
+  address: string;
+  owner_user_id: string;
+  display: string | null;
+  credential_ref: SourceCredentialRef | null;
+  enabled: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  routes: SourceRoute[];
+}
+
+/** A refused or disputed claim on a source. */
+export interface SourceClaimConflict {
+  conflict_id: number;
+  channel: SourceChannel;
+  address: string;
+  claimant_user_id: string;
+  existing_owner_user_id: string | null;
+  detail: string;
+  created_at: string | null;
+  resolved_at: string | null;
+}
+
+export interface SourceInput {
+  channel: SourceChannel;
+  address: string;
+  display?: string | null;
+  credential_ref?: SourceCredentialRef | null;
+}
+
 /** One of the caller's own IMAP/SMTP mailboxes. Never carries the password. */
 export interface EmailMailbox extends EmailServerSettings {
   address: string;

@@ -1007,9 +1007,12 @@ async def on_principal_removed(
         profile = profile_for_schema(schema)
         if profile is None or not await _box_ready(connection):
             return 0
-        return await disable_routes_for_profile(
-            connection, user_id=user_id, profile_slug=profile
-        )
+        # A savepoint when the caller is mid-transaction: a refused write here
+        # (e.g. missing grants) must not abort the caller's principals change.
+        async with connection.transaction():
+            return await disable_routes_for_profile(
+                connection, user_id=user_id, profile_slug=profile
+            )
     except Exception as exc:  # noqa: BLE001 - best-effort hook
         logger.warning("source registry: could not disable routes for %s: %s", user_id, exc)
         return 0

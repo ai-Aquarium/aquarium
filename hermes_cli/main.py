@@ -13154,6 +13154,13 @@ def main():
     register_member_subparser(subparsers)
 
     # =========================================================================
+    # source command — box-wide incoming source registry (FG-03 P2)
+    # =========================================================================
+    from hermes_cli.source_cli import register_source_subparser
+
+    register_source_subparser(subparsers)
+
+    # =========================================================================
     # changes command — review/undo/redo recorded change events (C5/FG-12)
     # =========================================================================
     from hermes_cli.changes_cli import register_changes_subparser

@@ -61,6 +61,7 @@ PUBLIC = {
 
 #: The handler enforces the role itself: route -> (role, check in its source).
 HANDLER_CHECKED = {
+    "POST /api/sources/{source_id}/transfer": ("admin", "transfer_source"),
     "POST /api/comms/members": ("admin", "_comms_member_service"),
     "POST /api/comms/members/import": ("admin", "_comms_member_service"),
     "POST /api/comms/members/{user_id}/invitation": ("admin", "_comms_member_service"),
@@ -220,6 +221,12 @@ SIGNED_IN = {
     "PUT /api/email/mailboxes/{address}",
     "DELETE /api/email/mailboxes/{address}",
     "POST /api/email/mailboxes/{address}/test",
+    # sources_api (FG-03): the caller's own sources; owner checks in the store
+    "GET /api/sources",
+    "POST /api/sources",
+    "PUT /api/sources/{source_id}/routes/{profile}",
+    "DELETE /api/sources/{source_id}",
+    "GET /api/sources/conflicts",
     # data_dictionary_api: the handler checks the caller's access to the source (404 otherwise)
     "GET /api/data/sources",
     "GET /api/data/sources/{source_id}",
