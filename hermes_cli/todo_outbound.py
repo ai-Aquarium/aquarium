@@ -317,6 +317,23 @@ def deliver_message(
         return {"error": "invalid JSON from send_message_tool", "raw": result_json}
 
 
+async def _arrival_for(store, principal, todo_id: str) -> Optional[dict[str, Any]]:
+    """The arrival behind ``todo_id`` (its ``source_ref``), when it has one."""
+    getter = getattr(store, "get", None)
+    if getter is None:
+        return None
+    try:
+        todo = await getter(principal, todo_id)
+    except Exception as exc:  # noqa: BLE001 - no to-do row: nothing to compare
+        log.debug("todo_outbound: to-do %s unavailable (%s)", todo_id, exc)
+        return None
+    if todo is None or not getattr(todo, "source_ref", None):
+        return None
+    from hermes_cli.todo_work import _load_arrival
+
+    return await _load_arrival(store, principal, todo)
+
+
 async def execute_proposal(
     store: "TodoStore",
     principal: "Principal",
@@ -361,14 +378,33 @@ async def execute_proposal(
         return {"error": "empty_body", "detail": "The approval has no body to send."}
 
     channel = routing["channel"] or ""
-    result_payload = deliver_message(
-        channel=channel,
-        target=routing["target"] or "",
-        thread=routing["thread"] or None,
-        body=body,
-        account=routing["account"] or None,
-        subject=routing["subject"] or None,
-    )
+    # FG-03 P6: the reply leaves by the arrival's own account, and only its
+    # source's owner may send from it — checked at send time, not just when
+    # the proposal was made.
+    from hermes_cli.reply_accounts import ReplyRefused, check_reply
+    from tools.access_policy import acting_as
+
+    arrival = await _arrival_for(store, principal, todo_id)
+    try:
+        await check_reply(
+            principal.user_id,
+            channel,
+            routing["account"] or None,
+            target=routing["target"] or "",
+            arrival=arrival,
+        )
+    except ReplyRefused as refused:
+        return {"error": refused.code, "detail": refused.detail}
+
+    with acting_as(principal.user_id, getattr(principal, "role", None)):
+        result_payload = deliver_message(
+            channel=channel,
+            target=routing["target"] or "",
+            thread=routing["thread"] or None,
+            body=body,
+            account=routing["account"] or None,
+            subject=routing["subject"] or None,
+        )
 
     delivered = not result_payload.get("error")
     event = "sent" if delivered else "failed"

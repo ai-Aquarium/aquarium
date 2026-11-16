@@ -395,36 +395,57 @@ def _resolve_email_account(account: str) -> "dict | None":
     return None
 
 
+def _email_account_pconfig(account: str, *, subject: "str | None" = None):
+    """A send-only PlatformConfig for a custom-pipeline email account, or None."""
+    from gateway.config import PlatformConfig
+
+    acct = _resolve_email_account(account)
+    if acct is None:
+        return None
+    smtp = acct.get("smtp") or {}
+    extra = {
+        "address": acct.get("address", ""),
+        "smtp_host": smtp.get("host", ""),
+        "smtp_port": smtp.get("port", 587),
+        "password_env": acct.get("credentials_env", ""),
+    }
+    if subject:
+        extra["subject"] = subject
+    return PlatformConfig(enabled=True, extra=extra)
+
+
 def _account_pconfig(
     platform_name: str, account: str, *, subject: "str | None" = None
 ):
     """A send-only PlatformConfig for the account an approval named.
+
+    The box source registry is asked first (FG-03 P6): a registered source
+    sends with its owner's saved credential — a person bot's token, a
+    personal mailbox's SMTP settings — and only its owner may send from it
+    (raises :class:`~hermes_cli.reply_accounts.ReplyRefused` otherwise). An
+    account the registry does not know falls back to the pipeline config.
 
     Returns ``None`` when the account cannot be resolved — the caller then
     refuses, because a send that leaves by the wrong identity is worse than
     no send.
     """
     from gateway.config import PlatformConfig
+    from hermes_cli.reply_accounts import resolve_send_account
+    from tools.access_policy import current_principal
 
+    acting_user, _role = current_principal()
+    source, pconfig = resolve_send_account(
+        platform_name, account, subject=subject, user_id=acting_user or None
+    )
+    if source is not None:
+        return pconfig
     if platform_name == "whatsapp":
         port = _resolve_whatsapp_bridge_port(account)
         if port is None:
             return None
         return PlatformConfig(enabled=True, extra={"bridge_port": port})
     if platform_name == "email":
-        acct = _resolve_email_account(account)
-        if acct is None:
-            return None
-        smtp = acct.get("smtp") or {}
-        extra = {
-            "address": acct.get("address", ""),
-            "smtp_host": smtp.get("host", ""),
-            "smtp_port": smtp.get("port", 587),
-            "password_env": acct.get("credentials_env", ""),
-        }
-        if subject:
-            extra["subject"] = subject
-        return PlatformConfig(enabled=True, extra=extra)
+        return _email_account_pconfig(account, subject=subject)
     return None
 
 
@@ -496,11 +517,16 @@ def _handle_send(args):
     # refuses — a reply leaving by the wrong account is worse than no reply.
     account = str(args.get("account") or "").strip()
     if account:
-        pconfig = _account_pconfig(
-            platform_name,
-            account,
-            subject=str(args.get("subject") or "").strip() or None,
-        )
+        from hermes_cli.reply_accounts import ReplyRefused
+
+        try:
+            pconfig = _account_pconfig(
+                platform_name,
+                account,
+                subject=str(args.get("subject") or "").strip() or None,
+            )
+        except ReplyRefused as refused:
+            return tool_error(refused.detail)
         if pconfig is None:
             return tool_error(
                 f"Account {account!r} could not be resolved on {platform_name}; "

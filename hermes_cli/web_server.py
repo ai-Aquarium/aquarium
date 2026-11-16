@@ -5161,7 +5161,11 @@ async def _settle_todo_proposal(principal, todo_id: str, answer: str) -> dict:
     """
     try:
         from hermes_cli.todo_store import default_store
+        from hermes_constants import get_hermes_home
 
+        # The answer route holds the to-do's profile scope (``?profile=``,
+        # FG-28 B4), so the store is that profile's schema and ``principal``
+        # its own enrolment; the revision session runs pinned to it too.
         store = default_store()
         if answer.strip().lower() == "approved":
             from hermes_cli.todo_outbound import execute_proposal
@@ -5191,6 +5195,7 @@ async def _settle_todo_proposal(principal, todo_id: str, answer: str) -> dict:
             actor=actor,
             extra_context=answer,
             revision=True,
+            profile_home=get_hermes_home(),
         )
         return {"type": "revision", "session_id": session_id}
     except Exception as exc:  # noqa: BLE001 - the answer itself already settled
