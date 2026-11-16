@@ -266,6 +266,39 @@ def test_disable_enable_care_and_refusals(box):
     assert listed(mary)[1]["layer"] == "builtin"
 
 
+def test_care_template_is_never_another_users_version(box):
+    john, mary, admin = _client("john"), _client("mary"), _client("cfo_admin")
+
+    def care(client, profile="cfo"):
+        r = client.get("/api/triage/layers", params={"kind": KIND, "profile": profile})
+        assert r.status_code == 200, r.text
+        return r.json()["care"]
+
+    builtin = care(john)["template"]
+    assert builtin["layer"] == "builtin" and builtin["content"].strip()
+
+    # Mary's own text wins for her, but her template text stays the built-in one.
+    r = mary.put("/api/triage/layers/care?profile=cfo",
+                 json={"kind": KIND, "layer": "user", "content": "Mary: invoices over 10k."})
+    assert r.status_code == 200, r.text
+    assert r.json()["care"]["layer"] == "user"
+    assert r.json()["care"]["template"] == builtin
+    assert care(mary)["content"] == "Mary: invoices over 10k."
+    assert care(mary)["template"] == builtin
+    assert "Mary" not in json.dumps(care(john))
+
+    # The admin's template text reaches everyone's template field, not their own text.
+    r = admin.put("/api/triage/layers/care?profile=cfo",
+                  json={"kind": KIND, "layer": "template", "content": "CFO template care."})
+    assert r.status_code == 200, r.text
+    template = {"layer": "template", "content": "CFO template care."}
+    for who in (john, mary, admin):
+        assert care(who)["template"] == template
+    assert care(mary)["content"] == "Mary: invoices over 10k."
+    assert care(john) == {"key": triage_skills.CARE_KEY, **template, "template": template}
+    assert care(mary, "cmo")["template"]["layer"] == "builtin"
+
+
 # -- CLI ---------------------------------------------------------------------------
 
 

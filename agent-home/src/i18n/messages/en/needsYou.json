@@ -71,7 +71,9 @@
     "dataDraft": "Dictionary draft v{v} for {source} is ready",
     "dataDraftUnnamed": "Dictionary draft v{v} for a data source is ready",
     "dataSchema": "The {source} schema changed — its dictionary needs an update",
-    "dataSchemaUnnamed": "A data source's schema changed — its dictionary needs an update"
+    "dataSchemaUnnamed": "A data source's schema changed — its dictionary needs an update",
+    "dataHealth": "Can't connect to {source} — its hourly check failed",
+    "dataHealthUnnamed": "Can't connect to a data source — its hourly check failed"
   },
   "details": {
     "changesOne": "1 change",

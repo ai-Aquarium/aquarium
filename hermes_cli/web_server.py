@@ -13465,6 +13465,7 @@ async def needs_you(request: Request):
         sources = await dd.list_sources(principal, ss.current_profile())
         items.extend(ny.data_draft_entries(sources))
         items.extend(ny.data_schema_entries(sources))
+        items.extend(ny.data_health_entries(sources))
     except Exception:
         _log.warning("needs-you: data dictionary source failed", exc_info=True)
 

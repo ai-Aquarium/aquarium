@@ -60,6 +60,7 @@ SEVERITY_BY_SOURCE = {
     "output_acceptance": "review",
     "data_draft": "review",
     "data_schema": "review",
+    "data_health": "blocking",
     "card_blocked": "review",
     "todo": "fyi",
     "profile_suggestion": "fyi",
@@ -688,6 +689,28 @@ def data_schema_entries(sources: Iterable[dict]) -> list[dict]:
             },
             href=href, created_at=s.get("schema_checked_at"),
             actions=[_open_action(href, "Open dictionary")],
+        ))
+    return out
+
+
+def data_health_entries(sources: Iterable[dict]) -> list[dict]:
+    """Settings data sources whose hourly health check failed (one card each, to the owner)."""
+    out: list[dict] = []
+    for s in sources:
+        health = s.get("health") or {}
+        if s.get("access") != "manage" or health.get("status") != "failed":
+            continue
+        name = s.get("name")
+        href = f"/data/{quote(str(s['id']), safe='')}"
+        out.append(entry(
+            id=f"data_health:{s['id']}",
+            source="data_health",
+            title=f"Can't connect to {name or 'a data source'} — its hourly check failed",
+            detail=health.get("error") or None,
+            i18n={"title": [_m("titles.dataHealth" if name else "titles.dataHealthUnnamed",
+                               source=name)]},
+            href=href, created_at=health.get("checked_at"),
+            actions=[_open_action(href, "Open data source")],
         ))
     return out
 

@@ -27,6 +27,13 @@ describe("PageHeader", () => {
     expect(back.getAttribute("href")).toBe("/skills/foo");
   });
 
+  it("cuts the trail at a back override that is already an ancestor", () => {
+    path = "/profiles/hr/triage";
+    render(<PageHeader title="My triage skills" back={{ href: "/", label: "Home" }} />);
+    const crumbs = [...document.querySelectorAll("ol a")].map((a) => a.getAttribute("href"));
+    expect(crumbs).toEqual(["/"]);
+  });
+
   it("has no Back row on Home", () => {
     path = "/";
     render(<PageHeader title="Home" />);

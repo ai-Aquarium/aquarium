@@ -1745,6 +1745,9 @@ export interface TriageSkillFileHistory {
   versions: TriageSkillFileVersion[];
 }
 
+/** Triage kinds with layered skills: the status card's three plus Telegram (FG-03 P6). */
+export type TriageLayerKind = TriageKindStatus["kind"] | "telegram";
+
 /** FG-03 P3 triage skill layers, lowest first; the highest present wins. */
 export type TriageLayer = "builtin" | "template" | "user";
 /** Layers a person can change: the profile template (owner/admin) or their own. */
@@ -1770,12 +1773,14 @@ export interface TriageCareSection {
   key: string;
   layer: TriageLayer;
   content: string;
+  /** The profile template's own text (template, else built-in); never another user's version. */
+  template?: { layer: TriageLayer; content: string };
 }
 
 /** `GET /api/triage/layers?kind=` */
 export interface TriageLayers {
   profile: string | null;
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   /** The caller; the user layer is always theirs. */
   user_id: string | null;
   files: TriageLayeredFile[];
@@ -1786,7 +1791,7 @@ export interface TriageLayers {
 
 /** `GET /api/triage/layers/file` */
 export interface TriageLayerFile {
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   key: string;
   /** The layer shown (the winner for `effective`, `null` if turned off). */
   layer: TriageLayer | null;
@@ -1802,7 +1807,7 @@ export interface TriageLayerFile {
 
 /** `GET /api/triage/layers/diff` — template vs the caller's version. */
 export interface TriageLayerDiff {
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   key: string;
   template_disabled: boolean;
   mine_disabled: boolean;
@@ -1825,7 +1830,7 @@ export interface TriageLayerVersion {
 }
 
 export interface TriageLayerHistory {
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   key: string;
   layer: TriageEditableLayer;
   versions: TriageLayerVersion[];
@@ -1887,6 +1892,44 @@ export interface MssqlConnection extends MssqlSettings {
     database?: string;
     error?: string;
   } | null;
+}
+
+/** Engines behind `/api/db/connections` (SQL Server has its own routes). */
+export type DbEngine = "mysql" | "sqlite";
+export type DbTls = "verify" | "on" | "off";
+
+/** One of the caller's MySQL / SQLite connections; the password is never returned. */
+export interface DbConnection {
+  engine: DbEngine;
+  name: string;
+  label: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  tls?: DbTls;
+  vpn?: string;
+  password_set?: boolean;
+  path?: string;
+}
+
+/** Body of `PUT /api/db/connections/{engine}/{name}`; an omitted password is kept. */
+export interface DbConnectionInput {
+  label?: string;
+  host?: string;
+  port?: number | null;
+  database?: string;
+  username?: string;
+  password?: string;
+  tls?: DbTls;
+  vpn?: string;
+  path?: string;
+}
+
+/** `POST /api/db/connections/{engine}/{name}/test`: ok + table count, or the plain reason. */
+export interface DbConnectionTest {
+  connection: DbConnection;
+  test: { ok: boolean; tables?: number; error?: string };
 }
 
 /** Body of `PUT /api/mssql/connections/{name}`; empty password keeps the saved one. */

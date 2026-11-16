@@ -251,7 +251,7 @@ def test_settings_connections_become_private_sources_with_drift(env, monkeypatch
     erp = mine["connection"]
     assert (erp["engine"], erp["connection"], erp["ref"], erp["access"]) == (
         "mssql", "erp", "mssql:erp", "manage")
-    assert "connection" not in sources(BOSS, profile)
+    assert sources(BOSS, profile)["connection"]["access"] == "read"
     assert "connection" not in sources(BOB, profile)
     # Listing again keeps one source per connection.
     assert sources(ALICE, profile)["connection"]["id"] == erp["id"]
@@ -275,9 +275,23 @@ def test_settings_connections_become_private_sources_with_drift(env, monkeypatch
 
     run(dd.put_grant(erp["id"], "bob", "read", by="alice"))
     assert sources(BOB, profile)["connection"]["access"] == "read"
-    assert run(dd.resolve_access(source, BOSS)) is None
+    assert run(dd.resolve_access(source, BOSS)) == "read"
+
+    # The schema check is the health check: a failure is recorded, then cleared.
+    async def unreachable(source, db=None):
+        raise de.EngineError("could not connect: timeout", 502)
+
+    monkeypatch.setattr(de, "source_schema", unreachable)
     with pytest.raises(de.EngineError):
-        run(de.adapter_for(source, BOB))
+        run(dd.check_source(source))
+    sick = run(dd.get_source(erp["id"])).view("manage")["health"]
+    assert (sick["status"], sick["error"]) == ("failed", "could not connect: timeout")
+    assert run(dd.schema_check_tick()) == 0  # checked under an hour ago: not again
+    monkeypatch.setattr(de, "source_schema", schema)
+    run(dd.check_source(source))
+    assert run(dd.get_source(erp["id"])).view("manage")["health"]["status"] == "ok"
+    assert run(dd.set_study_schemas(source, ["dbo", "dbo", " "])) == ["dbo"]
+    assert run(dd.get_source(erp["id"])).study_schemas == ["dbo"]
 
     assert run(dd.delete_connection_source(profile, "mssql", "alice", "erp")) is True
     assert run(dd.get_source(erp["id"])) is None

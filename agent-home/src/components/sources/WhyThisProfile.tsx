@@ -12,6 +12,11 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useT, type Translator } from "@/i18n";
 import type { RoutingDecision, SourceChannel } from "@/types";
 
+/** Settings › Sources › one source's recent routing (`/settings/sources/[sourceId]/routing`). */
+export function sourceRoutingHref(sourceId: string): string {
+  return `/settings/sources/${encodeURIComponent(sourceId)}/routing`;
+}
+
 /** Profile › My triage skills (`/profiles/[name]/triage`), opened on this channel's tab; open to members too. */
 export function triageSkillsHref(profile: string, channel: SourceChannel): string {
   return `/profiles/${encodeURIComponent(profile)}/triage?kind=${channel}`;

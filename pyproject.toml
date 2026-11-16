@@ -211,6 +211,9 @@ mssql = ["python-tds==1.17.1", "pyOpenSSL==26.2.0"]
 # MySQL / MariaDB data sources (hermes_cli/db_connections.py, the data
 # dictionary's MySQL adapter): pure-Python driver. SQLite uses the stdlib.
 mysql = ["PyMySQL==1.1.2"]
+# External PostgreSQL data sources (not Aquarium's own Supabase, which uses
+# asyncpg): pure-Python DB driver, read-only sessions only.
+postgres = ["pg8000==1.31.6"]
 # Windows Server PowerShell over WinRM (Settings -> In&Out -> Windows servers,
 # the ``windows_powershell`` tool): pypsrp + pyspnego (NTLM/Kerberos) +
 # requests-credssp (CredSSP). Pure Python; reuse the requests/cryptography pins.

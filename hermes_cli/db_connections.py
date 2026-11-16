@@ -1,14 +1,16 @@
-"""Per-person MySQL and SQLite connections (data-dictionary plan, Phase 7).
+"""Per-person PostgreSQL, MySQL and SQLite connections (data-dictionary plan, Phase 8).
 
 The same model as Settings' SQL Server connections
 (:mod:`hermes_cli.mssql_connections`): each connection is a private entry in
-the credential store, only its owner lists, edits, tests or reads through it,
-and passwords are write-only. Each connection becomes a data source with a
-dictionary (:mod:`hermes_cli.data_engines`).
+the credential store, only its owner lists, edits or tests it, and passwords
+are write-only. Each connection becomes a data source with a dictionary
+(:mod:`hermes_cli.data_engines`), which its owner may share; readers use the
+owner's login server-side and never see it.
 
-SQLite files are read from the box itself, so only the profile owner or an
-admin may add one, and only under the folders in ``data_sources.sqlite_roots``
-(``config.yaml``; default ``<HERMES_HOME>/data-sources``).
+SQLite files are read from the box itself: only from the folders in
+``data_sources.sqlite_roots`` (``config.yaml``; default
+``<HERMES_HOME>/data-sources``), and a member only from their own
+``<root>/<user_id>/`` folder.
 """
 
 from __future__ import annotations
@@ -27,8 +29,11 @@ from hermes_cli.credential_store import (
 )
 from hermes_cli.data_engines import EngineError
 
-ENGINES = ("mysql", "sqlite")
+ENGINES = ("postgres", "mysql", "sqlite")
+#: Engines reached over the network (host, port, login, TLS, optional VPN).
+NETWORK_ENGINES = ("postgres", "mysql")
 MYSQL_DEFAULT_PORT = 3306
+DEFAULT_PORTS = {"postgres": 5432, "mysql": MYSQL_DEFAULT_PORT}
 TLS_MODES = ("verify", "on", "off")
 _MYSQL_TEXT = ("host", "database", "username", "vpn", "label")
 
@@ -65,18 +70,39 @@ def mysql_driver():
     return pymysql
 
 
+def postgres_driver():
+    try:
+        import pg8000.native  # noqa: F401
+    except ImportError:
+        try:
+            from tools.lazy_deps import ensure
+
+            ensure("postgres.driver", prompt=False)
+            import pg8000.native  # noqa: F401
+        except Exception as exc:
+            raise EngineError(
+                "PostgreSQL support is not installed on this server (the 'postgres' extra)", 503
+            ) from exc
+    import pg8000
+
+    return pg8000
+
+
 def driver_available(engine: str) -> bool:
     if engine == "sqlite":
         return True
     try:
-        import pymysql  # noqa: F401
+        if engine == "postgres":
+            import pg8000.native  # noqa: F401
+        else:
+            import pymysql  # noqa: F401
     except Exception:
         return False
     return True
 
 
-def mysql_ssl(payload: Mapping[str, Any]) -> Optional[ssl.SSLContext]:
-    """The TLS context for a MySQL payload (None = no TLS)."""
+def tls_context(payload: Mapping[str, Any]) -> Optional[ssl.SSLContext]:
+    """The TLS context for a MySQL / PostgreSQL payload (None = no TLS)."""
     mode = payload.get("tls") or "verify"
     if mode == "off":
         return None
@@ -127,6 +153,28 @@ def sqlite_path(value: Any) -> Path:
     return resolved
 
 
+def _own_sqlite_folder(principal: Any, path: Path) -> None:
+    """Members add only files in their own ``<root>/<user_id>/`` folder; admins any root.
+
+    Otherwise anyone could register a file someone else keeps private.
+    """
+    from hermes_cli import site_sources as ss
+
+    if ss._is_profile_admin(principal):
+        return
+    user_id = str(getattr(principal, "user_id", "") or "")
+    folders = [r / user_id for r in sqlite_roots()] if user_id else []
+    if not any(f in path.parents for f in folders):
+        raise EngineError(
+            "you can add SQLite files from your own folder: "
+            + ", ".join(str(f) for f in folders),
+            403,
+        )
+
+
+mysql_ssl = tls_context
+
+
 # -- store ------------------------------------------------------------------------------
 
 
@@ -158,10 +206,10 @@ async def _own(principal: Any, engine: str, name: str) -> Credential:
 def view_of(cred: Credential) -> Dict[str, Any]:
     p = cred.payload
     out: Dict[str, Any] = {"engine": cred.provider, "name": cred.name, "label": p.get("label") or ""}
-    if cred.provider == "mysql":
+    if cred.provider in NETWORK_ENGINES:
         out.update(
             host=p.get("host", ""),
-            port=p.get("port") or MYSQL_DEFAULT_PORT,
+            port=p.get("port") or DEFAULT_PORTS[cred.provider],
             database=p.get("database", ""),
             username=p.get("username", ""),
             tls=p.get("tls") or "verify",
@@ -190,7 +238,7 @@ def _payload(engine: str, body: Mapping[str, Any]) -> Dict[str, Any]:
             raise EngineError(f"{field} is required")
     port = body.get("port")
     try:
-        payload["port"] = int(port) if port not in (None, "") else MYSQL_DEFAULT_PORT
+        payload["port"] = int(port) if port not in (None, "") else DEFAULT_PORTS[engine]
     except (TypeError, ValueError):
         raise EngineError("port must be a number") from None
     tls = body.get("tls") or "verify"
@@ -205,16 +253,14 @@ def _payload(engine: str, body: Mapping[str, Any]) -> Dict[str, Any]:
 
 async def save(principal: Any, engine: Any, name: Any, body: Mapping[str, Any]) -> Dict[str, Any]:
     """Create or replace the caller's connection; an omitted password is kept."""
-    from hermes_cli import site_sources as ss
-
     engine, name = _engine(engine), normalize_name(name)
     if not isinstance(body, Mapping):
         raise EngineError("body must be an object")
-    if engine == "sqlite" and not ss._is_profile_admin(principal):
-        raise EngineError("only the owner or an admin can add SQLite files", 403)
     payload = _payload(engine, body)
+    if engine == "sqlite":
+        _own_sqlite_folder(principal, Path(payload["path"]))
     existing = await find_own(principal, engine, name)
-    if engine == "mysql":
+    if engine in NETWORK_ENGINES:
         payload = merge_kept_secrets(engine, payload, existing.payload if existing else None)
         if not payload.get("password"):
             raise EngineError("password is required")
@@ -232,6 +278,9 @@ async def save(principal: Any, engine: Any, name: Any, body: Mapping[str, Any]) 
         )
     except CredentialError as exc:
         raise EngineError(str(exc).replace(str(payload.get("password") or "\0"), "***")) from exc
+    from hermes_cli import data_engines
+
+    await data_engines.remember_connection(principal)
     return view_of(cred)
 
 
@@ -255,9 +304,9 @@ async def run_test(principal: Any, engine: Any, name: Any) -> Dict[str, Any]:
     cred = await _own(principal, engine, name)
     result: Dict[str, Any] = {}
     try:
-        if engine == "mysql":
-            adapter: Any = data_engines.MysqlAdapter(
-                cred.payload, ip=await route_for(principal, cred), label=name)
+        if engine in NETWORK_ENGINES:
+            cls = data_engines.PostgresAdapter if engine == "postgres" else data_engines.MysqlAdapter
+            adapter: Any = cls(cred.payload, ip=await route_for(principal, cred), label=name)
         else:
             adapter = data_engines.SqliteAdapter(cred.payload, label=name)
         tables = await adapter.list_tables()
@@ -280,7 +329,7 @@ def _route_user(cred: Credential) -> str:
 
 
 async def route_for(principal: Any, cred: Credential, *, agent: bool = False) -> Optional[str]:
-    """The VPN address to dial for a MySQL ``cred`` (None: dial ``host`` directly)."""
+    """The VPN address to dial for a network ``cred`` (None: dial ``host`` directly)."""
     vpn_name = cred.payload.get("vpn")
     if not vpn_name:
         return None
@@ -292,7 +341,8 @@ async def route_for(principal: Any, cred: Credential, *, agent: bool = False) ->
         raise EngineError(f"the VPN '{vpn_name}' is not set up (Settings -> In&Out)") from None
     doc = await vpn.ensure_host_route(
         vpn_cred, _route_user(cred), str(cred.payload["host"]),
-        int(cred.payload.get("port") or MYSQL_DEFAULT_PORT), agent=agent,
+        int(cred.payload.get("port") or DEFAULT_PORTS.get(cred.provider, MYSQL_DEFAULT_PORT)),
+        agent=agent,
     )
     if not doc.get("routed") or not doc.get("ip"):
         raise EngineError(str(doc.get("error") or "the VPN route could not be set up"), 502)

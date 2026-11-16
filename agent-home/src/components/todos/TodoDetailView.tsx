@@ -13,7 +13,7 @@ import { useAction } from "@/lib/use-action";
 import { STAGE_LABEL, sourceGlyph } from "@/components/todos/TodoRow";
 import { formatWhen } from "@/components/files/FilesView";
 import type { Todo, TodoDetail, TodoStage } from "@/types";
-import { WhyThisProfile } from "@/components/sources/WhyThisProfile";
+import { sourceRoutingHref, WhyThisProfile } from "@/components/sources/WhyThisProfile";
 import { Sheet } from "@/components/ui/Sheet";
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { useUndoToast } from "@/components/ui/UndoToast";
@@ -572,6 +572,7 @@ function TriageProvenance({
             sourceId={todo.routing_source_id}
             batchId={todo.routing_batch_id}
             profile={profile && profile !== "default" ? profile : null}
+            recentRoutingHref={sourceRoutingHref}
           />
         </>
       ) : null}

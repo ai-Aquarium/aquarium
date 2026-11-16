@@ -10,6 +10,7 @@ import { DictionaryDetail } from "@/components/data/DictionaryDetail";
 import { ReviewDraft } from "@/components/data/ReviewDraft";
 import { ShareSheet } from "@/components/data/ShareSheet";
 import { BuildSheet } from "@/components/data/BuildSheet";
+import { toDbInput } from "@/components/data/DbConnections";
 import { DataSourceDetail } from "@/components/data/DataSourceDetail";
 import { fieldDiff, searchEntries, textToColumns } from "@/components/data/format";
 import type { DataSource, DataSourceDoc, DictionaryEntry } from "@/types/data";
@@ -139,5 +140,21 @@ describe("data pages", () => {
   it("parses columns and diffs fields", () => {
     expect(textToColumns("Amount: HKD\n\nstatus")).toEqual({ amount: "HKD", status: "" });
     expect(fieldDiff(ENTRY, { ...ENTRY, grain: "line" })).toEqual([{ field: "grain", from: "order", to: "line" }]);
+  });
+});
+
+describe("toDbInput", () => {
+  const base = { name: "CRM", label: "", host: "db1", port: "3306", database: "crm", username: "ro", password: "pw", tls: "verify" as const, vpn: "", path: "" };
+  it("builds a MySQL body and checks required fields, name, port and password", () => {
+    expect(toDbInput("mysql", base, false)).toEqual({ body: { host: "db1", port: 3306, database: "crm", username: "ro", password: "pw", tls: "verify", vpn: "" } });
+    expect(toDbInput("mysql", { ...base, host: " " }, false)).toEqual({ problem: "errRequired" });
+    expect(toDbInput("mysql", { ...base, name: "bad/name" }, false)).toEqual({ problem: "errName" });
+    expect(toDbInput("mysql", { ...base, port: "70000" }, false)).toEqual({ problem: "errPort" });
+    expect(toDbInput("mysql", { ...base, password: "" }, false)).toEqual({ problem: "errPassword" });
+    expect(toDbInput("mysql", { ...base, password: "" }, true)).toEqual({ body: { host: "db1", port: 3306, database: "crm", username: "ro", tls: "verify", vpn: "" } });
+  });
+  it("needs only a path for SQLite", () => {
+    expect(toDbInput("sqlite", { ...base, path: "/srv/p.db", label: "Prices" }, false)).toEqual({ body: { label: "Prices", path: "/srv/p.db" } });
+    expect(toDbInput("sqlite", { ...base, path: "" }, false)).toEqual({ problem: "errRequired" });
   });
 });

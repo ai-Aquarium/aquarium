@@ -1,0 +1,98 @@
+#!/bin/bash
+# Close Supabase's pg_net schema (`net`) to every role but the Supabase ones that use it.
+#
+#   deploy/hermes-lock-pg-net [--container NAME]     (run as root)
+#
+# pg_net's install script grants PUBLIC usage on schema net and every right on its
+# request queue and response tables, and PUBLIC may run its functions: any login could
+# read other people's webhook responses or make the database box send HTTP requests.
+# It also leaves the app-data sandbox login (aquarium_data_sandbox) able to reach two
+# tables, so every app-data question is refused (hermes_cli/app_data.py).
+#
+# Only supabase_admin owns those objects, and Aquarium's migrations run as postgres,
+# so this goes through the database container as supabase_admin. It revokes every
+# grant on net and its tables, sequences and functions from PUBLIC and every role not
+# in KEEP, then grants KEEP what it needs: postgres and service_role (admin use) and
+# supabase_functions_admin (database webhooks: supabase_functions.http_request() runs
+# as it and queues requests through net.http_get / net.http_post).
+#
+# install-aquarium.sh runs this after `hermes db migrate`, and hermes-deploy.sh on every
+# deploy, since a pg_net upgrade re-adds the PUBLIC grants. Idempotent; does nothing
+# where pg_net isn't installed or the container isn't running.
+set -euo pipefail
+CONTAINER=supabase-db
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --container) CONTAINER=$2; shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" != true ]; then
+  echo "pg_net: skipped, no running $CONTAINER container"
+  exit 0
+fi
+
+psql_admin() { docker exec -i "$CONTAINER" psql -U supabase_admin -X -q -At -v ON_ERROR_STOP=1 "$@"; }
+
+read -r -d '' LOCK_SQL <<'SQL' || true
+DO $lock$
+DECLARE
+  keep name[] := ARRAY['postgres', 'service_role', 'supabase_functions_admin'];
+  present name[];
+  r record;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net')
+     OR to_regnamespace('net') IS NULL THEN
+    RAISE NOTICE 'pg_net is not installed';
+    RETURN;
+  END IF;
+  SELECT coalesce(array_agg(rolname), '{}') INTO present FROM pg_roles WHERE rolname = ANY (keep);
+
+  -- Each grant on net, its relations and functions, to anyone but the owner and KEEP.
+  -- A NULL ACL means the built-in default, which for functions includes PUBLIC.
+  FOR r IN
+    WITH obj AS (
+      SELECT 'SCHEMA net' AS what, n.nspowner AS owner,
+             coalesce(n.nspacl, acldefault('n', n.nspowner)) AS acl
+        FROM pg_namespace n WHERE n.nspname = 'net'
+      UNION ALL
+      SELECT CASE c.relkind WHEN 'S' THEN 'SEQUENCE ' ELSE 'TABLE ' END || c.oid::regclass::text,
+             c.relowner,
+             coalesce(c.relacl, acldefault(CASE c.relkind WHEN 'S' THEN 's' ELSE 'r' END::"char", c.relowner))
+        FROM pg_class c
+       WHERE c.relnamespace = 'net'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+      UNION ALL
+      SELECT 'FUNCTION ' || p.oid::regprocedure::text, p.proowner,
+             coalesce(p.proacl, acldefault('f', p.proowner))
+        FROM pg_proc p WHERE p.pronamespace = 'net'::regnamespace AND p.prokind IN ('f', 'p')
+    )
+    SELECT DISTINCT obj.what,
+           CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(a.grantee)) END AS who
+      FROM obj, aclexplode(obj.acl) a
+     WHERE a.grantee <> obj.owner
+       AND (a.grantee = 0 OR pg_get_userbyid(a.grantee) <> ALL (keep))
+  LOOP
+    EXECUTE format('REVOKE ALL ON %s FROM %s', r.what, r.who);
+    RAISE NOTICE 'revoked % from %', r.what, r.who;
+  END LOOP;
+
+  IF cardinality(present) > 0 THEN
+    EXECUTE format('GRANT USAGE ON SCHEMA net TO %s', array_to_string(present, ', '));
+    EXECUTE format('GRANT ALL ON ALL TABLES IN SCHEMA net TO %s', array_to_string(present, ', '));
+    EXECUTE format('GRANT ALL ON ALL SEQUENCES IN SCHEMA net TO %s', array_to_string(present, ', '));
+    EXECUTE format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA net TO %s', array_to_string(present, ', '));
+  END IF;
+END
+$lock$;
+SQL
+
+# pg_net lives in one database (pg_net.database_name); check every one that takes connections.
+dbs=$(psql_admin -d postgres -c "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate ORDER BY 1")
+for db in $dbs; do
+  status=0
+  out=$(printf '%s\n' "$LOCK_SQL" | psql_admin -d "$db" 2>&1) || status=$?
+  [ -z "$out" ] || printf '%s\n' "$out" | sed "s/^NOTICE: */pg_net ($db): /"
+  [ "$status" -eq 0 ] || { echo "pg_net: locking failed in database $db" >&2; exit 1; }
+done
+echo "pg_net: locked"
