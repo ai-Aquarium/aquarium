@@ -1,13 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 
+import { ActionButton } from "@/components/ui/ActionButton";
 import { Sheet, primaryButtonClass, secondaryButtonClass } from "@/components/ui/Sheet";
 import { useT } from "@/i18n";
 import type { DataSource } from "@/types/data";
 
-import { schemasOf } from "./format";
+import { allows, schemasOf } from "./format";
+
+/** A connection source's first-study schemas live in Hermes; the owner's pick is saved there. */
+function useStudySchemas(source: DataSource) {
+  const remote = source.kind === "connection" && allows(source.access, "manage");
+  const [state, setState] = useState<{ available: string[]; chosen: string[] } | null>(null);
+  useEffect(() => {
+    if (!remote) return;
+    let live = true;
+    fetch(`/api/data/sources/${encodeURIComponent(source.id)}/study-schemas`, { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ available: string[]; chosen: string[] }>) : { available: [], chosen: [] }))
+      .then((doc) => live && setState({ available: doc.available ?? [], chosen: doc.chosen ?? [] }))
+      .catch(() => live && setState({ available: [], chosen: [] }));
+    return () => {
+      live = false;
+    };
+  }, [remote, source.id]);
+  return { remote, loading: remote && state === null, available: state?.available ?? [], chosen: state?.chosen ?? [] };
+}
 
 export type BuildScope = { kind: "undescribed" } | { kind: "schemas"; schemas: string[] } | { kind: "changed"; tables: string[] };
 
@@ -30,10 +50,18 @@ export function buildPrompt(t: ReturnType<typeof useT>, source: Pick<DataSource,
  */
 export function BuildSheet({ source, tables, onClose }: { source: DataSource; tables: string[]; onClose(): void }) {
   const t = useT("data");
-  const schemas = schemasOf(tables);
+  const router = useRouter();
+  const study = useStudySchemas(source);
+  const local = schemasOf(tables);
+  const schemas = study.available.length
+    ? study.available.map((name) => local.find((s) => s.name === name) ?? { name, count: 0 })
+    : local;
   const changed = (source.schema_drift ?? []).map((d) => d.table);
-  const [kind, setKind] = useState<BuildScope["kind"]>(schemas.length ? "schemas" : "undescribed");
-  const [picked, setPicked] = useState<string[]>(schemas.slice(0, 2).map((s) => s.name));
+  const [kindPick, setKind] = useState<BuildScope["kind"] | null>(null);
+  const kind = kindPick ?? (schemas.length ? "schemas" : "undescribed");
+  const [pickedState, setPicked] = useState<string[] | null>(null);
+  const picked = pickedState ?? (study.chosen.length ? study.chosen : (source.study_schemas?.length ? source.study_schemas : schemas.slice(0, 2).map((s) => s.name)));
+  const [saveError, setSaveError] = useState(false);
   const [onDemand, setOnDemand] = useState(true);
   const scope: BuildScope = kind === "schemas" ? { kind, schemas: picked } : kind === "changed" ? { kind, tables: changed } : { kind };
   const ready = kind !== "schemas" || picked.length > 0;
@@ -57,7 +85,27 @@ export function BuildSheet({ source, tables, onClose }: { source: DataSource; ta
           <button type="button" className={secondaryButtonClass} onClick={onClose}>
             {t("edit.cancel")}
           </button>
-          {ready ? (
+          {ready && study.remote && kind === "schemas" ? (
+            <ActionButton
+              className={primaryButtonClass}
+              busyLabel={t("build.open")}
+              onAction={async () => {
+                setSaveError(false);
+                const res = await fetch(`/api/data/sources/${encodeURIComponent(source.id)}/study-schemas`, {
+                  method: "PUT",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ schemas: picked }),
+                }).catch(() => null);
+                if (!res?.ok) {
+                  setSaveError(true);
+                  return;
+                }
+                router.push(href);
+              }}
+            >
+              {t("build.open")}
+            </ActionButton>
+          ) : ready ? (
             <Link href={href} className={`${primaryButtonClass} inline-flex min-h-9 items-center`}>
               {t("build.open")}
             </Link>
@@ -71,6 +119,12 @@ export function BuildSheet({ source, tables, onClose }: { source: DataSource; ta
     >
       <div className="flex flex-col gap-3 text-sm">
         <p className="text-[var(--color-muted)]">{t("build.hint")}</p>
+        {study.loading ? <p className="text-xs text-[var(--color-muted)]">{t("build.schemasLoading")}</p> : null}
+        {saveError ? (
+          <p role="alert" className="text-xs text-[var(--color-danger)]">
+            {t("build.saveFailed")}
+          </p>
+        ) : null}
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 text-xs font-medium">{t("build.scope")}</legend>
           {schemas.length
@@ -83,7 +137,7 @@ export function BuildSheet({ source, tables, onClose }: { source: DataSource; ta
                       <input
                         type="checkbox"
                         checked={picked.includes(s.name)}
-                        onChange={(e) => setPicked((p) => (e.target.checked ? [...p, s.name] : p.filter((x) => x !== s.name)))}
+                        onChange={(e) => setPicked(e.target.checked ? [...picked, s.name] : picked.filter((x) => x !== s.name))}
                       />
                       {s.name}
                     </label>
@@ -101,6 +155,7 @@ export function BuildSheet({ source, tables, onClose }: { source: DataSource; ta
           </label>
         </fieldset>
         {schemas.length ? <p className="text-xs text-[var(--color-muted)]">{t("build.bigNote")}</p> : null}
+        {study.remote && kind === "schemas" ? <p className="text-xs text-[var(--color-muted)]">{t("build.schemasSaved")}</p> : null}
       </div>
     </Sheet>
   );

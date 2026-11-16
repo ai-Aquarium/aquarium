@@ -20,10 +20,19 @@ export interface DataSourceHealth {
   detail?: string | null;
 }
 
+/** Hermes' hourly check of a connection source (it also keeps the connection open). */
+export interface DataSourceHealthCheck {
+  status: "ok" | "failed" | null;
+  error?: string | null;
+  checked_at?: string | null;
+}
+
 export interface DataSource {
   id: string;
   kind: "app" | "site" | "connection";
-  health?: DataSourceHealth | null;
+  health?: DataSourceHealth | DataSourceHealthCheck | null;
+  /** Schemas the first study covers (connection sources). */
+  study_schemas?: string[];
   name: string;
   owner_user_id: string;
   site_id: string | null;

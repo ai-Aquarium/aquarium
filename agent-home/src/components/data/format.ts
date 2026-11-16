@@ -91,7 +91,10 @@ export const HEALTH_TONE: Record<DataSourceHealth["state"], Tone> = {
 
 /** Built-in app data always works; a source without a check yet is "untested". */
 export function healthOf(s: DataSource): DataSourceHealth {
-  if (s.health) return s.health;
+  const h = s.health;
+  if (h && "state" in h) return h;
+  if (h?.status === "ok") return { state: "ok", checked_at: h.checked_at ?? null };
+  if (h?.status === "failed") return { state: "attention", checked_at: h.checked_at ?? null, detail: h.error ?? null };
   return s.kind === "app" ? { state: "builtin" } : { state: "untested" };
 }
 

@@ -42,7 +42,7 @@ function Choice({ type, title, body, href, note }: { type: SourceType | "sheet" 
  * Add data source (mockup v2): connect a database (SQL Server, MySQL, SQLite;
  * PostgreSQL once it has a connection API) or turn a website into tables.
  */
-export function AddDataSource({ canAddSite, isOwner, isAdmin = isOwner }: { canAddSite: boolean; isOwner: boolean; isAdmin?: boolean }) {
+export function AddDataSource({ canAddSite, isOwner }: { canAddSite: boolean; isOwner: boolean }) {
   const t = useT("data");
   const h2 = "text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]";
   return (
@@ -77,7 +77,7 @@ export function AddDataSource({ canAddSite, isOwner, isAdmin = isOwner }: { canA
         <DbConnections engine="mysql" />
       </section>
       <section id="sqlite" className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        <DbConnections engine="sqlite" canAdd={isAdmin} />
+        <DbConnections engine="sqlite" />
       </section>
       <InlineAlert tone="info">{t("add.privateNote")}</InlineAlert>
     </div>

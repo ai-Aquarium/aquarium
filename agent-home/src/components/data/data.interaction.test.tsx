@@ -12,7 +12,7 @@ import { ShareSheet } from "@/components/data/ShareSheet";
 import { BuildSheet } from "@/components/data/BuildSheet";
 import { toDbInput } from "@/components/data/DbConnections";
 import { DataSourceDetail } from "@/components/data/DataSourceDetail";
-import { fieldDiff, searchEntries, textToColumns } from "@/components/data/format";
+import { fieldDiff, healthOf, searchEntries, textToColumns } from "@/components/data/format";
 import type { DataSource, DataSourceDoc, DictionaryEntry } from "@/types/data";
 
 afterEach(() => {
@@ -156,5 +156,14 @@ describe("toDbInput", () => {
   it("needs only a path for SQLite", () => {
     expect(toDbInput("sqlite", { ...base, path: "/srv/p.db", label: "Prices" }, false)).toEqual({ body: { label: "Prices", path: "/srv/p.db" } });
     expect(toDbInput("sqlite", { ...base, path: "" }, false)).toEqual({ problem: "errRequired" });
+  });
+});
+
+describe("healthOf with Hermes' hourly check", () => {
+  const conn = { id: "c", kind: "connection", name: "ERP", owner_user_id: "u", site_id: null, access: "manage" } as const;
+  it("maps ok / failed / not yet checked", () => {
+    expect(healthOf({ ...conn, health: { status: "ok", checked_at: "2026-11-16T10:00:00Z" } })).toEqual({ state: "ok", checked_at: "2026-11-16T10:00:00Z" });
+    expect(healthOf({ ...conn, health: { status: "failed", error: "timeout", checked_at: null } })).toEqual({ state: "attention", checked_at: null, detail: "timeout" });
+    expect(healthOf({ ...conn, health: { status: null } })).toEqual({ state: "untested" });
   });
 });

@@ -3668,6 +3668,15 @@ export class HermesApiClient {
     return this.request(`/api/data/sources/${encodeURIComponent(id)}/grants?${qs.toString()}`, { method: "DELETE" });
   }
 
+  /** The schemas a source's first study covers, and every schema it has. */
+  async studySchemas(id: string): Promise<{ chosen: string[]; available: string[] }> {
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}/study-schemas`);
+  }
+
+  async putStudySchemas(id: string, schemas: string[]): Promise<{ chosen: string[] }> {
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}/study-schemas`, { method: "PUT", json: { schemas } });
+  }
+
   async refreshSite(
     id: string,
     body: { entities?: string[]; mode?: SiteRefreshMode } = {},
