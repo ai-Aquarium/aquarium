@@ -1663,6 +1663,112 @@ export interface TriageSkillFileHistory {
   versions: TriageSkillFileVersion[];
 }
 
+/** FG-03 P3 triage skill layers, lowest first; the highest present wins. */
+export type TriageLayer = "builtin" | "template" | "user";
+/** Layers a person can change: the profile template (owner/admin) or their own. */
+export type TriageEditableLayer = "template" | "user";
+/** `effective` = the winning text; otherwise one layer's own text. */
+export type TriageLayerView = "effective" | TriageLayer;
+/** What a layer holds for a key: its own text, or a turned-off marker. */
+export type TriageLayerState = "content" | "disabled";
+
+/** One key as the caller sees it in the addressed profile. */
+export interface TriageLayeredFile {
+  /** `<folder>/<file>.md`, e.g. `email-triage/classify-emails.md`. */
+  key: string;
+  /** Winning layer; `null` when the key is turned off. */
+  layer: TriageLayer | null;
+  path: string | null;
+  disabled: boolean;
+  layers: Partial<Record<TriageLayer, TriageLayerState>>;
+}
+
+/** The required "What I care about" section and the layer it comes from. */
+export interface TriageCareSection {
+  key: string;
+  layer: TriageLayer;
+  content: string;
+}
+
+/** `GET /api/triage/layers?kind=` */
+export interface TriageLayers {
+  profile: string | null;
+  kind: TriageKindStatus["kind"];
+  /** The caller; the user layer is always theirs. */
+  user_id: string | null;
+  files: TriageLayeredFile[];
+  care: TriageCareSection;
+  /** Owner/admin in the addressed profile: may change the template. */
+  can_edit_template: boolean;
+}
+
+/** `GET /api/triage/layers/file` */
+export interface TriageLayerFile {
+  kind: TriageKindStatus["kind"];
+  key: string;
+  /** The layer shown (the winner for `effective`, `null` if turned off). */
+  layer: TriageLayer | null;
+  requested_layer: TriageLayerView;
+  /** For one layer: what it holds (`null` = nothing); for `effective`, on or off. */
+  state: TriageLayerState | null;
+  disabled: boolean;
+  layers: Partial<Record<TriageLayer, TriageLayerState>>;
+  /** `null` when the layer has no text for the key or it is turned off. */
+  content: string | null;
+  can_edit_template: boolean;
+}
+
+/** `GET /api/triage/layers/diff` — template vs the caller's version. */
+export interface TriageLayerDiff {
+  kind: TriageKindStatus["kind"];
+  key: string;
+  template_disabled: boolean;
+  mine_disabled: boolean;
+  changed: boolean;
+  /** Unified diff (`template/<key>` → `mine/<key>`); empty when the same. */
+  diff: string;
+}
+
+/** A saved version of a layered triage skill key (newest first). */
+export interface TriageLayerVersion {
+  id: string;
+  /** Unix seconds. */
+  at: number;
+  /** `user:<id>`, `cli:operator`, or `system` for the pre-edit baseline. */
+  author: string;
+  action: "baseline" | "edit" | "disable" | "enable" | "reset";
+  message: string;
+  /** The saved text (`null` for disable/enable/reset). */
+  content: string | null;
+}
+
+export interface TriageLayerHistory {
+  kind: TriageKindStatus["kind"];
+  key: string;
+  layer: TriageEditableLayer;
+  versions: TriageLayerVersion[];
+}
+
+/** A write's new version, without its text. */
+export type TriageLayerVersionRef = Omit<TriageLayerVersion, "content"> | { action: string; noop: true };
+
+export interface TriageLayerWriteResult {
+  ok: boolean;
+  kind: string;
+  layer: TriageEditableLayer;
+  key: string;
+  disabled?: boolean;
+  version: TriageLayerVersionRef;
+}
+
+export interface TriageCareWriteResult {
+  ok: boolean;
+  kind: string;
+  layer: TriageEditableLayer;
+  care: TriageCareSection;
+  version: TriageLayerVersionRef;
+}
+
 /** Body of `PUT /api/email/mailboxes/{address}`; empty password keeps the saved one. */
 export interface EmailMailboxInput extends EmailServerSettings {
   username: string;

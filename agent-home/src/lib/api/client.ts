@@ -208,6 +208,14 @@ import type {
   RefreshKeysResponse,
   PinnedModelCard,
   ScheduledSummary,
+  TriageCareWriteResult,
+  TriageEditableLayer,
+  TriageLayerDiff,
+  TriageLayerFile,
+  TriageLayerHistory,
+  TriageLayers,
+  TriageLayerView,
+  TriageLayerWriteResult,
   TriageSkillFileContent,
   TriageSkillFileHistory,
   TriageStatus,
@@ -3399,6 +3407,53 @@ export class HermesApiClient {
   /** Owner/admin only (Hermes enforces it in the addressed profile). */
   async saveTriageSkillFile(kind: string, path: string, content: string): Promise<{ ok: boolean; path: string }> {
     return this.request("/api/triage/skill-file", { method: "PUT", json: { kind, path, content } });
+  }
+
+  /** FG-03 P3: the caller's resolved triage skill layers in this client's profile. */
+  async triageLayers(kind: string): Promise<TriageLayers> {
+    return this.request(`/api/triage/layers?${new URLSearchParams({ kind })}`);
+  }
+
+  async triageLayerFile(kind: string, key: string, layer: TriageLayerView = "effective"): Promise<TriageLayerFile> {
+    return this.request(`/api/triage/layers/file?${new URLSearchParams({ kind, key, layer })}`);
+  }
+
+  /** The profile template vs the caller's own version of one key. */
+  async triageLayerDiff(kind: string, key: string): Promise<TriageLayerDiff> {
+    return this.request(`/api/triage/layers/diff?${new URLSearchParams({ kind, key })}`);
+  }
+
+  async triageLayerHistory(kind: string, key: string, layer: TriageEditableLayer): Promise<TriageLayerHistory> {
+    return this.request(`/api/triage/layers/history?${new URLSearchParams({ kind, key, layer })}`);
+  }
+
+  /** `user` = the caller's own layer; `template` = owner/admin of the profile (Hermes enforces it). */
+  async saveTriageLayerFile(
+    kind: string,
+    layer: TriageEditableLayer,
+    key: string,
+    content: string,
+  ): Promise<TriageLayerWriteResult> {
+    return this.request("/api/triage/layers/file", { method: "PUT", json: { kind, layer, key, content } });
+  }
+
+  async setTriageLayerDisabled(
+    kind: string,
+    layer: TriageEditableLayer,
+    key: string,
+    disabled: boolean,
+  ): Promise<TriageLayerWriteResult> {
+    return this.request("/api/triage/layers/disable", { method: "POST", json: { kind, layer, key, disabled } });
+  }
+
+  /** Reset the caller's version of `key` to the template, or every key when omitted. */
+  async resetTriageLayer(kind: string, key?: string): Promise<{ ok: boolean; kind: string; reset: string[] }> {
+    return this.request("/api/triage/layers/reset", { method: "POST", json: key ? { kind, key } : { kind } });
+  }
+
+  /** The required "What I care about" section (Hermes refuses empty text). */
+  async saveTriageCare(kind: string, layer: TriageEditableLayer, content: string): Promise<TriageCareWriteResult> {
+    return this.request("/api/triage/layers/care", { method: "PUT", json: { kind, layer, content } });
   }
 
   /** The caller's own IMAP/SMTP mailboxes (never any password). */
