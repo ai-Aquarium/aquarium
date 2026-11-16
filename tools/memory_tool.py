@@ -40,6 +40,7 @@ Design:
 import json
 import logging
 import os
+import shutil
 import tempfile
 import time
 import uuid
@@ -134,7 +135,14 @@ class CuratedFile:
     label: str
     #: ``shared`` (profile-wide), ``participation`` (person × profile),
     #: ``person`` (that person, every profile), ``legacy`` (pre-FG-24).
+    #: ``user-folder`` / ``user-folder-archive`` are directories, not files:
+    #: a person's own ``<profile home>/users/<uid>/`` and its archived copies
+    #: under ``users/.archived/<uid>/`` (FG-03 P1).
     scope: str
+
+
+#: Scopes whose ``path`` is a directory removed whole.
+USER_FOLDER_SCOPES = ("user-folder", "user-folder-archive")
 
 
 def curated_memory_files(
@@ -221,9 +229,12 @@ def person_memory_files_on_box(user_id: str) -> List[CuratedFile]:
 
     Used when a person is removed rather than when memory is reset, so it
     crosses profiles: ``memories/users/<uid>/`` under the default home and
-    under every ``profiles/<name>/``, plus ``persons/<uid>/``.
+    under every ``profiles/<name>/``, plus ``persons/<uid>/``. It also lists
+    each profile's ``users/<uid>/`` folder and ``users/.archived/<uid>/``
+    (scopes in ``USER_FOLDER_SCOPES``; their ``path`` is the directory).
     """
     from hermes_cli.access import validate_user_id
+    from hermes_cli.user_profile_dirs import archived_user_dirs_root, user_profile_dir
 
     user_id = validate_user_id(user_id)
     home = get_hermes_home()
@@ -233,6 +244,7 @@ def person_memory_files_on_box(user_id: str) -> List[CuratedFile]:
     for profile_home in homes:
         if not profile_home.is_dir():
             continue
+        profile = "default" if profile_home == root else profile_home.name
         participation = profile_home / "memories" / "users" / user_id
         if participation.is_dir():
             files.append(
@@ -240,6 +252,22 @@ def person_memory_files_on_box(user_id: str) -> List[CuratedFile]:
                     participation / "MEMORY.md",
                     f"agent notes about {user_id} in {profile_home.name}",
                     "participation",
+                )
+            )
+        own = user_profile_dir(user_id, profile_home)
+        if own.is_dir():
+            files.append(
+                CuratedFile(
+                    own, f"{user_id}'s own folder in profile {profile}", "user-folder"
+                )
+            )
+        archived = archived_user_dirs_root(user_id, profile_home)
+        if archived.is_dir():
+            files.append(
+                CuratedFile(
+                    archived,
+                    f"{user_id}'s archived folders in profile {profile}",
+                    "user-folder-archive",
                 )
             )
     person_dir = root / "persons" / user_id
@@ -256,7 +284,11 @@ def erase_curated_file(curated: CuratedFile) -> None:
     A left-behind ``memories/users/<uid>/`` is a person this profile still
     appears to know: it is what ``--all-principals`` enumerates, and what a
     member deletion reads to decide whether an identity file is still in use.
+    A ``USER_FOLDER_SCOPES`` entry is a directory and goes whole.
     """
+    if curated.scope in USER_FOLDER_SCOPES:
+        shutil.rmtree(curated.path)
+        return
     curated.path.unlink()
     if curated.scope not in {"participation", "person"}:
         return

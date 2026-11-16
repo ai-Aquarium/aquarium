@@ -33,6 +33,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, List, Optional, Tuple
 
 from agent.skill_utils import is_excluded_skill_path
+from hermes_cli.user_profile_dirs import USERS_DIRNAME
 
 _PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -135,6 +136,12 @@ _CLONE_ALL_HISTORY_EXCLUDE_ROOT: frozenset[str] = frozenset({
 #: own notes, and it is what ``--clone`` has always copied.
 _CLONE_ALL_MEMORY_EXCLUDE = ("memories", "users")
 
+#: ``<home>/users/`` — each enrolled person's own version of the profile's
+#: settings, and ``users/.archived/`` under it (FG-03 P1). A profile is the
+#: template; a clone, export or import gets the template and never somebody
+#: else's version of it, so this root-level directory never leaves the box.
+_USER_FOLDERS_EXCLUDE_ROOT = USERS_DIRNAME
+
 # Marker file written by `hermes profile create --no-skills`.  When present in
 # a profile's root, callers of seed_profile_skills() (fresh-create, `hermes
 # update`'s all-profile sync, the web dashboard) skip bundled-skill seeding
@@ -159,7 +166,9 @@ def _clone_all_copytree_ignore(source_dir: Path):
       0. ``memories/users/`` and ``persons/`` — per-principal curated memory
          (FG-24). See ``_CLONE_ALL_MEMORY_EXCLUDE``: a clone's principals come
          from enrolment, so what the agent learned about one person in the
-         source profile is not the clone's to hold.
+         source profile is not the clone's to hold. Root-level ``users/``
+         (FG-03 per-user folders, ``_USER_FOLDERS_EXCLUDE_ROOT``) for the
+         same reason.
       1. Root-level entries in ``_CLONE_ALL_HISTORY_EXCLUDE_ROOT`` — session
          history, backups, and snapshots that belong to the SOURCE profile
          and should never carry into a fresh clone.  Applies to any source.
@@ -207,6 +216,9 @@ def _clone_all_copytree_ignore(source_dir: Path):
                 ignored.append(entry)
                 continue
             if at_root:
+                if entry == _USER_FOLDERS_EXCLUDE_ROOT:
+                    ignored.append(entry)
+                    continue
                 # History artifacts: excluded for ANY source profile.
                 if entry in _CLONE_ALL_HISTORY_EXCLUDE_ROOT:
                     ignored.append(entry)
@@ -1764,7 +1776,8 @@ def get_active_profile_name() -> str:
 def _default_export_ignore(root_dir: Path):
     """Return an *ignore* callable for :func:`shutil.copytree`.
 
-    At the root level it excludes everything in ``_DEFAULT_EXPORT_EXCLUDE_ROOT``.
+    At the root level it excludes everything in ``_DEFAULT_EXPORT_EXCLUDE_ROOT``
+    and the per-user folders (``_USER_FOLDERS_EXCLUDE_ROOT``).
     At all levels it excludes ``__pycache__``, sockets, and temp files.
     """
 
@@ -1780,6 +1793,28 @@ def _default_export_ignore(root_dir: Path):
         # Root-level exclusions
         if Path(directory) == root_dir:
             ignored.update(c for c in contents if c in _DEFAULT_EXPORT_EXCLUDE_ROOT)
+            if _USER_FOLDERS_EXCLUDE_ROOT in contents:
+                ignored.add(_USER_FOLDERS_EXCLUDE_ROOT)
+        return ignored
+
+    return _ignore
+
+
+#: Credentials a named-profile export leaves behind, at any depth.
+_NAMED_EXPORT_CREDENTIAL_FILES = frozenset({"auth.json", ".env"})
+
+
+def _named_export_ignore(root_dir: Path):
+    """Return an *ignore* callable for exporting a named profile.
+
+    Credential files are excluded at any depth; the per-user folders
+    (``_USER_FOLDERS_EXCLUDE_ROOT``) at the root.
+    """
+
+    def _ignore(directory: str, contents: list) -> set:
+        ignored = set(_NAMED_EXPORT_CREDENTIAL_FILES & set(contents))
+        if Path(directory) == root_dir and _USER_FOLDERS_EXCLUDE_ROOT in contents:
+            ignored.add(_USER_FOLDERS_EXCLUDE_ROOT)
         return ignored
 
     return _ignore
@@ -1816,14 +1851,14 @@ def export_profile(name: str, output_path: str) -> Path:
             result = shutil.make_archive(base, "gztar", tmpdir, "default")
             return Path(result)
 
-    # Named profiles — stage a filtered copy to exclude credentials
+    # Named profiles — stage a filtered copy to exclude credentials and the
+    # per-user folders.
     with tempfile.TemporaryDirectory() as tmpdir:
         staged = Path(tmpdir) / canon
-        _CREDENTIAL_FILES = {"auth.json", ".env"}
         shutil.copytree(
             profile_dir,
             staged,
-            ignore=lambda d, contents: _CREDENTIAL_FILES & set(contents),
+            ignore=_named_export_ignore(profile_dir),
         )
         result = shutil.make_archive(base, "gztar", tmpdir, canon)
         return Path(result)
@@ -1975,6 +2010,10 @@ def import_profile(
         if archive_root != canon:
             final_source = staging_root / canon
             extracted.rename(final_source)
+
+        # An archive from an older exporter can still carry people's own
+        # folders; an import gets the template, never their versions.
+        shutil.rmtree(final_source / _USER_FOLDERS_EXCLUDE_ROOT, ignore_errors=True)
 
         if verify_datastore:
             check_datastore_binding(canon, final_source, report=report)

@@ -36,3 +36,17 @@ def user_profile_dir(user_id: str, home: Optional[Path] = None) -> Path:
             f"Refusing user folder for {user_id!r}: {resolved} escapes {parent}"
         )
     return candidate
+
+
+def archived_user_dirs_root(user_id: str, home: Optional[Path] = None) -> Path:
+    """``<home>/users/.archived/<user_id>``: every archived copy of that user's folder."""
+    from hermes_cli.access import validate_user_id
+
+    parent = users_root(home) / ".archived"
+    candidate = parent / validate_user_id(user_id)
+    resolved = candidate.resolve()
+    if resolved.parent != parent.resolve():
+        raise ValueError(
+            f"Refusing archive folder for {user_id!r}: {resolved} escapes {parent}"
+        )
+    return candidate
