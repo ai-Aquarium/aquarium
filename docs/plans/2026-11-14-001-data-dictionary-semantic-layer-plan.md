@@ -17,6 +17,7 @@ dictionary** per data source instead of one skill per table.
 | 4 | agent-home UI (`/data`) | Merged (#921); browser-tested at 390/768/1440 px |
 | 5 | Improve over time: chat suggestions, answer feedback, Needs You | Merged (#921, #924); browser-tested locally |
 | 6 | Schema change check (no model) | Merged (#921); backend tests pass |
+| 7 | Search over large dictionaries (embeddings + keywords) | Built; unit + real Postgres/pgvector tests pass |
 
 Log:
 - 2026-11-14 — Evaluated the hybrid "MCP for access, skills for semantics"
@@ -92,6 +93,13 @@ Log:
   `<body>` with a focus trap that returns focus to its opener (a Sheet opened
   from the sticky top bar was under the review page's Approve bar).
   Browser-tested locally. Nothing deployed yet.
+
+- 2026-11-16 — Phase 7 built (details under Phase 7 below): large
+  dictionaries are searched instead of loaded whole. Unit tests and real
+  Postgres 16 + pgvector tests pass (index on approve/restore, only changed
+  entries re-embedded, model switch rebuilds, keyword fallback, `source=all`
+  only reads shared sources). Not deployed; on deploy run `hermes db migrate`
+  (new tables) — without it the app login creates them only if it may.
 
 ## Deploy (next step — not started)
 
@@ -248,9 +256,34 @@ The site-to-schema plan rejected a skill-only design for the same reason.
   a warn banner naming the drifted tables on the dictionary page, and a
   `stale` pill on affected entries — en + zh-Hant strings throughout.
 
+### Phase 7 — Search over large dictionaries
+- Why: a dictionary with hundreds of tables is too big to load into a chat;
+  the agent should read only the entries a question needs.
+- Built: `hermes_cli/data_dictionary_search.py`. `hermes db migrate` adds
+  `data_dictionary_index` (one row per approved table entry or glossary term:
+  its text, a hash, the embedding model and a pgvector `embedding`) and
+  `data_dictionary_index_state` (indexed version and model per source). The
+  embedder is live memory's (`memory.embedding`, FG-21): local HTTP model or
+  the hashing fallback. `approve`/`restore` re-index best-effort; a search
+  whose index is behind the approved version or built by another model
+  rebuilds it first; only changed entries are re-embedded.
+- Ranking: cosine nearest neighbours fused with a keyword score (table name ×3,
+  column names ×2, other text ×1, rarer words weigh more; CJK characters and
+  bigrams) by reciprocal rank, like the RAG tier. No pgvector, no embedder or a
+  failing embedding service → keywords alone (`search.mode: keyword`).
+- `site_db dictionary`: dictionaries up to 12,000 characters come back whole
+  as before; larger ones return the top `top_k` (default 8, max 20) entries for
+  `q` within 12,000 characters, glossary terms included (an oversized entry drops examples, then
+  metrics and joins, then column notes and columns, marked `trimmed`), with `search.more` naming matches that
+  didn't fit; without `q`, an `index` of table names and short meanings;
+  `entity` returns one entry. `source=all q=…` lists the best tables in every
+  source `list_sources` lets the person read. `describe q=…` adds the tables
+  the site's dictionary ranks highest (only when the person can read it).
+  The tool schema is static, so prompt caching is unaffected.
+- The `data-questions` skill searches first on large dictionaries.
+
 ### Later (not scheduled)
 - Other engines (SQL Server, MySQL, SQLite) as adapters behind one interface.
-- Embedding search over large dictionaries.
 
 ## 5. Testing
 - Unit and real-Postgres tests per phase (scoping, grants, caps, versioning).

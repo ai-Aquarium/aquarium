@@ -384,3 +384,40 @@ def test_dictionary_actions(fake_registry, monkeypatch):
     assert proposed[0]["by"] == "editor"
     assert "origin must be" in call("editor", "member", action="propose_dictionary", source="app",
                                     tables={}, origin="design")["error"]
+
+
+def test_dictionary_search_and_describe_ranking(fake_registry, monkeypatch):
+    from hermes_cli import data_dictionary as dd
+    from hermes_cli import data_dictionary_search as dds
+    from tests.hermes_cli.test_data_dictionary_search import big_dictionary
+
+    app = dd.Source(id="s1", kind="app", profile="default", name="Aquarium data")
+    shop = dd.Source(id="s2", kind="site", profile="default", name="shop", site_id=SITE.id)
+    entries = big_dictionary()
+
+    async def sync_sources(profile, **_kw):
+        return [app, shop]
+
+    async def resolve_access(source, principal, **_kw):
+        return "read" if principal.user_id == "reader" else None
+
+    async def dictionary(source, *, draft=False, **_kw):
+        return {"approved": {"version": 3, "entries": entries}}
+
+    async def table_summaries(site, *, q=None, names=None, **_kw):
+        return [{"name": n} for n in names or []]
+
+    monkeypatch.setattr(dd, "sync_sources", sync_sources)
+    monkeypatch.setattr(dd, "resolve_access", resolve_access)
+    monkeypatch.setattr(dd, "dictionary", dictionary)
+    monkeypatch.setattr(dds, "get_embedder", lambda: None)
+    monkeypatch.setattr(ss, "table_summaries", table_summaries)
+    whole = call("reader", "member", action="dictionary", source="app")
+    assert "index" in whole["approved"] and "entries" not in whole["approved"]
+    assert "q=" in whole["note"]
+    found = call("reader", "member", action="dictionary", source="app", q="refund rate", top_k=2)
+    assert list(found["approved"]["entries"]["tables"])[0] == "refunds"
+    assert found["approved"]["search"]["mode"] == "keyword"
+    described = call("reader", "member", action="describe", site="shop", q="refund")
+    assert described["tables"][0]["name"] == "refunds"
+    assert call("stranger", "member", action="describe", site="shop", q="refund").get("success") is False
