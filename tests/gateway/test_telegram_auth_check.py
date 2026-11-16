@@ -461,6 +461,20 @@ async def test_refused_media_is_described_not_downloaded():
 
 
 @pytest.mark.asyncio
+async def test_refused_venue_keeps_its_place_and_coordinates():
+    adapter = _make_adapter(allow_from=["222"])
+    offered = _with_sink(adapter)
+    msg = _make_message(None, from_user_id=111, chat_id=111, chat_type="private")
+    msg.venue = SimpleNamespace(title="Tim Ho Wan", address="2-20 Kwong Wa St",
+                                location=SimpleNamespace(latitude=22.3193, longitude=114.1694))
+    await adapter._handle_location_message(_update(msg), SimpleNamespace())
+    (record,) = offered
+    assert record["media"] == [{"type": "location", "latitude": 22.3193, "longitude": 114.1694,
+                                "title": "Tim Ho Wan", "address": "2-20 Kwong Wa St"}]
+    adapter._message_handler.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_sink_never_sees_allowed_users_bots_channels_or_edits():
     adapter = _make_adapter(allow_from=["222"])
     offered = _with_sink(adapter)

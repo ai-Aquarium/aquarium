@@ -370,3 +370,87 @@ def test_stopping_a_bot_writes_its_open_batches(monkeypatch, capture):
     assert capture.batches() == []
     asyncio.run(runner._stop_all_person_bots())
     assert [p.name for p in capture.batches()] == ["tg_111111111_7001_10.json"]
+
+
+def flaky_writes(monkeypatch, fail_first):
+    """``write_batch`` that fails the first ``fail_first`` calls; returns the call log."""
+    calls = []
+    real = telegram_triage.write_batch
+
+    def write(batch, *, batch_dir=None):
+        calls.append(batch["batch_id"])
+        if len(calls) <= fail_first:
+            raise OSError("disk full")
+        return real(batch, batch_dir=batch_dir)
+
+    monkeypatch.setattr(telegram_triage, "write_batch", write)
+    return calls
+
+
+def test_a_failed_write_is_retried_and_no_message_is_lost(monkeypatch, capture):
+    import gateway.person_telegram_bots as bots
+
+    monkeypatch.setattr(bots, "_RETRY_FIRST_SECONDS", 0.1)
+    calls = flaky_writes(monkeypatch, fail_first=1)
+    runner = started(monkeypatch)
+
+    async def go():
+        sink = runner._make_person_bot_capture("tgbot:111111111")
+        await runner._reconcile_person_telegram_bots()
+        await sink(record(message_id="10", text="invoice 1"))
+        await sink(record(message_id="11", text="invoice 2"))
+        await asyncio.sleep(0.08)  # first write failed, retry not due yet
+        assert capture.batches() == []
+        await sink(record(message_id="12", text="invoice 3"))  # a new batch, separate from the failed one
+        await asyncio.sleep(0.4)
+
+    asyncio.run(go())
+    batches = {p.name: json.loads(p.read_text()) for p in capture.batches()}
+    assert sorted(batches) == ["tg_111111111_7001_10.json", "tg_111111111_7001_12.json"]
+    assert [m["text"] for m in batches["tg_111111111_7001_10.json"]["messages"]] == ["invoice 1", "invoice 2"]
+    assert [m["text"] for m in batches["tg_111111111_7001_12.json"]["messages"]] == ["invoice 3"]
+    assert calls.count("tg_111111111_7001_10") == 2
+    assert runner._person_bot_capture_state()["retry"] == {}
+
+
+def test_stopping_a_bot_writes_batches_still_waiting_for_a_retry(monkeypatch, capture):
+    flaky_writes(monkeypatch, fail_first=1)
+    runner = started(monkeypatch)
+    run_capture(runner, "tgbot:111111111", record())
+    assert capture.batches() == [] and len(runner._person_bot_capture_state()["retry"]) == 1
+    asyncio.run(runner._stop_all_person_bots())
+    assert [p.name for p in capture.batches()] == ["tg_111111111_7001_10.json"]
+    assert runner._person_bot_capture_state()["retry"] == {}
+
+
+def test_stop_also_writes_a_chat_that_arrives_while_another_chats_write_is_running(monkeypatch, capture):
+    import threading
+
+    monkeypatch.setattr(telegram_triage, "CAPTURE_QUIET_SECONDS", 60)
+    real = telegram_triage.write_batch
+    writing, release = threading.Event(), threading.Event()
+
+    def slow_write(batch, *, batch_dir=None):
+        if batch["chat_id"] == STRANGER:
+            writing.set()
+            assert release.wait(5)
+        return real(batch, batch_dir=batch_dir)
+
+    monkeypatch.setattr(telegram_triage, "write_batch", slow_write)
+    runner = started(monkeypatch)
+
+    async def go():
+        sink = runner._make_person_bot_capture("tgbot:111111111")
+        await runner._reconcile_person_telegram_bots()
+        await sink(record())
+        stop = asyncio.create_task(runner._stop_all_person_bots())
+        while not writing.is_set():
+            await asyncio.sleep(0.01)
+        # Delivered by the adapter while chat A's write is suspended.
+        await sink(record(sender=OTHER, chat="-1009", chat_type="group", title="Suppliers", message_id="5"))
+        release.set()
+        await stop
+
+    asyncio.run(go())
+    assert [p.name for p in capture.batches()] == ["tg_111111111_7001_10.json", "tg_111111111_m1009_5.json"]
+    assert runner.handled == []
