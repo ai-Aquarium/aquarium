@@ -965,6 +965,8 @@ DEFAULT_CONFIG = {
             "email": "legacy",
             "whatsapp": "legacy",
             "calendar": "legacy",
+            # Telegram has no legacy triage: "off" (default) or "agent" (FG-03 P6).
+            "telegram": "off",
             "model": "",
             "max_iterations": 2,
         },
