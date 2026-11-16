@@ -34,7 +34,7 @@ from track_credit_helper import track_inference
 # Shared modules (triage_handlers, memory_bridge)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.batch_routing import should_triage
+from shared.profile_triage import triage_routed
 
 # Paths
 CONFIG_PATH = '/opt/data/whatsapp-messages/config.json'
@@ -306,14 +306,15 @@ def process_batch_file(batch_path):
             'tasks': [],
             'notes': [],
         }
-    elif not should_triage('whatsapp', batch, config=_hermes_config,
-                           log=lambda line: print(f"[triage] {line}")):
-        os.rename(batch_path, os.path.join(PROCESSED_DIR, os.path.basename(batch_path)))
-        return True
     else:
-        # Call LLM for classification
-        result = triage_batch(batch)
-        called_llm = True
+        # Route, then classify per triage.agent.whatsapp (legacy LLM or profile agents)
+        triage_routed('whatsapp', batch, batch_path,
+                      legacy_triage=triage_batch,
+                      legacy_act=process_triage_result,
+                      get_db=get_db, processed_dir=PROCESSED_DIR,
+                      config=_hermes_config,
+                      log=lambda line: print(f"[triage] {line}"))
+        return True
     
     if result:
         process_triage_result(batch, result)

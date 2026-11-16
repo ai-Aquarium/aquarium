@@ -151,6 +151,7 @@ import type {
   Source,
   SourceClaimConflict,
   RoutingDecision,
+  TriageComparison,
   SourceInput,
   SourceRoute,
   MssqlConnection,
@@ -3527,6 +3528,19 @@ export class HermesApiClient {
     if (query.all) params.set("all", "1");
     const qs = params.toString();
     return this.request(`/api/sources/decisions${qs ? `?${qs}` : ""}`);
+  }
+
+  /** FG-03 P5: legacy vs profile-agent triage of the caller's batches. */
+  async sourceComparisons(
+    query: { sourceId?: string; batchId?: string; limit?: number; all?: boolean } = {},
+  ): Promise<{ comparisons: TriageComparison[] }> {
+    const params = new URLSearchParams();
+    if (query.sourceId) params.set("source_id", query.sourceId);
+    if (query.batchId) params.set("batch_id", query.batchId);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.all) params.set("all", "1");
+    const qs = params.toString();
+    return this.request(`/api/sources/comparisons${qs ? `?${qs}` : ""}`);
   }
 
   /** Log into IMAP and SMTP with the saved settings (no mail is sent). */

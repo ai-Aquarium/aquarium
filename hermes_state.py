@@ -225,7 +225,7 @@ def get_last_init_error() -> Optional[str]:
 #: :func:`agent.seeded_session.spawn_seeded_session`, which becomes the agent's
 #: ``platform`` and so the session's ``source``. A new seeded caller must be
 #: classified here — ``test_seeded_origins_are_all_classified`` fails otherwise.
-NON_INTERACTIVE_SESSION_SOURCES: Tuple[str, ...] = ("cron", "todo")
+NON_INTERACTIVE_SESSION_SOURCES: Tuple[str, ...] = ("cron", "todo", "triage")
 
 #: Session-id prefixes for the same autonomous runs, as a second gate: cron
 #: names its sessions ``cron_<job_id>_<ts>`` (``cron/scheduler.run_job``), and a

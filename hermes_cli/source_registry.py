@@ -361,10 +361,11 @@ async def initialize_box(connection: "asyncpg.Connection") -> None:
     profile has claimed (a ``schema_owner`` table in it): that would mean a
     profile is writing its app tables here.
     """
-    from hermes_cli import triage_router
+    from hermes_cli import triage_agent, triage_router
 
     await connection.execute(DDL)
     await triage_router.ensure_schema(connection)
+    await triage_agent.ensure_schema(connection)
     await _refuse_profile_claim(connection)
     await connection.execute(
         f"INSERT INTO {BOX_SCHEMA}.box_marker (singleton, kind) VALUES (TRUE, $1) "
