@@ -1286,11 +1286,12 @@ export interface Todo {
   closed_at: string | null;
   outcome: string | null;
   work_result: TodoWorkResult | null; // what a work session produced
-  /** FG-03 P7: the routed batch this to-do came from (null when it was not routed). */
-  routing_source_id?: string | null;
-  routing_batch_id?: string | null;
   created_at: string | null;
   updated_at: string | null;
+  /** FG-03: the routed batch triage filed this from (null for anything else);
+   *  `sourceDecisions({ sourceId, batchId })` explains "Why this profile?". */
+  routing_source_id: string | null;
+  routing_batch_id: string | null;
 }
 
 /** What a finished work session left behind (the launcher's snapshot). */
@@ -1568,9 +1569,10 @@ export interface RoutingDecision {
   fallback: boolean;
   error: string | null;
   decided_at: string | null;
-  /** FG-03 P7: how many messages the batch held, and who sent the first one. */
-  message_count?: number | null;
-  first_sender?: string | null;
+  /** How many messages the batch held and who sent the first (never any text);
+   *  null for decisions stored before P7. */
+  message_count: number | null;
+  first_sender: string | null;
 }
 
 /** FG-03 P5: today's triage vs one picked profile's agent, for one batch. */

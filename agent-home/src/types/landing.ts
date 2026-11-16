@@ -55,7 +55,7 @@ export interface NeedsYouEntry {
     arrival_key?: string | null;
     /** Every profile that raised this arrival's to-do/alert. */
     profiles?: string[] | null;
-    /** FG-03 P7: the routed batch a triage entry came from. */
+    /** FG-03: the routed batch a triage to-do/alert came from ("Why this profile?"). */
     routing_source_id?: string | null;
     routing_batch_id?: string | null;
   };
