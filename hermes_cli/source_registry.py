@@ -63,6 +63,10 @@ CHANNELS: tuple[str, ...] = ("email", "whatsapp", "telegram")
 #: ``credential_ref`` must point at a secret, not carry one.
 _SECRET_KEYS = re.compile(r"pass|secret|token|key|cookie|session", re.IGNORECASE)
 _ALLOWED_REF_KEYS = frozenset({"profile", "kind", "name", "provider", "owner_user_id", "bridge", "port"})
+#: How the box admin settles a claim conflict: the current owner keeps the
+#: source, or it moves to the claimant.
+RESOLUTIONS: tuple[str, ...] = ("keep", "transfer")
+MAX_DISPLAY_CHARS = 200
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -115,6 +119,9 @@ CREATE TABLE IF NOT EXISTS {BOX_SCHEMA}.source_claim_conflicts (
 CREATE UNIQUE INDEX IF NOT EXISTS source_claim_conflicts_open_idx
     ON {BOX_SCHEMA}.source_claim_conflicts (channel, address, claimant_user_id)
     WHERE resolved_at IS NULL;
+ALTER TABLE {BOX_SCHEMA}.source_claim_conflicts
+    ADD COLUMN IF NOT EXISTS resolution TEXT
+        CHECK (resolution IN ('keep', 'transfer'));
 """
 
 
@@ -153,6 +160,14 @@ class SourcePermissionError(SourceRegistryError):
     """The actor may not change this source (not its owner / not box admin)."""
 
     status = 403
+
+
+class ConflictNotFound(SourceRegistryError):
+    status = 404
+
+
+class ConflictAlreadyResolved(SourceRegistryError):
+    status = 409
 
 
 class UnknownUser(SourceRegistryError):
@@ -244,6 +259,9 @@ class ClaimConflict:
     detail: str
     created_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
+    #: ``keep`` / ``transfer`` once the box admin settled it; ``None`` while
+    #: open, or when it was closed another way (e.g. a plain transfer).
+    resolution: Optional[str] = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -255,6 +273,7 @@ class ClaimConflict:
             "detail": self.detail,
             "created_at": _iso(self.created_at),
             "resolved_at": _iso(self.resolved_at),
+            "resolution": self.resolution,
         }
 
 
@@ -520,6 +539,7 @@ def _conflict(row: Mapping[str, Any]) -> ClaimConflict:
         detail=str(row["detail"] or ""),
         created_at=row["created_at"],
         resolved_at=row["resolved_at"],
+        resolution=row["resolution"],
     )
 
 
@@ -528,6 +548,10 @@ _SOURCE_COLS = (
     "enabled, created_at, updated_at"
 )
 _ROUTE_COLS = "source_id, profile_slug, enabled, created_at, updated_at"
+_CONFLICT_COLS = (
+    "conflict_id, channel, address, claimant_user_id, existing_owner_user_id, "
+    "detail, created_at, resolved_at, resolution"
+)
 
 
 async def _with_routes(connection: "asyncpg.Connection", rows: Sequence[Any]) -> list[Source]:
@@ -823,6 +847,58 @@ async def routed_profiles(connection: "asyncpg.Connection", source_id: str) -> l
     return [str(row["profile_slug"]) for row in rows]
 
 
+#: "Leave this field as it is" for :func:`update_source` (``None`` clears ``display``).
+UNSET: Any = object()
+
+
+def _check_display(display: Any) -> Optional[str]:
+    if display is None:
+        return None
+    if not isinstance(display, str):
+        raise SourceRegistryError("display must be a string or null")
+    value = re.sub(r"\s+", " ", display).strip()
+    if len(value) > MAX_DISPLAY_CHARS:
+        raise SourceRegistryError(f"display may be at most {MAX_DISPLAY_CHARS} characters")
+    return value or None
+
+
+async def update_source(
+    connection: "asyncpg.Connection",
+    *,
+    source_id: str,
+    actor_user_id: str,
+    enabled: Optional[bool] = None,
+    display: Any = UNSET,
+    box_admin: Optional[BoxAdminCheck] = None,
+) -> Source:
+    """Pause/resume a source and/or relabel it (its owner, or box owner/admin).
+
+    ``enabled=None`` and ``display=UNSET`` leave that field alone; ``display=None``
+    (or blank) clears the label. A disabled source keeps its routes but nothing
+    reads it: :meth:`Source.routed_profiles` and :func:`routed_profiles` are empty,
+    so pollers, bridges, bot capture and the router all skip it.
+    """
+    label = UNSET if display is UNSET else _check_display(display)
+    async with connection.transaction():
+        source = await _lock_source(connection, source_id)
+        await _require_owner_or_admin(source, actor_user_id, box_admin)
+        params: list[Any] = [uuid.UUID(source.source_id)]
+        sets: list[str] = []
+        if enabled is not None:
+            params.append(bool(enabled))
+            sets.append(f"enabled = ${len(params)}")
+        if label is not UNSET:
+            params.append(label)
+            sets.append(f"display = ${len(params)}")
+        if sets:
+            await connection.execute(
+                f"UPDATE {BOX_SCHEMA}.sources SET {', '.join(sets)}, updated_at = NOW() "
+                "WHERE source_id = $1",
+                *params,
+            )
+    return await _require_source(connection, source.source_id)
+
+
 async def set_source_enabled(
     connection: "asyncpg.Connection",
     *,
@@ -832,15 +908,10 @@ async def set_source_enabled(
     box_admin: Optional[BoxAdminCheck] = None,
 ) -> Source:
     """Pause or resume a whole source (owner, or box owner/admin)."""
-    source = await _require_source(connection, source_id)
-    await _require_owner_or_admin(source, actor_user_id, box_admin)
-    await connection.execute(
-        f"UPDATE {BOX_SCHEMA}.sources SET enabled = $2, updated_at = NOW() "
-        "WHERE source_id = $1",
-        uuid.UUID(source.source_id),
-        bool(enabled),
+    return await update_source(
+        connection, source_id=source_id, actor_user_id=actor_user_id,
+        enabled=bool(enabled), box_admin=box_admin,
     )
-    return await _require_source(connection, source.source_id)
 
 
 async def _require_owner_or_admin(
@@ -891,7 +962,8 @@ async def transfer_source(
             new_owner,
         )
         await connection.execute(
-            f"UPDATE {BOX_SCHEMA}.source_claim_conflicts SET resolved_at = NOW() "
+            f"UPDATE {BOX_SCHEMA}.source_claim_conflicts "
+            "SET resolved_at = NOW(), resolution = 'transfer' "
             "WHERE channel = $1 AND address = $2 AND claimant_user_id = $3 "
             "AND resolved_at IS NULL",
             source.channel,
@@ -942,8 +1014,7 @@ async def record_conflict(
         ON CONFLICT (channel, address, claimant_user_id) WHERE resolved_at IS NULL
         DO UPDATE SET existing_owner_user_id = EXCLUDED.existing_owner_user_id,
                       detail = EXCLUDED.detail
-        RETURNING conflict_id, channel, address, claimant_user_id,
-                  existing_owner_user_id, detail, created_at, resolved_at
+        RETURNING {_CONFLICT_COLS}
         """,
         channel,
         normalized,
@@ -973,8 +1044,7 @@ async def list_conflicts(
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     rows = await connection.fetch(
         f"""
-        SELECT conflict_id, channel, address, claimant_user_id,
-               existing_owner_user_id, detail, created_at, resolved_at
+        SELECT {_CONFLICT_COLS}
         FROM {BOX_SCHEMA}.source_claim_conflicts {where}
         ORDER BY created_at, conflict_id
         """,
@@ -1000,6 +1070,92 @@ async def resolve_conflict(
         int(conflict_id),
     )
     return status.endswith(" 1")
+
+
+async def get_conflict(connection: "asyncpg.Connection", conflict_id: Any) -> Optional[ClaimConflict]:
+    try:
+        key = int(conflict_id)
+    except (TypeError, ValueError):
+        return None
+    row = await connection.fetchrow(
+        f"SELECT {_CONFLICT_COLS} FROM {BOX_SCHEMA}.source_claim_conflicts "
+        "WHERE conflict_id = $1",
+        key,
+    )
+    return _conflict(row) if row is not None else None
+
+
+async def settle_conflict(
+    connection: "asyncpg.Connection",
+    *,
+    conflict_id: Any,
+    action: str,
+    actor_user_id: str,
+    box_admin: Optional[BoxAdminCheck] = None,
+    known_user: Optional[Callable[[str], Awaitable[bool]]] = None,
+) -> ClaimConflict:
+    """Settle an open claim conflict (box owner/admin only).
+
+    ``keep``: the current owner keeps the source. ``transfer``: the source
+    moves to the claimant through :func:`transfer_source`, so the old owner's
+    routes and credential pointer are dropped (routes must go to the owner's
+    own user-profiles); a source that was removed meanwhile is registered to
+    the claimant. Either way the conflict gets ``resolved_at`` and
+    ``resolution``, which also clears its "Needs you" entry.
+    """
+    choice = str(action or "").strip().lower()
+    if choice not in RESOLUTIONS:
+        raise SourceRegistryError(f"action must be one of {', '.join(RESOLUTIONS)}")
+    actor = _check_user(actor_user_id, "actor")
+    if not await (box_admin or is_box_admin)(actor):
+        raise SourcePermissionError("Only the box owner or an admin can resolve conflicts.")
+    try:
+        key = int(conflict_id)
+    except (TypeError, ValueError):
+        raise ConflictNotFound(f"No such conflict: {conflict_id}") from None
+    async with connection.transaction():
+        row = await connection.fetchrow(
+            f"SELECT {_CONFLICT_COLS} FROM {BOX_SCHEMA}.source_claim_conflicts "
+            "WHERE conflict_id = $1 FOR UPDATE",
+            key,
+        )
+        if row is None:
+            raise ConflictNotFound(f"No such conflict: {conflict_id}")
+        conflict = _conflict(row)
+        if conflict.resolved_at is not None:
+            raise ConflictAlreadyResolved("This conflict is already resolved.")
+        if choice == "transfer":
+            claimant = conflict.claimant_user_id
+            source = await get_source_by_address(connection, conflict.channel, conflict.address)
+            if source is None:
+                if not await (known_user or active_or_suspended_anywhere)(claimant):
+                    raise UnknownUser("The claimant is no longer enrolled on this box.")
+                await register_source(
+                    connection, channel=conflict.channel, address=conflict.address,
+                    owner_user_id=claimant,
+                )
+            elif source.owner_user_id != claimant:
+                await transfer_source(
+                    connection, source_id=source.source_id, new_owner_user_id=claimant,
+                    actor_user_id=actor, box_admin=box_admin, known_user=known_user,
+                )
+        row = await connection.fetchrow(
+            f"UPDATE {BOX_SCHEMA}.source_claim_conflicts "
+            "SET resolved_at = COALESCE(resolved_at, NOW()), resolution = $2 "
+            f"WHERE conflict_id = $1 RETURNING {_CONFLICT_COLS}",
+            key,
+            choice,
+        )
+    return _conflict(row)
+
+
+async def open_conflicts_on_box() -> list[ClaimConflict]:
+    """Every open claim conflict, oldest first (for the box admins' "Needs you")."""
+    connection = await connect_box()
+    try:
+        return await list_conflicts(connection)
+    finally:
+        await connection.close()
 
 
 # -- lifecycle hooks ----------------------------------------------------------

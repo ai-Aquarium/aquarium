@@ -1519,6 +1519,8 @@ export interface SourceCredentialRef {
   kind?: string;
   name?: string;
   provider?: string;
+  /** `wa-bridge`: the bridge's name (as listed by `/api/wa-bridges`). */
+  bridge?: string;
 }
 
 /** One incoming source (mailbox / WhatsApp number / Telegram bot) and its single owner. */
@@ -1545,6 +1547,17 @@ export interface SourceClaimConflict {
   detail: string;
   created_at: string | null;
   resolved_at: string | null;
+  /** How the box admin settled it; null while open or when closed another way. */
+  resolution: SourceConflictAction | null;
+}
+
+/** FG-03 P7: settling a claim conflict — the owner keeps it, or it moves to the claimant. */
+export type SourceConflictAction = "keep" | "transfer";
+
+/** FG-03 P7: `PATCH /api/sources/{id}`; omitted fields stay, `display: null` clears it. */
+export interface SourceUpdate {
+  enabled?: boolean;
+  display?: string | null;
 }
 
 /** FG-03 P4: the router's call on one profile for one batch. */
@@ -1594,12 +1607,30 @@ export interface TriageComparison {
   created_at: string | null;
 }
 
-export interface SourceInput {
-  channel: SourceChannel;
-  address: string;
-  display?: string | null;
-  credential_ref?: SourceCredentialRef | null;
-}
+/**
+ * `POST /api/sources`. Email needs `address`. WhatsApp / Telegram may omit it
+ * and name the caller's own credential — `{ kind: "wa-bridge", bridge }` or
+ * `{ kind: "telegram-bot" }` — and Hermes reads the number / bot id itself.
+ */
+export type SourceInput =
+  | {
+      channel: SourceChannel;
+      address: string;
+      display?: string | null;
+      credential_ref?: SourceCredentialRef | null;
+    }
+  | {
+      channel: "whatsapp";
+      address?: undefined;
+      display?: string | null;
+      credential_ref: { kind: "wa-bridge"; bridge: string };
+    }
+  | {
+      channel: "telegram";
+      address?: undefined;
+      display?: string | null;
+      credential_ref: { kind: "telegram-bot"; name?: string };
+    };
 
 /** One of the caller's own IMAP/SMTP mailboxes. Never carries the password. */
 export interface EmailMailbox extends EmailServerSettings {

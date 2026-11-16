@@ -64,7 +64,12 @@ SEVERITY_BY_SOURCE = {
     "todo": "fyi",
     "profile_suggestion": "fyi",
     "pin_suggestion": "fyi",
+    "source_claim": "approval",
 }
+
+#: Notification ``context`` keys copied onto the entry: the routed batch
+#: (FG-03) a triage to-do/alert came from, for "Why this profile?".
+ROUTING_KEYS = ("routing_source_id", "routing_batch_id")
 
 # Sources whose producer already sends a Web Push (tagged) at the moment the
 # wait begins; the poll-time push must not send a second one.
@@ -225,6 +230,13 @@ def split_arrival(dedupe_key: Optional[str]) -> tuple[str, Optional[str]]:
     return base, (ARRIVAL_PREFIX + rest) if sep and rest else None
 
 
+def routing_context(source_id: Any, batch_id: Any) -> Optional[dict]:
+    """``{"routing_source_id", "routing_batch_id"}`` of a routed batch, or ``None``."""
+    if not source_id or not batch_id:
+        return None
+    return {"routing_source_id": str(source_id), "routing_batch_id": str(batch_id)}
+
+
 def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dict]:
     """Pending notifications addressed to ``user_id``.
 
@@ -273,6 +285,9 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
             actions[-1]["style"] = "secondary"
         if arrival:
             context["arrival_key"] = arrival
+        extra = getattr(n, "context", None) or {}
+        if all(extra.get(k) for k in ROUTING_KEYS):
+            context.update({k: str(extra[k]) for k in ROUTING_KEYS})
         out.append(entry(
             id=f"notif:{n.id}",
             source=source,
@@ -682,6 +697,58 @@ def data_schema_entries(sources: Iterable[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+#: Where a box admin settles a source claim in agent-home.
+SOURCES_HREF = "/settings/sources"
+_CHANNEL_LABELS = {"email": "mailbox", "whatsapp": "WhatsApp number", "telegram": "Telegram bot"}
+
+
+def source_claim_entries(conflicts: Iterable[Any]) -> list[dict]:
+    """Open source claim conflicts (FG-03), for the box owner/admin to settle.
+
+    One entry per conflict (``source_claim:<id>``), with one-tap ``keep`` /
+    ``transfer`` actions; resolving it clears the entry.
+    """
+    out: list[dict] = []
+    for c in conflicts:
+        if getattr(c, "resolved_at", None) is not None:
+            continue
+        endpoint = f"/api/sources/conflicts/{int(c.conflict_id)}/resolve"
+        label = _CHANNEL_LABELS.get(c.channel, c.channel)
+        owner = c.existing_owner_user_id or "nobody"
+        out.append(entry(
+            id=f"source_claim:{int(c.conflict_id)}",
+            source="source_claim",
+            title=f"{c.claimant_user_id} claims the {label} {c.address}",
+            detail=f"It is registered to {owner}. Keep it with them, or transfer it "
+                   f"to {c.claimant_user_id}.",
+            context={
+                "conflict_id": int(c.conflict_id),
+                "channel": c.channel,
+                "address": c.address,
+                "claimant_user_id": c.claimant_user_id,
+                "existing_owner_user_id": c.existing_owner_user_id,
+            },
+            href=SOURCES_HREF,
+            created_at=c.created_at,
+            actions=[
+                _post_action("keep", "Keep current owner", "secondary", endpoint,
+                             {"action": "keep"}),
+                _post_action("transfer", "Transfer to claimant", "primary", endpoint,
+                             {"action": "transfer"}),
+            ],
+        ))
+    return out
+
+
+async def source_claims_for(user_id: str) -> list[dict]:
+    """The open source claims when ``user_id`` is the box owner/admin, else nothing."""
+    from hermes_cli import source_registry as registry
+
+    if not await registry.is_box_admin(user_id):
+        return []
+    return source_claim_entries(await registry.open_conflicts_on_box())
+
+
 def _profile_href(href: str, profile: Optional[str]) -> str:
     if not profile or profile == "default" or "profile=" in href:
         return href
@@ -738,6 +805,11 @@ def merge_arrivals(items: Iterable[dict]) -> list[dict]:
         primary = min(group, key=lambda i: (_SEVERITY_RANK.get(i["severity"], 99), i["created_at"]))
         profiles = sorted({i["context"].get("profile") for i in group} - {None})
         context = {**primary["context"], "profiles": profiles}
+        if not all(context.get(k) for k in ROUTING_KEYS):
+            routed = next((i["context"] for i in group
+                           if all(i["context"].get(k) for k in ROUTING_KEYS)), None)
+            if routed is not None:
+                context.update({k: routed[k] for k in ROUTING_KEYS})
         if len(profiles) != 1:
             context.pop("profile", None)
         out.append({
