@@ -58,6 +58,7 @@ import secrets
 import shutil
 import urllib.parse
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Mapping, Optional
 
 import httpx
@@ -425,11 +426,7 @@ def _erase_memory_files(user_id: str) -> list[str]:
     that has already been removed, so a failure is logged and reported rather
     than raised.
     """
-    from tools.memory_tool import (
-        get_memory_dir,
-        get_person_memory_dir,
-        person_memory_files_on_box,
-    )
+    from tools.memory_tool import get_memory_dir, get_person_memory_dir
 
     erased: list[str] = []
     participation = get_memory_dir(user_id)
@@ -440,12 +437,7 @@ def _erase_memory_files(user_id: str) -> list[str]:
         except OSError as exc:
             logger.warning("member delete: could not erase %s: %s", participation, exc)
 
-    remaining = [
-        curated
-        for curated in person_memory_files_on_box(user_id)
-        if curated.scope == "participation"
-    ]
-    if remaining:
+    if _still_participates(user_id):
         return erased
     person_dir = get_person_memory_dir(user_id)
     if person_dir.is_dir():
@@ -457,6 +449,58 @@ def _erase_memory_files(user_id: str) -> list[str]:
     return erased
 
 
+def _still_participates(user_id: str) -> bool:
+    """True while ``user_id`` is still somebody in some profile on the box.
+
+    Either signal counts: agent notes about them in a profile
+    (``memories/users/<uid>/``) or their own live folder in one
+    (``users/<uid>/``). Archived folders do not — they are what is left of a
+    profile they already left.
+    """
+    from tools.memory_tool import person_memory_files_on_box
+
+    return any(
+        curated.scope in {"participation", "user-folder"}
+        for curated in person_memory_files_on_box(user_id)
+    )
+
+
+def _remove_folder(path: Path, removed: list[str]) -> None:
+    try:
+        shutil.rmtree(path)
+        removed.append(str(path))
+    except OSError as exc:
+        logger.warning("member delete: could not remove %s: %s", path, exc)
+
+
+def _erase_person_files(user_id: str) -> tuple[list[str], list[str]]:
+    """Purge's file half: ``(memory files erased, user folders removed)``.
+
+    This profile's ``users/<uid>/`` and every archived copy of it go first,
+    then the curated memory (:func:`_erase_memory_files`). When that leaves
+    the person in no profile at all, the archived copies other profiles still
+    hold go too — the same rule that decides their identity file. A live
+    folder in another profile is that profile's enrolment, not this one's,
+    and stays.
+
+    Best-effort like :func:`_erase_memory_files`: a failure is logged, and
+    the paths actually removed are what is reported.
+    """
+    from hermes_cli.user_profile_dirs import archived_user_dirs_root, user_profile_dir
+    from tools.memory_tool import USER_FOLDER_SCOPES, person_memory_files_on_box
+
+    folders: list[str] = []
+    for own in (user_profile_dir(user_id), archived_user_dirs_root(user_id)):
+        if own.is_dir():
+            _remove_folder(own, folders)
+    erased = _erase_memory_files(user_id)
+    if not _still_participates(user_id):
+        for curated in person_memory_files_on_box(user_id):
+            if curated.scope in USER_FOLDER_SCOPES:
+                _remove_folder(curated.path, folders)
+    return erased, folders
+
+
 @dataclass(frozen=True)
 class DeletedMember:
     """Outcome of a hard delete: the enrolment removed + what its data did."""
@@ -465,6 +509,8 @@ class DeletedMember:
     ownership: OwnershipOutcome
     #: Curated memory files erased (``purge`` only), as display paths.
     memory_files_erased: list[str] = field(default_factory=list)
+    #: Their own profile folders removed (``purge`` only), as display paths.
+    user_folders_removed: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -472,6 +518,7 @@ class DeletedMember:
             "user_id": self.user_id,
             "ownership": self.ownership.as_dict(),
             "memory_files_erased": list(self.memory_files_erased),
+            "user_folders_removed": list(self.user_folders_removed),
         }
 
 
@@ -1328,8 +1375,10 @@ class MemberService:
         their enrolment here.
 
         Under ``purge`` the curated memory files about this person in *this*
-        profile go too, and their cross-profile identity file goes when this
-        was their last participation on the box. Rows without files was the
+        profile go too, with their own ``users/<uid>/`` folder here and its
+        archived copies; their cross-profile identity file, and archived
+        folders other profiles still hold, go when this was their last
+        participation on the box. Rows without files was the
         wrong half: the files are the half the system prompt reads, so a
         purged person could keep being described to the agent by name.
         """
@@ -1394,7 +1443,9 @@ class MemberService:
             await connection.close()
         await self.invitations.revoke(user_id=user_id)
         await self._store.unenroll(user_id)
-        erased = _erase_memory_files(user_id) if strategy == "purge" else []
+        erased, folders = (
+            _erase_person_files(user_id) if strategy == "purge" else ([], [])
+        )
         await self._audit(
             actor,
             "user.delete",
@@ -1403,11 +1454,15 @@ class MemberService:
                 "strategy": strategy,
                 "successor": successor,
                 "memory_files_erased": erased,
+                "user_folders_removed": folders,
                 **outcome.as_dict(),
             },
         )
         return DeletedMember(
-            user_id=user_id, ownership=outcome, memory_files_erased=erased
+            user_id=user_id,
+            ownership=outcome,
+            memory_files_erased=erased,
+            user_folders_removed=folders,
         )
 
     # -- internals -----------------------------------------------------------

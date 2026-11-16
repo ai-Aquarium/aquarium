@@ -48,9 +48,9 @@ DELETE_DESCRIPTION = (
     "principal, 'purge' deletes their private rows and moves the shared ones "
     "to you. Memory is not inheritable either way: their memory rows are "
     "deleted under both strategies, and 'purge' also erases the curated "
-    "memory files about them (and their cross-profile identity file if this "
-    "was their last participation on the box). Their box-wide account is "
-    "left alone."
+    "memory files about them and their own profile folder here (and their "
+    "cross-profile identity file and archived folders if this was their last "
+    "participation on the box). Their box-wide account is left alone."
 )
 
 
@@ -219,10 +219,13 @@ def member_delete_command(args: argparse.Namespace) -> int:
     )
     for path in deleted.memory_files_erased:
         print(f"Erased curated memory: {path}")
+    for path in deleted.user_folders_removed:
+        print(f"Removed their own profile folder: {path}")
     if outcome.strategy == "transfer" and not deleted.memory_files_erased:
         print(
-            "Their curated memory files were left in place — transfer moves "
-            "what they owned, and memory about a person is not inheritable."
+            "Their curated memory files and own profile folders were left in "
+            "place — transfer moves what they owned, and memory about a "
+            "person is not inheritable."
         )
     print(
         "Their box-wide account still exists — accounts are shared across "

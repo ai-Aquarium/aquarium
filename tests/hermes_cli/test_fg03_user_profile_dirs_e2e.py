@@ -150,6 +150,37 @@ async def test_two_users_in_two_profiles_get_four_folders_and_removal_archives_o
 
 
 @pytest.mark.asyncio
+async def test_purge_removes_the_folder_the_unenrol_hook_just_archived(
+    postgres_dsn: str, hermes_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``delete --strategy purge``: unenrol archives, then the purge deletes it."""
+    await _reset(postgres_dsn)
+    admin = StubAdmin()
+    services: dict[str, MemberService] = {}
+    john = ""
+    for profile in ("cfo", "cmo"):
+        services[profile] = service = await _console(
+            hermes_root, profile, postgres_dsn, admin, monkeypatch
+        )
+        created = await service.create_member(
+            OWNER, email="john@x.io", profile=profile, display="John"
+        )
+        john = created.principal.user_id
+    cfo_home, cmo_home = _home(hermes_root, "cfo"), _home(hermes_root, "cmo")
+    (user_profile_dir(john, cfo_home) / "triage.md").write_text("cfo")
+    (user_profile_dir(john, cmo_home) / "triage.md").write_text("cmo")
+
+    monkeypatch.setenv("HERMES_HOME", str(cfo_home))
+    datastore._verified_schemas.clear()
+    deleted = await services["cfo"].delete_member(OWNER, user_id=john, strategy="purge")
+
+    assert not user_profile_dir(john, cfo_home).exists()
+    assert not archived_user_dirs_root(john, cfo_home).exists()
+    assert str(archived_user_dirs_root(john, cfo_home)) in deleted.user_folders_removed
+    assert (user_profile_dir(john, cmo_home) / "triage.md").read_text() == "cmo"
+
+
+@pytest.mark.asyncio
 async def test_enrolling_into_a_non_active_profile_writes_under_that_profile(
     postgres_dsn: str, hermes_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
