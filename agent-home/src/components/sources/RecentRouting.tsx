@@ -83,7 +83,7 @@ export function RecentRouting({
   };
 
   return (
-    <div data-component="RecentRouting" className="space-y-4">
+    <div data-component="RecentRouting" className="space-y-4 pb-20 sm:pb-0">
       {sources.length > 1 ? (
         <nav aria-label={t("title")} className="flex flex-wrap gap-2">
           {sources.map((s) => (
