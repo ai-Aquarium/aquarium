@@ -12297,7 +12297,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "computer-use",
         "changes", "config", "cron", "curator", "dashboard", "serve", "debug", "doctor",
         "incomings",
-        "datastore", "db", "dump", "fallback", "gateway", "goal", "hooks", "import", "insights",
+        "datastore", "db", "dump", "source", "fallback", "gateway", "goal", "hooks", "import", "insights",
         "promotion",
         "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate", "moa",
         "journey", "memory-graph", "learning",
@@ -13223,6 +13223,11 @@ def main():
     from hermes_cli.db_migrate import register_db_subparser
 
     register_db_subparser(subparsers)
+
+    # source command — the box-level source registry (`hermes source migrate`, FG-03)
+    from hermes_cli.source_migrate import register_source_subparser
+
+    register_source_subparser(subparsers)
 
     # =========================================================================
     # login command  (parser built in hermes_cli/subcommands/login.py)
