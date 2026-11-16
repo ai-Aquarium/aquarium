@@ -619,6 +619,24 @@ def test_writable_parent_of_mount_root_refused(h):
     assert doc["state"] == "error" and "writable" in doc["error"]
 
 
+def test_mount_root_is_traversable_despite_umask_077(h):
+    old = os.umask(0o077)
+    try:
+        doc = up(h)
+    finally:
+        os.umask(old)
+    assert doc["mounted"] is True
+    for path in (h.MOUNT_ROOT, os.path.join(h.MOUNT_ROOT, "office-files")):
+        assert stat.S_IMODE(os.stat(path).st_mode) == 0o755
+
+
+def test_root_only_mount_root_is_repaired(h):
+    os.mkdir(h.MOUNT_ROOT, 0o700)
+    os.chmod(h.MOUNT_ROOT, 0o700)
+    up(h)
+    assert stat.S_IMODE(os.stat(h.MOUNT_ROOT).st_mode) == 0o755
+
+
 def test_check_counts_files(h):
     up(h)
     root = Path(h.MOUNT_ROOT) / "office-files"
