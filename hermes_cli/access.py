@@ -1358,7 +1358,9 @@ async def _disable_source_routes(store: object, conn: object, user_id: str) -> N
         return
     from hermes_cli import source_registry
 
-    await source_registry.on_principal_removed(conn, schema=schema, user_id=user_id)
+    await source_registry.on_principal_removed(
+        conn, schema=schema, user_id=user_id, dsn=getattr(store, "dsn", None)
+    )
 
 
 class PrincipalStore:

@@ -288,10 +288,17 @@ def test_transfer_is_box_admin_only_and_drops_routes(box):
                 await registry.transfer_source(
                     c, source_id=src.source_id, new_owner_user_id="mary", actor_user_id=actor
                 )
+        with pytest.raises(registry.UnknownUser):
+            await registry.transfer_source(
+                c, source_id=src.source_id, new_owner_user_id="mray", actor_user_id="leo"
+            )
+        unchanged = await registry.get_source(c, src.source_id)
+        assert unchanged.owner_user_id == "john" and unchanged.routes
         moved = await registry.transfer_source(
             c, source_id=src.source_id, new_owner_user_id="mary", actor_user_id="leo"
         )
         assert moved.owner_user_id == "mary" and moved.routes == ()
+        assert moved.credential_ref is None
         assert await registry.list_conflicts(c) == []
         assert len(await registry.list_conflicts(c, include_resolved=True)) == 1
         # Now John may not touch it; the box admin can remove it.

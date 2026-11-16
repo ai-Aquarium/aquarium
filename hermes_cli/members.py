@@ -413,12 +413,15 @@ def parse_member_csv(csv_text: str) -> list[ImportRow]:
     return rows
 
 
-async def _remove_box_sources(store: Any, user_id: str) -> int:
-    """FG-03: once a person is in no profile on the box, their sources go too."""
+async def _remove_box_sources(user_id: str) -> int:
+    """FG-03: once a person is in no profile on the box, their sources go too.
+
+    The registry is box-wide, so it opens its own database, not this profile's.
+    """
     from hermes_cli import source_registry
 
     try:
-        connection = await store.connect()
+        connection = await source_registry.connect_box()
     except Exception as exc:  # noqa: BLE001 - best-effort, like the file purge
         logger.warning("source registry: no connection to remove sources: %s", exc)
         return 0
@@ -1461,7 +1464,7 @@ class MemberService:
         erased, folders = (
             _erase_person_files(user_id) if strategy == "purge" else ([], [])
         )
-        sources_removed = await _remove_box_sources(store, user_id)
+        sources_removed = await _remove_box_sources(user_id)
         await self._audit(
             actor,
             "user.delete",

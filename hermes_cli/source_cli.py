@@ -21,7 +21,9 @@ def _owner_user_id() -> str:
     from hermes_cli.access import PrincipalStore
     from hermes_cli.datastore import get_store
 
-    owner = asyncio.run(PrincipalStore(get_store("supabase-app", "prod")).get_owner())
+    # The default profile's owner, whichever profile ``hermes -p`` selected.
+    with registry.default_profile_scope():
+        owner = asyncio.run(PrincipalStore(get_store("supabase-app", "prod")).get_owner())
     if owner is None:
         print("No owner is enrolled; run 'hermes owner init <user_id>' first.", file=sys.stderr)
         raise SystemExit(1)
