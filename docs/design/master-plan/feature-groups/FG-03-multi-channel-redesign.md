@@ -1,6 +1,6 @@
 # FG-03 — Multi-channel redesign (one brain, all channels)
 
-**Wave:** 1 · **Owner agent:** devin:733e4888 · **Status:** Contract + Shape-1 merged; **live-gateway wiring (C4 identity enrichment in `gateway/run.py`) IMPLEMENTED** — see *Gateway migration* below. Telegram live-tested; WhatsApp/email **live round-trip still pending** the channel creds (email = old-box Gmail IMAP; WhatsApp = QR bind).
+**Wave:** 1 · **Status (2026-11-16):** **Re-scoped — P0 done, P1–P8 pending.** Gateway C4 identity enrichment is live; triage still runs in the standalone `custom/*` DeepSeek pipelines. See *Current state* and *Target design* below. Previous status: Contract + Shape-1 merged; **live-gateway wiring (C4 identity enrichment in `gateway/run.py`) IMPLEMENTED** — see *Gateway migration* below. Telegram live-tested; WhatsApp/email **live round-trip still pending** the channel creds (email = old-box Gmail IMAP; WhatsApp = QR bind).
 
 ## Summary
 Route **every** incoming channel (N WhatsApp numbers, N emails, N calendars, …)
@@ -10,6 +10,136 @@ instead of the bespoke `custom/*` scripts that bypass the agent core today
 already designed in depth in **`docs/design/architecture-design-number-one.md`**
 and **`docs/design/AGENT-HANDOFF.md`**; that design is authoritative — this doc
 is the execution wrapper.
+
+## Current state (verified on `develop`, 2026-11-16)
+
+Full evidence with `path:line` citations:
+[storage scoping audit](FG-03-audit/2026-11-16-storage-scoping.md) ·
+[pipeline & gateway audit](FG-03-audit/2026-11-16-pipeline-gateway.md).
+
+- **Two inbound systems that share no code.** (a) `custom/` pipelines:
+  poll → SQLite → batch → one direct DeepSeek call → `triage_handlers`.
+  (b) The gateway runs real `AIAgent` turns, but only for paired/allowed
+  senders and for a person talking to their own bot/bridge. No triage runs in
+  an agent.
+- **Pipelines are not profile-aware.** Paths are hard-coded under `/opt/data`
+  (outside every profile home); `hermes_cli` helpers they call resolve the one
+  `HERMES_HOME` / prod schema from their env file.
+- **Triage skills are box-wide** (`/opt/data/skills/<channel>-triage`,
+  email also reads WhatsApp's). No profile or user layer.
+- **Sources are scattered:** box-wide `config.json` (email accounts, WA
+  phones), per-profile `credentials` rows (mailboxes, Google, one Telegram bot
+  per user), per-profile `bridge-owners.json`, per-profile `account_owners`.
+  Owner falls back Settings → config → saver → install owner.
+- **Personal mailboxes are never triaged** (only mirrored into
+  `inbound_items`) and cannot be replied from (`send_message_tool` resolves
+  only pipeline-config accounts).
+- **Double readers are possible:** a WA bridge in both the batcher config and
+  `bridge-owners.json`; an inbox read by both the poller and the gateway email
+  adapter.
+- **Memory:** per user within a profile already exists
+  (`memories/users/<uid>/MEMORY.md`); `INBOX_FACTS.md` is per profile and
+  owner-only, so members' facts are lost.
+- **Bugs found:** triage auto-start looks the to-do up as the install owner
+  (skips for other people's arrivals); the WA/email digest goes to the box
+  Telegram chat only; a failing triage batch is retried forever.
+- **Outbound is in place:** approval → `execute_proposal` →
+  `send_message_tool --account`, never auto-approved (review/reply-loop
+  milestones A–D).
+- **Reusable seam:** `agent.seeded_session.spawn_seeded_session(...,
+  profile_home=, internal_user_id=)` runs a headless turn in a given profile
+  as a given person.
+
+## Target design (2026-11-16, approved by Yan) — multi-user, multi-profile, one routing call
+
+Supersedes the single-profile framing above ("one profile for everything",
+`architecture-design-number-one.md` §0.5). That framing was right for one
+person; Aquarium now serves several people, each using several profiles.
+
+### Model
+
+| Concept | What it is | Stored |
+|---|---|---|
+| **Profile (template)** | A role such as CFO or CMO: Soul, model, skills, default triage skills | Its folder (`HERMES_HOME`, `profiles/<name>/`) + its own Supabase app schema (FG-27) |
+| **User-profile** | One user using one profile. John and Mary can both use CFO; each starts from the template and keeps their own changes | A `principals` row in that profile's schema + (new) `<profile home>/users/<user_id>/` for the user's triage skills, memory and settings |
+| **Source** | One incoming account: a mailbox, a WhatsApp number, a Telegram bot | Box-wide list; **exactly one owner user**; a second user claiming the same address/number is refused |
+| **Route** | Source → one of the owner's user-profiles (John's mailbox → John@CFO, John@CMO). The owner decides; a profile with no route never reads that source and costs nothing | Box-wide, next to the source |
+
+Each source is connected **once** (one poller/bridge/bot), never once per
+profile: gateway adapters take a scoped credential lock
+(`acquire_scoped_lock`) so two profiles cannot hold the same credential.
+Fan-out to profiles happens after the router, not by connecting the source in
+every profile.
+
+Not supported: one mailbox shared by several people (e.g. `info@`).
+
+### Flow per incoming batch
+
+1. A source's poller/bridge/bot receives a batch (as today's batchers debounce).
+2. **One routing call** per batch: a cheap model reads the batch plus the
+   owner's "What I care about" section from each routed user-profile and
+   returns 0..N user-profiles with a one-line reason each. Zero → stored only.
+   The decision and reasons are recorded ("Why this profile?").
+   On failure: wait and retry 3 times, then send to **all** routed
+   user-profiles.
+3. **Full triage** in each chosen user-profile: a headless turn of that
+   profile's agent, acting as the owner, with skill layers
+   built-in defaults → profile template → user's version. The response schema
+   and `custom/shared/triage_handlers.py` stay; outputs (to-dos, escalations,
+   work requests, memory facts) land in that profile's schema and the user's
+   sub-folder.
+4. Needs You merges alerts that several profiles raise for the same arrival.
+5. Replies leave via the receiving account and always need approval.
+   Auto-send is designed for (a per-user-profile setting) but off.
+
+### Onboarding and editing
+
+- Registering a source: pick which of my profiles it routes to, then for each
+  "Use the template's triage skills" or "View and change".
+- Later: Profile › My triage skills — template beside my version, diff,
+  Reset to template, history.
+- Profile owners/admins edit the template; each user edits only their own
+  version. A user's version overrides whole files, adds files, or disables
+  files (no line-level merge).
+
+### Phases
+
+| Phase | Deliverable | Effort |
+|---|---|---|
+| **P0** | This rewrite + verified current-state audit; system test points at `PRODUCTION.md` in `leolau/aquarium-ops` | 1 d |
+| **P1** | User-profile folders `<profile>/users/<user>/`, created on enrolment, archived on removal; isolation tests | 2 d |
+| **P2** | Source registry: one owner per source (unique), routes to the owner's user-profiles; migrate today's mailboxes, WhatsApp phones/bridges, Telegram bots; unowned → install owner; conflicting claims listed for the owner | 3–4 d |
+| **P3** | Triage skill layers per user-profile; required "What I care about" section; reset + history | 2–3 d |
+| **P4** | Router: one cheap call per batch, configurable model, stored decisions, retry ×3 then all | 2–3 d |
+| **P5** | Full triage in the chosen user-profiles' agents; per-channel switch `legacy|agent` with a comparison period before cutover; Needs You dedupe | 4–5 d |
+| **P6** | Telegram as a triage source; replies from the receiving account, approval-only | 2 d |
+| **P7** | UI — Figma mockups first, then agent-home: register-source wizard, My triage skills, "Why this profile" | 1.5 d + 3–4 d |
+| **P8** | Real-Postgres E2E (John & Mary × CFO & CMO; routed to one / both / none; fallback; ownership uniqueness; no cross-user leaks), browser test, production test on approval | 2–3 d |
+
+### Design notes from the audit
+
+- **Box-level registry.** Sources, routes and routing decisions must live
+  outside any one profile schema (today credentials are profile-schema-bound
+  and the FG-27 guard refuses foreign schemas). P2 decides the store (a
+  box-level schema next to GoTrue, or the default profile's schema with
+  explicit box scope) and how a source credential is read without entering a
+  profile schema.
+- **One reader per source.** P2 removes the double-reader paths: the
+  pipeline poller/batcher is the only reader of a triaged source; the gateway
+  keeps the owner's self-chat on person bots/bridges.
+- **User folder.** `<profile>/users/<uid>/` holds triage skills and
+  settings; per-user memory stays at `memories/users/<uid>/` (already per
+  user-profile) to avoid a migration. `users/` must be added to the
+  `--clone-all` / export excludes and to the user-removal sweep.
+- **Triage results** go to the chosen profile's schema (`inbound_items`,
+  to-dos, notifications, a per-user `INBOX_FACTS`), not the box-wide SQLite,
+  which keeps raw messages keyed by source.
+- **Telegram:** allow several bot sources per user (today one fixed `bot`
+  credential). The owner's self-chat with a person bot/bridge needs a default
+  user-profile.
+- **Prompt cache:** each triage run is a seeded session; keep each
+  user-profile's triage system prompt byte-stable (skill layers resolved at
+  session start) so provider prefix caching applies.
 
 ## Decisions applied
 - D7 (`session_key` gains `account_id` + user/task), D5 (channels prod-only), D2 (hybrid memory for shared coordination state).
@@ -121,6 +251,8 @@ Channel ingestion forced to `prod` (C3 guard, tested). Coordination state in `ap
 - Channel prod-only guard test.
 
 ## System testing (system-test box)
+> **Superseded 2026-11-16:** the box named below is decommissioned. Run system tests on production only with approval, following `production/PRODUCTION.md` in `leolau/aquarium-ops`. Target scenarios are in *Target design › Phases* (P8).
+
 **Required step after this FG's development completes** (part of its Definition of Done), on top of the per-PR unit/E2E + baseline gate: deploy this FG to the new ai-prentice-4-all ECS (`hermes-systest`, `i-j6c81aisv2dd8mg17yle`, 4/16, cn-hongkong-b, EIP `47.83.199.25`) — the dedicated **system-test host** — and exercise it end-to-end on the real stack against a **staging** Supabase schema (`app_staging`) + staging SQLite core (**never prod**). See README §7.1. Acceptance checklist:
 - Bind ≥2 real **test** channel accounts (e.g. 2 WhatsApp numbers / 2 email inboxes) on the deployed box; confirm both route into the **one shared brain**, sessions stay isolated per account, and replies egress via the correct account.
 - Exercise the **channels-prod-only** guard on the live stack (channel traffic never resolves to dev/staging mode).
@@ -137,14 +269,25 @@ Tests green + baseline green (session-key lock intact) + `ruff`/`ty` clean; Shap
 
 ## Progress checklist
 - [x] `SessionSource.account_id` (+ `internal_user_id` / `task`) + `session_key` fold-in (C4), single-account byte-stable
-- [x] In-process inbound queue + bounded worker pool (Shape 1) — `gateway/inbound.py` `InboundRouter` (per-session serial, cross-session parallel)
-- [x] Producers stripped to thin normalizers (WhatsApp/email/calendar) — `gateway/producers.py`
-- [x] Calendar cron producer — `gateway/producers.py` `calendar_event_to_inbound` / `run_calendar_sync`
-- [x] Channel prod-only guard — `gateway/inbound.py` `guard_channel_prod` (routes via C3 `resolve_mode`)
+- [x] In-process inbound queue + bounded worker pool (Shape 1) — `gateway/inbound.py` `InboundRouter` (per-session serial, cross-session parallel); used only by tests, the live gateway uses its own agent cache by design
+- [ ] Producers stripped to thin normalizers (WhatsApp/email/calendar) — `gateway/producers.py` exists but is **test-only**; `custom/*` still triages via DeepSeek (corrected 2026-11-16 → P4/P5)
+- [ ] Calendar cron producer — `gateway/producers.py` `calendar_event_to_inbound` / `run_calendar_sync` exist but are **not wired**; calendar runs `custom/calendar/*` (corrected 2026-11-16)
+- [x] Channel prod-only guard — `gateway/inbound.py` `guard_channel_prod` (routes via C3 `resolve_mode`); note: not called at runtime, the gateway hard-binds `app_schema("prod")` instead (effectively met)
 - [x] Channel identity → Principal bound via the C1 `resolve_principal` seam — `gateway/inbound.py` `bind_channel_principal`
 - [x] tests + Shape-2 migration notes (unit + Postgres E2E incl. negative-access; Shape 2 documented in `gateway/inbound.py` + Design §3)
 - [x] **Live-gateway wiring (C4 identity enrichment in `gateway/run.py`)** — see *Gateway migration* section; the running gateway now stamps `account_id` + resolves the internal `Principal` at the inbound chokepoint (unit-tested). Live WhatsApp/email round-trip still pending channel creds.
 - [x] System test on the system-test ECS — Telegram inbound→C4 route→DeepSeek→egress + web/Telegram parity **PASSED** (2026-07-11); WhatsApp + email live round-trip **still pending** (needs the gateway migration + channel creds)
+
+### Target design phases (2026-11-16)
+- [x] P0 — re-scope doc + verified current-state audit
+- [ ] P1 — user-profile folders `<profile>/users/<uid>/`
+- [ ] P2 — box-level source registry, one owner per source, routes
+- [ ] P3 — triage skill layers per user-profile
+- [ ] P4 — router (one cheap call per batch, retry ×3 then all)
+- [ ] P5 — full triage in chosen user-profiles' agents (per-channel switch)
+- [ ] P6 — Telegram triage source; replies from receiving account
+- [ ] P7 — UI (Figma mockups first)
+- [ ] P8 — E2E, browser and approved production verification
 
 ## Audit log
 | Date | Edition | Author | Change | Rationale |
@@ -154,6 +297,9 @@ Tests green + baseline green (session-key lock intact) + `ruff`/`ty` clean; Shap
 | 2026-07-12 | 4 | devin:8cec0d47 | Added *Gateway migration (Shape-1 → live `gateway/run.py`)* section + checklist; corrected status/progress to reflect that the live gateway does not yet route channels through `InboundRouter` (only Telegram was live-tested; WhatsApp/email live round-trip pending migration + creds) | Leo: migrate the live gateway to the one-brain router first, then do live WhatsApp/email round-trips; document so future agents can follow/verify |
 | 2026-07-11 | 3 | devin:733e4888 | Implemented C4 (`SessionSource.account_id`/`internal_user_id`/`task` + `build_session_key` fold-in, byte-stable for single-account callers) and Shape 1 (`gateway/inbound.py` in-process `InboundRouter` queue+bounded pool with per-session-serial / cross-session-parallel turns; `gateway/producers.py` thin WhatsApp/email/calendar normalizers + calendar cron producer). Bound channel identity → Principal via the C1 `resolve_principal` seam; channels forced prod-only via the C3 router. Added unit tests + Postgres E2E (≥2 accounts isolated, principal binding, negative-access); baseline + `ruff`/`ty` clean. | Publish contract C4 early in Wave 1 (FG-06/FG-09 depend on it); realise one-brain-all-channels without per-channel silos while preserving prompt-cache safety. |
 | 2026-07-11 | 6 | devin:8cec0d47 | **Live-gateway wiring implemented.** Wired C4 identity into the running gateway: `_handle_message_with_agent` now calls `_enrich_channel_source_identity` (stamps receiving `account_id` from `BasePlatformAdapter.account_id`; resolves sender→internal `Principal` via `bind_channel_principal`/`_get_principal_store`) **before** session-key/cached-`AIAgent` lookup. Gated on the app-DB DSN (no-op / byte-stable when unset). Chose to enrich the gateway's *existing* per-session-serial / cross-session-parallel cached-agent dispatch rather than add a second `InboundRouter` queue (documented under *Design decision*). Added `tests/gateway/test_live_gateway_identity_wiring.py`; baseline + `ruff`/`ty` clean. Live WhatsApp/email round-trip still pending channel creds. | Leo: migrate the live gateway to the one-brain router first, then live WhatsApp/email round-trips; keep it followable/verifiable. |
+| 2026-11-16 | 7 | devin:ee4fdc1b | Re-scoped FG-03 to multi-user / multi-profile: added *Current state* (audit), *Target design* (profile template + user-profile, one-owner sources, one routing call per batch, full triage per chosen user-profile), P0–P8 phases; corrected over-ticked checklist items; superseded the decommissioned system-test box | Yan approved the design 2026-11-16 |
 
 ## Cloud-agent prompt
+> **Historical (Wave 1).** For new work, implement the next unticked phase in *Target design phases*, one PR per phase.
+
 > **[Wave 1 — start after Wave 0 merges]** Repo `leolau/aquarium`, branch off `develop`. Read `docs/design/master-plan/README.md`, this doc (`FG-03`), and the authoritative designs `docs/design/architecture-design-number-one.md` + `docs/design/AGENT-HANDOFF.md`. Implement the **multi-channel redesign (one brain, all channels)**: (1) add `account_id` to `SessionSource` and fold it into `build_session_key` (contract C4) while keeping keys **byte-identical for existing single-account callers** — `tests/plan_baseline/test_session_key_baseline.py` must stay green; (2) build **Shape 1**: an in-process inbound queue + bounded async worker pool in the gateway, with the existing `custom/*` pollers reduced to thin producers emitting `(platform, account_id, sender_chat_id, payload)`, each routed to the per-session cached `AIAgent` (reuse `gateway/run.py`'s cache); (3) add a calendar cron producer into the same queue; (4) enforce **channels prod-only** via contract C3. Shared coordination state goes in the FG-05 live store via tool call (cache-safe) — never in the system prompt. Follow `AGENTS.md` (one brain/one profile, cache-sacred, footprint ladder). Add unit + E2E (≥2 accounts isolated) + prod-only guard tests; run `scripts/run_tests.sh`, `ruff`, `ty`. Edit ONLY this FG doc. Open a PR linking this doc. **Not done until this FG's *System testing (system-test box)* checklist (in this doc) passes** — coordinate that deploy/run with Leo.
