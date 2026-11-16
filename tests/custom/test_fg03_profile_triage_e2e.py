@@ -60,7 +60,8 @@ TEXT = {
 }
 LEGACY = {"classification": "legacy", "summary": "legacy verdict", "escalate": True,
           "escalation_reason": "legacy", "escalation_priority": "high",
-          "tasks": [{"description": "legacy task"}], "notes": [{"content": "legacy note"}]}
+          "tasks": [{"description": "legacy task"}], "notes": [{"content": "legacy note"}],
+          "todos": [{"title": "Legacy to-do", "priority": "high", "notify": True}]}
 
 
 def agent_reply(profile):
@@ -473,7 +474,10 @@ def test_agent_falls_back_to_legacy_after_three_failed_passes(setup, box):  # no
     # CFO's result already wrote the box-wide rows; legacy does not repeat them.
     assert ch.box_rows() == _verdict_once(ch)
     rows = _profile_rows(box)
-    assert rows["cfo"]["todos"] == [("john", "Pay INV-77")] and rows["cmo"] == NOTHING
+    assert rows["cfo"]["todos"] == [("john", "Pay INV-77")]
+    assert rows["cmo"]["todos"] == [("john", "Legacy to-do")]  # as John@CMO
+    assert {owner for owner, _ in rows["cmo"]["notifications"]} == {"john"}
+    assert rows["default"] == NOTHING  # nothing for the install owner
     assert "_agent_attempts" in json.loads(Path(ch.processed, path.name).read_text())
 
 
@@ -484,9 +488,10 @@ def test_agent_all_failed_falls_back_to_legacy_box_rows(setup, box):  # noqa: F8
         ch.run(path)
     assert ch.done(path) and len(ch.deepseek.calls) == 1 and len(model.calls) == 1
     assert ch.box_rows() == {"escalations": ["legacy verdict"], ch.tasks: ["legacy task"],
-                             ch.notes: ["legacy note"]}
+                             ch.notes: ["legacy note"]}  # once, not per profile
     rows = _profile_rows(box)
-    assert rows["cfo"] == NOTHING and rows["cmo"] == NOTHING
+    assert rows["cfo"]["todos"] == [("john", "Legacy to-do")] == rows["cmo"]["todos"]
+    assert rows["default"] == NOTHING
 
 
 def test_agent_shortcuts_never_route_or_run_a_turn(setup, box):  # noqa: F811

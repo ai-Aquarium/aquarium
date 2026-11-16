@@ -145,26 +145,60 @@ def _act_in_profile(kind, batch, run, *, owner, get_db, box_writes) -> None:
         db.close()
 
 
-def _legacy_fallback(kind, batch, batch_path, *, legacy_triage, legacy_act, get_db,
-                     processed_dir, box_done, log) -> None:
+def _profile_home(profile: str):
+    """The profile's Hermes home, resolved as ``triage_agent.run_profile_triage`` does."""
+    from pathlib import Path
+
+    from hermes_cli.profiles import get_profile_dir, profile_exists
+
+    if not profile or not profile_exists(profile):
+        return None
+    return Path(get_profile_dir(profile))
+
+
+def _legacy_fallback(kind, batch, batch_path, *, missing, owner, legacy_triage, legacy_act,
+                     get_db, processed_dir, box_done, log) -> None:
+    """Legacy triage for the profiles whose agent never succeeded, acted on in
+    each of them as the batch owner; ``legacy_act`` only when no profile
+    succeeded and none of them resolves."""
     clean = _clean(batch)
     result = legacy_triage(clean)
     if not result:
         log("Failed to triage batch, will retry later")
         return
-    if box_done:
-        # A profile already wrote this batch's box-wide rows; don't repeat them.
-        from shared.triage_handlers import process_result
+    homes = []
+    for profile in missing if owner else []:
+        try:
+            home = _profile_home(profile)
+        except Exception as e:
+            log(f"cannot resolve profile {profile}: {e!r}")
+            home = None
+        if home is None:
+            log(f"profile {profile} not found; legacy result not applied there")
+            continue
+        homes.append((profile, home))
+    if not homes:
+        if not box_done:
+            legacy_act(clean, result)
+        _finish(batch_path, processed_dir, batch)
+        return
+    from shared.triage_handlers import process_result
 
-        clean["_channel"] = kind
+    for profile, home in homes:
+        target = copy.deepcopy(clean)
+        target["_channel"] = kind
         db = get_db()
         try:
-            process_result(result, clean, db, box_writes=False)
+            process_result(result, target, db, profile_home=home, owner_user_id=owner,
+                           box_writes=not box_done)
             db.commit()
+        except Exception as e:
+            log(f"acting on the legacy triage in {profile} failed: {e!r}")
+            continue
         finally:
             db.close()
-    else:
-        legacy_act(clean, result)
+        box_done = True
+        log(f"legacy triage applied in {profile} for {owner}")
     _finish(batch_path, processed_dir, batch)
 
 
@@ -181,7 +215,9 @@ def _agent(kind, batch, batch_path, decision, *, legacy_triage, legacy_act, get_
     attempts = int(batch.get(ATTEMPTS_KEY) or 0)
     if attempts >= MAX_AGENT_ATTEMPTS:
         log(f"agent triage of batch {batch_id} failed {attempts} times; legacy triage")
-        _legacy_fallback(kind, batch, batch_path, legacy_triage=legacy_triage,
+        _legacy_fallback(kind, batch, batch_path,
+                         missing=[p for p in selected if p not in done],
+                         owner=_owner(batch, decision), legacy_triage=legacy_triage,
                          legacy_act=legacy_act, get_db=get_db, processed_dir=processed_dir,
                          box_done=box_done, log=log)
         return
@@ -224,7 +260,8 @@ def _agent(kind, batch, batch_path, decision, *, legacy_triage, legacy_act, get_
     if batch[ATTEMPTS_KEY] >= MAX_AGENT_ATTEMPTS:
         log(f"agent triage of batch {batch_id} failed {batch[ATTEMPTS_KEY]} times "
             f"({', '.join(missing)}); legacy triage")
-        _legacy_fallback(kind, batch, batch_path, legacy_triage=legacy_triage,
+        _legacy_fallback(kind, batch, batch_path, missing=missing, owner=owner,
+                         legacy_triage=legacy_triage,
                          legacy_act=legacy_act, get_db=get_db, processed_dir=processed_dir,
                          box_done=box_done, log=log)
         return

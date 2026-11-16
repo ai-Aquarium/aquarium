@@ -30,7 +30,7 @@ AGENT_RESULT = {"classification": "action_required", "escalate": True, "tasks": 
 def agents(monkeypatch, router):  # noqa: F811
     """Stub the P5 agent layer and the handlers; record what they were asked."""
     state = types.SimpleNamespace(mode="agent", failing=set(), runs=[], acted=[],
-                                  compared=[], legacy_acted=[])
+                                  compared=[], legacy_acted=[], no_home=set())
 
     def triage_selected(kind, batch, profiles, *, owner_user_id, config=None, runner=None):
         state.runs.append(list(profiles))
@@ -53,6 +53,8 @@ def agents(monkeypatch, router):  # noqa: F811
     monkeypatch.setattr(triage_agent, "triage_selected", triage_selected)
     monkeypatch.setattr(triage_agent, "record_comparisons_sync", record_comparisons_sync)
     monkeypatch.setattr("shared.triage_handlers.process_result", process_result)
+    monkeypatch.setattr("shared.profile_triage._profile_home",
+                        lambda p: None if p in state.no_home else Path(f"/homes/{p}"))
     return state
 
 
@@ -148,15 +150,38 @@ def test_failed_profiles_retry_alone_then_fall_back_to_legacy(pipeline, router, 
     pipeline.run(path)
     assert agents.runs == [["cfo", "cmo"], ["cmo"], ["cmo"]]
     assert len(router.calls) == 3  # one per attempt; a stored decision makes no model call
-    # cfo wrote the box-wide rows once; the legacy fallback must not repeat them.
+    # The legacy result goes to the missing profile only, as the owner; cfo
+    # already wrote the box-wide rows, so they are not repeated.
     assert agents.acted == [("/homes/cfo", "u-john", True, pipeline.kind),
-                            (None, None, False, pipeline.kind)]
+                            ("/homes/cmo", "u-john", False, pipeline.kind)]
     assert pipeline.triaged == ["b9"] and pipeline.stored == [] and pipeline.done(path)
 
 
-def test_all_profiles_failing_falls_back_to_full_legacy(pipeline, router, agents):  # noqa: F811
+def test_fallback_skips_a_missing_profile_that_does_not_resolve(pipeline, router, agents):  # noqa: F811
+    router.decision = _decision("cfo", "cmo")
+    agents.failing, agents.no_home = {"cmo"}, {"cmo"}
+    path = pipeline.write("b9")
+    for _ in range(3):
+        pipeline.run(path)
+    assert agents.acted == [("/homes/cfo", "u-john", True, pipeline.kind)]
+    assert pipeline.triaged == ["b9"] and pipeline.stored == [] and pipeline.done(path)
+
+
+def test_all_profiles_failing_apply_legacy_in_each_profile(pipeline, router, agents):  # noqa: F811
+    router.decision = _decision("cfo", "cmo")
+    agents.failing = {"cfo", "cmo"}
+    path = pipeline.write("b10")
+    for _ in range(3):
+        pipeline.run(path)
+    assert agents.runs == [["cfo", "cmo"]] * 3
+    assert agents.acted == [("/homes/cfo", "u-john", True, pipeline.kind),
+                            ("/homes/cmo", "u-john", False, pipeline.kind)]
+    assert pipeline.triaged == ["b10"] and pipeline.stored == [] and pipeline.done(path)
+
+
+def test_no_profile_resolving_falls_back_to_full_legacy(pipeline, router, agents):  # noqa: F811
     router.decision = _decision("cfo")
-    agents.failing = {"cfo"}
+    agents.failing = agents.no_home = {"cfo"}
     path = pipeline.write("b10")
     for _ in range(3):
         pipeline.run(path)
