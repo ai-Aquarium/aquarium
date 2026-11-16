@@ -5,7 +5,7 @@
 #   deploy/hermes-close-data [--data DIR] [--group NAME]     (run as root)
 #
 # The agent's terminal and file tools run as hermes-tools (terminal.run_as).
-# These folders hold every person's raw mail, WhatsApp and calendar, and
+# These folders hold every person's raw mail, WhatsApp, Telegram and calendar, and
 # whole-database backups, so a terminal user must not be able to enter them;
 # people see their own data through the owner-scoped Postgres copy instead.
 # The pollers, batchers and triage run as hermes and keep full access.
@@ -24,7 +24,7 @@ done
 [ -d "$DATA" ] || { echo "--data must be an existing folder" >&2; exit 2; }
 getent group "$GROUP" >/dev/null || { echo "no group $GROUP" >&2; exit 2; }
 
-CLOSED=(email-messages whatsapp-messages calendar backups)
+CLOSED=(email-messages whatsapp-messages telegram-messages calendar backups)
 shopt -s nullglob
 for d in "${CLOSED[@]/#/$DATA/}" "$DATA"/restore-*; do
   [ -d "$d" ] && [ ! -L "$d" ] || continue

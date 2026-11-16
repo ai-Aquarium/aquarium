@@ -53,6 +53,8 @@ custom/
 │   ├── triage_agent.py       # WA message triage + task extraction
 │   ├── escalation_pusher.py  # WA-only escalation pusher (v1)
 │   └── digest_cron.py        # WA-only hourly digest (v1)
+├── telegram/                 # Telegram-specific services
+│   └── triage_agent.py       # Telegram batch triage in the bot owner's profiles
 ├── shared/                   # Cross-channel services
 │   ├── contact_manager.py    # Unified contact auto-management + correlation
 │   ├── escalation_pusher_v2.py  # Unified WA+Email escalation pusher

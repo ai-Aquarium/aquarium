@@ -415,9 +415,10 @@ def test_update_installs_verified_stable_release(box, capsys):
 
 def test_update_closes_raw_stores_to_the_terminal_user(box, capsys):
     # The agent's terminal runs as hermes-tools: an update must not leave raw
-    # mail/WhatsApp/calendar stores or database copies open to it (FG-38).
+    # mail/WhatsApp/Telegram/calendar stores or database copies open to it (FG-38).
     released_box(box)
-    names = ["email-messages", "whatsapp-messages", "calendar", "backups", "restore-b2c-1"]
+    names = ["email-messages", "whatsapp-messages", "telegram-messages", "calendar", "backups",
+             "restore-b2c-1"]
     for name in names + ["hermes-home-extra"]:
         d = box.p(f"/opt/data/{name}")
         d.mkdir(parents=True, exist_ok=True)

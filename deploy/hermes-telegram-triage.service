@@ -1,0 +1,28 @@
+[Unit]
+# The triage half of the Telegram pipeline (FG-03 P6): reads the gateway's
+# batch files in /opt/data/telegram-messages/batches and triages each one in
+# the bot owner's user-profiles. It stays installed and enabled on every box:
+# with triage.agent.telegram: off (the default) each pass is a no-op that
+# leaves the batch files untouched; setting it to agent in config.yaml takes
+# effect on the next pass, without a restart.
+Description=Hermes Telegram triage agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Every hermes-* unit was de-privileged on 2026-07-31 so a prompt injection
+# cannot reach the host; a unit added afterwards has to carry this itself.
+User=hermes
+Group=hermes
+WorkingDirectory=/opt/data/hermes-agent/custom/telegram
+# Supplies HERMES_HOME (config.yaml -> triage.agent.telegram, datastore).
+EnvironmentFile=/opt/data/hermes-messaging.env
+ExecStart=/opt/data/hermes-agent/.venv/bin/python /opt/data/hermes-agent/custom/telegram/triage_agent.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/hermes-telegram-triage.log
+StandardError=append:/var/log/hermes-telegram-triage.log
+
+[Install]
+WantedBy=multi-user.target
