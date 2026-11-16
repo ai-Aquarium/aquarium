@@ -946,6 +946,18 @@ DEFAULT_CONFIG = {
     "fallback_providers": [],
     "credential_pool_strategies": {},
     "toolsets": ["hermes-cli"],
+    "triage": {
+        # FG-03 P4: the per-batch router (hermes_cli/triage_router.py).
+        # "shadow" makes and stores decisions while today's triage runs
+        # unchanged; "enforce" lets callers act on them; "off" skips it.
+        # A failed call is retried `retries` times, waiting
+        # retry_delay_seconds × attempt; then every routed profile gets it.
+        "router": {
+            "mode": "shadow",
+            "retries": 3,
+            "retry_delay_seconds": 5,
+        },
+    },
     "source_registry": {
         # Where the email poller and WhatsApp batcher get the sources to read
         # (FG-03 P2): "registry" (the box source registry; the box-wide
@@ -1677,6 +1689,17 @@ DEFAULT_CONFIG = {
         # Landing "review" that suggests chats to pin (one tool-less call
         # over recent chat titles/last messages; see landing.pin_suggestions).
         "session_review": {
+            "provider": "auto",
+            "model": "",
+            "base_url": "",
+            "api_key": "",
+            "timeout": 30,
+            "extra_body": {},
+        },
+        # FG-03 P4 triage router: one cheap tool-less call per incoming
+        # batch picks which of the owner's routed profiles triage it
+        # (hermes_cli/triage_router.py). Pin a cheap model here.
+        "triage_router": {
             "provider": "auto",
             "model": "",
             "base_url": "",
