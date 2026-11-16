@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { ActionButton } from "@/components/ui/ActionButton";
 
 import type { ChatApprovalRequest } from "@/types";
+import { lockBodyScroll } from "@/lib/body-scroll-lock";
 
 /** Human labels for the approval choices the agent offers. */
 export const CHOICE_LABELS: Record<string, string> = {
@@ -43,11 +44,7 @@ export function ApprovalModal({ request, busy, onResolve }: ApprovalModalProps) 
 
   // Stop the thread behind the sheet from scrolling under the user's thumb.
   useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
+    return lockBodyScroll();
   }, []);
 
   return (

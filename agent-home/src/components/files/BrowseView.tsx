@@ -852,7 +852,7 @@ function renderPreview(preview: Preview | null, t: ReturnType<typeof useT>, name
             <div className="flex justify-end">
               <MaximizeToggle />
             </div>
-            <pre className={`${maximized ? "min-h-0 flex-1" : "max-h-72"} overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--color-border)] p-2 text-xs`}>
+            <pre tabIndex={maximized ? 0 : undefined} aria-label={maximized ? name : undefined} className={`${maximized ? "min-h-0 flex-1" : "max-h-72"} overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--color-border)] p-2 text-xs`}>
               {preview.text}
             </pre>
           </>

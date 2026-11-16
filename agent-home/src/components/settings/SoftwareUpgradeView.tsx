@@ -635,7 +635,7 @@ function JobPanel({
                 <div className="flex justify-end">
                   <MaximizeToggle />
                 </div>
-                <pre className={`${maximized ? "min-h-0 flex-1" : "max-h-48"} overflow-auto rounded-xl bg-[var(--color-bg)] p-3 font-mono text-xs leading-relaxed text-[var(--color-bg)]`}>
+                <pre tabIndex={maximized ? 0 : undefined} aria-label={maximized ? t("logTitle") : undefined} className={`${maximized ? "min-h-0 flex-1" : "max-h-48"} overflow-auto rounded-xl bg-[var(--color-bg)] p-3 font-mono text-xs leading-relaxed text-[var(--color-bg)]`}>
                   {job.log.length ? job.log.join("\n") : t("noLog")}
                 </pre>
               </>

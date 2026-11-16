@@ -15,6 +15,7 @@ import {
 } from "@/lib/chat/secret-prompt";
 import { useNow } from "@/lib/use-now";
 import type { ChatSecretRequest } from "@/types";
+import { lockBodyScroll } from "@/lib/body-scroll-lock";
 
 export interface SecretRequestModalProps {
   /** `request` answers an agent `secret.request`; `save` stores a volunteered secret. */
@@ -152,11 +153,10 @@ export function SecretRequestModal({
   const expired = left === 0;
 
   useEffect(() => {
-    const previous = document.body.style.overflow;
     const opener = document.activeElement as HTMLElement | null;
-    document.body.style.overflow = "hidden";
+    const unlock = lockBodyScroll();
     return () => {
-      document.body.style.overflow = previous;
+      unlock();
       opener?.focus?.();
     };
   }, []);

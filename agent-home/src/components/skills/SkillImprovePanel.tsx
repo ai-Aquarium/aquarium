@@ -519,7 +519,7 @@ export function DiffPreview({
           <div className="flex justify-end">
             <MaximizeToggle />
           </div>
-          <div className={`${maximized ? "min-h-0 flex-1" : "max-h-96"} overflow-auto rounded-xl bg-[var(--color-surface-2)] py-2 font-mono text-[12px] leading-5`}>
+          <div tabIndex={maximized ? 0 : undefined} aria-label={maximized ? title : undefined} className={`${maximized ? "min-h-0 flex-1" : "max-h-96"} overflow-auto rounded-xl bg-[var(--color-surface-2)] py-2 font-mono text-[12px] leading-5`}>
             {full
               ? hunks(ops, 3).map((h, i) =>
                   "skipped" in h ? (

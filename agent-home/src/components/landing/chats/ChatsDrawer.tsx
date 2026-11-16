@@ -6,6 +6,7 @@ import { ChatsPanel, type ChatsPanelProps } from "./ChatsPanel";
 import { LeftPanelTabs, type LeftTabsSlot } from "./LeftPanelTabs";
 import { XIcon } from "@/components/ui/icons";
 import { useT } from "@/i18n";
+import { lockBodyScroll } from "@/lib/body-scroll-lock";
 
 /**
  * Mobile Chats drawer (Figma `6:195`): the sidebar's contents in a
@@ -33,8 +34,7 @@ export function ChatsDrawer({
 
   useEffect(() => {
     if (!open) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockBodyScroll();
     const opener = document.activeElement as HTMLElement | null;
     const search = focusSearch
       ? panelRef.current?.querySelector<HTMLInputElement>('[data-component="SessionSearch"] input')
@@ -45,7 +45,7 @@ export function ChatsDrawer({
     }
     window.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = previous;
+      unlock();
       window.removeEventListener("keydown", onKey);
       opener?.focus?.();
     };
