@@ -1706,6 +1706,9 @@ export interface TriageSkillFileHistory {
   versions: TriageSkillFileVersion[];
 }
 
+/** Triage kinds with layered skills: the status card's three plus Telegram (FG-03 P6). */
+export type TriageLayerKind = TriageKindStatus["kind"] | "telegram";
+
 /** FG-03 P3 triage skill layers, lowest first; the highest present wins. */
 export type TriageLayer = "builtin" | "template" | "user";
 /** Layers a person can change: the profile template (owner/admin) or their own. */
@@ -1731,12 +1734,14 @@ export interface TriageCareSection {
   key: string;
   layer: TriageLayer;
   content: string;
+  /** The profile template's own text (template, else built-in), when Hermes sends it. */
+  template?: { layer: TriageLayer; content: string };
 }
 
 /** `GET /api/triage/layers?kind=` */
 export interface TriageLayers {
   profile: string | null;
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   /** The caller; the user layer is always theirs. */
   user_id: string | null;
   files: TriageLayeredFile[];
@@ -1747,7 +1752,7 @@ export interface TriageLayers {
 
 /** `GET /api/triage/layers/file` */
 export interface TriageLayerFile {
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   key: string;
   /** The layer shown (the winner for `effective`, `null` if turned off). */
   layer: TriageLayer | null;
@@ -1763,7 +1768,7 @@ export interface TriageLayerFile {
 
 /** `GET /api/triage/layers/diff` — template vs the caller's version. */
 export interface TriageLayerDiff {
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   key: string;
   template_disabled: boolean;
   mine_disabled: boolean;
@@ -1786,7 +1791,7 @@ export interface TriageLayerVersion {
 }
 
 export interface TriageLayerHistory {
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   key: string;
   layer: TriageEditableLayer;
   versions: TriageLayerVersion[];

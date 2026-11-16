@@ -69,6 +69,27 @@ const WRAP =
  * get Edit on each triage skill file; members and viewers get View (Hermes
  * refuses their saves too).
  */
+/** Entry to Profile › My triage skills: my own layer over this profile's template. */
+function MyTriageLink({ profile }: { profile: string }) {
+  return (
+    <Link
+      href={`/profiles/${encodeURIComponent(profile)}/triage`}
+      data-slot="my-triage-skills"
+      className="mt-2 flex min-h-11 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm hover:border-[var(--color-accent)]"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block font-medium text-[var(--color-fg)]">My triage skills</span>
+        <span className="block text-xs text-[var(--color-muted)]">
+          What you care about, which files you use, and your version beside the {profile} template.
+        </span>
+      </span>
+      <span aria-hidden className="text-[var(--color-accent)]">
+        →
+      </span>
+    </Link>
+  );
+}
+
 export function TriageCard({
   profile,
   status,
@@ -86,6 +107,7 @@ export function TriageCard({
         <p role="alert" className="text-sm text-[var(--color-danger)]">
           Couldn&apos;t check triage for {profile}: {error}
         </p>
+        <MyTriageLink profile={profile} />
       </div>
     );
   }
@@ -115,6 +137,7 @@ export function TriageCard({
         <span className="flex-1 font-semibold text-[var(--color-fg)]">Triage · {headline}</span>
         <Pill tone={pill[state][1]}>{pill[state][0]}</Pill>
       </div>
+      <MyTriageLink profile={profile} />
 
       {on.length ? (
         <>

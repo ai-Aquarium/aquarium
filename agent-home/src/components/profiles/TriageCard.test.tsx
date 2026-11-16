@@ -42,6 +42,7 @@ describe("TriageCard states", () => {
       <TriageCard profile="hr" status={status([kind("email", "set_up"), kind("whatsapp", "set_up"), kind("calendar", "not_set_up", ["account"])])} />,
     );
     expect(card(container).dataset.state).toBe("set_up");
+    expect(screen.getByRole("link", { name: /My triage skills/ }).getAttribute("href")).toBe("/profiles/hr/triage");
     expect(screen.getByText(/Triage · set up for you/)).toBeTruthy();
     const email = container.querySelector('[data-kind="email"][data-state="set_up"]') as HTMLElement;
     expect(within(email).getByText("escalation-rules.md")).toBeTruthy();

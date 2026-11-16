@@ -14,13 +14,17 @@ export interface ProfilesViewProps {
   initialProfiles: ProfileInfo[];
   providers: ModelProviderOption[];
   error: string | null;
+  /** Profile whose editor starts open, e.g. coming back from its triage page. */
+  initialOpen?: string | null;
 }
 
 /** The Profiles page body: card grid, the editor drawer and the new-profile dialog. */
-export function ProfilesView({ initialProfiles, providers, error }: ProfilesViewProps) {
+export function ProfilesView({ initialProfiles, providers, error, initialOpen = null }: ProfilesViewProps) {
   const [profiles, setProfiles] = useState(initialProfiles);
   const [loadError, setLoadError] = useState(error);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(() =>
+    initialOpen && initialProfiles.some((p) => p.name === initialOpen) ? initialOpen : null,
+  );
   const [creating, setCreating] = useState<{ from?: string } | null>(null);
 
   const reload = useCallback(async () => {
