@@ -198,6 +198,35 @@ def test_unrouted_and_disabled_mailboxes_not_polled(box, email_db, imap, registr
     assert registry[0] == []
 
 
+async def _transfer_and_route(dsn, source_id, new_owner, profile):
+    conn = await sr.connect_box(dsn=dsn)
+    try:
+        await sr.transfer_source(
+            conn, source_id=source_id, new_owner_user_id=new_owner, actor_user_id="admin",
+            box_admin=_yes, known_user=_yes,
+        )
+        await sr.set_route(
+            conn, source_id=source_id, profile_slug=profile, enabled=True,
+            actor_user_id=new_owner, membership=_yes,
+        )
+    finally:
+        await conn.close()
+
+
+def test_transferred_mailbox_is_not_read_with_the_old_owners_credential(box, email_db, imap, registry, postgres_dsn):  # noqa: F811
+    path, _ = email_db
+    save(ALICE, imap.port)
+    source_id = run(_add(postgres_dsn, "email", "alice@example.com", "alice",
+                         ref=_imap_ref("alice@example.com", "alice"), routes=("work",)))
+    run(_transfer_and_route(postgres_dsn, source_id, "bob", "home"))
+
+    plan = _poll_email()
+    assert [s.source_id for s in plan.sources] == [source_id]
+    assert imap.logins == [] and _email_rows(path) == []
+    status = email_poller.poll_status["accounts"]["alice@example.com"]
+    assert status["auth"] == "no_credential"
+
+
 def test_empty_registry_falls_back_to_config_json(box, email_db, imap, registry, caplog):  # noqa: F811
     path, config = email_db
     save(ALICE, imap.port)

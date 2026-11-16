@@ -86,7 +86,9 @@ async def _registry_sources(
 ) -> list[Source]:
     from hermes_cli.source_registry import connect_box, list_sources
 
-    connection = await connect_box(config=config, dsn=dsn)
+    # ``config`` only picks the poller mode; the registry DSN is box-wide
+    # (the default profile's), whichever profile this reader runs in.
+    connection = await connect_box(dsn=dsn)
     try:
         return await list_sources(connection, channel=channel)
     finally:
