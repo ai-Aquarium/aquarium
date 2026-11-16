@@ -145,6 +145,8 @@ PAGES: Tuple[PageSpec, ...] = (
     PageSpec("/sites/new", admin_markers=("AddSiteForm",), member_markers=("AddSiteNotAllowed",)),
     PageSpec("/sites/zz-smoke-missing", not_found=True),
     PageSpec("/data", ("DataList",)),
+    # Anyone may connect a database (private to them), so every role gets the form.
+    PageSpec("/data/new", ("AddDataSource",)),
     PageSpec("/data/zz-smoke-missing", not_found=True),
     PageSpec("/data/zz-smoke-missing/review", not_found=True),
     PageSpec("/aquarium", ("AquariumView", "AquariumLegend"), shell=False),
@@ -200,6 +202,7 @@ APP_URLS: Mapping[str, Tuple[Tuple[Tuple[str, bool], ...], Tuple[Tuple[str, bool
     "graph": ((("/graph", False),), ()),
     "capacity": ((("/capacity", False),), ()),
     "sites": ((("/sites", False),), (("/api/sites", False),)),
+    "data": ((("/data", False),), ()),
     "users": ((("/users", False), ("/members", False)), (("/api/comms/directory", False),)),
     "suggestions": ((("/profiles/suggestions", False),), (("/api/profiles/suggestions", False),)),
     "profiles": ((("/profiles", True),), (("/api/profiles", True), ("/api/profiles/named", False))),
