@@ -36,9 +36,12 @@ describe("MemoryPointModal text — maximize", () => {
     expect(panel().getAttribute("data-maximized")).toBe("true");
     expect(text().className).not.toContain("max-h-60");
     expect(text().className).toContain("flex-1");
+    expect(text().getAttribute("tabindex")).toBe("0");
+    expect(text().getAttribute("aria-label")).toBe("Memory");
     fireEvent.click(view.getByRole("button", { name: "Minimize Memory" }));
     expect(panel().getAttribute("data-maximized")).toBe("false");
     expect(text().className).toContain("max-h-60");
+    expect(text().hasAttribute("tabindex")).toBe(false);
   });
 
   it("Esc minimizes the text first, then closes the modal", () => {

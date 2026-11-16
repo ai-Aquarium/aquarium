@@ -19,7 +19,13 @@ function focusComposer() {
 }
 
 /** Under an answer from data: source and version, Show SQL, "Was this right?" (Figma 63:644). */
-export function DataAnswerFooter({ answer }: { answer: DataAnswer }) {
+export function DataAnswerFooter({
+  answer,
+  onMaximizedChange,
+}: {
+  answer: DataAnswer;
+  onMaximizedChange?(maximized: boolean): void;
+}) {
   const t = useT("data");
   const [sqlOpen, setSqlOpen] = useState(false);
   const [state, setState] = useState<"idle" | "saved" | "correcting">("idle");
@@ -59,7 +65,12 @@ export function DataAnswerFooter({ answer }: { answer: DataAnswer }) {
         </button>
       </p>
       {sqlOpen ? (
-        <Maximizable title={t("answer.sqlTitle")} component="DataAnswerSql" className="flex flex-col gap-1">
+        <Maximizable
+          title={t("answer.sqlTitle")}
+          component="DataAnswerSql"
+          className="flex flex-col gap-1"
+          onMaximizedChange={onMaximizedChange}
+        >
           {({ maximized }) => (
             <>
               {maximized ? null : (
@@ -68,6 +79,8 @@ export function DataAnswerFooter({ answer }: { answer: DataAnswer }) {
                 </div>
               )}
               <pre
+                tabIndex={maximized ? 0 : undefined}
+                aria-label={maximized ? t("answer.sqlTitle") : undefined}
                 className={`${maximized ? "min-h-0 flex-1" : "max-h-64"} overflow-auto rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-mono text-xs whitespace-pre-wrap text-[var(--color-muted)]`}
               >
                 {answer.sql}

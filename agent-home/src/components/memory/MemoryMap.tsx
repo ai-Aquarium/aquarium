@@ -424,6 +424,8 @@ export function MemoryPointModal({
               </div>
             )}
             <p
+              tabIndex={maximized ? 0 : undefined}
+              aria-label={maximized ? title : undefined}
               className={`${maximized ? "min-h-0 flex-1" : "max-h-60"} overflow-y-auto text-sm leading-relaxed`}
             >
               {point.label || "(no label)"}
