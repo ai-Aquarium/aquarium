@@ -132,7 +132,7 @@ export function filterSources(
         (filter === "mine" && s.owner_user_id === me) ||
         (filter === "shared" && s.owner_user_id !== me && s.access !== "manage")) &&
       (type === "all" || sourceType(s) === type) &&
-      (!needle || `${s.name} ${s.connection_name ?? ""}`.toLowerCase().includes(needle)),
+      (!needle || `${s.name} ${s.connection ?? ""}`.toLowerCase().includes(needle)),
   );
 }
 

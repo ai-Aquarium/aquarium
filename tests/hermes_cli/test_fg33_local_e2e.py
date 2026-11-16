@@ -75,8 +75,9 @@ class FakeBox:
             return 1, "", "not via sudo -n"
         if argv[2] == rt.HELPER:
             return self._helper(argv[3], spec)
-        if argv[2] == rt.PROVISIONER and argv[3:5] == ["apps", "db"] and len(argv) == 8:
-            return self._db(argv[5], argv[6], argv[7], spec or {})
+        if argv[2] == rt.PROVISIONER and argv[3:5] == ["apps", "db"] and len(argv) == 7:
+            rest = {k: v for k, v in (spec or {}).items() if k != "slug"}
+            return self._db(argv[5], (spec or {}).get("slug"), argv[6], rest)
         return 1, "", "unknown program"
 
     def _helper(self, verb, spec):
@@ -134,8 +135,12 @@ class FakeBox:
         out = []
         for argv, spec in self.calls:
             if argv[2] == program:
-                out.append(f"{argv[3]}:{spec['mode']}" if program == rt.HELPER and spec and "mode" in spec
-                           else " ".join(argv[3:]))
+                if program == rt.HELPER and spec and "mode" in spec:
+                    out.append(f"{argv[3]}:{spec['mode']}")
+                elif program == rt.PROVISIONER and spec:
+                    out.append(" ".join([*argv[3:6], spec["slug"], *argv[6:]]))
+                else:
+                    out.append(" ".join(argv[3:]))
         return out
 
 
@@ -146,12 +151,13 @@ def test_helper_argv_is_exact_and_specs_are_validated():
     client = rt.HelperClient(box)
     assert client.helper_argv("build") == ["sudo", "-n", "/usr/local/sbin/aquarium-app-helper", "build"]
     assert client.db_argv("migrate", "notes", "prod") == [
-        "sudo", "-n", "/usr/local/sbin/aquarium", "apps", "db", "migrate", "notes", "prod",
+        "sudo", "-n", "/usr/local/sbin/aquarium", "apps", "db", "migrate", "prod",
     ]
     assert json.loads(client.db_spec("migrate", "notes", "prod", approval_ref="apr_1",
                                       migrations=[{"name": "1_init.sql", "sql": "select 1"}])) == {
-        "approval_ref": "apr_1", "migrations": [{"name": "1_init.sql", "sql": "select 1"}]}
-    assert client.db_spec("create", "notes", "dev") is None
+        "slug": "notes", "approval_ref": "apr_1",
+        "migrations": [{"name": "1_init.sql", "sql": "select 1"}]}
+    assert json.loads(client.db_spec("create", "notes", "dev")) == {"slug": "notes"}
     with pytest.raises(ValueError):
         client.db_spec("drop", "notes", "dev", confirm="other")
     for bad in ("../etc", "Notes", "a/b", "-x", "", "a" * 41, "trailing-"):

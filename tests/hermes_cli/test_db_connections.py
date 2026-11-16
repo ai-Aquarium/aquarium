@@ -1,0 +1,119 @@
+"""MySQL / SQLite connections in Settings: private, write-only passwords, SQLite roots."""
+
+from __future__ import annotations
+
+import asyncio
+import sqlite3
+
+import pytest
+from fastapi import HTTPException
+
+import hermes_cli.db_connections as dbc
+import hermes_cli.db_connections_api as api
+from hermes_cli.access import Principal
+from hermes_cli.credential_store import FileCredentialStore, default_credential_store
+from hermes_cli.data_engines import EngineError
+
+ALICE = Principal(user_id="alice", display="Alice", role="member")
+BOB = Principal(user_id="bob", display="Bob", role="member")
+BOSS = Principal(user_id="boss", display="Boss", role="admin")
+SECRET = "my-pass-51c0e2"
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+@pytest.fixture(autouse=True)
+def file_store(monkeypatch):
+    store = default_credential_store()
+    assert isinstance(store, FileCredentialStore), "tests need the file backend"
+    forgotten = []
+
+    async def forget(owner, engine, name):
+        forgotten.append((owner, engine, name))
+
+    import hermes_cli.data_engines as de
+
+    monkeypatch.setattr(de, "forget_connection", forget)
+    return forgotten
+
+
+@pytest.fixture
+def root(tmp_path, monkeypatch):
+    folder = (tmp_path / "data-sources").resolve()
+    folder.mkdir()
+    monkeypatch.setattr(dbc, "sqlite_roots", lambda: [folder])
+    db = folder / "shop.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE t (a INTEGER)")
+    conn.commit()
+    conn.close()
+    return folder
+
+
+def mysql_body(**over):
+    return {"host": "db.example", "database": "shop", "username": "reader", "password": SECRET, **over}
+
+
+def test_mysql_connection_is_private_and_password_write_only():
+    saved = run(dbc.save(ALICE, "mysql", "shop", mysql_body()))
+    assert saved["password_set"] is True and SECRET not in str(saved)
+    assert [c["name"] for c in run(dbc.list_mine(ALICE))] == ["shop"]
+    assert run(dbc.list_mine(BOB)) == []
+    assert run(dbc.list_mine(BOSS)) == []
+    # Editing without a password keeps it.
+    run(dbc.save(ALICE, "mysql", "shop", mysql_body(password="", port=3307)))
+    entry = run(dbc.find_own(ALICE, "mysql", "shop"))
+    assert entry.payload["password"] == SECRET and entry.payload["port"] == 3307
+    with pytest.raises(EngineError):
+        run(dbc.delete(BOB, "mysql", "shop"))
+
+
+def test_mysql_needs_password_and_valid_fields():
+    with pytest.raises(EngineError):
+        run(dbc.save(ALICE, "mysql", "new", mysql_body(password="")))
+    with pytest.raises(EngineError):
+        run(dbc.save(ALICE, "mysql", "new", mysql_body(tls="maybe")))
+    with pytest.raises(EngineError):
+        run(dbc.save(ALICE, "postgres", "new", mysql_body()))
+
+
+def test_sqlite_is_admin_only_and_inside_a_root(root, tmp_path, file_store):
+    with pytest.raises(EngineError) as err:
+        run(dbc.save(ALICE, "sqlite", "shop", {"path": str(root / "shop.db")}))
+    assert err.value.status == 403
+    outside = tmp_path / "other.db"
+    sqlite3.connect(outside).close()
+    with pytest.raises(EngineError):
+        run(dbc.save(BOSS, "sqlite", "other", {"path": str(outside)}))
+    saved = run(dbc.save(BOSS, "sqlite", "shop", {"path": str(root / "shop.db")}))
+    assert saved["path"] == str(root / "shop.db")
+    tested = run(dbc.run_test(BOSS, "sqlite", "shop"))
+    assert tested["test"] == {"ok": True, "tables": 1}
+    assert run(dbc.delete(BOSS, "sqlite", "shop")) is True
+    assert file_store == [("boss", "sqlite", "shop")]
+
+
+def test_api_routes_act_on_the_caller_only(monkeypatch):
+    current = {"p": ALICE}
+
+    async def caller(_request):
+        return current["p"]
+
+    class Req:
+        def __init__(self, doc=None):
+            self._doc = doc
+
+        async def json(self):
+            return self._doc
+
+    monkeypatch.setattr(api, "_caller", caller)
+    run(api.put_connection("mysql", "shop", Req(mysql_body())))
+    listed = run(api.list_connections(Req()))
+    assert [c["name"] for c in listed["connections"]] == ["shop"] and "sqlite" in listed["drivers"]
+    current["p"] = BOB
+    assert run(api.list_connections(Req()))["connections"] == []
+    with pytest.raises(HTTPException) as err:
+        run(api.delete_connection("mysql", "shop", Req()))
+    assert err.value.status_code == 404

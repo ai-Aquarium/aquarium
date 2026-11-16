@@ -221,7 +221,7 @@ export function DataSourceDetail({
                   ) : null
                 }
               >
-                <p className="text-sm">{source.connection_name ?? source.name}</p>
+                <p className="text-sm">{source.connection ?? source.name}</p>
                 <p className="text-xs text-[var(--color-muted)]">{manage ? t("source.connectionBody") : t("source.connectionOwnerOnly", { who: owner })}</p>
               </Card>
             ) : null}

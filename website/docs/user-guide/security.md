@@ -457,7 +457,7 @@ terminal:
   run_as: hermes-tools   # default: "" (the gateway's own user)
 ```
 
-With it set, foreground commands, background processes, `execute_code` and the file tools (which run through the terminal) start through the root-owned helper `/usr/local/sbin/hermes-tools-exec` (`sudo -n -E -u hermes-tools`, never root). They keep the already-filtered environment and `PATH`, but the gateway's process and its private files belong to another user. Timeouts and `process kill` stop them through the same helper. If the setting names a user but the helper is missing or not root-owned, commands fail with a message naming `terminal.run_as`; they never quietly fall back to the gateway user.
+With it set, foreground commands, background processes, `execute_code` and the file tools (which run through the terminal) start through the root-owned helper `/usr/local/sbin/hermes-tools-exec` (`sudo -n --preserve-env=<names> -u hermes-tools`, never root). They keep the already-filtered environment and `PATH`, but the gateway's process and its private files belong to another user. Timeouts and `process kill` stop them through the same helper. If the setting names a user but the helper is missing or not root-owned, commands fail with a message naming `terminal.run_as`; they never quietly fall back to the gateway user.
 
 **`hermes …` from the agent's terminal.** `hermes-tools` cannot read `$HERMES_HOME/.env`, so the real CLI cannot start as that user. Inside the agent's shell, `hermes` is a shim (`/usr/local/lib/hermes-tools/bin/hermes`). It passes the arguments to `/usr/local/sbin/hermes-tools-cli`, which runs as `hermes` and accepts only this list:
 

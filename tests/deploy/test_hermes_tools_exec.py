@@ -66,7 +66,7 @@ def test_command_runs_as_hermes_tools_and_cannot_read_the_gateway():
     )
     out = subprocess.run(
         ["sudo", "-n", "-u", "hermes", "env", "PASSED=kept", "bash", "-c",
-         f"cd /tmp && sudo -n -E -u hermes-tools /usr/local/sbin/hermes-tools-exec bash -c '{inner}'"],
+         f"cd /tmp && sudo -n --preserve-env=PASSED,PATH -u hermes-tools /usr/local/sbin/hermes-tools-exec bash -c '{inner}'"],
         capture_output=True, text=True, check=True,
     ).stdout.split()
     assert out == ["hermes-tools", "env=kept", "parent-blocked", "home-blocked"]

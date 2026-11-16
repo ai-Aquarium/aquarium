@@ -1048,7 +1048,7 @@ class LocalEnvironment(BaseEnvironment):
 
         run_as = terminal_user.configured_user()
         if run_as:
-            args = terminal_user.wrap_bash(args, run_as)
+            args = terminal_user.wrap_bash(args, run_as, run_env)
             self._run_as = run_as
 
         # Recover when the cwd has been deleted out from under us — usually by

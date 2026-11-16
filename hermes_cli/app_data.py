@@ -218,6 +218,7 @@ async def query(
     principal: Optional[Principal],
     areas: Sequence[str],
     sql: str,
+    params: Sequence[Any] = (),
     *,
     max_rows: int = ss.MAX_QUERY_ROWS,
     store: Any = None,
@@ -239,7 +240,7 @@ async def query(
             async with conn.transaction(readonly=True):
                 stmt = await conn.prepare(sql)
                 columns = [a.name for a in stmt.get_attributes()]
-                cursor = await stmt.cursor()
+                cursor = await stmt.cursor(*params)
                 rows = await cursor.fetch(max_rows + 1)
         except asyncpg.PostgresError as exc:
             raise ss.SiteError(f"query failed: {exc}") from exc

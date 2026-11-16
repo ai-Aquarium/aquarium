@@ -42,10 +42,20 @@ def test_missing_helper_fails_with_a_message_naming_the_setting(tmp_path, monkey
 def test_wrap_runs_bash_through_the_helper_never_as_root():
     if not os.path.exists(terminal_user.HELPER) or os.stat(terminal_user.HELPER).st_uid != 0:
         pytest.skip("helper not installed")
-    argv = terminal_user.wrap_bash(["/usr/bin/zsh", "-lic", "echo hi"], "hermes-tools")
-    assert argv == ["sudo", "-n", "-E", "-u", "hermes-tools", terminal_user.HELPER,
+    argv = terminal_user.wrap_bash(["/usr/bin/zsh", "-lic", "echo hi"], "hermes-tools",
+                                   {"PATH": "/usr/bin"})
+    assert argv == ["sudo", "-n", "--preserve-env=PATH", "-u", "hermes-tools", terminal_user.HELPER,
                     "bash", "-lic", "echo hi"]
     assert "root" not in argv
+
+
+def test_environment_is_named_for_sudo_never_valued(monkeypatch):
+    monkeypatch.setattr(terminal_user, "_check_helper", lambda user: None)
+    env = {"PATH": "/opt/venv/bin", "API_TOKEN": "s3cret", "bad,name": "x", "B": ""}
+    argv = terminal_user.wrap_command(["python3", "x.py"], "hermes-tools", env)
+    assert argv[:5] == ["sudo", "-n", "--preserve-env=API_TOKEN,B,PATH", "-u", "hermes-tools"]
+    assert "-E" not in argv and not any("s3cret" in a for a in argv)
+    assert "--preserve-env" not in " ".join(terminal_user.command_prefix("hermes-tools", {}))
 
 
 def _sudo_ok() -> bool:
