@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
-import { CARD, ProfileChip } from "@/components/sources/ui";
+import { RoutingDecisionCard, routingDecisionTitle } from "@/components/sources/RoutingDecisionCard";
+import { BTN_GHOST, CARD, ProfileChip } from "@/components/sources/ui";
 import { Pill, type Tone } from "@/components/ui/Pill";
+import { Sheet } from "@/components/ui/Sheet";
 import { useT } from "@/i18n/client";
 import { decisionOutcome, type DecisionOutcome } from "@/lib/sources/api";
 import type { RoutingDecision, Source } from "@/types";
@@ -37,6 +40,20 @@ export function RecentRouting({
   now?: Date;
 }) {
   const t = useT("sources");
+  const tr = useT("routing");
+  const [why, setWhy] = useState<RoutingDecision | null>(null);
+  const whyButton = (d: RoutingDecision) => (
+    <button
+      type="button"
+      data-action="why-routed"
+      aria-label={t("routing.whyLabel", { id: d.batch_id })}
+      aria-haspopup="dialog"
+      className={`${BTN_GHOST} !min-h-0 px-1.5 py-0.5 text-xs text-[var(--color-accent)]`}
+      onClick={() => setWhy(d)}
+    >
+      {t("routing.why")}
+    </button>
+  );
   const reason = (d: RoutingDecision): string => {
     const outcome = decisionOutcome(d);
     if (outcome === "fallback") return t("routing.fallbackReason", { attempts: d.attempts });
@@ -120,7 +137,10 @@ export function RecentRouting({
                       {meta(d) ? <p className="text-xs text-[var(--color-muted)]">{meta(d)}</p> : null}
                     </td>
                     <td className={`${last} px-4 py-3 text-right align-top`}>
-                      <Pill tone={OUTCOME_TONE[outcome]}>● {t(`routing.outcome.${outcome}`)}</Pill>
+                      <div className="flex flex-col items-end gap-1">
+                        <Pill tone={OUTCOME_TONE[outcome]}>● {t(`routing.outcome.${outcome}`)}</Pill>
+                        {whyButton(d)}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -142,6 +162,7 @@ export function RecentRouting({
                   <div className="flex flex-wrap gap-1.5">{chips(d)}</div>
                   <p className={outcome === "fallback" ? "text-[var(--color-warn-text)]" : "text-[var(--color-muted)]"}>{reason(d)}</p>
                   {meta(d) ? <p className="text-xs text-[var(--color-muted)]">{meta(d)}</p> : null}
+                  <div className="-mb-1 flex justify-end">{whyButton(d)}</div>
                 </li>
               );
             })}
@@ -149,6 +170,11 @@ export function RecentRouting({
         </>
       )}
       <p className="text-xs text-[var(--color-muted)]">{t("routing.footer", { limit })}</p>
+      {why ? (
+        <Sheet title={routingDecisionTitle(tr, why)} onClose={() => setWhy(null)} component="RecentRoutingWhySheet">
+          <RoutingDecisionCard decision={why} />
+        </Sheet>
+      ) : null}
     </div>
   );
 }

@@ -76,6 +76,8 @@
   "routing.storedReason": "沒有 profile 關心 — 只儲存",
   "routing.fallbackReason": "檢查失敗了 {attempts} 次，所以你所有已路由的 profile 都收到了",
   "routing.footer": "最近 {limit} 個決定。沒有 profile 關心的批次會被儲存，仍可搜尋。",
+  "routing.why": "為甚麼？",
+  "routing.whyLabel": "批次 {id} 為甚麼這樣分派",
   "routing.empty": "還沒有決定。這個來源的第一批訊息檢查後會在這裏出現。",
   "routing.yesterday": "昨天",
   "routing.unknownSource": "這個來源不屬於你，或已被移除。",

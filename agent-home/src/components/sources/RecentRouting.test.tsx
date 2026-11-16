@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { RecentRouting, decisionWhen } from "@/components/sources/RecentRouting";
@@ -89,5 +89,34 @@ describe("RecentRouting", () => {
     expect(decisionWhen(null, NOW, "Yesterday")).toBe("—");
     expect(decisionWhen(new Date(2026, 10, 16, 9, 0).toISOString(), NOW, "Yesterday")).toBe("Yesterday");
     expect(decisionWhen(new Date(2026, 10, 17, 9, 5).toISOString(), NOW, "Yesterday")).toMatch(/09:05/);
+  });
+
+  it("opens the shared RoutingDecisionCard for a row from Why?", () => {
+    render(
+      <RecentRouting
+        now={NOW}
+        limit={50}
+        sourceId="s1"
+        sources={[src("s1", "john@acme.com")]}
+        decisions={[
+          d({
+            batch_id: "b-7f3a",
+            selected: ["cfo"],
+            choices: [
+              { profile: "cfo", selected: true, reason: "supplier invoice due Friday" },
+              { profile: "cmo", selected: false, reason: "no campaign content" },
+            ],
+            message_count: 3,
+            first_sender: "ap@supplier.com",
+          }),
+        ]}
+      />,
+    );
+    expect(document.querySelector('[data-component="RoutingDecisionCard"]')).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: "Why batch b-7f3a was routed this way" })[0]);
+    const card = document.querySelector('[data-component="RoutingDecisionCard"]');
+    expect(card).toBeTruthy();
+    expect(screen.getByRole("dialog").textContent).toContain("Why cfo got this");
+    expect(card?.querySelectorAll('[data-testid="route-choice"]').length).toBe(2);
   });
 });

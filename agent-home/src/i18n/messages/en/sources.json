@@ -76,6 +76,8 @@
   "routing.storedReason": "No profile cares — stored only",
   "routing.fallbackReason": "The check failed {attempts} times, so all your routed profiles got it",
   "routing.footer": "Last {limit} decisions. Batches no profile cares about are stored and can still be searched.",
+  "routing.why": "Why?",
+  "routing.whyLabel": "Why batch {id} was routed this way",
   "routing.empty": "No decisions yet. The first batch from this source shows up here after it is checked.",
   "routing.yesterday": "Yesterday",
   "routing.unknownSource": "This source is not one of yours, or it was removed.",
