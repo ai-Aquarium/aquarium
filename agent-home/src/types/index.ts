@@ -1288,6 +1288,10 @@ export interface Todo {
   work_result: TodoWorkResult | null; // what a work session produced
   created_at: string | null;
   updated_at: string | null;
+  /** FG-03: the routed batch triage filed this from (null for anything else);
+   *  `sourceDecisions({ sourceId, batchId })` explains "Why this profile?". */
+  routing_source_id: string | null;
+  routing_batch_id: string | null;
 }
 
 /** What a finished work session left behind (the launcher's snapshot). */
@@ -1541,6 +1545,17 @@ export interface SourceClaimConflict {
   detail: string;
   created_at: string | null;
   resolved_at: string | null;
+  /** How the box admin settled it; null while open or when closed another way. */
+  resolution: SourceConflictAction | null;
+}
+
+/** FG-03 P7: settling a claim conflict — the owner keeps it, or it moves to the claimant. */
+export type SourceConflictAction = "keep" | "transfer";
+
+/** FG-03 P7: `PATCH /api/sources/{id}`; omitted fields stay, `display: null` clears it. */
+export interface SourceUpdate {
+  enabled?: boolean;
+  display?: string | null;
 }
 
 /** FG-03 P4: the router's call on one profile for one batch. */
@@ -1565,6 +1580,10 @@ export interface RoutingDecision {
   fallback: boolean;
   error: string | null;
   decided_at: string | null;
+  /** How many messages the batch held and who sent the first (never any text);
+   *  null for decisions stored before P7. */
+  message_count: number | null;
+  first_sender: string | null;
 }
 
 /** FG-03 P5: today's triage vs one picked profile's agent, for one batch. */

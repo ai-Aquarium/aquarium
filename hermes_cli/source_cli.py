@@ -140,12 +140,50 @@ def source_remove_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _set_enabled(args: argparse.Namespace, enabled: bool) -> int:
+    actor = _actor(args)
+
+    async def run(connection):
+        source = await _resolve(connection, args.source)
+        return await registry.update_source(
+            connection, source_id=source.source_id, actor_user_id=actor, enabled=enabled,
+        )
+
+    source = _run(run)
+    verb = "Enabled" if enabled else "Disabled"
+    _emit(args, {"source": source.as_dict()}, f"{verb}:\n{_describe(source)}")
+    return 0
+
+
+def source_enable_command(args: argparse.Namespace) -> int:
+    return _set_enabled(args, True)
+
+
+def source_disable_command(args: argparse.Namespace) -> int:
+    return _set_enabled(args, False)
+
+
+def source_resolve_command(args: argparse.Namespace) -> int:
+    actor = _actor(args)
+    conflict = _run(lambda c: registry.settle_conflict(
+        c, conflict_id=args.conflict_id, action=args.action, actor_user_id=actor,
+    ))
+    _emit(
+        args,
+        {"conflict": conflict.as_dict()},
+        f"Conflict #{conflict.conflict_id} resolved: {conflict.resolution} "
+        f"({conflict.channel} {conflict.address})",
+    )
+    return 0
+
+
 def source_conflicts_command(args: argparse.Namespace) -> int:
     rows = _run(lambda c: registry.list_conflicts(c, include_resolved=args.resolved))
     text = "\n".join(
         f"#{c.conflict_id} {c.channel} {c.address}: {c.claimant_user_id} claimed, "
         f"owner {c.existing_owner_user_id or '-'}"
-        f"{' (resolved)' if c.resolved_at else ''} — {c.detail}"
+        f"{f' (resolved: {c.resolution})' if c.resolution else ' (resolved)' if c.resolved_at else ''}"
+        f" — {c.detail}"
         for c in rows
     ) or "No conflicts."
     _emit(args, {"conflicts": [c.as_dict() for c in rows]}, text)
@@ -161,8 +199,12 @@ def _describe_decision(decision: triage_router.RoutingDecision) -> str:
         flags.append(f"error: {decision.error}")
     extra = f"  [{'; '.join(flags)}]" if flags else ""
     when = f"{decision.decided_at:%Y-%m-%d %H:%M} " if decision.decided_at else ""
+    batch = ""
+    if decision.message_count is not None or decision.first_sender:
+        count = f"{decision.message_count} message(s)" if decision.message_count is not None else "messages"
+        batch = f" ({count}{f' from {decision.first_sender}' if decision.first_sender else ''})"
     lines = [
-        f"{when}{decision.channel:9} batch {decision.batch_id} -> {picked}{extra}",
+        f"{when}{decision.channel:9} batch {decision.batch_id}{batch} -> {picked}{extra}",
         f"          source {decision.source_id}  owner {decision.owner_user_id}"
         f"  model {decision.model or '-'}",
     ]
@@ -279,6 +321,15 @@ def register_source_subparser(subparsers: argparse._SubParsersAction) -> None:
         common(p)
         p.set_defaults(func=func)
 
+    for name, func, text in (
+        ("enable", source_enable_command, "Resume reading a paused source"),
+        ("disable", source_disable_command, "Pause a source: nothing reads it, routes are kept"),
+    ):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("source", help="Source id or channel:address")
+        common(p)
+        p.set_defaults(func=func)
+
     rm = sub.add_parser("remove", help="Remove a source and its routes")
     rm.add_argument("source", help="Source id or channel:address")
     common(rm)
@@ -288,6 +339,15 @@ def register_source_subparser(subparsers: argparse._SubParsersAction) -> None:
     con.add_argument("--resolved", action="store_true", help="Include resolved ones")
     common(con, actor=False)
     con.set_defaults(func=source_conflicts_command)
+
+    res = sub.add_parser(
+        "resolve", help="Settle a claim conflict (box owner/admin): keep or transfer"
+    )
+    res.add_argument("conflict_id", type=int, help="Conflict number (see 'conflicts')")
+    res.add_argument("action", choices=list(registry.RESOLUTIONS),
+                     help="keep: the current owner keeps it; transfer: it moves to the claimant")
+    common(res)
+    res.set_defaults(func=source_resolve_command)
 
     dec = sub.add_parser(
         "decisions", help="Why each batch went to which profile (the triage router)"

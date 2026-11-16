@@ -504,3 +504,75 @@ def test_agent_shortcuts_never_route_or_run_a_turn(setup, box):  # noqa: F811
     ch.run(path)
     assert ch.done(path)
     assert model.calls == [] and turns.calls == [] and ch.deepseek.calls == []
+
+
+def _routing_rows(box, profile):  # noqa: F811
+    """(title, routing source, routing batch) of every to-do, and the context of
+    every notification, in ``profile``."""
+    async def read():
+        conn = await asyncpg.connect(box["dsn"], ssl=False)
+        try:
+            schema = app_schema("prod", profile=profile)
+            todos = [tuple(r) for r in await conn.fetch(
+                f"SELECT title, routing_source_id, routing_batch_id FROM {schema}.tasks "
+                "ORDER BY created_at")]
+            contexts = [json.loads(r[0]) if r[0] else None for r in await conn.fetch(
+                f"SELECT context FROM {schema}.notifications ORDER BY created_at")]
+            return todos, contexts
+        finally:
+            await conn.close()
+
+    return asyncio.run(read())
+
+
+def _todo_dicts(box, profile, user):  # noqa: F811
+    """``Todo.as_dict()`` (the API's row shape) of ``user``'s to-dos in ``profile``."""
+    async def read():
+        with _scoped_to(box["homes"][profile]):
+            app = get_store("supabase-app", "prod", config=pg_config(box["dsn"]))
+            principal = await PrincipalStore(app).get(user)
+            items, _cursor = await TodoStore(app).list(principal)
+        return [t.as_dict() for t in items]
+
+    return asyncio.run(read())
+
+
+def test_agent_todo_and_alert_carry_the_routing_link(setup, box, monkeypatch):  # noqa: F811
+    ch, source_id, model, turns = setup(router="enforce", agent="agent")
+    path = ch.write("b-launch", source_id)
+    ch.run(path)
+    assert ch.done(path)
+    link = {"routing_source_id": source_id, "routing_batch_id": "b-launch"}
+    for profile in ("cfo", "cmo"):
+        todos, contexts = _routing_rows(box, profile)
+        assert todos == [("Pay INV-77", source_id, "b-launch")]
+        # The to-do's announcement and the escalation alert both carry it.
+        assert contexts == [link, link]
+
+    [entry] = _arrival_entries(monkeypatch, "john")
+    assert {k: entry["context"][k] for k in link} == link
+    # The to-do record carries it, and the owner can ask the router why.
+    todo = _todo_dicts(box, "cfo", "john")[0]
+    assert (todo["routing_source_id"], todo["routing_batch_id"]) == (source_id, "b-launch")
+    [decision] = _client("john").get(
+        "/api/sources/decisions",
+        params={"source_id": todo["routing_source_id"], "batch_id": todo["routing_batch_id"]},
+    ).json()["decisions"]
+    assert decision["selected"] == ["cfo", "cmo"]
+    assert decision["message_count"] == 1
+    assert decision["first_sender"] in ("supplier@example.com", "Supplier <+85211112222>")
+    # Owner-only: Mary cannot read John's decision behind the to-do.
+    _session_as(monkeypatch, "mary")
+    assert _client("mary").get(
+        "/api/sources/decisions", params={"source_id": source_id, "batch_id": "b-launch"},
+    ).json() == {"decisions": []}
+
+
+def test_legacy_todo_has_no_routing_link(setup, box):  # noqa: F811
+    ch, source_id, model, turns = setup(router="shadow", agent="legacy")
+    path = ch.write("b-invoice", source_id)
+    ch.run(path)
+    assert ch.done(path)
+    todos, contexts = _routing_rows(box, "default")
+    assert todos and all(t[1:] == (None, None) for t in todos)
+    assert all(c is None for c in contexts)

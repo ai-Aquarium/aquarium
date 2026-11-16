@@ -22,6 +22,8 @@ export type NeedsYouSource =
   | "profile_suggestion"
   | "pin_suggestion"
   | "data_draft"
+  /** FG-03: someone claimed a source another user owns (box owner/admin only). */
+  | "source_claim"
   /** A pending notification that maps to no source above (e.g. a proactive ask). */
   | "notification";
 
@@ -55,6 +57,15 @@ export interface NeedsYouEntry {
     arrival_key?: string | null;
     /** Every profile that raised this arrival's to-do/alert. */
     profiles?: string[] | null;
+    /** FG-03: the routed batch a triage to-do/alert came from ("Why this profile?"). */
+    routing_source_id?: string | null;
+    routing_batch_id?: string | null;
+    /** FG-03 `source_claim`: the conflict to settle with keep / transfer. */
+    conflict_id?: number | null;
+    channel?: string | null;
+    address?: string | null;
+    claimant_user_id?: string | null;
+    existing_owner_user_id?: string | null;
   };
   created_at: number;
   href: string;

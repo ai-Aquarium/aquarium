@@ -13469,6 +13469,11 @@ async def needs_you(request: Request):
         _log.warning("needs-you: data dictionary source failed", exc_info=True)
 
     try:
+        items.extend(await ny.source_claims_for(principal.user_id))
+    except Exception:
+        _log.warning("needs-you: source claims failed", exc_info=True)
+
+    try:
         enrolled = set() if admin else await _enrolled_profiles(principal.user_id)
         items.extend(await asyncio.to_thread(ny.project_entries, principal, enrolled, covered))
     except Exception:

@@ -5,12 +5,14 @@ write is the owner's own, except transfer (box owner/admin). Listing every
 source on the box (``?all=1``) is box owner/admin only. The store is
 :mod:`hermes_cli.source_registry`; no secret ever passes through here
 (``credential_ref`` is a pointer). Routing decisions (FG-03 P4) are the
-owner's own; ``?all=1`` (box owner/admin) is for support.
+owner's own; ``?all=1`` (box owner/admin) is for support. Pausing a source
+(``PATCH``) is its owner's or the box admin's; settling a claim conflict is
+the box admin's.
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -34,6 +36,15 @@ class RouteBody(BaseModel):
 
 class TransferBody(BaseModel):
     new_owner_user_id: str = Field(min_length=1)
+
+
+class PatchBody(BaseModel):
+    enabled: Optional[bool] = None
+    display: Optional[str] = None
+
+
+class ResolveBody(BaseModel):
+    action: Literal["keep", "transfer"]
 
 
 async def _caller(request: Request):
@@ -134,6 +145,29 @@ async def delete_source(request: Request, source_id: str):
     return await _with_box(run)
 
 
+@router.patch("/{source_id}")
+async def patch_source(request: Request, source_id: str, body: PatchBody):
+    """Pause/resume a source or relabel it (its owner, or box owner/admin).
+
+    Omitted fields stay as they are; ``display: null`` clears the label. A
+    disabled source keeps its routes, but no poller, bridge or bot reads it.
+    """
+    principal = await _caller(request)
+    given = body.model_fields_set
+
+    async def run(connection):
+        source = await registry.update_source(
+            connection,
+            source_id=source_id,
+            actor_user_id=principal.user_id,
+            enabled=body.enabled if "enabled" in given else None,
+            display=body.display if "display" in given else registry.UNSET,
+        )
+        return {"source": source.as_dict()}
+
+    return await _with_box(run)
+
+
 @router.post("/{source_id}/transfer")
 async def transfer(request: Request, source_id: str, body: TransferBody):
     """Give a source to another person (box owner/admin; routes are dropped)."""
@@ -166,6 +200,23 @@ async def conflicts(request: Request, all: bool = False):
         return [c.as_dict() for c in rows]
 
     return {"conflicts": await _with_box(run)}
+
+
+@router.post("/conflicts/{conflict_id}/resolve")
+async def resolve_conflict(request: Request, conflict_id: int, body: ResolveBody):
+    """Settle a claim conflict (box owner/admin): ``keep`` or ``transfer`` to the claimant."""
+    principal = await _caller(request)
+
+    async def run(connection):
+        conflict = await registry.settle_conflict(
+            connection,
+            conflict_id=conflict_id,
+            action=body.action,
+            actor_user_id=principal.user_id,
+        )
+        return {"conflict": conflict.as_dict()}
+
+    return await _with_box(run)
 
 
 @router.get("/decisions")
