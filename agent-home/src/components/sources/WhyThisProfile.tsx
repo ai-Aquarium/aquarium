@@ -18,16 +18,27 @@ const POPOVER_WIDTH = 440;
 const EDGE = 16;
 
 interface Place {
-  top: number;
+  top?: number;
+  bottom?: number;
   left: number;
+  maxHeight: number;
 }
 
-/** Below the link, kept on screen; fixed so a scrolling panel can't clip it. */
-function placeBelow(el: HTMLElement, align: "start" | "end"): Place {
+/** Room the decision needs before it flips above the link instead. */
+const MIN_ROOM = 320;
+
+/** Under the link (above it when the bottom is too close), kept on screen; fixed so a scrolling panel can't clip it. */
+function placeNear(el: HTMLElement, align: "start" | "end"): Place {
   const r = el.getBoundingClientRect();
   const width = Math.min(POPOVER_WIDTH, window.innerWidth - 2 * EDGE);
   const want = align === "end" ? r.right - width : r.left;
-  return { top: r.bottom + 8, left: Math.max(EDGE, Math.min(want, window.innerWidth - width - EDGE)) };
+  const left = Math.max(EDGE, Math.min(want, window.innerWidth - width - EDGE));
+  const below = window.innerHeight - r.bottom - 8 - EDGE;
+  const above = r.top - 8 - EDGE;
+  if (below < MIN_ROOM && above > below) {
+    return { bottom: window.innerHeight - r.top + 8, left, maxHeight: above };
+  }
+  return { top: r.bottom + 8, left, maxHeight: below };
 }
 
 type Load =
@@ -99,7 +110,7 @@ function WhyThisProfileLink({
       setSheetOpen(false);
       return;
     }
-    if (window.matchMedia(DESKTOP_QUERY).matches && trigger.current) setPlace(placeBelow(trigger.current, align));
+    if (window.matchMedia(DESKTOP_QUERY).matches && trigger.current) setPlace(placeNear(trigger.current, align));
     else setSheetOpen(true);
     if (load.status === "idle" || load.status === "error") void fetchDecision();
   };
@@ -113,7 +124,7 @@ function WhyThisProfileLink({
     if (!popOpen) return;
     panel.current?.focus();
     const follow = () => {
-      if (trigger.current) setPlace(placeBelow(trigger.current, align));
+      if (trigger.current) setPlace(placeNear(trigger.current, align));
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") closePopover();
@@ -172,7 +183,7 @@ function WhyThisProfileLink({
           aria-label={title}
           tabIndex={-1}
           data-testid="why-this-profile-popover"
-          style={{ top: place.top, left: place.left, maxHeight: `calc(100vh - ${place.top + EDGE}px)` }}
+          style={{ top: place.top, bottom: place.bottom, left: place.left, maxHeight: place.maxHeight }}
           className="fixed z-50 flex w-[440px] max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left shadow-[0_8px_24px_rgba(0,0,0,0.4)] outline-none"
         >
           <div className="flex items-start gap-2">

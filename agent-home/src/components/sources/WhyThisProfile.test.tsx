@@ -77,6 +77,18 @@ describe("WhyThisProfile", () => {
     expect(screen.getByRole("link", { name: "Edit what CFO cares about" }).getAttribute("href")).toBe("/profiles");
   });
 
+  it("flips above a link near the bottom of the window", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply({ decisions: [decision()] })));
+    render(<WhyThisProfile sourceId="src-mail" batchId="b-1" profile="CFO" />);
+    vi.spyOn(link(), "getBoundingClientRect").mockReturnValue({
+      top: window.innerHeight - 40, bottom: window.innerHeight - 24, left: 100, right: 220, width: 120, height: 16, x: 100, y: 0, toJSON() {},
+    } as DOMRect);
+    await press(link());
+    const style = screen.getByTestId("why-this-profile-popover").style;
+    expect(style.top).toBe("");
+    expect(style.bottom).toBe("48px");
+  });
+
   it("Esc closes the popover", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply({ decisions: [decision()] })));
     render(<WhyThisProfile sourceId="src-mail" batchId="b-1" profile="CFO" />);
