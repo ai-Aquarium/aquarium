@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { describeSource, sourceLink } from "@/components/memory/citation";
+import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import { memoryHeaderActionsRef } from "@/lib/memory/header-actions";
 import type {
   MemoryProjection,
@@ -398,20 +399,38 @@ export function MemoryPointModal({
   point: MemoryProjectionPoint;
   onClose: () => void;
 }) {
-  useEscapeToClose(onClose);
+  const [textMaximized, setTextMaximized] = useState(false);
+  // While the text is maximized it is the top layer: Esc minimizes it first.
+  useEscapeToClose(onClose, !textMaximized);
 
   const source = describeSource(point);
   const link = sourceLink(point);
+  const title = point.kind === "chunk" ? "Document chunk" : "Memory";
 
   return (
-    <ModalFrame
-      component="MemoryPointModal"
-      title={point.kind === "chunk" ? "Document chunk" : "Memory"}
-      onClose={onClose}
-    >
-      <p className="max-h-60 overflow-y-auto text-sm leading-relaxed">
-        {point.label || "(no label)"}
-      </p>
+    <ModalFrame component="MemoryPointModal" title={title} onClose={onClose}>
+      <Maximizable
+        title={title}
+        component="MemoryPointText"
+        className="flex flex-col gap-1"
+        maximized={textMaximized}
+        onMaximizedChange={setTextMaximized}
+      >
+        {({ maximized }) => (
+          <>
+            {maximized ? null : (
+              <div className="flex justify-end">
+                <MaximizeToggle />
+              </div>
+            )}
+            <p
+              className={`${maximized ? "min-h-0 flex-1" : "max-h-60"} overflow-y-auto text-sm leading-relaxed`}
+            >
+              {point.label || "(no label)"}
+            </p>
+          </>
+        )}
+      </Maximizable>
 
       {source && (
         <div className="mt-3 border-t border-[var(--color-border)] pt-2">
@@ -455,14 +474,15 @@ export function MemoryPointModal({
 }
 
 /** Close on Escape, so a modal over the map is dismissable from the keyboard. */
-function useEscapeToClose(onClose: () => void): void {
+function useEscapeToClose(onClose: () => void, enabled = true): void {
   useEffect(() => {
+    if (!enabled) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, enabled]);
 }
 
 /** Backdrop + dialog card + close button, shared by the map's two popups. */
