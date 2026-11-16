@@ -148,6 +148,9 @@ def _inside(path: Path, root: Path) -> bool:
 
 
 def _layer_file(root: Path, key: str) -> Path:
+    if key == CARE_KEY:
+        # Only write_care/reset_care touch it (they refuse empty text).
+        raise SkillFileError(400, f'{key!r} is the "What I care about" section; edit it as such')
     file = root / validate_key(key)
     if root.exists() and file.exists() and not _inside(file, root):
         raise SkillFileError(400, f"{key!r} escapes its layer folder")

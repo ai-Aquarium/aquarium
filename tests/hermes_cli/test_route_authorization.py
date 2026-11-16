@@ -61,6 +61,11 @@ PUBLIC = {
 
 #: The handler enforces the role itself: route -> (role, check in its source).
 HANDLER_CHECKED = {
+    # FG-03 P3: template layer = the profile's owner/admins; user layer = only the caller
+    "PUT /api/triage/layers/file": ("member", "_require_layer_edit"),
+    "POST /api/triage/layers/disable": ("member", "_require_layer_edit"),
+    "POST /api/triage/layers/reset": ("member", "_require_layer_edit"),
+    "PUT /api/triage/layers/care": ("member", "_require_layer_edit"),
     "POST /api/sources/{source_id}/transfer": ("admin", "transfer_source"),
     "POST /api/comms/members": ("admin", "_comms_member_service"),
     "POST /api/comms/members/import": ("admin", "_comms_member_service"),
@@ -287,6 +292,12 @@ SIGNED_IN = {
     "GET /api/triage/status",
     "GET /api/triage/skill-file",
     "GET /api/triage/skill-file/history",
+    # FG-03 P3 triage skill layers: the caller's own layer in the scoped
+    # profile; template writes are checked in the handler (see HANDLER_CHECKED)
+    "GET /api/triage/layers",
+    "GET /api/triage/layers/file",
+    "GET /api/triage/layers/diff",
+    "GET /api/triage/layers/history",
     # vpn_api: the caller's own VPN folders
     "GET /api/vpn/folders",
     "POST /api/vpn/folders",

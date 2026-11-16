@@ -13161,6 +13161,13 @@ def main():
     register_source_subparser(subparsers)
 
     # =========================================================================
+    # triage command — layered triage skills per user-profile (FG-03 P3)
+    # =========================================================================
+    from hermes_cli.triage_cli import register_triage_subparser
+
+    register_triage_subparser(subparsers)
+
+    # =========================================================================
     # changes command — review/undo/redo recorded change events (C5/FG-12)
     # =========================================================================
     from hermes_cli.changes_cli import register_changes_subparser
