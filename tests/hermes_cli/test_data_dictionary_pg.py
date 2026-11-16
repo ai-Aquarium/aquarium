@@ -226,3 +226,58 @@ def test_confirmed_answer_becomes_a_feedback_example(env):
     assert {c["origin"] for c in draft["changes"]} == {"feedback"}
     with pytest.raises(ss.SiteError):
         run(dd.add_example(app, table="tasks", question="", sql=sql, by="bob"))
+
+
+def test_settings_connections_become_private_sources_with_drift(env, monkeypatch):
+    """A Settings connection is its owner's source; grants share the dictionary, drift is checked."""
+    import hermes_cli.data_engines as de
+
+    profile, _site = env
+
+    async def refs(principal):
+        if principal.user_id != "alice":
+            return []
+        return [{"engine": "mssql", "name": "erp", "label": "ERP"}]
+
+    live = {"dbo.orders": {"order_no", "amount"}}
+
+    async def schema(source, db=None):
+        assert source.owner_user_id == "alice" and source.connection_name == "erp"
+        return {t: set(c) for t, c in live.items()}
+
+    monkeypatch.setattr(de, "connection_refs", refs)
+    monkeypatch.setattr(de, "source_schema", schema)
+    mine = sources(ALICE, profile)
+    erp = mine["connection"]
+    assert (erp["engine"], erp["connection"], erp["ref"], erp["access"]) == (
+        "mssql", "erp", "mssql:erp", "manage")
+    assert "connection" not in sources(BOSS, profile)
+    assert "connection" not in sources(BOB, profile)
+    # Listing again keeps one source per connection.
+    assert sources(ALICE, profile)["connection"]["id"] == erp["id"]
+
+    source = run(dd.get_source(erp["id"]))
+    run(dd.propose(source, tables={"dbo.orders": {"meaning": "Orders",
+                                                   "columns": {"order_no": "Order number",
+                                                               "amount": "HKD"}}}, by="alice"))
+    draft = run(dd.dictionary(source, draft=True))["draft"]
+    run(dd.approve(source, draft["version"], by="alice"))
+    assert run(dd.check_source(source)) == []
+    checked = run(dd.get_source(erp["id"]))
+    assert checked.schema_fingerprint == de.schema_fingerprint(live)
+
+    live["dbo.orders"].add("coupon")
+    live["dbo.customers"] = {"id"}
+    drift = {d["table"]: d for d in run(dd.check_source(source))}
+    assert drift["dbo.orders"]["detail"]["added"] == ["coupon"]
+    assert drift["dbo.customers"]["change"] == "added"
+    assert run(dd.get_source(erp["id"])).schema_fingerprint != checked.schema_fingerprint
+
+    run(dd.put_grant(erp["id"], "bob", "read", by="alice"))
+    assert sources(BOB, profile)["connection"]["access"] == "read"
+    assert run(dd.resolve_access(source, BOSS)) is None
+    with pytest.raises(de.EngineError):
+        run(de.adapter_for(source, BOB))
+
+    assert run(dd.delete_connection_source(profile, "mssql", "alice", "erp")) is True
+    assert run(dd.get_source(erp["id"])) is None

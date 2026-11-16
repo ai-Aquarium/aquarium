@@ -12,10 +12,14 @@ export interface SchemaDriftItem {
 
 export interface DataSource {
   id: string;
-  kind: "app" | "site";
+  kind: "app" | "site" | "connection";
   name: string;
   owner_user_id: string;
   site_id: string | null;
+  /** Engine behind the source; connection sources also carry their Settings connection. */
+  engine?: "postgres" | "mssql" | "mysql" | "sqlite";
+  connection?: string | null;
+  ref?: string | null;
   access: DataAccess;
   status?: DictionaryStatus;
   approved_version?: number | null;

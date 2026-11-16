@@ -21,7 +21,11 @@ person asking: they only ever see rows they may see.
 ## Answer a question
 
 1. **Pick the source.** A site's data → `source` = the site slug
-   (`list_sites`). Their own Aquarium data → `source` = `app`.
+   (`list_sites`). Their own Aquarium data → `source` = `app`. A database
+   connected in Settings (SQL Server, MySQL, SQLite) → `source` = its `ref`,
+   e.g. `mssql:erp` (`list_sources` lists every source with its ref and id).
+   Only the person who connected a database can read its rows; others it is
+   shared with see its dictionary only — say so instead of retrying.
 2. **Read the dictionary**: `site_db action=dictionary source=… q="<the
    question>"`. It says what each table and column means, the grain, the joins
    and the agreed metric definitions. A small dictionary comes back whole
@@ -42,11 +46,14 @@ person asking: they only ever see rows they may see.
    tables, then `propose_dictionary` once they agree.
 3. **Look before you write SQL**: `describe` (site, entity?, q?) for a site
    (with `q` it also lists the tables the dictionary ranks highest),
-   `app_describe` for app data. Check column names, fill and common values.
+   `app_describe` for app data, `describe` (source, entity?, q?) for a
+   connection. Check column names, fill and common values.
 4. **Ask when it's unclear.** If the question could mean two things (which
    date, which status counts as "done", gross or net), ask one short question
    instead of guessing.
-5. **Run one SELECT**: `query` (site, sql) or `app_query` (areas, sql); in
+5. **Run one SELECT**: `query` (site or source, sql, params?) or `app_query`
+   (areas, sql); write it in the source's own dialect (T-SQL `TOP`, MySQL
+   backticks) and put values in `params` as `:name` placeholders; in
    app data each area is a table named after it (`todos`, `goals`, `files`,
    `inbox`). Results stop at 500 rows: if `truncated` is true, aggregate in SQL
    or say the list is cut off. Never page through raw rows to count them.
