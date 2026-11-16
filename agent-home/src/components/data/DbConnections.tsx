@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Add data source → MySQL / SQLite: the signed-in person's own connections
+ * Add data source → PostgreSQL / MySQL / SQLite: the signed-in person's own connections
  * (`/api/db/connections`, private to them until shared from Data › Access;
  * the password is write-only). "Save and test" saves, then opens the
  * connection and counts its tables. Hermes checks each one hourly after that.
@@ -27,9 +27,12 @@ export interface DbFormValues {
 }
 
 const EMPTY: DbFormValues = {
-  name: "", label: "", host: "", port: "3306", database: "", username: "", password: "",
+  name: "", label: "", host: "", port: "", database: "", username: "", password: "",
   tls: "verify", vpn: "", path: "",
 };
+
+const DEFAULT_PORT: Partial<Record<DbEngine, string>> = { postgres: "5432", mysql: "3306" };
+const HOST_PLACEHOLDER: Partial<Record<DbEngine, string>> = { postgres: "pg01.yourcompany.local", mysql: "mysql01.yourcompany.local" };
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 
@@ -115,7 +118,7 @@ export function DbConnections({ engine }: { engine: DbEngine }) {
   useEffect(() => {
     const timer = setTimeout(() => {
       void load();
-      if (engine === "mysql") {
+      if (engine !== "sqlite") {
         fetch("/api/vpn", { cache: "no-store" })
           .then((r) => (r.ok ? (r.json() as Promise<{ vpns?: VpnView[] }>) : { vpns: [] }))
           .then((doc) => setVpns((doc.vpns ?? []).filter((v) => v && v.name).map((v) => v.name)))
@@ -240,7 +243,7 @@ export function DbConnections({ engine }: { engine: DbEngine }) {
         </ul>
       )}
       {connections && !form && (
-        <button type="button" className={btnCls} disabled={!!busy} onClick={() => setForm({ values: EMPTY, editing: false })}>
+        <button type="button" className={btnCls} disabled={!!busy} onClick={() => setForm({ values: { ...EMPTY, port: DEFAULT_PORT[engine] ?? "" }, editing: false })}>
           {t(`db.add.${engine}`)}
         </button>
       )}
@@ -271,7 +274,7 @@ export function DbConnections({ engine }: { engine: DbEngine }) {
               <>
                 <label className={labelCls}>
                   <span>{t("db.host")}</span>
-                  <input className={inputCls} placeholder="mysql01.yourcompany.local" value={v.host} onChange={(e) => setField("host", e.target.value)} />
+                  <input className={inputCls} placeholder={HOST_PLACEHOLDER[engine]} value={v.host} onChange={(e) => setField("host", e.target.value)} />
                 </label>
                 <label className={labelCls}>
                   <span>{t("db.port")}</span>

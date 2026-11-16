@@ -176,6 +176,7 @@ describe("toDbInput", () => {
     expect(toDbInput("mysql", { ...base, password: "" }, true)).toEqual({ body: { host: "db1", port: 3306, database: "crm", username: "ro", tls: "verify", vpn: "" } });
   });
   it("needs only a path for SQLite", () => {
+    expect(toDbInput("postgres", { ...base, port: "5432" }, false)).toEqual({ body: { host: "db1", port: 5432, database: "crm", username: "ro", password: "pw", tls: "verify", vpn: "" } });
     expect(toDbInput("sqlite", { ...base, path: "/srv/p.db", label: "Prices" }, false)).toEqual({ body: { label: "Prices", path: "/srv/p.db" } });
     expect(toDbInput("sqlite", { ...base, path: "" }, false)).toEqual({ problem: "errRequired" });
   });

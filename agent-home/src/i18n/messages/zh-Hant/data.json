@@ -286,7 +286,6 @@
     "mysqlBody": "MySQL 5.7 或以上及 MariaDB。",
     "postgresBody": "PostgreSQL 11 或以上。",
     "sqliteBody": "「檔案」內的 .sqlite 或 .db 檔案，唯讀。",
-    "soon": "即將推出",
     "website": "把網站轉成資料表",
     "siteBody": "代理研究網站，提出資料表供你批准，然後保持更新。接著在網站 › 新增網站繼續。",
     "siteLocked": "你的角色不可使用",
@@ -308,14 +307,17 @@
   },
   "db": {
     "title": {
+      "postgres": "PostgreSQL 資料庫",
       "mysql": "MySQL 資料庫",
       "sqlite": "SQLite 檔案"
     },
     "description": {
+      "postgres": "你自己的 PostgreSQL 連線。分享數據來源前只屬於你；獲分享的人經此唯讀登入提問，永遠看不到密碼。",
       "mysql": "你自己的 MySQL / MariaDB 連線。分享數據來源前只屬於你；獲分享的人經此唯讀登入提問，永遠看不到密碼。",
-      "sqlite": "此伺服器上的 SQLite 檔案，唯讀。任何人都可新增；檔案須位於 config.yaml（data_sources.sqlite_roots）所設資料夾內。"
+      "sqlite": "此伺服器上的 SQLite 檔案，唯讀。任何人都可新增：檔案必須位於 config.yaml（data_sources.sqlite_roots）設定的資料夾內，成員的檔案須在其中自己的資料夾。"
     },
     "add": {
+      "postgres": "新增 PostgreSQL 資料庫",
       "mysql": "新增 MySQL 資料庫",
       "sqlite": "新增 SQLite 檔案"
     },

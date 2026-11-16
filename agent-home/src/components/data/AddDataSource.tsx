@@ -39,8 +39,8 @@ function Choice({ type, title, body, href, note }: { type: SourceType | "sheet" 
 }
 
 /**
- * Add data source (mockup v2): connect a database (SQL Server, MySQL, SQLite;
- * PostgreSQL once it has a connection API) or turn a website into tables.
+ * Add data source (mockup v2): connect a database (SQL Server, MySQL,
+ * PostgreSQL, SQLite) or turn a website into tables.
  */
 export function AddDataSource({ canAddSite, isOwner }: { canAddSite: boolean; isOwner: boolean }) {
   const t = useT("data");
@@ -52,7 +52,7 @@ export function AddDataSource({ canAddSite, isOwner }: { canAddSite: boolean; is
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           <Choice type="mssql" title={t("type.mssql")} body={t("add.mssqlBody")} href="#sql-server" />
           <Choice type="mysql" title={t("type.mysql")} body={t("add.mysqlBody")} href="#mysql" />
-          <Choice type="postgres" title={t("type.postgres")} body={t("add.postgresBody")} note={t("add.soon")} />
+          <Choice type="postgres" title={t("type.postgres")} body={t("add.postgresBody")} href="#postgres" />
           <Choice type="sqlite" title={t("type.sqlite")} body={t("add.sqliteBody")} href="#sqlite" />
         </div>
       </section>
@@ -75,6 +75,9 @@ export function AddDataSource({ canAddSite, isOwner }: { canAddSite: boolean; is
       </section>
       <section id="mysql" className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <DbConnections engine="mysql" />
+      </section>
+      <section id="postgres" className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <DbConnections engine="postgres" />
       </section>
       <section id="sqlite" className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <DbConnections engine="sqlite" />
