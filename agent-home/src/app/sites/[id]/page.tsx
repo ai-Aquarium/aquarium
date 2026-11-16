@@ -36,14 +36,16 @@ export default async function Page({
   try {
     const { site } = await client.site(id);
     const admin = site.access === "admin";
-    const [designs, tables, runs, grants, directory] = await Promise.all([
+    const [designs, tables, runs, grants, directory, data] = await Promise.all([
       client.siteDesigns(id),
       client.siteTables(id).catch(() => ({ tables: [] })),
       client.siteRuns(id).catch(() => ({ runs: [] })),
       admin ? client.siteGrants(id).then((g): SiteGrant[] => g.grants) : Promise.resolve(null),
       loadDirectory(client),
+      client.dataSources().catch(() => ({ sources: [] })),
     ]);
-    loaded = { site, designs: designs.designs, tables: tables.tables, runs: runs.runs, grants, directory };
+    const dataSourceId = data.sources.find((s) => s.site_id === site.id)?.id ?? null;
+    loaded = { site, designs: designs.designs, tables: tables.tables, runs: runs.runs, grants, directory, dataSourceId };
   } catch (err) {
     if (err instanceof HermesApiError && err.status === 404) notFound();
     return (
@@ -64,6 +66,7 @@ export default async function Page({
         directory={loaded.directory}
         me={principal.user_id}
         initialTab={isSiteTab(tab) ? tab : "design"}
+        dataSourceId={loaded.dataSourceId}
       />
     </MobileShell>
   );

@@ -17,6 +17,7 @@
   "mode": { "incremental": "增量", "full": "完整" },
   "trigger": { "manual": "手動", "schedule": "排程", "agent": "助手" },
   "list": {
+    "openInData": "字典及提問：在數據頁開啟 ›",
     "add": "新增網站",
     "filterLabel": "顯示哪些網站",
     "filter": { "all": "全部", "mine": "我的", "shared": "與我分享" },
@@ -56,6 +57,9 @@
     "notAllowedBody": "請擁有人或管理員代你新增，或允許你的角色新增網站。"
   },
   "detail": {
+    "inData": "這些資料表亦是「數據」頁內的數據來源。",
+    "openDictionary": "開啟字典",
+    "askInChat": "在對話中提問",
     "owner": "擁有人：{who}",
     "loginSaved": "已儲存登入資料",
     "loginMissing": "已設定登入網址，未儲存登入資料",
@@ -152,6 +156,8 @@
     "starting": "開始中…"
   },
   "sharing": {
+    "separate": "誰可在對話中詢問此網站及查看其字典是另一個清單：",
+    "dataAccess": "數據 › 存取權",
     "owner": "擁有人",
     "levelFor": "{who} 的權限",
     "revoke": "撤銷",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { SecretRequestPrompt } from "@/components/chat/SecretRequestPrompt";
 import { ApprovalCard } from "@/components/chat/thread/ApprovalCard";
@@ -27,7 +27,10 @@ export function ChatConversationView({
   composerLauncherClearance = true,
   sessionRef,
   compactOnPhone = false,
+  aboveComposer,
 }: {
+  /** Shown right above the composer (the chat page's "Ask about" picker). */
+  aboveComposer?: ReactNode;
   conv: ChatConversation;
   storageEnabled: boolean;
   composerInitialText?: string;
@@ -150,6 +153,7 @@ export function ChatConversationView({
         </p>
       ) : null}
 
+      {aboveComposer}
       <Composer
         sending={selBusy}
         storageEnabled={storageEnabled}
