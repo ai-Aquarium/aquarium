@@ -12306,7 +12306,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "project", "projects", "promote", "proxy", "ref",
         "prompt-size",
         "send", "sessions", "setup", "setup-link", "todos", "vpn",
-        "skills", "slack", "status", "tool", "tools", "uninstall", "update",
+        "skills", "slack", "source", "status", "tool", "tools", "uninstall", "update",
         "version", "webhook", "whatsapp", "whatsapp-cloud", "chat", "secrets", "security",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an

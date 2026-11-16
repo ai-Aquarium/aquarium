@@ -129,6 +129,10 @@ def _session_as(monkeypatch, user_id: str):
     from hermes_cli import web_server
 
     monkeypatch.setattr(web_server, "_comms_session_subject", lambda request: user_id)
+    # Loopback-token mode and no bound host, whatever an earlier test left on
+    # the shared app.
+    monkeypatch.setattr(web_server.app.state, "auth_required", False, raising=False)
+    monkeypatch.setattr(web_server.app.state, "bound_host", None, raising=False)
     return SimpleNamespace(user_id=user_id)
 
 
