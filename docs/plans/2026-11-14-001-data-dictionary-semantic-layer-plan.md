@@ -333,7 +333,9 @@ The site-to-schema plan rejected a skill-only design for the same reason.
   picks the schemas a first `study` covers (`study schemas=` / `entities=`
   override); undescribed tables are studied first, and `dictionary entity=`
   on a table not yet described returns its live structure to propose
-  (studied on demand).
+  (studied on demand). Row values (sample/common values, counts) appear only
+  for people with row access: for a site that is Sites › Sharing, so a
+  Data › Access grantee gets structure only (on-demand study and `study`).
 - External PostgreSQL connections (not Aquarium's own Supabase): the same
   store and API as MySQL (`engine = postgres`, ref `postgres:<name>`, port
   5432, TLS `verify`/`on`/`off`, optional VPN). `PostgresAdapter` (pg8000,
