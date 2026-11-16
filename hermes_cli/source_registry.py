@@ -33,9 +33,19 @@ import json
 import logging
 import re
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping, Optional, Sequence
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Iterator,
+    Mapping,
+    Optional,
+    Sequence,
+)
 
 if TYPE_CHECKING:
     import asyncpg
@@ -143,6 +153,12 @@ class SourcePermissionError(SourceRegistryError):
     """The actor may not change this source (not its owner / not box admin)."""
 
     status = 403
+
+
+class UnknownUser(SourceRegistryError):
+    """The named user is enrolled in no profile on this box."""
+
+    status = 404
 
 
 class ProfileNotEnrolled(SourceRegistryError):
@@ -368,11 +384,37 @@ async def _refuse_profile_claim(connection: "asyncpg.Connection") -> None:
         )
 
 
+@contextmanager
+def default_profile_scope() -> Iterator[None]:
+    """Run the block in the default profile's runtime scope (config + secrets).
+
+    The registry is box-wide, so its database and its default actor come from
+    the default profile whichever profile the caller is in (``hermes -p cfo``,
+    a CFO request).
+    """
+    entry = _registry_entry("default")
+    if entry is None or not entry.hermes_home.is_dir():
+        yield
+        return
+    from hermes_cli.console_scope import _scoped_to
+
+    with _scoped_to(entry.hermes_home):
+        yield
+
+
 def box_dsn(config: Optional[Mapping[str, Any]] = None) -> str:
-    """The datastore DSN (the same Postgres as every profile schema)."""
+    """The registry's DSN: the default profile's prod datastore.
+
+    With ``config`` given, that config's prod DSN. Otherwise it is resolved in
+    the default profile's scope, so every profile reaches the same registry
+    even when a profile points its own schemas at another database.
+    """
     from hermes_cli.datastore import get_store
 
-    return get_store("supabase-app", "prod", config=config).dsn
+    if config is not None:
+        return get_store("supabase-app", "prod", config=config).dsn
+    with default_profile_scope():
+        return get_store("supabase-app", "prod").dsn
 
 
 async def connect_box(
@@ -519,6 +561,25 @@ async def _require_source(connection: "asyncpg.Connection", source_id: str) -> S
     if source is None:
         raise SourceNotFound(f"No such source: {source_id}")
     return source
+
+
+async def _lock_source(connection: "asyncpg.Connection", source_id: str) -> Source:
+    """:func:`_require_source` holding the row lock (call inside a transaction).
+
+    Serialises owner checks against :func:`transfer_source`: a route write or
+    delete authorised for the old owner cannot land after the owner changed.
+    """
+    try:
+        key = uuid.UUID(str(source_id))
+    except ValueError:
+        raise SourceNotFound(f"No such source: {source_id}") from None
+    row = await connection.fetchrow(
+        f"SELECT {_SOURCE_COLS} FROM {BOX_SCHEMA}.sources WHERE source_id = $1 FOR UPDATE",
+        key,
+    )
+    if row is None:
+        raise SourceNotFound(f"No such source: {source_id}")
+    return (await _with_routes(connection, [row]))[0]
 
 
 # -- membership / authority --------------------------------------------------
@@ -686,28 +747,29 @@ async def set_route(
     """
     profile = _check_profile(profile_slug)
     actor = _check_user(actor_user_id, "actor")
-    source = await _require_source(connection, source_id)
-    if source.owner_user_id != actor:
-        raise SourcePermissionError("Only the source's owner can change where it routes.")
-    if enabled:
-        check = membership or is_active_in_profile
-        if not await check(source.owner_user_id, profile):
-            raise ProfileNotEnrolled(
-                f"You are not an active member of profile {profile!r}, so this "
-                "source cannot route there."
-            )
-    row = await connection.fetchrow(
-        f"""
-        INSERT INTO {BOX_SCHEMA}.source_routes (source_id, profile_slug, enabled)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (source_id, profile_slug) DO UPDATE
-            SET enabled = EXCLUDED.enabled, updated_at = NOW()
-        RETURNING {_ROUTE_COLS}
-        """,
-        uuid.UUID(source.source_id),
-        profile,
-        bool(enabled),
-    )
+    async with connection.transaction():
+        source = await _lock_source(connection, source_id)
+        if source.owner_user_id != actor:
+            raise SourcePermissionError("Only the source's owner can change where it routes.")
+        if enabled:
+            check = membership or is_active_in_profile
+            if not await check(source.owner_user_id, profile):
+                raise ProfileNotEnrolled(
+                    f"You are not an active member of profile {profile!r}, so this "
+                    "source cannot route there."
+                )
+        row = await connection.fetchrow(
+            f"""
+            INSERT INTO {BOX_SCHEMA}.source_routes (source_id, profile_slug, enabled)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (source_id, profile_slug) DO UPDATE
+                SET enabled = EXCLUDED.enabled, updated_at = NOW()
+            RETURNING {_ROUTE_COLS}
+            """,
+            uuid.UUID(source.source_id),
+            profile,
+            bool(enabled),
+        )
     return _route(row)
 
 
@@ -795,25 +857,31 @@ async def transfer_source(
     new_owner_user_id: str,
     actor_user_id: str,
     box_admin: Optional[BoxAdminCheck] = None,
+    known_user: Optional[Callable[[str], Awaitable[bool]]] = None,
 ) -> Source:
     """Give a source to another user (box owner/admin only); drops every route.
 
-    Routes belong to the old owner's user-profiles, so none survive: the new
-    owner picks their own. Open conflicts for this address raised by the new
+    Routes and the credential pointer belong to the old owner, so neither
+    survives: the new owner picks their own routes and credential. The new
+    owner must be enrolled in some profile on the box (a mistyped id would
+    strand the source). Open conflicts for this address raised by the new
     owner are marked resolved.
     """
     actor = _check_user(actor_user_id, "actor")
     new_owner = _check_user(new_owner_user_id, "new owner user id")
     if not await (box_admin or is_box_admin)(actor):
         raise SourcePermissionError("Only the box owner or an admin can transfer a source.")
-    source = await _require_source(connection, source_id)
-    key = uuid.UUID(source.source_id)
+    if not await (known_user or active_or_suspended_anywhere)(new_owner):
+        raise UnknownUser("No one with that user id is enrolled on this box.")
     async with connection.transaction():
+        source = await _lock_source(connection, source_id)
+        key = uuid.UUID(source.source_id)
         await connection.execute(
             f"DELETE FROM {BOX_SCHEMA}.source_routes WHERE source_id = $1", key
         )
         await connection.execute(
-            f"UPDATE {BOX_SCHEMA}.sources SET owner_user_id = $2, updated_at = NOW() "
+            f"UPDATE {BOX_SCHEMA}.sources SET owner_user_id = $2, "
+            "credential_ref = NULL, updated_at = NOW() "
             "WHERE source_id = $1",
             key,
             new_owner,
@@ -837,14 +905,16 @@ async def remove_source(
     box_admin: Optional[BoxAdminCheck] = None,
 ) -> bool:
     """Delete a source and its routes (its owner, or box owner/admin)."""
-    source = await get_source(connection, source_id)
-    if source is None:
-        return False
-    await _require_owner_or_admin(source, actor_user_id, box_admin)
-    status = await connection.execute(
-        f"DELETE FROM {BOX_SCHEMA}.sources WHERE source_id = $1",
-        uuid.UUID(source.source_id),
-    )
+    async with connection.transaction():
+        try:
+            source = await _lock_source(connection, source_id)
+        except SourceNotFound:
+            return False
+        await _require_owner_or_admin(source, actor_user_id, box_admin)
+        status = await connection.execute(
+            f"DELETE FROM {BOX_SCHEMA}.sources WHERE source_id = $1",
+            uuid.UUID(source.source_id),
+        )
     return status.endswith(" 1")
 
 
@@ -995,17 +1065,34 @@ async def _box_ready(connection: "asyncpg.Connection") -> bool:
 
 
 async def on_principal_removed(
-    connection: "asyncpg.Connection", *, schema: str, user_id: str
+    connection: "asyncpg.Connection",
+    *,
+    schema: str,
+    user_id: str,
+    dsn: Optional[str] = None,
 ) -> int:
     """Hook for :meth:`PrincipalStore.unenroll`: disable routes to that profile.
 
     Runs on the profile's own connection (same database, schema-qualified SQL),
-    so it needs no second login. A box without the registry is a no-op. Never
+    so it needs no second login; when ``dsn`` (the profile store's) is not the
+    registry's database it opens the registry instead. A box without the
+    registry is a no-op. Never
     raises: the ``principals`` row is already gone and stays the source of truth.
     """
     try:
         profile = profile_for_schema(schema)
-        if profile is None or not await _box_ready(connection):
+        if profile is None:
+            return 0
+        if dsn is not None and dsn != box_dsn():
+            # This profile's schemas live in another database than the registry.
+            box = await connect_box()
+            try:
+                return await disable_routes_for_profile(
+                    box, user_id=user_id, profile_slug=profile
+                )
+            finally:
+                await box.close()
+        if not await _box_ready(connection):
             return 0
         # A savepoint when the caller is mid-transaction: a refused write here
         # (e.g. missing grants) must not abort the caller's principals change.
