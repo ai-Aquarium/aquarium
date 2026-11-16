@@ -563,6 +563,26 @@ def _validate_content_size(content: str, label: str = "SKILL.md") -> Optional[st
     return None
 
 
+#: The data tools' own names. A skill that mentions them is either teaching the
+#: data tools (the bundled procedure skills below do that) or describing one
+#: data source, whose meaning belongs in that source's reviewed dictionary
+#: (data-dictionary plan, decision D3: no skill per table or source).
+_DATA_TOOL_MARKERS = re.compile(r"\b(?:site_db|propose_dictionary|app_describe|app_query)\b")
+_DATA_PROCEDURE_SKILLS = frozenset({"data-questions", "site-to-schema"})
+
+
+def _validate_not_data_dictionary(name: str, content: str) -> Optional[str]:
+    """Refuse agent skill text that documents a data source or the data tools."""
+    if name in _DATA_PROCEDURE_SKILLS or not _DATA_TOOL_MARKERS.search(content or ""):
+        return None
+    return (
+        "Not saved: skills can't describe a data source or teach the site_db tool. "
+        "What a source's tables, columns, values, joins and metrics mean goes in its "
+        "dictionary: call site_db action=propose_dictionary (the owner approves it "
+        "under Data). How to answer data questions lives in the data-questions skill."
+    )
+
+
 def _resolve_skill_dir(name: str, category: str = None) -> Path:
     """Build the directory path for a new skill, optionally under a category."""
     if category:
@@ -797,6 +817,10 @@ def _create_skill(name: str, content: str, category: str = None) -> Dict[str, An
     if err:
         return {"success": False, "error": err}
 
+    err = _validate_not_data_dictionary(name, content)
+    if err:
+        return {"success": False, "error": err}
+
     # Check for name collisions across all directories
     existing = _find_skill(name)
     if existing:
@@ -852,6 +876,10 @@ def _edit_skill(name: str, content: str) -> Dict[str, Any]:
         return {"success": False, "error": err}
 
     err = _validate_content_size(content)
+    if err:
+        return {"success": False, "error": err}
+
+    err = _validate_not_data_dictionary(name, content)
     if err:
         return {"success": False, "error": err}
 
@@ -978,6 +1006,10 @@ def _patch_skill(
     # Check size limit on the result
     target_label = "SKILL.md" if not file_path else file_path
     err = _validate_content_size(new_content, label=target_label)
+    if err:
+        return {"success": False, "error": err}
+
+    err = _validate_not_data_dictionary(name, new_content)
     if err:
         return {"success": False, "error": err}
 
@@ -1137,6 +1169,10 @@ def _write_file(name: str, file_path: str, file_content: str) -> Dict[str, Any]:
             ),
         }
     err = _validate_content_size(file_content, label=file_path)
+    if err:
+        return {"success": False, "error": err}
+
+    err = _validate_not_data_dictionary(name, file_content)
     if err:
         return {"success": False, "error": err}
 
