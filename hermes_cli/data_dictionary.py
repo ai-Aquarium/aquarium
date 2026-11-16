@@ -674,6 +674,7 @@ async def approve(
             )
     result = {"version": int(version), "status": "approved", "changed_tables": changed_tables(before, entries)}
     await _recheck_quiet(source, db=db)
+    await _reindex_quiet(source, db=db)
     return result
 
 
@@ -725,6 +726,7 @@ async def restore(source: Source, version: int, *, by: str, db: Any = None) -> D
             )
     result = {"version": new, "status": "approved", "restored_from": int(version)}
     await _recheck_quiet(source, db=db)
+    await _reindex_quiet(source, db=db)
     return result
 
 
@@ -820,6 +822,13 @@ async def _recheck_quiet(source: Source, *, db: Any = None) -> None:
         await check_source(source, db=db)
     except Exception:  # noqa: BLE001
         logger.warning("schema re-check failed for source %s", source.id, exc_info=True)
+
+
+async def _reindex_quiet(source: Source, *, db: Any = None) -> None:
+    """Keep the search index on the approved version (plan Phase 7)."""
+    from hermes_cli import data_dictionary_search
+
+    await data_dictionary_search.reindex_quiet(source, db=db)
 
 
 async def schema_check_tick(*, db: Any = None) -> int:

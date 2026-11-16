@@ -44,7 +44,7 @@ SCHEMA = {
         "list_sites; create_site (name, base_url, login_url, username, password); "
         "get_design (site); propose_design (site, design, recipe) — stores a design for "
         "approval, creates nothing; approve_design (site, version) — only when the person "
-        "explicitly approves; describe (site, entity?, q? keywords) — tables with row counts, or one table's "
+        "explicitly approves; describe (site, entity?, q? keywords — also the tables the dictionary ranks highest) — tables with row counts, or one table's "
         "columns with fill, distinct counts and common values: use before writing SQL; query (site, sql: one SELECT over the site's tables, at most "
         "500 rows); refresh (site, entities?, mode? incremental|full) — starts a backend "
         "refresh; run_status (site) — recent refresh runs. Studying a site (logs in with the "
@@ -58,7 +58,9 @@ SCHEMA = {
         "private copies of those areas, each a table named after its area, at most 500 rows. "
         "Data dictionary (source = site slug, or app for Aquarium's own data): dictionary — the "
         "approved meaning of each table, its grain, joins, metrics and examples; read it before "
-        "writing SQL; study — structure and samples of every table plus which are undescribed; "
+        "writing SQL (q? the question — a large dictionary returns only the top_k? best-matching "
+        "entries, or without q an index of table names; entity? one table's entry; source=all "
+        "with q finds the matching tables in every source you can read); study — structure and samples of every table plus which are undescribed; "
         "propose_dictionary (source, tables: {table: {meaning, row, grain, columns: {col: text}, "
         "joins: [{to, on}], metrics: [{name, definition, sql}], examples: [{question, sql}]}}, "
         "remove?, glossary?, note, origin? chat|study|feedback) — adds to the draft the owner "
@@ -86,8 +88,9 @@ SCHEMA = {
             "sample": {"type": "integer", "description": "preview: sample rows per entity (default 3)"},
             "version": {"type": "integer", "description": "approve_design: design version"},
             "entity": {"type": "string", "description": "describe: one table name"},
-            "q": {"type": "string", "description": "describe: keep tables matching these words"},
-            "source": {"type": "string", "description": "dictionary actions: site slug, or app"},
+            "q": {"type": "string", "description": "describe / dictionary: the question or keywords"},
+            "top_k": {"type": "integer", "description": "dictionary q: most tables to return (default 8)"},
+            "source": {"type": "string", "description": "dictionary actions: site slug, app, or all (dictionary q)"},
             "tables": {"type": "object", "description": "propose_dictionary: {table: entry}"},
             "remove": {"type": "array", "items": {"type": "string"}},
             "glossary": {"type": "array", "items": {"type": "object"}},
@@ -174,18 +177,42 @@ async def _dict_source(principal: Any, ref: Any, *, need: str = "read"):
     return source, access, site
 
 
+async def _ranked_tables(principal: Any, site: Any, q: str) -> list:
+    """The site's tables its dictionary ranks highest for ``q`` (if the person may read it)."""
+    import logging
+
+    from hermes_cli import data_dictionary_search as dds
+
+    try:
+        source, _access, _site = await _dict_source(principal, site.slug)
+        return await dds.rank_tables(source, q)
+    except Exception:  # noqa: BLE001 - describe still answers from keywords
+        logging.getLogger(__name__).debug("no dictionary ranking for describe", exc_info=True)
+        return []
+
+
 async def _dictionary_action(action: str, principal: Any, args: Mapping[str, Any]) -> str:
     from hermes_cli import app_data
     from hermes_cli import data_dictionary as dd
     from hermes_cli import site_sources as ss
 
+    from hermes_cli import data_dictionary_search as dds
+
     need = "read" if action == "dictionary" else "propose"
+    if action == "dictionary" and str(args.get("source") or "").strip() == "all":
+        return _result(matches=await dds.search_all(
+            principal, ss.current_profile(), str(args.get("q") or "")))
     source, access, site = await _dict_source(principal, args.get("source"), need=need)
     found = await dd.dictionary(source, draft=dd.allows(access, "propose"))
     approved = found["approved"]
     if action == "dictionary":
         out = {"source": source.view(access), "approved": approved and {
-            "version": approved["version"], "entries": approved["entries"]}}
+            "version": approved["version"],
+            **await dds.lookup(source, approved, q=args.get("q"), entity=args.get("entity"),
+                               top_k=int(args.get("top_k") or dds.TOP_K))}}
+        if approved and "index" in out["approved"]:
+            out["note"] = ("This dictionary is large: call dictionary again with q= (the question) "
+                           "or entity= to read the entries you need.")
         if found.get("draft"):
             out["draft"] = {k: found["draft"][k] for k in ("version", "changed_tables")}
         if approved is None:
@@ -289,8 +316,10 @@ async def site_db_tool(args: Mapping[str, Any], **_kw: Any) -> str:
         if action == "describe":
             if args.get("entity"):
                 return _result(site=site.slug, table=await ss.describe_entity(site, str(args["entity"])))
+            q = args.get("q") or None
             return _result(
-                site=site.slug, tables=await ss.table_summaries(site, q=args.get("q") or None)
+                site=site.slug,
+                tables=await ss.table_summaries(site, q=q, names=q and await _ranked_tables(principal, site, q)),
             )
         if action == "query":
             result = await ss.query(site, str(args.get("sql") or ""), max_rows=int(args.get("max_rows") or ss.MAX_QUERY_ROWS))
