@@ -263,7 +263,8 @@ async def _dictionary_action(action: str, principal: Any, args: Mapping[str, Any
             out["note"] = ("This dictionary is large: call dictionary again with q= (the question) "
                            "or entity= to read the entries you need.")
         if undescribed:
-            out.update(await _study_on_demand(source, principal, entity))
+            out.update(await _study_on_demand(
+                source, principal, entity, values=await _row_access(principal, source, site)))
         if found.get("draft"):
             out["draft"] = {k: found["draft"][k] for k in ("version", "changed_tables")}
         if approved is None:
@@ -279,7 +280,12 @@ async def _dictionary_action(action: str, principal: Any, args: Mapping[str, Any
         described = set(((approved or {}).get("entries") or {}).get("tables") or {})
         if site is not None:
             tables = study_order(await ss.table_summaries(site), described, tables=args.get("entities"))
-            detail = [await ss.describe_entity(site, t["name"]) for t in tables[:STUDY_TABLES]]
+            values = await _row_access(principal, source, site)
+            detail = [
+                await ss.describe_entity(site, t["name"]) if values else _structure_only(
+                    await ss.describe_entity(site, t["name"], samples=0))
+                for t in tables[:STUDY_TABLES]
+            ]
         elif source.kind == "connection":
             from hermes_cli import data_engines as de
 
@@ -331,13 +337,52 @@ def study_order(
     return sorted(found, key=lambda t: t.get("name") in described)
 
 
-async def _study_on_demand(source: Any, principal: Any, entity: str) -> dict:
-    """A table the dictionary doesn't describe yet, studied the first time it is asked about."""
+_ROW_STATS = ("rows", "filled", "distinct", "common_values", "sample")
+
+
+async def _row_access(principal: Any, source: Any, site: Any) -> bool:
+    """Whether the caller may see a source's row values, not just its structure.
+
+    Data › Access shares a dictionary; a site's rows stay governed by
+    Sites › Sharing. App data is scoped per person, and a Settings data source
+    is read through its owner's login by everyone it is shared with.
+    """
+    from hermes_cli import site_sources as ss
+
+    if source.kind != "site":
+        return True
+    if site is None:
+        return False
+    try:
+        await _site(principal, site.slug)
+    except ss.SiteError:
+        return False
+    return True
+
+
+def _structure_only(table: Mapping[str, Any]) -> dict:
+    """A described table without anything read from its rows."""
+    out = {k: v for k, v in table.items() if k not in _ROW_STATS}
+    out["columns"] = [
+        {k: v for k, v in col.items() if k not in _ROW_STATS} for col in table.get("columns") or []
+    ]
+    out["values_hidden"] = "you can see this source's structure, not its rows (Sites › Sharing)"
+    return out
+
+
+async def _study_on_demand(source: Any, principal: Any, entity: str, *, values: bool) -> dict:
+    """A table the dictionary doesn't describe yet, studied the first time it is asked about.
+
+    Without row access only its structure is read (no sample values).
+    """
     from hermes_cli import data_engines as de
 
     try:
         adapter = await de.adapter_for(source, principal)
-        table = await adapter.describe_table(entity)
+        if values:
+            table = await adapter.describe_table(entity)
+        else:
+            table = _structure_only(await adapter.describe_table(entity, samples=0))
     except Exception as exc:  # noqa: BLE001 - the dictionary answer still stands
         return {"undescribed": [entity], "note": f"{entity} isn't described yet ({exc})."}
     return {
