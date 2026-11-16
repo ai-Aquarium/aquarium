@@ -9,6 +9,7 @@ import { useRefresh } from "@/components/ui/useRefresh";
 import { TOOLS_MANAGE_DENIED } from "@/lib/auth/roles";
 import type { McpOAuthFlowState, McpServer, Toolset } from "@/types";
 import { ActionButton } from "@/components/ui/ActionButton";
+import { lockBodyScroll } from "@/lib/body-scroll-lock";
 
 /**
  * Settings → Tools & Integrations. Lists the MCP servers and `hermes tools`
@@ -97,11 +98,7 @@ function OAuthSheet({
 
   // Stop the page behind the sheet from scrolling (same as ConfirmDialog).
   useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
+    return lockBodyScroll();
   }, []);
 
   async function submitRedirect() {

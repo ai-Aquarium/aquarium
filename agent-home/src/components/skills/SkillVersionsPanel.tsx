@@ -366,7 +366,7 @@ export function SkillVersionsPanel({ name, profile }: { name: string; profile: s
                   <div className="flex justify-end border-b border-[var(--color-border)] px-2 py-1.5">
                     <MaximizeToggle />
                   </div>
-                  <div className={`${maximized ? "min-h-0 flex-1" : "max-h-[60vh]"} overflow-auto bg-[var(--color-surface-2)] py-1.5 font-mono text-[12.5px] leading-relaxed`}>
+                  <div tabIndex={maximized ? 0 : undefined} aria-label={maximized ? compareTitle : undefined} className={`${maximized ? "min-h-0 flex-1" : "max-h-[60vh]"} overflow-auto bg-[var(--color-surface-2)] py-1.5 font-mono text-[12.5px] leading-relaxed`}>
                     {parsed.rows.map((r, k) =>
                       r.kind === "file" || r.kind === "hunk" || r.kind === "note" ? (
                         <div key={k} data-row={r.kind} className="px-3 py-0.5 text-[var(--color-muted)]">

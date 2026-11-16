@@ -15,6 +15,7 @@ import {
 } from "react";
 
 import { useT } from "@/i18n";
+import { lockBodyScroll } from "@/lib/body-scroll-lock";
 
 /**
  * A panel that can be maximized to fill the screen and minimized back in place.
@@ -147,8 +148,7 @@ export function Maximizable({
   useEffect(() => {
     if (!maximized) return;
     openStack.push(id);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockBodyScroll();
     let blocked = false;
     const isTop = () => openStack[openStack.length - 1] === id;
     // Capture runs before any other window listener, so a Sheet that is about
@@ -187,7 +187,7 @@ export function Maximizable({
     return () => {
       window.removeEventListener("keydown", onCapture, true);
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previous;
+      unlock();
       const at = openStack.lastIndexOf(id);
       if (at >= 0) openStack.splice(at, 1);
     };

@@ -111,4 +111,13 @@ describe("Sheet with a maximized panel inside", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  it("gives page scrolling back when the sheet unmounts with the panel still maximized", async () => {
+    const { unmount } = render(<WithPanel />);
+    await flushFrame();
+    fireEvent.click(screen.getByRole("button", { name: "Maximize notes.txt" }));
+    expect(document.body.style.overflow).toBe("hidden");
+    unmount();
+    expect(document.body.style.overflow).toBe("");
+  });
 });

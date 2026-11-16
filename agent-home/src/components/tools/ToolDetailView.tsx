@@ -74,7 +74,7 @@ function LogsTail({ tool }: { tool: Tool }) {
           </div>
           {error ? <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p> : null}
           {lines ? (
-            <pre className={`${maximized ? "min-h-0 flex-1" : "max-h-72"} overflow-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-mono text-xs text-[var(--color-fg)] [overflow-wrap:anywhere] whitespace-pre-wrap`}>{lines.join("\n") || t("detail.logsEmpty")}</pre>
+            <pre tabIndex={maximized ? 0 : undefined} aria-label={maximized ? t("detail.logs") : undefined} className={`${maximized ? "min-h-0 flex-1" : "max-h-72"} overflow-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-mono text-xs text-[var(--color-fg)] [overflow-wrap:anywhere] whitespace-pre-wrap`}>{lines.join("\n") || t("detail.logsEmpty")}</pre>
           ) : null}
         </>
       )}

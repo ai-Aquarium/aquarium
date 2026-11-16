@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 
 import { ActionButton } from "@/components/ui/ActionButton";
 import { useT } from "@/i18n";
+import { lockBodyScroll } from "@/lib/body-scroll-lock";
 
 export interface ConfirmDialogProps {
   title: string;
@@ -47,11 +48,7 @@ export function ConfirmDialog({
   const t = useT("common");
   // Stop the page behind the sheet from scrolling under the user's thumb.
   useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
+    return lockBodyScroll();
   }, []);
 
   useEffect(() => {

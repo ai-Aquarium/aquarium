@@ -266,9 +266,16 @@ describe("text preview", () => {
       expect(screen.getByRole("dialog", { name: "notes.txt" })).toBe(panel);
       expect(pre.className).not.toContain("max-h-");
       expect(pre.className).toContain("flex-1");
+      const minimize = within(panel).getByRole("button", { name: "Minimize notes.txt" });
+      expect(document.activeElement).toBe(minimize);
+      // The text is in the Tab cycle, so keyboard users can scroll it.
+      fireEvent.keyDown(minimize, { key: "Tab", shiftKey: true });
+      expect(document.activeElement).toBe(pre);
+      expect(pre.getAttribute("aria-label")).toBe("notes.txt");
       fireEvent.keyDown(window, { key: "Escape" });
       expect(panel.getAttribute("data-maximized")).toBe("false");
       expect(pre.className).toContain("max-h-72");
+      expect(pre.hasAttribute("tabindex")).toBe(false);
       expect(screen.getByRole("button", { name: "Ask the agent about this file" })).toBeTruthy();
     } finally {
       LISTINGS["net-jensen:"] = listing;
