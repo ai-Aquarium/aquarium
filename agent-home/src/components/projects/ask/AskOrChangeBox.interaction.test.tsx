@@ -267,3 +267,40 @@ describe("AskOrChangeBox — change mode", () => {
     ).toBe(true);
   });
 });
+
+describe("AskOrChangeBox — maximize", () => {
+  it("maximizes in place and minimizes back with thread, typed text and mode kept", async () => {
+    fetchMock.mockResolvedValueOnce(json(200, ANSWER));
+    const { textarea, askButton, container } = setup({ status: "Run 3 running · 2 need you" });
+    fireEvent.change(textarea(), { target: { value: "What's left?" } });
+    fireEvent.click(askButton());
+    await waitFor(() => expect(screen.getByText(ANSWER.answer)).toBeTruthy());
+    const thread = container.querySelector("[data-thread]")!;
+    expect(thread.className).toContain("max-h-72");
+    fireEvent.change(textarea(), { target: { value: "draft follow-up" } });
+    const field = textarea();
+
+    fireEvent.click(screen.getByRole("button", { name: "Maximize Ask about this project" }));
+    const dialog = screen.getByRole("dialog", { name: "Ask about this project" });
+    expect(dialog.getAttribute("data-component")).toBe("AskOrChangeBox");
+    expect(dialog.textContent).toContain("Four MOUs · Run 3 running · 2 need you · keeps the last 10 questions");
+    expect(container.querySelector("[data-thread]")).toBe(thread);
+    expect(thread.className).not.toContain("max-h-72");
+    expect(thread.className).toContain("flex-1");
+    expect(textarea()).toBe(field);
+    expect(field.value).toBe("draft follow-up");
+
+    const modeButton = (m: string) => container.querySelector(`[data-mode="${m}"]`) as HTMLButtonElement;
+    fireEvent.click(modeButton("change"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(textarea().getAttribute("aria-label")).toBe("What should change");
+
+    fireEvent.keyDown(textarea(), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(modeButton("change").getAttribute("aria-pressed")).toBe("true");
+    expect(textarea().value).toBe("draft follow-up");
+    fireEvent.click(modeButton("ask"));
+    expect(screen.getByText(ANSWER.answer)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

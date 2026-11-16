@@ -10,6 +10,7 @@ import { CopyButton, downloadText } from "@/components/skills/CopyButton";
 import { SkillMarkdown } from "@/components/skills/SkillMarkdown";
 import { skillHref } from "@/components/skills/skill-links";
 import { ActionButton } from "@/components/ui/ActionButton";
+import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import { inputClass, primaryButtonClass, secondaryButtonClass } from "@/components/ui/Sheet";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { errorText, profileQuery, sendJson } from "@/lib/admin-fetch";
@@ -161,13 +162,6 @@ export function SkillEditor({
     };
   }, [dirty, askConfirm]);
 
-  useEffect(() => {
-    if (!fullscreen) return;
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setFullscreen(false);
-    window.addEventListener("keydown", esc);
-    return () => window.removeEventListener("keydown", esc);
-  }, [fullscreen]);
-
   function format(kind: FormatKind) {
     const ta = bodyRef.current;
     const start = ta?.selectionStart ?? body.length;
@@ -228,12 +222,8 @@ export function SkillEditor({
 
   const categoryOptions = Array.from(new Set([...categories, meta.category].filter(Boolean))).sort();
   const platformOptions = Array.from(new Set([...PLATFORMS, ...meta.platforms]));
-  const fullscreenWrap = fullscreen ? "fixed inset-0 z-50 !min-h-0 rounded-none bg-[var(--color-surface)]" : "";
-  const fsButton = (
-    <button type="button" className={barButton} aria-pressed={fullscreen} onClick={() => setFullscreen((f) => !f)}>
-      {fullscreen ? "Exit full screen" : "⤢ Full screen"}
-    </button>
-  );
+  const fsButton = <MaximizeToggle className={barButton} />;
+  const fsBody = "w-full overflow-hidden rounded-xl border border-[var(--color-border)]";
 
   return (
     <section data-component="SkillEditor" data-skill={name} data-view={view} className="space-y-3.5 pb-2">
@@ -381,7 +371,13 @@ export function SkillEditor({
             ]}
           />
           <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
-            <div className={`${paneClass} ${fullscreenWrap} ${pane === "edit" ? "" : "hidden lg:flex"}`}>
+            <Maximizable
+              title="Instructions"
+              maximized={fullscreen}
+              onMaximizedChange={setFullscreen}
+              bodyClassName={fsBody}
+              className={`${paneClass} ${pane === "edit" ? "" : "hidden lg:flex"}`}
+            >
               <div role="toolbar" aria-label="Formatting" className={barClass}>
                 <b className="mr-1.5 text-xs">Instructions</b>
                 {TOOLBAR.map((t) => (
@@ -394,7 +390,7 @@ export function SkillEditor({
               </div>
               <CodeEditor label="Instructions (Markdown)" value={body} textareaRef={bodyRef} onChange={(v) => edit({ kind: "body", body: v })} />
               <ValidationBar checks={checks} doc={doc} />
-            </div>
+            </Maximizable>
             <div className={`${paneClass} bg-[var(--color-surface-2)] ${pane === "preview" ? "" : "hidden lg:flex"}`}>
               <div className={barClass}>
                 <b className="text-xs">Preview</b>
@@ -408,7 +404,13 @@ export function SkillEditor({
           </div>
         </>
       ) : (
-        <div className={`${paneClass} min-h-[560px] ${fullscreenWrap}`}>
+        <Maximizable
+          title="SKILL.md"
+          maximized={fullscreen}
+          onMaximizedChange={setFullscreen}
+          bodyClassName={fsBody}
+          className={`${paneClass} min-h-[560px]`}
+        >
           <div className={barClass}>
             <b className="text-xs">SKILL.md</b>
             <span className="ml-2 hidden text-xs text-[var(--color-muted)] sm:inline">the whole file: YAML header + Markdown, exactly as stored</span>
@@ -421,7 +423,7 @@ export function SkillEditor({
           </div>
           <CodeEditor label="SKILL.md" value={doc} onChange={(v) => edit({ kind: "plain", doc: v })} />
           <ValidationBar checks={checks} doc={doc} />
-        </div>
+        </Maximizable>
       )}
 
       {dirty ? (

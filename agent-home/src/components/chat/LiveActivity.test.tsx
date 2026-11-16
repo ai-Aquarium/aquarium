@@ -12,7 +12,7 @@ describe("LiveActivity", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("maximizes into a full panel with every step and the full reasoning", () => {
+  it("maximizes in place to full screen with every step and the full reasoning", () => {
     const reasoning = "line one\n".repeat(40) + "last line";
     render(
       <LiveActivity
@@ -23,22 +23,24 @@ describe("LiveActivity", () => {
         ]}
       />,
     );
-    expect(document.querySelector('[data-component="LiveActivityMaximized"]')).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Maximize agent activity" }));
-    const panel = document.querySelector('[data-component="LiveActivityMaximized"]')!;
-    expect(panel.getAttribute("role")).toBe("dialog");
+    const live = document.querySelector('[data-component="LiveReasoning"]')!;
+    expect(live.className).toContain("max-h-24");
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Maximize Agent activity" }));
+    const panel = screen.getByRole("dialog", { name: "Agent activity" });
+    expect(panel.getAttribute("data-component")).toBe("LiveActivity");
+    expect(panel.className).toContain("fixed inset-0");
     expect(panel.textContent).toContain("terminal — done");
     expect(panel.textContent).toContain("vision_analyze — running…");
-    const full = panel.querySelector('[data-component="LiveReasoningFull"]')!;
+    const full = panel.querySelector('[data-component="LiveReasoning"]')!;
+    expect(full).toBe(live);
     expect(full.textContent).toBe(reasoning);
     expect(full.className).not.toContain("max-h-24");
-    // Phones keep the bottom-sheet height (only `mobileFull` sheets fill the screen)
-    // and the steps scroll inside the panel.
-    const box = panel.firstElementChild as HTMLElement;
-    expect(box.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-h-[92vh]", "rounded-t-2xl", "sm:h-[90vh]"]));
-    expect(box.className).not.toMatch(/(^|\s)(h-\[92vh\]|h-\[100dvh\])/);
-    expect(box.querySelector(".overflow-y-auto")?.contains(full)).toBe(true);
+    expect(full.closest(".overflow-y-auto")).not.toBeNull();
+
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(document.querySelector('[data-component="LiveActivityMaximized"]')).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("⤢ Maximize")).toBeTruthy();
   });
 });

@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,6 +17,7 @@ import {
 
 import { useT } from "@/i18n";
 import { lockBodyScroll } from "@/lib/body-scroll-lock";
+import { isEditable, keyboardOpen } from "@/lib/use-keyboard-viewport";
 
 /**
  * A panel that can be maximized to fill the screen and minimized back in place.
@@ -65,6 +67,15 @@ const FOCUSABLE =
 /** Maximized panels, oldest first: only the last one answers Esc and Tab. */
 const openStack: string[] = [];
 
+/** Scroll offsets of scrolled elements inside `root`, to restore after a layout change. */
+function scrollOffsets(root: HTMLElement | null): Map<HTMLElement, number> {
+  const saved = new Map<HTMLElement, number>();
+  root?.querySelectorAll<HTMLElement>("*").forEach((el) => {
+    if (el.scrollTop > 0) saved.set(el, el.scrollTop);
+  });
+  return saved;
+}
+
 /** Another modal (not a maximized panel) sits above `own`, e.g. a Sheet. */
 function modalAbove(own: HTMLElement | null): boolean {
   return Array.from(
@@ -113,6 +124,7 @@ export function Maximizable({
   const toggleRef = useRef<HTMLButtonElement>(null);
   const minimizeRef = useRef<HTMLButtonElement>(null);
   const moveFocus = useRef(false);
+  const minimizedScroll = useRef<Map<HTMLElement, number> | null>(null);
   const onChangeRef = useRef(onMaximizedChange);
   useEffect(() => {
     onChangeRef.current = onMaximizedChange;
@@ -129,6 +141,8 @@ export function Maximizable({
         active === toggleRef.current ||
         active === minimizeRef.current ||
         !panelRef.current?.contains(active);
+      // Full-screen height can clamp a capped list's offset; put it back on minimize.
+      if (next) minimizedScroll.current = scrollOffsets(panelRef.current);
       if (controlled === undefined) setUncontrolled(next);
       onChangeRef.current?.(next);
     },
@@ -139,6 +153,14 @@ export function Maximizable({
     [maximized, setMaximized],
   );
 
+  useLayoutEffect(() => {
+    if (maximized || !minimizedScroll.current) return;
+    minimizedScroll.current.forEach((top, el) => {
+      el.scrollTop = top;
+    });
+    minimizedScroll.current = null;
+  }, [maximized]);
+
   useEffect(() => {
     if (!moveFocus.current) return;
     moveFocus.current = false;
@@ -147,6 +169,7 @@ export function Maximizable({
 
   useEffect(() => {
     if (!maximized) return;
+    const frame = panelRef.current;
     openStack.push(id);
     const unlock = lockBodyScroll();
     let blocked = false;
@@ -182,11 +205,36 @@ export function Maximizable({
         first.focus();
       }
     }
+    // iOS keeps the layout viewport full height under the keyboard, and the
+    // page cannot scroll: fit the frame to the visible area instead.
+    const vv = window.visualViewport;
+    function fitViewport() {
+      const panel = panelRef.current;
+      if (!panel || !vv) return;
+      const covered = keyboardOpen(
+        window.innerHeight,
+        vv.height,
+        isEditable(document.activeElement),
+      );
+      panel.style.height = covered ? `${Math.round(vv.height)}px` : "";
+      panel.style.top = covered ? `${Math.round(vv.offsetTop)}px` : "";
+    }
+    const fitLater = () => requestAnimationFrame(fitViewport);
     window.addEventListener("keydown", onCapture, true);
     window.addEventListener("keydown", onKey);
+    vv?.addEventListener("resize", fitViewport);
+    vv?.addEventListener("scroll", fitViewport);
+    document.addEventListener("focusin", fitLater);
+    document.addEventListener("focusout", fitLater);
     return () => {
       window.removeEventListener("keydown", onCapture, true);
       window.removeEventListener("keydown", onKey);
+      vv?.removeEventListener("resize", fitViewport);
+      vv?.removeEventListener("scroll", fitViewport);
+      document.removeEventListener("focusin", fitLater);
+      document.removeEventListener("focusout", fitLater);
+      frame?.style.removeProperty("height");
+      frame?.style.removeProperty("top");
       unlock();
       const at = openStack.lastIndexOf(id);
       if (at >= 0) openStack.splice(at, 1);
@@ -219,15 +267,16 @@ export function Maximizable({
               data-maximized-strip
               className="mx-auto mb-2 flex w-full shrink-0 items-center gap-2 border-b border-[var(--color-border)] pb-2"
             >
-              <h2 className="min-w-0 truncate text-sm font-semibold">
+              <h2 className="max-w-[70%] shrink-0 truncate text-sm font-semibold">
                 {title}
               </h2>
               {status ? (
-                <div className="min-w-0 truncate text-xs text-[var(--color-muted)]">
+                <div className="min-w-0 flex-1 truncate text-xs text-[var(--color-muted)]">
                   {status}
                 </div>
-              ) : null}
-              <span className="flex-1" />
+              ) : (
+                <span className="flex-1" />
+              )}
               <button
                 ref={minimizeRef}
                 type="button"
