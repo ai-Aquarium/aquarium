@@ -291,6 +291,8 @@ export function CardDetailView({
                   )}
                   <pre
                     data-component="CardWorkerLog"
+                    tabIndex={maximized ? 0 : undefined}
+                    aria-label={maximized ? "Worker log" : undefined}
                     className={`${maximized ? "min-h-0 flex-1" : "max-h-72"} overflow-y-auto whitespace-pre-wrap rounded-lg bg-[var(--color-surface-2)] p-2 text-xs text-[var(--color-muted)]`}
                   >
                     {logTail}

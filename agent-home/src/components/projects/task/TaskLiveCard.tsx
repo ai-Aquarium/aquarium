@@ -93,6 +93,7 @@ export function TaskLiveCard({ slug, task }: { slug: string; task: LiveTask }) {
           aria-live="polite"
           aria-label="Card output"
           data-component="TaskLiveOutput"
+          tabIndex={maximized ? 0 : undefined}
           onScroll={(e) => {
             const el = e.currentTarget;
             follow.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;

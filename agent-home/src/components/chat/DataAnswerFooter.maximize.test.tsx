@@ -43,6 +43,8 @@ describe("DataAnswerFooter SQL — maximize", () => {
     expect(panel().getAttribute("data-maximized")).toBe("true");
     expect(pre().className).not.toContain("max-h-64");
     expect(pre().className).toContain("flex-1");
+    expect(pre().getAttribute("tabindex")).toBe("0");
+    expect(pre().getAttribute("aria-label")).toBe("SQL query");
 
     fireEvent.click(view.getByRole("button", { name: "Minimize SQL query" }));
     expect(panel().getAttribute("data-maximized")).toBe("false");

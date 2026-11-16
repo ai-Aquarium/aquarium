@@ -50,6 +50,7 @@ describe("CardDetailView worker log — maximize", () => {
     const view = render(<CardDetailView slug="tender" card={CARD} />);
     expect(log().textContent).toContain("saved 3 files");
     expect(log().className).toContain("max-h-72");
+    expect(log().hasAttribute("tabindex")).toBe(false);
     expect(panel().getAttribute("data-maximized")).toBe("false");
     expect(view.getByRole("button", { name: "Maximize Worker log" }).textContent).toBe("⤢ Maximize");
   });
@@ -61,6 +62,9 @@ describe("CardDetailView worker log — maximize", () => {
     expect(panel().getAttribute("role")).toBe("dialog");
     expect(log().className).not.toContain("max-h-72");
     expect(log().className).toContain("flex-1");
+    // In the focus trap, so the keyboard can reach and scroll the log.
+    expect(log().getAttribute("tabindex")).toBe("0");
+    expect(log().getAttribute("aria-label")).toBe("Worker log");
     expect(view.queryByRole("button", { name: "Maximize Worker log" })).toBeNull();
 
     fireEvent.click(view.getByRole("button", { name: "Minimize Worker log" }));

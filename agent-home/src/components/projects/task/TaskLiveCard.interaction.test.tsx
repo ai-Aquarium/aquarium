@@ -115,6 +115,7 @@ describe("TaskLiveCard", () => {
     expect(card().getAttribute("role")).toBe("dialog");
     expect(log().className).not.toMatch(/max-h-/);
     expect(log().className).toContain("flex-1");
+    expect(log().getAttribute("tabindex")).toBe("0");
     expect(screen.getByText(/Looking up HubSpot pricing/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Minimize Find the options" }));
