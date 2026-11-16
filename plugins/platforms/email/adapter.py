@@ -1232,7 +1232,11 @@ async def _standalone_send(
     # Multi-account boxes (the custom email pipeline) name the env var that
     # holds *this* account's password via ``extra["password_env"]``; single-
     # account deployments fall back to EMAIL_PASSWORD exactly as before.
-    password = os.getenv(extra.get("password_env") or "EMAIL_PASSWORD", "")
+    # A personal mailbox (FG-03 P6) hands its saved password over in-memory.
+    password = extra.get("password") or os.getenv(
+        extra.get("password_env") or "EMAIL_PASSWORD", ""
+    )
+    username = extra.get("username") or address
     smtp_host = extra.get("smtp_host") or os.getenv("EMAIL_SMTP_HOST", "")
     try:
         smtp_port = int(extra.get("smtp_port") or os.getenv("EMAIL_SMTP_PORT", "587"))
@@ -1262,12 +1266,25 @@ async def _standalone_send(
             msg = MIMEText(message, "plain", "utf-8")
         msg["From"] = address
         msg["To"] = chat_id
-        msg["Subject"] = extra.get("subject") or "Hermes Agent"
+        subject = extra.get("subject") or "Hermes Agent"
+        if thread_id:
+            # A reply: thread it under the message it answers.
+            ref = f"<{str(thread_id).strip().strip('<>')}>"
+            msg["In-Reply-To"] = ref
+            msg["References"] = ref
+            if extra.get("subject") and not subject.lower().startswith("re:"):
+                subject = f"Re: {subject}"
+        msg["Subject"] = subject
         msg["Date"] = formatdate(localtime=True)
 
-        server = smtplib.SMTP(smtp_host, smtp_port)
-        server.starttls(context=_ssl.create_default_context())
-        server.login(address, password)
+        if str(extra.get("smtp_security") or "").lower() == "ssl":
+            server = smtplib.SMTP_SSL(
+                smtp_host, smtp_port, context=_ssl.create_default_context()
+            )
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port)
+            server.starttls(context=_ssl.create_default_context())
+        server.login(username, password)
         server.send_message(msg)
         server.quit()
         result = {"success": True, "platform": "email", "chat_id": chat_id}
