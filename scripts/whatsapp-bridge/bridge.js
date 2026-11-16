@@ -542,6 +542,15 @@ async function startSocket() {
         continue;
       }
 
+      // The owner's own self-chat: read by the gateway's person-bridge
+      // listener while it polls ?only=self (see GET /messages).
+      const ownNumber = (sock.user?.id || '').replace(/:.*@/, '@').replace(/@.*/, '');
+      const ownLid = (sock.user?.lid || '').replace(/:.*@/, '@').replace(/@.*/, '');
+      const chatUser = chatId.replace(/@.*/, '');
+      const selfChat = !isGroup && Boolean(
+        (ownNumber && chatUser === ownNumber) || (ownLid && chatUser === ownLid)
+      );
+
       const event = {
         messageId: msg.key.id,
         chatId,
@@ -561,6 +570,7 @@ async function startSocket() {
         botIds,
         timestamp: toNumber(msg.messageTimestamp),
         fromOwner,
+        selfChat,
       };
 
       messageQueue.push(event);
@@ -608,9 +618,34 @@ app.use((req, res, next) => {
 
 // Drain the queue. This returns immediately, empty queue included — a client
 // looping on it without a delay will spin at this endpoint's response rate.
+//
+// One reader per message (FG-03): ?only=self drains the owner's self-chat (the
+// gateway person-bridge listener); ?only=external drains the rest (the
+// pipeline batcher) and, while no self reader has polled for a minute, the
+// self-chat too, so nothing is stranded. No parameter drains everything.
+const SELF_READER_TTL_MS = 60 * 1000;
+let selfReaderSeenAt = 0;
+function drainQueue(keep) {
+  const taken = [];
+  for (let i = 0; i < messageQueue.length;) {
+    if (keep(messageQueue[i])) {
+      taken.push(messageQueue.splice(i, 1)[0]);
+    } else {
+      i += 1;
+    }
+  }
+  return taken;
+}
 app.get('/messages', (req, res) => {
-  const msgs = messageQueue.splice(0, messageQueue.length);
-  res.json(msgs);
+  const only = String(req.query.only || '');
+  if (only === 'self') {
+    selfReaderSeenAt = Date.now();
+    return res.json(drainQueue((event) => event.selfChat === true));
+  }
+  if (only === 'external' && Date.now() - selfReaderSeenAt < SELF_READER_TTL_MS) {
+    return res.json(drainQueue((event) => event.selfChat !== true));
+  }
+  res.json(messageQueue.splice(0, messageQueue.length));
 });
 
 // Send a message
@@ -823,6 +858,7 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     scriptHash: SCRIPT_HASH,
     outboundMediaDir: OUTBOUND_MEDIA_DIR,
+    queues: ['self', 'external'],
   });
 });
 

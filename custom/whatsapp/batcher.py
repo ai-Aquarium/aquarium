@@ -60,6 +60,8 @@ def get_db():
         _local.conn = sqlite3.connect(DB_PATH, timeout=10)
         _local.conn.execute("PRAGMA journal_mode=WAL")
         _local.conn.execute("PRAGMA busy_timeout=5000")
+        from shared.channel_db import ensure_source_columns
+        ensure_source_columns(_local.conn, 'messages')
     return _local.conn
 
 # Batching state
@@ -269,7 +271,7 @@ def _epoch_seconds(ts):
         return None
 
 
-def process_message(msg, source_phone, bridge_port=None, owner_user_id=None):
+def process_message(msg, source_phone, bridge_port=None, owner_user_id=None, source_id=None):
     """Process a single message: write to DB, download media, add to batch."""
     msg_id = msg.get('messageId') or msg.get('key', {}).get('id') or str(uuid.uuid4())
     sender_phone = extract_sender_phone(msg)
@@ -293,11 +295,12 @@ def process_message(msg, source_phone, bridge_port=None, owner_user_id=None):
         inserted = db.execute(
             """INSERT OR IGNORE INTO messages 
                (id, source_phone, sender_phone, sender_name, chat_id, is_group, 
-                text, media_type, media_path, media_mimetype, timestamp, received_at, batch_id, raw_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                text, media_type, media_path, media_mimetype, timestamp, received_at, batch_id, raw_json,
+                source_id, owner_user_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (msg_id, source_phone, sender_phone, sender_name, chat_id, is_group,
              text or None, media_type, None, media_mimetype, timestamp, now, None,
-             json.dumps(msg))
+             json.dumps(msg), source_id, owner_user_id)
         )
         db.commit()
         if inserted.rowcount == 0:
@@ -473,28 +476,34 @@ def flush_batch(batch_key):
           f"({len(batch['messages'])} msgs) -> {batch_file}")
 
 
-def poll_bridge(phone):
-    """Continuously poll a configured phone's bridge for new messages.
+def poll_bridge(phone, stop=None):
+    """Continuously poll a phone's bridge for new messages until ``stop`` is set.
 
     Whose they are is looked up for every batch, so a change in Settings ›
-    Accounts reaches a running batcher (``settings_owner`` caches for a minute).
+    Accounts reaches a running batcher (``settings_owner`` caches for a minute);
+    a registry source's owner is the registry's.
+
+    ``only=external`` leaves the owner's self-chat on the bridge while a
+    gateway person-bridge listener reads it (one reader per message); with no
+    such listener, or an older bridge, it drains everything as before.
     """
     port, source_phone = phone['bridge_port'], phone['id']
-    url = f"http://localhost:{port}/messages"
+    source_id = phone.get('source_id')
+    url = f"http://localhost:{port}/messages?only=external"
     consecutive_errors = 0
     
-    while True:
+    while stop is None or not stop.is_set():
         try:
             resp = urlopen(url, timeout=35)
             data = json.loads(resp.read().decode())
             consecutive_errors = 0
             
             if isinstance(data, list) and len(data) > 0:
-                owner_user_id = phone_owner(phone)
+                owner_user_id = (phone.get('owner_user_id') or None) if source_id else phone_owner(phone)
                 for msg in data:
                     try:
                         process_message(msg, source_phone, bridge_port=port,
-                                        owner_user_id=owner_user_id)
+                                        owner_user_id=owner_user_id, source_id=source_id)
                     except Exception as e:
                         msg_id = msg.get('messageId') if isinstance(msg, dict) else None
                         print(f"[batcher] Failed to process message {msg_id} from {port}: {e!r} "
@@ -540,6 +549,84 @@ class HealthHandler(BaseHTTPRequestHandler):
 
 START_TIME = time.time()
 
+def load_poll_plan(previous=None):
+    """The WhatsApp sources to read: the source registry, or the config.json
+    fallback (``source_registry.pollers`` in config.yaml)."""
+    from hermes_cli.source_polling import load_poll_plan as plan_for
+    return plan_for('whatsapp', previous=previous,
+                    log=lambda line: print(f"[batcher] {line}"))
+
+
+def registry_phones(plan, config_phones, bridge_ports):
+    """Bridge pollers for the registry's routed WhatsApp sources.
+
+    The bridge comes from each source's ``credential_ref`` (``port``, else the
+    ``bridge`` name's port); a config.json phone on the same port keeps its id
+    (the send path's ``source_phone``). One poller per bridge, however many
+    profiles the source routes to.
+    """
+    from hermes_cli.source_polling import source_bridge_port
+    by_port = {p.get('bridge_port'): p for p in config_phones}
+    by_number = {''.join(c for c in str(p.get('number', '')) if c.isdigit()): p
+                 for p in config_phones}
+    phones, ports = [], set()
+    for source in plan.sources:
+        port = source_bridge_port(source, bridge_ports)
+        known = by_port.get(port) if port else by_number.get(source.address)
+        if port is None and known is not None:
+            port = known.get('bridge_port')
+        if not port:
+            print(f"[batcher] WARNING: no bridge for registry source {source.source_id} "
+                  f"(credential_ref={source.credential_ref or None}); not read")
+            continue
+        if port in ports:
+            print(f"[batcher] WARNING: bridge {port} is already read for another source; "
+                  f"{source.source_id} not read twice")
+            continue
+        ports.add(port)
+        phone_id = (known or {}).get('id') or (source.credential_ref or {}).get('bridge') or source.address
+        phones.append({'id': phone_id, 'bridge_port': port, 'source_id': source.source_id,
+                       'owner_user_id': source.owner_user_id})
+    return phones
+
+
+def desired_phones(plan):
+    """Bridge pollers keyed by port for ``plan``."""
+    try:
+        config_phones = [p for p in load_config().get('phones', []) if p.get('enabled', True)]
+    except FileNotFoundError:
+        config_phones = []
+    if not plan.from_registry:
+        return {p['bridge_port']: p for p in config_phones}
+    try:
+        from hermes_cli.wa_bridge_owners import bridge_ports
+        ports = bridge_ports()
+    except Exception as e:
+        print(f"[batcher] Could not read bridge ports: {e!r}")
+        ports = {}
+    return {p['bridge_port']: p for p in registry_phones(plan, config_phones, ports)}
+
+
+def reconcile_pollers(pollers, wanted):
+    """Start/stop bridge pollers so exactly ``wanted`` (port -> phone) run."""
+    for port in list(pollers):
+        phone, stop, _ = pollers[port]
+        if wanted.get(port) != phone:
+            stop.set()
+            del pollers[port]
+            print(f"[batcher] Stopped polling bridge ({phone['id']}) on port {port}")
+    for port, phone in wanted.items():
+        if port in pollers:
+            continue
+        stop = threading.Event()
+        t = threading.Thread(target=poll_bridge, args=(phone, stop), daemon=True,
+                             name=f"poll-{phone['id']}")
+        t.start()
+        pollers[port] = (phone, stop, t)
+        print(f"[batcher] Polling Bridge ({phone['id']}) on port {port}"
+              + (f" for source {phone['source_id']}" if phone.get('source_id') else ""))
+
+
 def main():
     print(f"[batcher] Starting unified batcher (window: {BATCH_WINDOW_SEC}s)")
     
@@ -559,23 +646,16 @@ def main():
     health_thread.start()
     print("[batcher] Health endpoint on port 7900")
     
-    # Start polling threads for each enabled phone
-    threads = []
-    for phone in config['phones']:
-        if phone.get('enabled', True):
-            t = threading.Thread(
-                target=poll_bridge,
-                args=(phone,),
-                daemon=True,
-                name=f"poll-{phone['id']}"
-            )
-            t.start()
-            threads.append(t)
-            print(f"[batcher] Polling Bridge ({phone['id']}) on port {phone['bridge_port']}")
-    
-    # Keep main thread alive
+    # One poller per bridge; the set is re-read every minute so a source
+    # routed, paused or added in Settings reaches a running batcher.
+    pollers, plan = {}, None
     try:
         while True:
+            try:
+                plan = load_poll_plan(previous=plan)
+                reconcile_pollers(pollers, desired_phones(plan))
+            except Exception as e:
+                print(f"[batcher] Could not decide which bridges to read: {e!r}")
             time.sleep(60)
             # Periodic stats
             with _batch_lock:
@@ -585,7 +665,6 @@ def main():
             print(f"[batcher] Stats: {msg_count} total messages, {pending} pending batches")
     except KeyboardInterrupt:
         print("[batcher] Shutting down...")
-
 
 if __name__ == '__main__':
     main()
