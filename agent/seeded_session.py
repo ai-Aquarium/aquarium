@@ -391,7 +391,7 @@ def _body_inner(
         providers_order=_pr.get("order"),
         provider_sort=_pr.get("sort"),
         openrouter_min_coding_score=(_cfg.get("openrouter") or {}).get("min_coding_score"),
-        enabled_toolsets=list(enabled_toolsets) if enabled_toolsets else None,
+        enabled_toolsets=list(enabled_toolsets) if enabled_toolsets is not None else None,
         disabled_toolsets=list(disabled_toolsets) if disabled_toolsets else None,
         quiet_mode=quiet_mode,
         skip_context_files=not bool(workdir),

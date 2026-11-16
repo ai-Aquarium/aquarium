@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from hermes_cli import source_registry as registry
-from hermes_cli import triage_router
+from hermes_cli import triage_agent, triage_router
 
 router = APIRouter(prefix="/api/sources")
 
@@ -197,3 +197,33 @@ async def decisions(
         return [d.as_dict() for d in rows]
 
     return {"decisions": await _with_box(run)}
+
+
+@router.get("/comparisons")
+async def comparisons(
+    request: Request,
+    source_id: Optional[str] = None,
+    batch_id: Optional[str] = None,
+    limit: int = 50,
+    all: bool = False,
+):
+    """Today's triage vs each picked profile's agent, per batch (newest first).
+
+    Only the caller's own batches; ``?all=1`` lists everyone's for the box
+    owner/admin. No batch text is stored, only the two triage results.
+    """
+    principal = await _caller(request)
+    user_id = principal.user_id
+    if all and not await registry.is_box_admin(user_id):
+        raise HTTPException(status_code=403, detail="Only the box owner or an admin can list every comparison.")
+
+    async def run(connection):
+        return await triage_agent.list_comparisons(
+            connection,
+            owner_user_id=None if all else user_id,
+            source_id=source_id or None,
+            batch_id=batch_id or None,
+            limit=limit,
+        )
+
+    return {"comparisons": await _with_box(run)}
