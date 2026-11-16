@@ -432,3 +432,118 @@ def test_route_is_empty_without_the_multi_user_datastore(route, monkeypatch):
     monkeypatch.setattr(web_server, "_comms_resolve_principal", _unconfigured)
     body = client.get("/api/needs-you").json()
     assert body["items"] == [] and body["count"] == 0
+
+
+def test_data_drafts_are_listed_only_for_sources_the_caller_approves():
+    rows = [
+        {"id": "s1", "name": "HSDOS WMS", "access": "manage", "draft_version": 4,
+         "draft_changes": 3, "draft_origins": ["chat", "feedback"],
+         "draft_proposed_at": "2026-11-14T12:00:00+00:00"},
+        {"id": "s2", "name": "Shared", "access": "propose", "draft_version": 2, "draft_changes": 1},
+        {"id": "s3", "name": "Clean", "access": "manage", "draft_version": None},
+    ]
+    [item] = ny.data_draft_entries(rows)
+    assert item["id"] == "data_draft:s1:4"
+    assert item["severity"] == "review"
+    assert item["href"] == "/data/s1/review"
+    assert item["title"] == "Dictionary draft v4 for HSDOS WMS is ready"
+    assert item["detail"] == "3 changes · from a chat · from answer feedback"
+    assert item["actions"][0]["label"] == "Review"
+    # agent-home translates these parts; the English text above is the fallback.
+    assert item["i18n"]["title"] == [
+        {"key": "titles.dataDraft", "vars": {"v": 4, "source": "HSDOS WMS"}}
+    ]
+    assert [p["key"] for p in item["i18n"]["detail"]] == [
+        "details.changes", "details.origin.chat", "details.origin.feedback",
+    ]
+    # list_sources sends the draft time as ISO text; the card must keep its age.
+    assert item["created_at"] == datetime(2026, 11, 14, 12, tzinfo=timezone.utc).timestamp()
+
+
+def test_schema_drift_cards_are_listed_only_for_managers_with_drift():
+    rows = [
+        {"id": "s1", "name": "HSDOS WMS", "access": "manage",
+         "schema_checked_at": "2026-11-15T09:00:00+00:00",
+         "schema_drift": [
+             {"table": "orders", "change": "columns"},
+             {"table": "customers", "change": "added"},
+             {"table": "legacy", "change": "removed"},
+         ]},
+        {"id": "s2", "name": "Shared", "access": "propose",
+         "schema_drift": [{"table": "t", "change": "added"}]},
+        {"id": "s3", "name": "Clean", "access": "manage", "schema_drift": []},
+    ]
+    [item] = ny.data_schema_entries(rows)
+    assert item["id"] == "data_schema:s1"
+    assert item["severity"] == "review"
+    assert item["href"] == "/data/s1"
+    assert item["title"] == "The HSDOS WMS schema changed — its dictionary needs an update"
+    # the card names at most two drifted tables in detail text
+    assert item["detail"] == "3 tables differ · orders: columns changed · customers is new"
+    assert item["i18n"]["title"] == [
+        {"key": "titles.dataSchema", "vars": {"source": "HSDOS WMS"}}
+    ]
+    assert [p["key"] for p in item["i18n"]["detail"]] == [
+        "details.schemaDrift", "details.schemaItem.columns", "details.schemaItem.added",
+    ]
+    assert item["created_at"] == datetime(2026, 11, 15, 9, tzinfo=timezone.utc).timestamp()
+
+
+# ---------------------------------------------------------------------------
+# One arrival raised in several profiles (FG-03 P5)
+# ---------------------------------------------------------------------------
+
+
+def test_arrival_keys_round_trip_and_survive_separators():
+    key = ny.arrival_key("email", "john@example.com", "<a:b|c@x>")
+    assert key.startswith("arrival:email:") and key.count(":") == 3
+    tagged = ny.with_arrival("todo:t1", key)
+    assert ny.split_arrival(tagged) == ("todo:t1", key)
+    assert ny.split_arrival("todo:t1") == ("todo:t1", None)
+    assert ny.with_arrival("todo:t1", None) == "todo:t1"
+
+
+def test_rows_for_one_arrival_merge_into_one_entry_listing_profiles():
+    key = ny.arrival_key("email", "john@example.com", "<m1@x>")
+    cfo = ny.tag_profile(ny.notification_entries([
+        _notif("n1", target="john", kind="proactive_ask", created=2000.0,
+               dedupe_key=ny.with_arrival("todo:t1", key)),
+        _notif("n2", target="john", kind="proactive_ask", created=3000.0,
+               dedupe_key=ny.with_arrival(ny.TRIAGE_ALERT, key)),
+    ], "john"), "cfo")
+    cmo = ny.tag_profile(ny.notification_entries([
+        _notif("n3", target="john", kind="proactive_ask", created=1000.0,
+               dedupe_key=ny.with_arrival("todo:t9", key)),
+    ], "john"), "cmo", link=True)
+    other = ny.notification_entries([_notif("n4", target="john", dedupe_key="todo:t5")], "john")
+    assert cmo[0]["href"] == "/todos?profile=cmo"
+
+    items = ny.finalize(cfo + cmo + other)
+    assert [i["id"] for i in items] == [key, "notif:n4"]  # review sorts before fyi
+    merged = items[0]
+    assert merged["context"]["profiles"] == ["cfo", "cmo"]
+    assert "profile" not in merged["context"]
+    assert merged["severity"] == "review"  # the alert outranks the fyi to-dos
+    assert merged["created_at"] == 1000.0
+
+
+def test_an_arrival_from_one_profile_keeps_its_profile_and_arrival_id():
+    key = ny.arrival_key("whatsapp", "phone2", "m1")
+    rows = ny.tag_profile(ny.notification_entries([
+        _notif("n1", target="john", kind="proactive_ask", dedupe_key=ny.with_arrival("todo:t1", key)),
+    ], "john"), "cfo")
+    [item] = ny.finalize(rows)
+    assert item["id"] == key and item["context"]["profile"] == "cfo"
+    assert item["context"]["profiles"] == ["cfo"]
+
+
+def test_an_arrival_is_pushed_once_per_person_across_profiles(tmp_path, monkeypatch):
+    import hermes_constants
+
+    monkeypatch.setattr(hermes_constants, "get_default_hermes_root", lambda: tmp_path)
+    key = ny.arrival_key("email", "a", "1")
+    assert ny.claim_arrival_push("john", key) is True
+    assert ny.claim_arrival_push("john", key) is False
+    assert ny.claim_arrival_push("mary", key) is True
+    ny.release_arrival_push("john", key)
+    assert ny.claim_arrival_push("john", key) is True

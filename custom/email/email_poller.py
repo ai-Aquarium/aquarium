@@ -37,6 +37,8 @@ def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    from shared.channel_db import ensure_source_columns
+    ensure_source_columns(conn, 'email_messages')
     return conn
 
 def load_config():
@@ -51,6 +53,61 @@ def load_install_accounts():
     except FileNotFoundError:
         return []
     return [a for a in config.get('accounts', []) if a.get('enabled', True)]
+
+def load_poll_plan(previous=None):
+    """The email sources to poll: the source registry, or the config.json
+    fallback (``source_registry.pollers`` in config.yaml)."""
+    from hermes_cli.source_polling import load_poll_plan as plan_for
+    return plan_for('email', previous=previous,
+                    log=lambda line: print(f"[poller] {line}"))
+
+
+GMAIL_IMAP = {'host': 'imap.gmail.com', 'port': 993, 'tls': True}
+
+
+def registry_accounts(plan, install_accounts, personal):
+    """Poller entries for the registry's routed email sources.
+
+    Credentials come through each source's ``credential_ref`` from the
+    existing loaders: a Settings mailbox (``email-imap``) from the credential
+    store, a Google account through ``google_oauth``. An install-wide entry
+    for the same address keeps its id (the poll cursor and send path).
+    """
+    by_address = {str(a.get('address', '')).lower(): a for a in install_accounts}
+    accounts = []
+    for source in plan.sources:
+        ref = dict(source.credential_ref or {})
+        address = source.address
+        owner = ref.get('owner_user_id') or source.owner_user_id
+        wanted = str(ref.get('name') or address).lower()
+        kind, provider = ref.get('kind') or '', ref.get('provider') or ''
+        mailbox = None
+        if kind in ('', 'email-imap') and provider in ('', 'imap'):
+            mailbox = next((c for c in personal if c.name.lower() == wanted
+                            and c.owner_user_id == owner), None)
+        if address in by_address:
+            account = dict(by_address[address])
+        elif mailbox is not None:
+            account = {'id': address, 'address': address, 'auth': 'password',
+                       'imap': {'host': mailbox.payload.get('imap_host'),
+                                'port': mailbox.payload.get('imap_port', 993)},
+                       'folders': ['INBOX'], 'label': source.display or address}
+        elif provider == 'google' or kind.startswith('google'):
+            account = {'id': address, 'address': address, 'auth': 'oauth',
+                       'google_account': ref.get('name') or address,
+                       'imap': dict(GMAIL_IMAP), 'folders': ['INBOX'],
+                       'label': source.display or address}
+        else:
+            print(f"[poller] WARNING: no credential for registry source {source.source_id} "
+                  f"({address}); credential_ref={ref or None}")
+            poll_status.setdefault('accounts', {})[address] = {'address': address, 'auth': 'no_credential'}
+            continue
+        if account.get('auth') == 'password' and mailbox is not None:
+            account['_cred'] = mailbox
+        account.update(source_id=source.source_id, owner_user_id=source.owner_user_id)
+        accounts.append(account)
+    return accounts
+
 
 def load_personal_mailboxes():
     """Every person's own mailbox from the credential store (Get ready 7)."""
@@ -272,7 +329,7 @@ def poll_account(account, db):
     use_password = account.get('auth') == 'password'
     cred = payload = None
     if use_password:
-        cred = _mailbox_cred(account)
+        cred = account.get('_cred') or _mailbox_cred(account)
         payload = cred.payload if cred is not None else None
         if payload is None:
             print(
@@ -295,7 +352,9 @@ def poll_account(account, db):
             poll_status.setdefault('accounts', {}).setdefault(account_id, {})['auth'] = 'no_credential'
             return 0
 
-    owner_user_id = account_owner(account, cred)
+    source_id = account.get('source_id')
+    # A registry source has exactly one owner, recorded in the registry.
+    owner_user_id = (account.get('owner_user_id') or None) if source_id else account_owner(account, cred)
 
     # Ensure account exists in DB
     existing = db.execute("SELECT last_uid FROM email_accounts WHERE id = ?", (account_id,)).fetchone()
@@ -417,11 +476,13 @@ def poll_account(account, db):
                                 """INSERT OR IGNORE INTO email_messages
                                    (id, account_id, from_addr, from_name, to_addrs, cc_addrs,
                                     subject, body_text, body_html, has_attachments, attachment_info,
-                                    message_id, in_reply_to, thread_id, folder, received_at, batch_id, raw_headers)
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)""",
+                                    message_id, in_reply_to, thread_id, folder, received_at, batch_id, raw_headers,
+                                    source_id, owner_user_id)
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)""",
                                 (str(uuid.uuid4()), account_id, from_addr, from_name, to_addrs, cc_addrs,
                                  subject, text_body, html_body, has_attachments, attachment_info,
-                                 message_id, in_reply_to, thread_id, folder, received_at, raw_headers)
+                                 message_id, in_reply_to, thread_id, folder, received_at, raw_headers,
+                                 source_id, owner_user_id)
                             )
                             if inserted.rowcount == 0:
                                 # OR IGNORE never raises: a message_id already
@@ -656,54 +717,39 @@ def start_health_server():
     server.serve_forever()
 
 
-def main():
-    print(f"[poller] Email IMAP Poller starting...")
-    print(f"[poller] DB: {DB_PATH}")
-    print(f"[poller] Config: {CONFIG_PATH}")
+def poll_round(plan, db):
+    """Poll every mailbox of ``plan`` once; returns ``(accounts, new_count)``.
 
-    # Start health server
-    health_thread = threading.Thread(target=start_health_server, daemon=True)
-    health_thread.start()
-    print(f"[poller] Health server on port {HEALTH_PORT}")
-
-    accounts = load_install_accounts()
+    From the registry, each routed source is one poller entry, filed into
+    ``email_messages`` (so batched and triaged as before) whether it is an
+    install-wide mailbox or one a person added in Settings; the legacy
+    register-only pass over Settings mailboxes runs in config.json mode only.
+    """
+    install = load_install_accounts()
     personal = load_personal_mailboxes()
-    print(f"[poller] Active accounts: {len(accounts)}")
-    for a in accounts:
-        print(f"[poller]   {a['id']}: {a['address']} (poll every {a.get('poll_interval_seconds', 60)}s)")
-    print(f"[poller] Personal mailboxes: {len(personal)}")
+    accounts = registry_accounts(plan, install, personal) if plan.from_registry else install
+    total = 0
+    for account in accounts:
+        try:
+            new_count = poll_account(account, db)
+            total += new_count
+            now = datetime.now(timezone.utc).isoformat()
+            poll_status['accounts'][account['id']] = {
+                'address': account['address'],
+                'source_id': account.get('source_id'),
+                'last_poll': now,
+                'new_count': new_count
+            }
+            poll_status['last_poll'] = now
+            if account.get('_cred') is not None:
+                _record_settings_poll(account['_cred'], ok=True, new_count=new_count)
+        except Exception as e:
+            print(f"[poller] Error polling {account['address']}: {e}")
+            traceback.print_exc()
+            if account.get('_cred') is not None:
+                _record_settings_poll(account['_cred'], ok=False, new_count=0)
 
-    if not accounts and not personal:
-        print("[poller] No enabled accounts. Waiting for config update...")
-        while True:
-            time.sleep(60)
-            accounts = load_install_accounts()
-            personal = load_personal_mailboxes()
-            if accounts or personal:
-                break
-
-    poll_status['accounts'] = {a['id']: {'address': a['address'], 'last_poll': None, 'new_count': 0} for a in accounts}
-
-    while True:
-        accounts = load_install_accounts()
-        personal = load_personal_mailboxes()
-
-        db = get_db()
-        for account in accounts:
-            try:
-                new_count = poll_account(account, db)
-                now = datetime.now(timezone.utc).isoformat()
-                poll_status['accounts'][account['id']] = {
-                    'address': account['address'],
-                    'last_poll': now,
-                    'new_count': new_count
-                }
-                poll_status['last_poll'] = now
-            except Exception as e:
-                print(f"[poller] Error polling {account['address']}: {e}")
-                traceback.print_exc()
-        db.close()
-
+    if not plan.from_registry:
         install_addresses = {str(a.get('address', '')).lower() for a in accounts}
         personal_errors = 0
         for cred in personal:
@@ -713,6 +759,47 @@ def main():
                 personal_errors += 1
                 print(f"[poller] Error polling a personal mailbox: {type(e).__name__}")
         poll_status['personal'] = {'mailboxes': len(personal), 'errors': personal_errors}
+    return accounts, total
+
+
+def _record_settings_poll(cred, *, ok, new_count):
+    """Keep Settings' "last checked" for a mailbox the registry poll read."""
+    from hermes_cli import email_mailboxes as mb
+    try:
+        state = mb.poll_state(cred.owner_user_id, cred.name)
+        mb.record_poll(cred.owner_user_id, cred.name, {
+            **state, 'at': datetime.now(timezone.utc).isoformat(), 'ok': ok,
+            'error': None if ok else 'Reading the mailbox failed; it will be retried.',
+            'new_count': new_count, 'reader': 'pipeline'})
+    except Exception as e:
+        print(f"[poller] Could not record a mailbox poll: {type(e).__name__}")
+
+
+def main():
+    print(f"[poller] Email IMAP Poller starting...")
+    print(f"[poller] DB: {DB_PATH}")
+    print(f"[poller] Fallback config: {CONFIG_PATH}")
+
+    # Start health server
+    health_thread = threading.Thread(target=start_health_server, daemon=True)
+    health_thread.start()
+    print(f"[poller] Health server on port {HEALTH_PORT}")
+
+    plan = None
+    while True:
+        try:
+            plan = load_poll_plan(previous=plan)
+        except Exception as e:
+            print(f"[poller] Could not decide which mailboxes to poll: {e}")
+            time.sleep(60)
+            continue
+        poll_status['mode'] = plan.mode
+
+        db = get_db()
+        try:
+            accounts, _ = poll_round(plan, db)
+        finally:
+            db.close()
 
         # Sleep for the shortest poll interval
         min_interval = min((a.get('poll_interval_seconds', 60) for a in accounts), default=60)

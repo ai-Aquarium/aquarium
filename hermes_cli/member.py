@@ -48,9 +48,9 @@ DELETE_DESCRIPTION = (
     "principal, 'purge' deletes their private rows and moves the shared ones "
     "to you. Memory is not inheritable either way: their memory rows are "
     "deleted under both strategies, and 'purge' also erases the curated "
-    "memory files about them (and their cross-profile identity file if this "
-    "was their last participation on the box). Their box-wide account is "
-    "left alone."
+    "memory files about them and their own profile folder here (and their "
+    "cross-profile identity file and archived folders if this was their last "
+    "participation on the box). Their box-wide account is left alone."
 )
 
 
@@ -92,8 +92,7 @@ def _print_activation_link(token: str, *, expires_at: str) -> None:
     path = activation_path(token, administered_profile())
     print(f"  {path}")
     print(
-        "Prefix it with your agent-home origin, e.g. "
-        f"https://<your-agent-home>{path}"
+        f"Prefix it with your agent-home origin, e.g. https://<your-agent-home>{path}"
     )
 
 
@@ -124,8 +123,7 @@ def member_list_command(args: argparse.Namespace) -> int:
         # messages still arrive as an unlinked raw handle.
         channels = ", ".join(m.channels) if m.channels else "no channels linked"
         print(
-            f"{m.role:<6} {m.user_id}  {email}  "
-            f"[{status}]  {m.display or ''}".rstrip()
+            f"{m.role:<6} {m.user_id}  {email}  [{status}]  {m.display or ''}".rstrip()
         )
         print(f"       {channels}")
     shown = page.offset + len(members)
@@ -221,10 +219,13 @@ def member_delete_command(args: argparse.Namespace) -> int:
     )
     for path in deleted.memory_files_erased:
         print(f"Erased curated memory: {path}")
+    for path in deleted.user_folders_removed:
+        print(f"Removed their own profile folder: {path}")
     if outcome.strategy == "transfer" and not deleted.memory_files_erased:
         print(
-            "Their curated memory files were left in place — transfer moves "
-            "what they owned, and memory about a person is not inheritable."
+            "Their curated memory files and own profile folders were left in "
+            "place — transfer moves what they owned, and memory about a "
+            "person is not inheritable."
         )
     print(
         "Their box-wide account still exists — accounts are shared across "
@@ -289,7 +290,9 @@ def member_unlink_channel_command(args: argparse.Namespace) -> int:
         print(f"Could not unlink the channel: {error}", file=sys.stderr)
         raise SystemExit(1) from error
 
-    print(f"{args.platform}:{args.channel_user_id} no longer resolves to {principal.user_id}.")
+    print(
+        f"{args.platform}:{args.channel_user_id} no longer resolves to {principal.user_id}."
+    )
     print(f"Linked channels: {', '.join(principal.channels) or 'none'}")
     return 0
 
@@ -307,9 +310,7 @@ def member_activate_command(args: argparse.Namespace) -> int:
 def _set_active(user_id: str, *, active: bool) -> int:
     try:
         service = _service()
-        asyncio.run(
-            service.set_member_active(_actor(), user_id=user_id, active=active)
-        )
+        asyncio.run(service.set_member_active(_actor(), user_id=user_id, active=active))
     except (MemberError, PermissionError, RuntimeError, ValueError) as error:
         verb = "reactivate" if active else "deactivate"
         print(f"Could not {verb} member: {error}", file=sys.stderr)
@@ -376,6 +377,29 @@ def member_local_principal_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def member_backfill_folders_command(args: argparse.Namespace) -> int:
+    """Run ``hermes member backfill-folders`` — create missing user folders (FG-03)."""
+    from hermes_cli.user_profile_dirs import backfill_user_profile_dirs
+
+    reports = asyncio.run(backfill_user_profile_dirs(dry_run=args.dry_run))
+    verb = "would create" if args.dry_run else "created"
+    failed = False
+    for report in reports:
+        if report.skipped:
+            print(f"{report.home}: skipped ({report.skipped})")
+            continue
+        print(
+            f"{report.home}: {verb} {len(report.created)}, "
+            f"already present {len(report.existing)}"
+        )
+        for user_id in report.created:
+            print(f"  + users/{user_id}/")
+        for error in report.errors:
+            failed = True
+            print(f"  ! {error}", file=sys.stderr)
+    return 1 if failed else 0
+
+
 def register_member_subparser(subparsers: argparse._SubParsersAction) -> None:
     """Register ``hermes member`` and its sub-actions."""
     parser = subparsers.add_parser(
@@ -392,9 +416,7 @@ def register_member_subparser(subparsers: argparse._SubParsersAction) -> None:
     member_sub = parser.add_subparsers(dest="member_command", required=True)
 
     lst = member_sub.add_parser("list", help="List enrolled members")
-    lst.add_argument(
-        "--limit", type=int, default=25, help="Page size (default: 25)"
-    )
+    lst.add_argument("--limit", type=int, default=25, help="Page size (default: 25)")
     lst.add_argument("--offset", type=int, default=0, help="Rows to skip")
     lst.add_argument(
         "--query",
@@ -444,9 +466,7 @@ def register_member_subparser(subparsers: argparse._SubParsersAction) -> None:
         description=DELETE_DESCRIPTION,
     )
     delete.add_argument("user_id", help="The member's principal id")
-    delete.add_argument(
-        "--strategy", required=True, choices=list(DELETE_STRATEGIES)
-    )
+    delete.add_argument("--strategy", required=True, choices=list(DELETE_STRATEGIES))
     delete.add_argument(
         "--transfer-to",
         dest="transfer_to",
@@ -494,7 +514,9 @@ def register_member_subparser(subparsers: argparse._SubParsersAction) -> None:
         ),
     )
     unlink_channel.add_argument("user_id", help="The member's principal id")
-    unlink_channel.add_argument("platform", help="Gateway platform name (e.g. telegram)")
+    unlink_channel.add_argument(
+        "platform", help="Gateway platform name (e.g. telegram)"
+    )
     unlink_channel.add_argument("channel_user_id", help="The platform-native sender id")
     unlink_channel.set_defaults(func=member_unlink_channel_command)
 
@@ -542,3 +564,21 @@ def register_member_subparser(subparsers: argparse._SubParsersAction) -> None:
         help="Forget the binding (it will be resolved again next session)",
     )
     local_principal.set_defaults(func=member_local_principal_command)
+
+    backfill = member_sub.add_parser(
+        "backfill-folders",
+        help="Create <profile>/users/<user_id>/ for every active member (FG-03)",
+        description=(
+            "Create the per-user folder of every active principal in every "
+            "profile on this box (the default profile and profiles/*). A "
+            "missing folder is restored from the member's newest archive, or "
+            "created empty. Idempotent: existing folders are left untouched "
+            "and suspended members are not changed."
+        ),
+    )
+    backfill.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Only report which folders would be created or restored",
+    )
+    backfill.set_defaults(func=member_backfill_folders_command)

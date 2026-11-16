@@ -83,3 +83,26 @@ describe("ToolDetailView deployments", () => {
     );
   });
 });
+
+describe("ToolDetailView logs", () => {
+  it("offers Maximize once logs are shown; maximized drops the height cap and keeps Reload", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ lines: ["boot", "ready"] })));
+    try {
+      const { container } = render(<ToolDetailView data={{ tool: TOOL({}) }} viewer={MIA} />);
+      const tail = container.querySelector<HTMLElement>('[data-component="ToolLogsTail"]')!;
+      expect(within(tail).queryByRole("button", { name: /^Maximize/ })).toBeNull();
+      fireEvent.click(within(tail).getByRole("button", { name: "Show recent logs" }));
+      const pre = await within(tail).findByText(/boot/);
+      expect(pre.className).toContain("max-h-72");
+      fireEvent.click(within(tail).getByRole("button", { name: "Maximize Recent logs" }));
+      expect(tail.getAttribute("data-maximized")).toBe("true");
+      expect(pre.className).not.toContain("max-h-");
+      expect(within(tail).getByRole("button", { name: "Reload logs" })).toBeTruthy();
+      fireEvent.click(within(tail).getByRole("button", { name: "Minimize Recent logs" }));
+      expect(tail.getAttribute("data-maximized")).toBe("false");
+      expect(pre.className).toContain("max-h-72");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

@@ -1100,6 +1100,14 @@ def _media_delivery_allowed_roots() -> List[Path]:
     """Return roots from which model-emitted local media may be delivered."""
     roots = [Path(root) for root in MEDIA_DELIVERY_SAFE_ROOTS]
     roots.extend(_profile_cache_roots())
+    try:
+        # Attachments of a project card's proposed send (hermes_cli.card_outbound),
+        # snapshotted and hash-pinned when proposed.
+        from hermes_cli.kanban_db import outbound_root
+
+        roots.append(outbound_root())
+    except Exception:
+        pass
     extra_roots = os.environ.get(MEDIA_DELIVERY_ALLOW_DIRS_ENV, "")
     for chunk in extra_roots.split(os.pathsep):
         for raw_root in chunk.split(","):

@@ -37,6 +37,7 @@ import type {
   SiteTableQuery,
   SiteTableRows,
 } from "@/types/sites";
+import type { DataGrant, DataGrantLevel, DataSource, DataSourceDoc, DictionaryVersion } from "@/types/data";
 import type {
   ChatInputMode,
   ActivityItem,
@@ -147,6 +148,12 @@ import type {
   CredentialEntry,
   EmailMailbox,
   EmailMailboxInput,
+  Source,
+  SourceClaimConflict,
+  RoutingDecision,
+  TriageComparison,
+  SourceInput,
+  SourceRoute,
   MssqlConnection,
   MssqlConnectionInput,
   WinrmConnection,
@@ -203,6 +210,14 @@ import type {
   RefreshKeysResponse,
   PinnedModelCard,
   ScheduledSummary,
+  TriageCareWriteResult,
+  TriageEditableLayer,
+  TriageLayerDiff,
+  TriageLayerFile,
+  TriageLayerHistory,
+  TriageLayers,
+  TriageLayerView,
+  TriageLayerWriteResult,
   TriageSkillFileContent,
   TriageSkillFileHistory,
   TriageStatus,
@@ -3396,6 +3411,53 @@ export class HermesApiClient {
     return this.request("/api/triage/skill-file", { method: "PUT", json: { kind, path, content } });
   }
 
+  /** FG-03 P3: the caller's resolved triage skill layers in this client's profile. */
+  async triageLayers(kind: string): Promise<TriageLayers> {
+    return this.request(`/api/triage/layers?${new URLSearchParams({ kind })}`);
+  }
+
+  async triageLayerFile(kind: string, key: string, layer: TriageLayerView = "effective"): Promise<TriageLayerFile> {
+    return this.request(`/api/triage/layers/file?${new URLSearchParams({ kind, key, layer })}`);
+  }
+
+  /** The profile template vs the caller's own version of one key. */
+  async triageLayerDiff(kind: string, key: string): Promise<TriageLayerDiff> {
+    return this.request(`/api/triage/layers/diff?${new URLSearchParams({ kind, key })}`);
+  }
+
+  async triageLayerHistory(kind: string, key: string, layer: TriageEditableLayer): Promise<TriageLayerHistory> {
+    return this.request(`/api/triage/layers/history?${new URLSearchParams({ kind, key, layer })}`);
+  }
+
+  /** `user` = the caller's own layer; `template` = owner/admin of the profile (Hermes enforces it). */
+  async saveTriageLayerFile(
+    kind: string,
+    layer: TriageEditableLayer,
+    key: string,
+    content: string,
+  ): Promise<TriageLayerWriteResult> {
+    return this.request("/api/triage/layers/file", { method: "PUT", json: { kind, layer, key, content } });
+  }
+
+  async setTriageLayerDisabled(
+    kind: string,
+    layer: TriageEditableLayer,
+    key: string,
+    disabled: boolean,
+  ): Promise<TriageLayerWriteResult> {
+    return this.request("/api/triage/layers/disable", { method: "POST", json: { kind, layer, key, disabled } });
+  }
+
+  /** Reset the caller's version of `key` to the template, or every key when omitted. */
+  async resetTriageLayer(kind: string, key?: string): Promise<{ ok: boolean; kind: string; reset: string[] }> {
+    return this.request("/api/triage/layers/reset", { method: "POST", json: key ? { kind, key } : { kind } });
+  }
+
+  /** The required "What I care about" section (Hermes refuses empty text). */
+  async saveTriageCare(kind: string, layer: TriageEditableLayer, content: string): Promise<TriageCareWriteResult> {
+    return this.request("/api/triage/layers/care", { method: "PUT", json: { kind, layer, content } });
+  }
+
   /** The caller's own IMAP/SMTP mailboxes (never any password). */
   async emailMailboxes(): Promise<{
     mailboxes: EmailMailbox[];
@@ -3419,6 +3481,66 @@ export class HermesApiClient {
     return this.request(`/api/email/mailboxes/${encodeURIComponent(address)}`, {
       method: "DELETE",
     });
+  }
+
+  /** FG-03: the caller's incoming sources and routes (`all`: box owner/admin). */
+  async sources(all = false): Promise<{
+    sources: Source[];
+    profiles: string[];
+    is_box_admin: boolean;
+  }> {
+    return this.request(`/api/sources${all ? "?all=1" : ""}`);
+  }
+
+  async registerSource(body: SourceInput): Promise<{ source: Source }> {
+    return this.request("/api/sources", { method: "POST", json: body });
+  }
+
+  async putSourceRoute(
+    sourceId: string,
+    profile: string,
+    enabled: boolean,
+  ): Promise<{ route: SourceRoute }> {
+    return this.request(
+      `/api/sources/${encodeURIComponent(sourceId)}/routes/${encodeURIComponent(profile)}`,
+      { method: "PUT", json: { enabled } },
+    );
+  }
+
+  async deleteSource(sourceId: string): Promise<{ deleted: boolean }> {
+    return this.request(`/api/sources/${encodeURIComponent(sourceId)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async sourceConflicts(all = false): Promise<{ conflicts: SourceClaimConflict[] }> {
+    return this.request(`/api/sources/conflicts${all ? "?all=1" : ""}`);
+  }
+
+  /** FG-03 P4: the caller's routing decisions, newest first (`all`: box owner/admin). */
+  async sourceDecisions(
+    query: { sourceId?: string; batchId?: string; limit?: number; all?: boolean } = {},
+  ): Promise<{ decisions: RoutingDecision[] }> {
+    const params = new URLSearchParams();
+    if (query.sourceId) params.set("source_id", query.sourceId);
+    if (query.batchId) params.set("batch_id", query.batchId);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.all) params.set("all", "1");
+    const qs = params.toString();
+    return this.request(`/api/sources/decisions${qs ? `?${qs}` : ""}`);
+  }
+
+  /** FG-03 P5: legacy vs profile-agent triage of the caller's batches. */
+  async sourceComparisons(
+    query: { sourceId?: string; batchId?: string; limit?: number; all?: boolean } = {},
+  ): Promise<{ comparisons: TriageComparison[] }> {
+    const params = new URLSearchParams();
+    if (query.sourceId) params.set("source_id", query.sourceId);
+    if (query.batchId) params.set("batch_id", query.batchId);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.all) params.set("all", "1");
+    const qs = params.toString();
+    return this.request(`/api/sources/comparisons${qs ? `?${qs}` : ""}`);
   }
 
   /** Log into IMAP and SMTP with the saved settings (no mail is sent). */
@@ -3491,6 +3613,56 @@ export class HermesApiClient {
     return this.request(`/api/sites/${encodeURIComponent(id)}/grants?${qs.toString()}`, {
       method: "DELETE",
     });
+  }
+
+  // -- Data dictionary (/api/data/*; Hermes checks the caller's access) --
+
+  async dataSources(): Promise<{ sources: DataSource[] }> {
+    return this.request("/api/data/sources");
+  }
+
+  async dataSource(id: string): Promise<DataSourceDoc> {
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}`);
+  }
+
+  async dataVersions(id: string): Promise<{ versions: DictionaryVersion[] }> {
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}/versions`);
+  }
+
+  async proposeDictionary(id: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}/draft`, { method: "POST", json: body });
+  }
+
+  async dictionaryFeedback(id: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}/feedback`, { method: "POST", json: body });
+  }
+
+  async approveDictionary(id: string, body: { version: number; reject: string[] }): Promise<Record<string, unknown>> {
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}/draft/approve`, { method: "POST", json: body });
+  }
+
+  async discardDictionary(id: string): Promise<{ discarded: boolean }> {
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}/draft`, { method: "DELETE" });
+  }
+
+  async restoreDictionary(id: string, version: string): Promise<Record<string, unknown>> {
+    return this.request(
+      `/api/data/sources/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/restore`,
+      { method: "POST" },
+    );
+  }
+
+  async dataGrants(id: string): Promise<{ owner_user_id: string; grants: DataGrant[] }> {
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}/grants`);
+  }
+
+  async putDataGrant(id: string, body: { user_id: string; grant: DataGrantLevel }): Promise<{ grant: DataGrant }> {
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}/grants`, { method: "POST", json: body });
+  }
+
+  async revokeDataGrant(id: string, userId: string): Promise<{ revoked: boolean }> {
+    const qs = new URLSearchParams({ user_id: userId });
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}/grants?${qs.toString()}`, { method: "DELETE" });
   }
 
   async refreshSite(
@@ -4096,11 +4268,12 @@ export class HermesApiClient {
     slug: string,
     taskId: string,
     key: string,
-    decision: "approve" | "deny",
+    decision: "approve" | "deny" | "revise",
+    note?: string,
   ): Promise<import("@/types").ProjectBoardTask> {
     return this.request(
       `/api/registry/projects/${encodeURIComponent(slug)}/cards/${encodeURIComponent(taskId)}/approvals`,
-      { method: "POST", json: { key, decision } },
+      { method: "POST", json: note ? { key, decision, note } : { key, decision } },
     );
   }
 }

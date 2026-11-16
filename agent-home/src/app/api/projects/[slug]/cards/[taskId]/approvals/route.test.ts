@@ -45,4 +45,19 @@ describe("POST /api/projects/:slug/cards/:taskId/approvals", () => {
     expect((await POST(req({ key: "  ", decision: "approve" }), params)).status).toBe(422);
     expect(decide).not.toHaveBeenCalled();
   });
+
+  it("revise forwards a trimmed note, and needs one", async () => {
+    principalState.principal = { user_id: "leo" };
+    const decide = vi.fn(async () => ({ id: "t_1", status: "ready" }));
+    clientState.client = { decideProjectCardApproval: decide };
+    expect((await POST(req({ key: "send:ab", decision: "revise" }), params)).status).toBe(422);
+    expect((await POST(req({ key: "send:ab", decision: "revise", note: "  " }), params)).status).toBe(422);
+    expect(
+      (await POST(req({ key: "send:ab", decision: "revise", note: "x".repeat(2001) }), params)).status,
+    ).toBe(422);
+    expect(decide).not.toHaveBeenCalled();
+    const res = await POST(req({ key: "send:ab", decision: "revise", note: " Add PO 7781 " }), params);
+    expect(res.status).toBe(200);
+    expect(decide.mock.calls).toEqual([["tender", "t_1", "send:ab", "revise", "Add PO 7781"]]);
+  });
 });

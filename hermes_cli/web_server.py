@@ -315,14 +315,19 @@ async def _lifespan_services(app: "FastAPI"):
 
     db_pool_on = db_pool.enable(db_pool.settings_from_config(load_config() or {}))
 
-    # Site-to-schema scheduled refreshes (hermes_cli/site_sources.py).
+    # Site-to-schema scheduled refreshes (hermes_cli/site_sources.py) and the
+    # dictionary schema-change sweep (hermes_cli/data_dictionary.py).
     sites_stop = asyncio.Event()
     sites_task = None
+    schema_task = None
     try:
         from hermes_cli import site_sources
 
         if site_sources.scheduler_enabled(load_config() or {}):
             sites_task = asyncio.create_task(site_sources.scheduler_loop(sites_stop))
+            from hermes_cli import data_dictionary
+
+            schema_task = asyncio.create_task(data_dictionary.schema_check_loop(sites_stop))
     except Exception:  # noqa: BLE001 - never block the dashboard on it
         _log.debug("site scheduler not started", exc_info=True)
 
@@ -332,6 +337,8 @@ async def _lifespan_services(app: "FastAPI"):
         sites_stop.set()
         if sites_task is not None:
             sites_task.cancel()
+        if schema_task is not None:
+            schema_task.cancel()
         if db_pool_on:
             await asyncio.to_thread(db_pool.disable)
         cpu_stop.set()
@@ -408,9 +415,11 @@ from hermes_cli.vpn_api import install_internal_auth as _vpn_install_internal_au
 from hermes_cli.email_accounts_api import router as _email_accounts_router  # noqa: E402
 from hermes_cli.telegram_bot_api import router as _telegram_bot_router  # noqa: E402
 from hermes_cli.email_mailboxes_api import router as _email_mailboxes_router  # noqa: E402
+from hermes_cli.sources_api import router as _sources_router  # noqa: E402
 from hermes_cli.mssql_connections_api import router as _mssql_connections_router  # noqa: E402
 from hermes_cli.winrm_connections_api import router as _winrm_connections_router  # noqa: E402
 from hermes_cli.site_sources_api import router as _site_sources_router  # noqa: E402
+from hermes_cli.data_dictionary_api import router as _data_dictionary_router  # noqa: E402
 from hermes_cli.wa_bridge_api import router as _wa_bridge_router  # noqa: E402
 from hermes_cli.triage_status_api import router as _triage_status_router  # noqa: E402
 from hermes_cli.backup_offsite_api import router as _backup_offsite_router  # noqa: E402
@@ -452,9 +461,11 @@ app.include_router(_telegram_bot_router)
 _vpn_install_internal_auth()
 app.include_router(_email_accounts_router)
 app.include_router(_email_mailboxes_router)
+app.include_router(_sources_router)
 app.include_router(_mssql_connections_router)
 app.include_router(_winrm_connections_router)
 app.include_router(_site_sources_router)
+app.include_router(_data_dictionary_router)
 app.include_router(_wa_bridge_router)
 app.include_router(_triage_status_router)
 app.include_router(_backup_offsite_router)
@@ -936,6 +947,16 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         ),
         "options": ["stash", "discard"],
     },
+    "source_registry.pollers": {
+        "type": "select",
+        "description": (
+            "Where the email poller and WhatsApp batcher find sources to read. "
+            "'registry' reads the box source registry and falls back to the "
+            "box-wide config.json only when the registry is unreachable or "
+            "empty; 'registry_only' never falls back; 'config' is legacy."
+        ),
+        "options": ["registry", "registry_only", "config"],
+    },
 }
 
 # Categories with fewer fields get merged into "general" to avoid tab sprawl.
@@ -970,6 +991,8 @@ _CATEGORY_MERGE: Dict[str, str] = {
     "computer_use": "agent",
     # `email_poller.config_path` is the only email_poller field.
     "email_poller": "general",
+    # `source_registry.pollers` is the only source_registry field.
+    "source_registry": "general",
 }
 
 # Display order for tabs — unlisted categories sort alphabetically after these.
@@ -5138,7 +5161,11 @@ async def _settle_todo_proposal(principal, todo_id: str, answer: str) -> dict:
     """
     try:
         from hermes_cli.todo_store import default_store
+        from hermes_constants import get_hermes_home
 
+        # The answer route holds the to-do's profile scope (``?profile=``,
+        # FG-28 B4), so the store is that profile's schema and ``principal``
+        # its own enrolment; the revision session runs pinned to it too.
         store = default_store()
         if answer.strip().lower() == "approved":
             from hermes_cli.todo_outbound import execute_proposal
@@ -5168,6 +5195,7 @@ async def _settle_todo_proposal(principal, todo_id: str, answer: str) -> dict:
             actor=actor,
             extra_context=answer,
             revision=True,
+            profile_home=get_hermes_home(),
         )
         return {"type": "revision", "session_id": session_id}
     except Exception as exc:  # noqa: BLE001 - the answer itself already settled
@@ -7430,6 +7458,7 @@ _AUX_TASK_SLOTS: Tuple[str, ...] = (
     "mcp",
     "title_generation",
     "session_review",
+    "triage_router",
     "triage_specifier",
     "kanban_decomposer",
     "profile_describer",
@@ -13386,6 +13415,20 @@ async def needs_you(request: Request):
         _log.warning("needs-you: notifications source failed", exc_info=True)
     covered = ny.notification_dedupe_keys(items)
 
+    # Triage raises an arrival's to-dos/alerts in each of the caller's chosen
+    # profiles (FG-03 P5): gather those too, so finalize() shows one entry.
+    try:
+        from hermes_cli.profiles import get_active_profile_name
+
+        here = get_active_profile_name()
+        items = [
+            *ny.tag_profile([i for i in items if i["context"].get("arrival_key")], here),
+            *[i for i in items if not i["context"].get("arrival_key")],
+        ]
+        items.extend(await ny.arrival_entries_elsewhere(principal.user_id))
+    except Exception:
+        _log.warning("needs-you: other profiles' arrivals failed", exc_info=True)
+
     runs = {
         run_id: {"session_id": entry["session_id"], "profile": entry.get("profile")}
         for run_id, entry in list(_CHAT_RUNS.items())
@@ -13412,6 +13455,16 @@ async def needs_you(request: Request):
         items.extend(ny.profile_suggestion_entries(open_rows))
     except Exception:
         _log.warning("needs-you: profile suggestions source failed", exc_info=True)
+
+    try:
+        from hermes_cli import data_dictionary as dd
+        from hermes_cli import site_sources as ss
+
+        sources = await dd.list_sources(principal, ss.current_profile())
+        items.extend(ny.data_draft_entries(sources))
+        items.extend(ny.data_schema_entries(sources))
+    except Exception:
+        _log.warning("needs-you: data dictionary source failed", exc_info=True)
 
     try:
         enrolled = set() if admin else await _enrolled_profiles(principal.user_id)

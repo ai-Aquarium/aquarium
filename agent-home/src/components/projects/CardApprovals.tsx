@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
+
 import { ActionButton } from "@/components/projects/ActionButton";
 import { ActionError } from "@/components/projects/ActionError";
 import { useProjectAction } from "@/components/projects/useProjectAction";
-import type { ProjectCardApproval } from "@/types";
+import type { ProjectBoardTask, ProjectCardApproval } from "@/types";
 import { newTabRel } from "@/lib/http/link-rel";
 
 export interface ApprovalLink {
@@ -86,8 +88,188 @@ export function describeApproval(approval: ProjectCardApproval): ApprovalView {
   return { tool, intent, args, text, links };
 }
 
+/** An outgoing message a card's worker proposed (`hermes projects propose-send`). */
+export interface OutboundProposal {
+  channel: string;
+  target: string;
+  account: string;
+  subject: string;
+  body: string;
+  attachment: { name: string; size: number } | null;
+}
+
+/** The proposed message on a `send:` approval, or null for any other ask. */
+export function describeOutbound(approval: ProjectCardApproval): OutboundProposal | null {
+  if (!approval.key.startsWith("send:")) return null;
+  const parsed = parseObject((approval.detail ?? "").trim());
+  if (!parsed || parsed.kind !== "outbound_send") return null;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const att = parsed.attachment;
+  const attachment =
+    att && typeof att === "object" && typeof (att as { name?: unknown }).name === "string"
+      ? {
+          name: (att as { name: string }).name,
+          size: Number((att as { size?: unknown }).size) || 0,
+        }
+      : null;
+  return {
+    channel: str(parsed.channel),
+    target: str(parsed.target),
+    account: str(parsed.account),
+    subject: str(parsed.subject),
+    body: str(parsed.body),
+    attachment,
+  };
+}
+
+export function channelName(channel: string): string {
+  return channel === "whatsapp" ? "WhatsApp" : channel === "email" ? "email" : channel;
+}
+
+function fileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
+/** The whole message as it will leave: who to, from which account, what. */
+export function OutboundProposalView({ proposal }: { proposal: OutboundProposal }) {
+  const rows: [string, string][] = [
+    ["To", proposal.target],
+    ["From", proposal.account],
+  ];
+  if (proposal.subject) rows.push(["Subject", proposal.subject]);
+  return (
+    <div data-component="OutboundProposal" className="mt-1 flex flex-col gap-1.5 text-xs">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+        {rows.map(([name, value]) => (
+          <div key={name} className="contents">
+            <dt className="text-[var(--color-muted)]">{name}</dt>
+            <dd className="min-w-0 break-all" data-field={name.toLowerCase()}>
+              {value}
+            </dd>
+          </div>
+        ))}
+        <div className="contents">
+          <dt className="text-[var(--color-muted)]">Attachment</dt>
+          <dd className="min-w-0 break-all" data-field="attachment">
+            {proposal.attachment
+              ? `${proposal.attachment.name} (${fileSize(proposal.attachment.size)})`
+              : "None"}
+          </dd>
+        </div>
+      </dl>
+      <pre
+        data-component="OutboundBody"
+        className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-2)] p-2 font-sans"
+      >
+        {proposal.body}
+      </pre>
+    </div>
+  );
+}
+
+export type OutboundDecisionKind = "approve" | "deny" | "revise";
+
+/**
+ * Approve and send / Deny / Revise with a note — the answers to a proposed
+ * message. Nothing is sent until Approve and send.
+ */
+export function OutboundDecision({
+  pending,
+  disabled,
+  onDecide,
+  primaryClass,
+  buttonClass,
+}: {
+  pending: OutboundDecisionKind | null;
+  disabled: boolean;
+  onDecide: (decision: OutboundDecisionKind, note?: string) => void;
+  primaryClass: string;
+  buttonClass: string;
+}) {
+  const [revising, setRevising] = useState(false);
+  const [note, setNote] = useState("");
+  if (revising) {
+    return (
+      <div data-component="OutboundRevise" className="mt-2 flex flex-col gap-1.5">
+        <textarea
+          aria-label="What should change"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={3}
+          maxLength={2000}
+          placeholder="What should change before it is sent?"
+          className="w-full rounded-lg border border-[var(--color-border)] bg-transparent p-2 text-xs"
+        />
+        <div className="flex flex-wrap gap-2">
+          <ActionButton
+            busy={pending === "revise"}
+            disabled={disabled || !note.trim()}
+            pendingLabel="Sending back…"
+            onClick={() => onDecide("revise", note.trim())}
+            className={primaryClass}
+          >
+            Send back with note
+          </ActionButton>
+          <ActionButton
+            busy={false}
+            disabled={disabled}
+            onClick={() => setRevising(false)}
+            className={buttonClass}
+          >
+            Cancel
+          </ActionButton>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 flex flex-wrap gap-2" data-appmcp-deny="consent">
+      <ActionButton
+        busy={pending === "approve"}
+        disabled={disabled}
+        pendingLabel="Sending…"
+        onClick={() => onDecide("approve")}
+        className={primaryClass}
+      >
+        Approve and send
+      </ActionButton>
+      <ActionButton
+        busy={pending === "deny"}
+        disabled={disabled}
+        pendingLabel="Denying…"
+        onClick={() => onDecide("deny")}
+        className={buttonClass}
+      >
+        Deny
+      </ActionButton>
+      <ActionButton
+        busy={false}
+        disabled={disabled}
+        onClick={() => setRevising(true)}
+        className={buttonClass}
+      >
+        Revise…
+      </ActionButton>
+    </div>
+  );
+}
+
+/** The server's answer to a send: the reason it did not go, else null. */
+export function sendFailure(task: Pick<ProjectBoardTask, "outbound"> | null | undefined): string | null {
+  const outbound = task?.outbound;
+  if (outbound?.event === "partial") {
+    return `Partly sent: the text went out but not the attachment (${outbound.error ?? "the attachment failed"}). It was not retried, so the text is not sent twice.`;
+  }
+  if (!outbound || outbound.event !== "failed") return null;
+  return `Not sent: ${outbound.error ?? outbound.detail ?? "the send failed"}. It is waiting for approval again.`;
+}
+
 /** The reviewable body of one approval: why, the exact call, and links. */
 export function ApprovalDetail({ approval }: { approval: ProjectCardApproval }) {
+  const outbound = describeOutbound(approval);
+  if (outbound) return <OutboundProposalView proposal={outbound} />;
   const view = describeApproval(approval);
   return (
     <div data-component="ApprovalDetail" className="mt-1 flex flex-col gap-1.5 text-xs">
@@ -141,6 +323,11 @@ export function ApprovalDetail({ approval }: { approval: ProjectCardApproval }) 
   );
 }
 
+const ROW_PRIMARY =
+  "rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent-fg)] disabled:opacity-50";
+const ROW_BTN =
+  "rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium disabled:opacity-50";
+
 function ApprovalRow({
   slug,
   taskId,
@@ -152,12 +339,21 @@ function ApprovalRow({
   approval: ProjectCardApproval;
   canAct: boolean;
 }) {
-  const action = useProjectAction();
-  const decide = (decision: "approve" | "deny") => {
+  const action = useProjectAction<ProjectBoardTask>();
+  const [pending, setPending] = useState<OutboundDecisionKind | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const outbound = describeOutbound(approval);
+  const decide = (decision: OutboundDecisionKind, note?: string) => {
     if (action.busy) return;
+    setPending(decision);
+    setFailure(null);
     void action.run(
       `/api/projects/${encodeURIComponent(slug)}/cards/${encodeURIComponent(taskId)}/approvals`,
-      { method: "POST", body: { key: approval.key, decision } },
+      {
+        method: "POST",
+        body: note ? { key: approval.key, decision, note } : { key: approval.key, decision },
+        onSuccess: (data) => setFailure(sendFailure(data)),
+      },
     );
   };
   return (
@@ -166,15 +362,27 @@ function ApprovalRow({
       data-approval-key={approval.key}
       className="rounded-lg border border-amber-400/40 bg-amber-400/5 p-2.5"
     >
-      <p className="text-sm font-medium">Waiting on you: allow {approval.label}?</p>
+      <p className="text-sm font-medium">
+        {outbound
+          ? `Waiting on you: send this ${channelName(outbound.channel)}?`
+          : `Waiting on you: allow ${approval.label}?`}
+      </p>
       <ApprovalDetail approval={approval} />
-      {canAct ? (
+      {canAct && outbound ? (
+        <OutboundDecision
+          pending={action.busy ? pending : null}
+          disabled={action.busy}
+          onDecide={decide}
+          primaryClass={ROW_PRIMARY}
+          buttonClass={ROW_BTN}
+        />
+      ) : canAct ? (
         <div className="mt-2 flex flex-wrap gap-2" data-appmcp-deny="consent">
           <ActionButton
             busy={action.busy}
             pendingLabel="Saving…"
             onClick={() => decide("approve")}
-            className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
+            className={ROW_PRIMARY}
           >
             Allow on this card
           </ActionButton>
@@ -182,11 +390,16 @@ function ApprovalRow({
             busy={false}
             disabled={action.busy}
             onClick={() => decide("deny")}
-            className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+            className={ROW_BTN}
           >
             Deny
           </ActionButton>
         </div>
+      ) : null}
+      {failure ? (
+        <p role="alert" className="mt-2 text-xs text-[var(--color-danger)]">
+          {failure}
+        </p>
       ) : null}
       <ActionError action={action} className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--color-danger)]" />
     </li>

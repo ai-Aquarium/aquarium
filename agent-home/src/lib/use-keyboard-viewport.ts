@@ -5,7 +5,7 @@ import { useEffect } from "react";
 /** Less than this between the layout and visual viewport is browser chrome, not a keyboard. */
 export const KEYBOARD_MIN_PX = 120;
 
-function isEditable(el: Element | null): boolean {
+export function isEditable(el: Element | null): boolean {
   if (!el) return false;
   if (el instanceof HTMLTextAreaElement) return !el.readOnly && !el.disabled;
   if (el instanceof HTMLInputElement) {

@@ -27,8 +27,10 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
-from hermes_cli import kanban_db, kanban_view, projects_db
+from hermes_cli import card_outbound, kanban_db, kanban_view, projects_db
+from tools.access_policy import acting_as
 from hermes_cli.projects_api import (
+    _require_human,
     _board_conn,
     _move_card_sync,
     _refuse_if_archived,
@@ -282,6 +284,11 @@ async def decide_card_approval(request: Request, task_id: str) -> dict[str, Any]
     comment thread, and once nothing else is pending on a blocked card it
     is released, so the next worker either makes the approved call or
     reads that it was denied.
+
+    A proposed outgoing message (key ``send:…``, :mod:`hermes_cli.card_outbound`)
+    is *sent* by ``approve`` — here, by this person's act, through the shared
+    egress — and also takes ``revise`` with a ``note``: the draft is refused
+    and the note goes to the next worker run to draft a new one.
     """
     project, _role, _profiles, principal = await _require_write(
         request, judgement=True
@@ -290,14 +297,64 @@ async def decide_card_approval(request: Request, task_id: str) -> dict[str, Any]
     body = await _json_object(request)
     key = str(body.get("key") or "").strip()
     decision = str(body.get("decision") or "").strip()
+    note = str(body.get("note") or "").strip()
     if not key:
         raise HTTPException(status_code=422, detail="key is required")
-    if decision not in ("approve", "deny"):
+    if decision not in ("approve", "deny", "revise"):
         raise HTTPException(
-            status_code=422, detail="decision must be 'approve' or 'deny'"
+            status_code=422,
+            detail="decision must be 'approve', 'deny' or 'revise'",
         )
+    is_send = card_outbound.is_send_key(key)
+    if decision == "revise":
+        if not is_send:
+            raise HTTPException(
+                status_code=422, detail="only a proposed message can be revised"
+            )
+        if not note:
+            raise HTTPException(status_code=422, detail="revise needs a note")
+        if len(note) > _REASON_MAX_LEN:
+            raise HTTPException(status_code=422, detail="note is too long")
     approve = decision == "approve"
+    if is_send and approve:
+        await _require_human(request, "sending a message")
     actor = f"user:{principal.user_id}"
+
+    def _comment_for(label: str, outbound: Optional[dict]) -> str:
+        if is_send:
+            if decision == "revise":
+                return (
+                    f"Changes requested for: {label}. Not sent. Note: {note}\n"
+                    "Draft a revised message and propose it again with "
+                    "`hermes projects propose-send`."
+                )
+            if not approve:
+                return (
+                    f"Denied: {label}. Not sent. Do not send it, or anything "
+                    "like it, another way; finish without it, or block the "
+                    "card and say what cannot be done without it."
+                )
+            if outbound and outbound.get("event") == "sent":
+                return f"Sent: {label}. Approved and sent by {actor}."
+            reason = (outbound or {}).get("error") or (outbound or {}).get("detail")
+            if outbound and outbound.get("event") == "partial":
+                return (
+                    f"Partly sent: {label}. The text went out but the attachment "
+                    f"did not ({reason}). It was not retried, so the recipient "
+                    "does not get the text twice; send the file another way or "
+                    "propose it again."
+                )
+            return (
+                f"Could not send: {label} ({reason}). Nothing was sent; it is "
+                "waiting for approval again."
+            )
+        if approve:
+            return f"Approved for this card: {label}. The call will go through now."
+        return (
+            f"Denied for this card: {label}. Do not use it or get the "
+            "same effect another way; finish without it, or block the card "
+            "and say what cannot be done without it."
+        )
 
     def _sync() -> dict:
         with _board_conn(project) as bconn:
@@ -309,16 +366,19 @@ async def decide_card_approval(request: Request, task_id: str) -> dict[str, Any]
             )
             if label is None:
                 raise ValueError("nothing is waiting for that approval")
-            kanban_db.add_comment(
-                bconn,
-                task_id,
-                actor,
-                f"Approved for this card: {label}. The call will go through now."
-                if approve
-                else f"Denied for this card: {label}. Do not use it or get the "
-                "same effect another way; finish without it, or block the card "
-                "and say what cannot be done without it.",
-            )
+            outbound = None
+            if is_send and approve:
+                # The send tool checks bridge ownership against the person a
+                # call runs for; that is the approving person.
+                role = getattr(principal.role, "value", principal.role)
+                with acting_as(principal.user_id, str(role) if role else None):
+                    outbound = card_outbound.deliver(bconn, task_id, key, actor=actor)
+            elif decision == "revise":
+                kanban_db.append_event(
+                    bconn, task_id, "outbound_revise",
+                    {"key": key, "note": note, "by": actor},
+                )
+            kanban_db.add_comment(bconn, task_id, actor, _comment_for(label, outbound))
             pending = kanban_db.list_task_approvals(bconn, [task_id]).get(task_id, [])
             if task.status == "blocked" and not pending:
                 kanban_db.unblock_task(bconn, task_id)
@@ -327,6 +387,11 @@ async def decide_card_approval(request: Request, task_id: str) -> dict[str, Any]
                 raise KeyError(task_id)
             out = kanban_view.task_dict(refreshed)
             out["pending_approvals"] = pending
+            if outbound is not None:
+                out["outbound"] = {
+                    k: outbound.get(k) for k in ("event", "error", "detail")
+                    if outbound.get(k)
+                }
             return out
 
     try:

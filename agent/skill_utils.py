@@ -445,6 +445,31 @@ def _shared_skills_dir() -> Optional[Path]:
     return shared if shared.is_dir() else None
 
 
+def _is_user_folders_root(path: Path) -> bool:
+    """True if *path* is a profile home's ``users/`` (FG-03 per-user folders).
+
+    Those hold each enrolled person's own version of the profile; nothing
+    under them is the profile's skill, so a scan that reaches one (an
+    external dir set to a profile home or above it) must not walk in.
+    """
+    from hermes_constants import get_default_hermes_root, get_hermes_home
+    from hermes_cli.user_profile_dirs import USERS_DIRNAME
+
+    if path.name != USERS_DIRNAME:
+        return False
+    try:
+        parent = path.parent.resolve()
+        root = get_default_hermes_root().resolve()
+        active = get_hermes_home().resolve()
+    except (OSError, RuntimeError):
+        return False
+    return parent in (root, active) or parent.parent == root / "profiles"
+
+
+def _inside_user_folders(path: Path) -> bool:
+    return any(_is_user_folders_root(ancestor) for ancestor in (path, *path.parents))
+
+
 def get_external_skills_dirs() -> List[Path]:
     """Read ``skills.external_dirs`` from config.yaml and return validated paths.
 
@@ -516,6 +541,12 @@ def get_external_skills_dirs() -> List[Path]:
         if p == local_skills:
             continue
         if p in seen:
+            continue
+        if _inside_user_folders(p):
+            logger.warning(
+                "External skills dir is inside a profile's per-user folders, "
+                "skipping: %s", p
+            )
             continue
         if p.is_dir():
             seen.add(p)
@@ -757,7 +788,7 @@ def iter_skill_index_files(skills_dir: Path, filename: str):
     """Walk skills_dir yielding sorted paths matching *filename*.
 
     Excludes Hermes metadata, VCS, virtualenv/dependency, cache, and skill
-    support directories. Support directories (references/templates/assets/
+    support directories, and a profile home's per-user ``users/`` folders. Support directories (references/templates/assets/
     scripts) can contain arbitrary markdown and even archived package
     ``SKILL.md`` files, but they are progressive-disclosure data loaded through
     ``skill_view(..., file_path=...)`` rather than active skill roots.
@@ -770,6 +801,7 @@ def iter_skill_index_files(skills_dir: Path, filename: str):
             for d in dirs
             if d not in EXCLUDED_SKILL_DIRS
             and not (has_skill_md and d in SKILL_SUPPORT_DIRS)
+            and not _is_user_folders_root(Path(root) / d)
         ]
         if filename in files:
             matches.append(Path(root) / filename)

@@ -611,10 +611,28 @@ class EmailAdapter(BasePlatformAdapter):
             logger.error("[Email] SMTP connection failed: %s", e)
             return False
 
+        await self._warn_if_pipeline_reads_mailbox()
         self._running = True
         self._poll_task = asyncio.create_task(self._poll_loop())
         print(f"[Email] Connected as {self._address}")
         return True
+
+    async def _warn_if_pipeline_reads_mailbox(self) -> None:
+        """Warn when the email pipeline also reads this mailbox (FG-03 P2)."""
+        try:
+            from hermes_cli.source_polling import pipeline_reads_mailbox
+
+            source = await pipeline_reads_mailbox(self._address)
+        except Exception:
+            return
+        if source:
+            logger.warning(
+                "[Email] %s is also read by the email pipeline (source %s); a mailbox "
+                "should have one reader. Remove it from the gateway (EMAIL_ADDRESS) or "
+                "unroute the source.",
+                self._address,
+                source,
+            )
 
     async def disconnect(self) -> None:
         """Stop polling and disconnect."""
@@ -1159,6 +1177,40 @@ class EmailAdapter(BasePlatformAdapter):
 # ──────────────────────────────────────────────────────────────────────────
 
 
+#: Total attachment bytes per one-shot email. Base64 grows a payload by a
+#: third, so this stays under the common 25 MB provider ceiling.
+STANDALONE_MAX_ATTACHMENT_BYTES = 18 * 1024 * 1024
+
+
+def _standalone_attachments(media_files) -> List[Tuple[Path, bytes]]:
+    """Read the MEDIA files a one-shot email carries.
+
+    Callers have already run the paths through ``validate_media_delivery_path``;
+    this re-checks what it reads (a regular file, after resolving symlinks) and
+    refuses the whole send when any file is missing or the total is over
+    :data:`STANDALONE_MAX_ATTACHMENT_BYTES`, because an invoice email that
+    silently leaves without its PDF is worse than no email.
+    """
+    out: List[Tuple[Path, bytes]] = []
+    total = 0
+    for item in media_files or []:
+        raw = item[0] if isinstance(item, (tuple, list)) else item
+        try:
+            path = Path(str(raw)).resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            raise ValueError(f"attachment {Path(str(raw)).name!r} is missing")
+        if not path.is_file():
+            raise ValueError(f"attachment {path.name!r} is not a regular file")
+        total += path.stat().st_size
+        if total > STANDALONE_MAX_ATTACHMENT_BYTES:
+            raise ValueError(
+                "attachments are larger than "
+                f"{STANDALONE_MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB in total"
+            )
+        out.append((path, path.read_bytes()))
+    return out
+
+
 async def _standalone_send(
     pconfig,
     chat_id,
@@ -1180,7 +1232,11 @@ async def _standalone_send(
     # Multi-account boxes (the custom email pipeline) name the env var that
     # holds *this* account's password via ``extra["password_env"]``; single-
     # account deployments fall back to EMAIL_PASSWORD exactly as before.
-    password = os.getenv(extra.get("password_env") or "EMAIL_PASSWORD", "")
+    # A personal mailbox (FG-03 P6) hands its saved password over in-memory.
+    password = extra.get("password") or os.getenv(
+        extra.get("password_env") or "EMAIL_PASSWORD", ""
+    )
+    username = extra.get("username") or address
     smtp_host = extra.get("smtp_host") or os.getenv("EMAIL_SMTP_HOST", "")
     try:
         smtp_port = int(extra.get("smtp_port") or os.getenv("EMAIL_SMTP_PORT", "587"))
@@ -1191,18 +1247,50 @@ async def _standalone_send(
         return {"error": "Email not configured (EMAIL_ADDRESS, EMAIL_PASSWORD, EMAIL_SMTP_HOST required)"}
 
     try:
-        msg = MIMEText(message, "plain", "utf-8")
+        attachments = _standalone_attachments(media_files)
+    except ValueError as e:
+        return {"error": f"Email not sent: {e}"}
+
+    try:
+        if attachments:
+            msg = MIMEMultipart()
+            if message:
+                msg.attach(MIMEText(message, "plain", "utf-8"))
+            for path, data in attachments:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(data)
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", "attachment", filename=path.name)
+                msg.attach(part)
+        else:
+            msg = MIMEText(message, "plain", "utf-8")
         msg["From"] = address
         msg["To"] = chat_id
-        msg["Subject"] = extra.get("subject") or "Hermes Agent"
+        subject = extra.get("subject") or "Hermes Agent"
+        if thread_id:
+            # A reply: thread it under the message it answers.
+            ref = f"<{str(thread_id).strip().strip('<>')}>"
+            msg["In-Reply-To"] = ref
+            msg["References"] = ref
+            if extra.get("subject") and not subject.lower().startswith("re:"):
+                subject = f"Re: {subject}"
+        msg["Subject"] = subject
         msg["Date"] = formatdate(localtime=True)
 
-        server = smtplib.SMTP(smtp_host, smtp_port)
-        server.starttls(context=_ssl.create_default_context())
-        server.login(address, password)
+        if str(extra.get("smtp_security") or "").lower() == "ssl":
+            server = smtplib.SMTP_SSL(
+                smtp_host, smtp_port, context=_ssl.create_default_context()
+            )
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port)
+            server.starttls(context=_ssl.create_default_context())
+        server.login(username, password)
         server.send_message(msg)
         server.quit()
-        return {"success": True, "platform": "email", "chat_id": chat_id}
+        result = {"success": True, "platform": "email", "chat_id": chat_id}
+        if attachments:
+            result["attachments"] = [path.name for path, _data in attachments]
+        return result
     except Exception as e:
         try:
             from tools.send_message_tool import _error as _e

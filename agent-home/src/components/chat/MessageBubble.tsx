@@ -4,7 +4,9 @@ import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode }
 
 import { ChatFile } from "@/components/chat/ChatFile";
 import { ChatMedia } from "@/components/chat/ChatMedia";
+import { DataAnswerFooter } from "@/components/chat/DataAnswerFooter";
 import { RichText } from "@/components/chat/RichText";
+import { splitDataAnswer } from "@/lib/chat/data-answer";
 import { mediaRefPath } from "@/lib/chat/media-ref";
 import {
   splitCompactionContent,
@@ -181,12 +183,19 @@ export const MessageBubble = memo(function MessageBubble({
   msgIndex?: number;
   highlightTerm?: string;
 }) {
+  // A maximized panel inside the row must escape it: content-visibility
+  // containment would make the row its containing block and clip it.
+  const [maximized, setMaximized] = useState(false);
   const isUser = message.role === "user";
   const split = splitCompactionContent(message.content ?? "");
-  const content = isUser ? stripRefMentions(stripInjectedContext(split.display)) : split.display;
+  const data = isUser ? null : splitDataAnswer(split.display);
+  const content = isUser
+    ? stripRefMentions(stripInjectedContext(split.display))
+    : (data?.text ?? split.display);
+  const dataAnswer = data?.answer ?? null;
   const reasoning = isUser ? "" : (message.reasoning ?? "").trim();
 
-  if (content === "" && reasoning === "") {
+  if (content === "" && reasoning === "" && !dataAnswer) {
     // Summary-only row (or a user turn that was just the context line): no
     // bubble at all — at most the compaction divider.
     return split.hadCompaction ? <CompactionDivider /> : null;
@@ -200,7 +209,7 @@ export const MessageBubble = memo(function MessageBubble({
         data-msg-index={msgIndex}
         data-role={message.role}
         data-sent-while-working={isUser && message.sentWhileWorking ? "true" : undefined}
-        style={ROW_STYLE}
+        style={maximized ? undefined : ROW_STYLE}
         className={`group flex gap-1 ${isUser ? "justify-end" : "justify-start"}`}
       >
         <div
@@ -226,6 +235,7 @@ export const MessageBubble = memo(function MessageBubble({
                 </details>
               ) : null}
               <RichText content={content} />
+              {dataAnswer ? <DataAnswerFooter answer={dataAnswer} onMaximizedChange={setMaximized} /> : null}
             </>
           )}
         </div>

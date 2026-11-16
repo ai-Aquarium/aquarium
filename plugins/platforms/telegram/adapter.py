@@ -16,7 +16,7 @@ import os
 import html as _html
 import re
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set, Any
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -412,6 +412,7 @@ class TelegramAdapter(BasePlatformAdapter):
         )
         self._pending_text_batches: Dict[str, MessageEvent] = {}
         self._pending_text_batch_tasks: Dict[str, asyncio.Task] = {}
+        self._refused_message_sink: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None
         self._drop_delayed_deliveries = False
         self._polling_error_task: Optional[asyncio.Task] = None
         self._polling_conflict_count: int = 0
@@ -664,6 +665,107 @@ class TelegramAdapter(BasePlatformAdapter):
             "GATEWAY_ALLOW_ALL_USERS",
         )
         return any(os.getenv(key, "").strip() for key in keys)
+
+    def set_refused_message_sink(
+        self, sink: Optional[Callable[[Dict[str, Any]], Awaitable[None]]]
+    ) -> None:
+        """Hand messages refused by the intake allowlist to ``sink``.
+
+        The sink gets a plain record (:meth:`_refused_message_record`) of each
+        human message from a DM or group that ``_is_user_authorized_from_message``
+        refused. Those messages still never reach the agent path and get no
+        reply; the sink only decides whether to keep them (FG-03 P6 person
+        bots write them as triage batches).
+        """
+        self._refused_message_sink = sink
+
+    async def _offer_refused_message(self, message: Message) -> None:
+        sink = getattr(self, "_refused_message_sink", None)
+        if sink is None or message is None or self._is_own_message(message):
+            return
+        if getattr(message, "edit_date", None):
+            return
+        record = self._refused_message_record(message)
+        if record is None:
+            return
+        try:
+            await sink(record)
+        except Exception:
+            logger.warning("[%s] Refused-message sink failed", self.name, exc_info=True)
+
+    @staticmethod
+    def _refused_message_media(message: Message) -> List[Dict[str, Any]]:
+        media: List[Dict[str, Any]] = []
+        photos = getattr(message, "photo", None) or []
+        if photos:
+            largest = photos[-1]
+            media.append({"type": "photo", "file_id": getattr(largest, "file_id", None),
+                          "file_unique_id": getattr(largest, "file_unique_id", None),
+                          "file_size": getattr(largest, "file_size", None)})
+        for kind in ("video", "audio", "voice", "document", "sticker"):
+            item = getattr(message, kind, None)
+            if not item:
+                continue
+            entry = {"type": kind}
+            for key in ("file_id", "file_unique_id", "mime_type", "file_name", "file_size"):
+                value = getattr(item, key, None)
+                if isinstance(value, (str, int)):
+                    entry[key] = value
+            media.append(entry)
+        venue = getattr(message, "venue", None)
+        location = getattr(venue, "location", None) if venue else None
+        location = location or getattr(message, "location", None)
+        if location is not None or venue:
+            entry = {"type": "location",
+                     "latitude": getattr(location, "latitude", None),
+                     "longitude": getattr(location, "longitude", None)}
+            for key in ("title", "address"):
+                value = getattr(venue, key, None) if venue else None
+                if isinstance(value, str) and value:
+                    entry[key] = value
+            media.append(entry)
+        return media
+
+    def _refused_message_record(self, message: Message) -> Optional[Dict[str, Any]]:
+        """A JSON-ready record of a human DM/group message, else ``None``."""
+        user = getattr(message, "from_user", None)
+        chat = getattr(message, "chat", None)
+        user_id = str(getattr(user, "id", "") or "").strip()
+        chat_id = str(getattr(chat, "id", "") or "").strip()
+        if not user_id or not chat_id or getattr(user, "is_bot", False) is True:
+            return None
+        raw_type = str(getattr(chat, "type", "")).split(".")[-1].lower()
+        if raw_type == "private":
+            chat_type = "dm"
+        elif raw_type in ("group", "supergroup"):
+            chat_type = "group"
+        else:
+            return None
+        full_name = str(getattr(user, "full_name", "") or "").strip() or " ".join(
+            str(part) for part in (getattr(user, "first_name", ""), getattr(user, "last_name", ""))
+            if isinstance(part, str) and part
+        )
+        username = str(getattr(user, "username", "") or "").strip()
+        date = getattr(message, "date", None)
+        if isinstance(date, datetime):
+            if date.tzinfo is None:
+                date = date.replace(tzinfo=timezone.utc)
+            timestamp = date.astimezone(timezone.utc).isoformat()
+        else:
+            timestamp = datetime.now(timezone.utc).isoformat()
+        title = getattr(chat, "title", None)
+        return {
+            "chat_id": chat_id,
+            "chat_type": chat_type,
+            "chat_title": str(title) if isinstance(title, str) and title else full_name,
+            "message_id": str(getattr(message, "message_id", "") or ""),
+            "sender_id": user_id,
+            "sender_name": full_name,
+            "sender_username": f"@{username}" if username else "",
+            "text": str(getattr(message, "text", None) or getattr(message, "caption", None) or ""),
+            "timestamp": timestamp,
+            "media": self._refused_message_media(message),
+        }
 
     def _is_user_authorized_from_message(self, message: Message) -> bool:
         """Check if the sender of a Telegram message is authorized.
@@ -7059,6 +7161,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 getattr(getattr(msg, "from_user", None), "id", None),
                 getattr(getattr(msg, "chat", None), "id", None),
             )
+            await self._offer_refused_message(msg)
             return
         if not self._should_process_message(msg):
             if self._should_observe_unmentioned_group_message(msg):
@@ -7078,6 +7181,8 @@ class TelegramAdapter(BasePlatformAdapter):
         if not msg or not msg.text:
             return
         if not self._should_process_message(msg, is_command=True):
+            if getattr(self, "_refused_message_sink", None) and not self._is_user_authorized_from_message(msg):
+                await self._offer_refused_message(msg)
             return
         if not self._is_user_authorized_from_message(msg):
             logger.warning(
@@ -7085,6 +7190,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 getattr(getattr(msg, "from_user", None), "id", None),
                 getattr(getattr(msg, "chat", None), "id", None),
             )
+            await self._offer_refused_message(msg)
             return
         await self._ensure_forum_commands(msg)
 
@@ -7105,6 +7211,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 getattr(getattr(msg, "from_user", None), "id", None),
                 getattr(getattr(msg, "chat", None), "id", None),
             )
+            await self._offer_refused_message(msg)
             return
         if not self._should_process_message(msg):
             if self._should_observe_unmentioned_group_message(msg):
@@ -7308,6 +7415,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 getattr(getattr(update.message, "from_user", None), "id", None),
                 getattr(getattr(update.message, "chat", None), "id", None),
             )
+            await self._offer_refused_message(update.message)
             return
         if not self._should_process_message(update.message):
             if self._should_observe_unmentioned_group_message(update.message):

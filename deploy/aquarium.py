@@ -867,7 +867,7 @@ def carry_forward(old: Path, new: Path) -> List[str]:
 #: Raw channel stores and whole-database copies: the agent's terminal runs as
 #: hermes-tools, so only their owner and the hermes group may enter (FG-38).
 #: Mirrors deploy/hermes-close-data, which the git-checkout deploy runs.
-CLOSED_DATA = ("email-messages", "whatsapp-messages", "calendar", "backups")
+CLOSED_DATA = ("email-messages", "whatsapp-messages", "telegram-messages", "calendar", "backups")
 
 
 def close_raw_stores(cfg: Dict[str, str]) -> None:

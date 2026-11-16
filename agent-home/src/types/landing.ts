@@ -21,6 +21,7 @@ export type NeedsYouSource =
   | "todo"
   | "profile_suggestion"
   | "pin_suggestion"
+  | "data_draft"
   /** A pending notification that maps to no source above (e.g. a proactive ask). */
   | "notification";
 
@@ -49,6 +50,11 @@ export interface NeedsYouEntry {
     session_id?: string | null;
     run_id?: string | null;
     profile?: string | null;
+    /** Triage arrival this entry is about (`arrival:<surface>:<account>:<id>`);
+     *  rows from several profiles for one arrival are merged into one entry. */
+    arrival_key?: string | null;
+    /** Every profile that raised this arrival's to-do/alert. */
+    profiles?: string[] | null;
   };
   created_at: number;
   href: string;
@@ -56,6 +62,14 @@ export interface NeedsYouEntry {
   /** false → the landing page only offers "open", never a one-tap action. */
   reversible?: boolean;
   notification_id?: string | null;
+  /** Translatable parts of `title` / `detail` (agent-home `needsYou` strings);
+   *  `title` / `detail` stay the English fallback. */
+  i18n?: { title?: NeedsYouTextPart[]; detail?: NeedsYouTextPart[] } | null;
+}
+
+export interface NeedsYouTextPart {
+  key: string;
+  vars?: Record<string, string | number>;
 }
 
 export interface NeedsYouResponse {

@@ -399,6 +399,7 @@ describe("VpnConnections", () => {
     render(<VpnConnections />);
     fireEvent.click(await screen.findByText("Edit"));
     const header = await screen.findByText('Edit "Office files"');
+    expect(header.closest("li")).toBeTruthy();
     const form = header.closest("div")!;
     const q = within(form);
     expect(q.queryByPlaceholderText("Office files")).toBeNull();

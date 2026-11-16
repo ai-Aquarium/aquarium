@@ -61,6 +61,12 @@ PUBLIC = {
 
 #: The handler enforces the role itself: route -> (role, check in its source).
 HANDLER_CHECKED = {
+    # FG-03 P3: template layer = the profile's owner/admins; user layer = only the caller
+    "PUT /api/triage/layers/file": ("member", "_require_layer_edit"),
+    "POST /api/triage/layers/disable": ("member", "_require_layer_edit"),
+    "POST /api/triage/layers/reset": ("member", "_require_layer_edit"),
+    "PUT /api/triage/layers/care": ("member", "_require_layer_edit"),
+    "POST /api/sources/{source_id}/transfer": ("admin", "transfer_source"),
     "POST /api/comms/members": ("admin", "_comms_member_service"),
     "POST /api/comms/members/import": ("admin", "_comms_member_service"),
     "POST /api/comms/members/{user_id}/invitation": ("admin", "_comms_member_service"),
@@ -220,6 +226,27 @@ SIGNED_IN = {
     "PUT /api/email/mailboxes/{address}",
     "DELETE /api/email/mailboxes/{address}",
     "POST /api/email/mailboxes/{address}/test",
+    # sources_api (FG-03): the caller's own sources; owner checks in the store
+    "GET /api/sources",
+    "POST /api/sources",
+    "PUT /api/sources/{source_id}/routes/{profile}",
+    "DELETE /api/sources/{source_id}",
+    "GET /api/sources/conflicts",
+    "GET /api/sources/decisions",
+    "GET /api/sources/comparisons",
+    # data_dictionary_api: the handler checks the caller's access to the source (404 otherwise)
+    "GET /api/data/sources",
+    "GET /api/data/sources/{source_id}",
+    "GET /api/data/sources/{source_id}/versions",
+    "GET /api/data/sources/{source_id}/versions/{version}",
+    "POST /api/data/sources/{source_id}/draft",
+    "POST /api/data/sources/{source_id}/feedback",
+    "POST /api/data/sources/{source_id}/draft/approve",
+    "DELETE /api/data/sources/{source_id}/draft",
+    "POST /api/data/sources/{source_id}/versions/{version}/restore",
+    "GET /api/data/sources/{source_id}/grants",
+    "POST /api/data/sources/{source_id}/grants",
+    "DELETE /api/data/sources/{source_id}/grants",
     # site_sources_api: the handler checks the caller's grant on the site (404 otherwise)
     "GET /api/sites/settings",
     "GET /api/sites",
@@ -267,6 +294,12 @@ SIGNED_IN = {
     "GET /api/triage/status",
     "GET /api/triage/skill-file",
     "GET /api/triage/skill-file/history",
+    # FG-03 P3 triage skill layers: the caller's own layer in the scoped
+    # profile; template writes are checked in the handler (see HANDLER_CHECKED)
+    "GET /api/triage/layers",
+    "GET /api/triage/layers/file",
+    "GET /api/triage/layers/diff",
+    "GET /api/triage/layers/history",
     # vpn_api: the caller's own VPN folders
     "GET /api/vpn/folders",
     "POST /api/vpn/folders",

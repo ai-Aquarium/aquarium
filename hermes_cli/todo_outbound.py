@@ -32,7 +32,8 @@ import logging
 import shlex
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from hermes_cli.access import Principal
@@ -105,12 +106,31 @@ def target_from_arrival(item: Mapping[str, Any]) -> dict[str, Optional[str]]:
     in a private chat with its author answers a different question than the one
     that was asked.
     """
+    channel = str(item.get("surface") or "")
+    if channel == "email":
+        # An email arrival's conversation is its thread / Message-ID, not an
+        # address: the reply goes to the sender, threaded under the message.
+        return {
+            "channel": channel,
+            "target": str(item.get("sender_id") or ""),
+            "account_id": (str(item["account_id"]) if item.get("account_id") else None),
+            "thread_id": (str(item["external_id"]) if item.get("external_id") else None),
+            "subject": reply_subject(item.get("subject")),
+        }
     target = str(item.get("conversation") or item.get("sender_id") or "")
     return {
-        "channel": str(item.get("surface") or ""),
+        "channel": channel,
         "target": target,
         "account_id": (str(item["account_id"]) if item.get("account_id") else None),
     }
+
+
+def reply_subject(subject: Any) -> Optional[str]:
+    """``Re: <subject>`` for an email reply (never ``Re: Re: ...``)."""
+    text = str(subject or "").strip()
+    if not text:
+        return None
+    return text if text.lower().startswith("re:") else f"Re: {text}"
 
 
 def parse_action(
@@ -139,10 +159,14 @@ def parse_action(
         channel=channel,
         target=target,
         body=body[:MAX_BODY_CHARS],
-        subject=str(payload.get("subject") or "").strip()[:MAX_SUBJECT_CHARS],
+        subject=str(
+            payload.get("subject") or defaults.get("subject") or ""
+        ).strip()[:MAX_SUBJECT_CHARS],
         account_id=str(account_id) if account_id else None,
         thread_id=(
-            str(payload["thread_id"]) if payload.get("thread_id") else None
+            str(payload.get("thread_id") or defaults.get("thread_id"))
+            if (payload.get("thread_id") or defaults.get("thread_id"))
+            else None
         ),
     )
 
@@ -244,6 +268,95 @@ async def propose(
     )
 
 
+def deliver_message(
+    *,
+    channel: str,
+    target: str,
+    body: str,
+    account: Optional[str] = None,
+    subject: Optional[str] = None,
+    thread: Optional[str] = None,
+    attachments: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Send one approved message through the shared egress (``hermes send``'s
+    ``send_message_tool``): account-aware, so a reply leaves by the account
+    it is meant to. ``attachments`` (and any ``MEDIA:`` line already in
+    ``body``) travel as files; a file the media-path check refuses fails the
+    whole send instead of dropping the attachment silently.
+
+    Returns the tool's result payload (``{"error": ...}`` on a refusal).
+    """
+    from gateway.platforms.base import (
+        BasePlatformAdapter,
+        validate_media_delivery_path,
+    )
+
+    named, _clean = BasePlatformAdapter.extract_media(body or "")
+    files = [str(p) for p, _voice in named] + [str(p) for p in attachments]
+    for path in files:
+        if not validate_media_delivery_path(path):
+            return {
+                "error": f"attachment {Path(path).name!r} was refused by the "
+                "media path check; nothing was sent"
+            }
+    message = body or ""
+    if attachments:
+        # Quoted, so a file of any extension is extracted as a file, then
+        # checked: an attachment that would not survive extraction refuses
+        # the send instead of leaving as a literal path in the text.
+        message = "\n".join([message, *(f'MEDIA:"{p}"' for p in attachments)])
+        extracted = {str(p) for p, _voice in BasePlatformAdapter.extract_media(message)[0]}
+        for path in attachments:
+            if str(path) not in extracted:
+                return {
+                    "error": f"attachment {Path(path).name!r} could not be "
+                    "attached; nothing was sent"
+                }
+
+    from hermes_cli.send_cmd import _load_hermes_env
+
+    _load_hermes_env()
+    from tools.send_message_tool import send_message_tool
+
+    send_target = channel
+    if target:
+        send_target += f":{target}"
+    if thread:
+        send_target += f":{thread}"
+    send_args: dict[str, Any] = {
+        "action": "send",
+        "target": send_target,
+        "message": message,
+    }
+    if account:
+        send_args["account"] = account
+    if subject:
+        send_args["subject"] = subject
+
+    result_json = send_message_tool(send_args)
+    try:
+        return json.loads(result_json) if result_json else {}
+    except json.JSONDecodeError:
+        return {"error": "invalid JSON from send_message_tool", "raw": result_json}
+
+
+async def _arrival_for(store, principal, todo_id: str) -> Optional[dict[str, Any]]:
+    """The arrival behind ``todo_id`` (its ``source_ref``), when it has one."""
+    getter = getattr(store, "get", None)
+    if getter is None:
+        return None
+    try:
+        todo = await getter(principal, todo_id)
+    except Exception as exc:  # noqa: BLE001 - no to-do row: nothing to compare
+        log.debug("todo_outbound: to-do %s unavailable (%s)", todo_id, exc)
+        return None
+    if todo is None or not getattr(todo, "source_ref", None):
+        return None
+    from hermes_cli.todo_work import _load_arrival
+
+    return await _load_arrival(store, principal, todo)
+
+
 async def execute_proposal(
     store: "TodoStore",
     principal: "Principal",
@@ -287,35 +400,41 @@ async def execute_proposal(
     if not body:
         return {"error": "empty_body", "detail": "The approval has no body to send."}
 
-    # Deliver through the same egress `hermes send` uses — account-aware, so
-    # C4's "reply leaves by the account the message arrived on" is honoured.
-    from hermes_cli.send_cmd import _load_hermes_env
-
-    _load_hermes_env()
-    from tools.send_message_tool import send_message_tool
-
     channel = routing["channel"] or ""
-    send_target = channel
-    if routing["target"]:
-        send_target += f":{routing['target']}"
-    if routing["thread"]:
-        send_target += f":{routing['thread']}"
+    # FG-03 P6: the reply leaves by the arrival's own account, and only its
+    # source's owner may send from it — checked at send time, not just when
+    # the proposal was made.
+    from hermes_cli.reply_accounts import ReplyRefused, check_reply
+    from tools.access_policy import acting_as
 
-    _send_args: dict[str, Any] = {
-        "action": "send",
-        "target": send_target,
-        "message": body,
-    }
-    if routing["account"]:
-        _send_args["account"] = routing["account"]
-    if routing["subject"]:
-        _send_args["subject"] = routing["subject"]
-
-    result_json = send_message_tool(_send_args)
+    arrival = await _arrival_for(store, principal, todo_id)
     try:
-        result_payload = json.loads(result_json) if result_json else {}
-    except json.JSONDecodeError:
-        result_payload = {"error": "invalid JSON from send_message_tool", "raw": result_json}
+        await check_reply(
+            principal.user_id,
+            channel,
+            routing["account"] or None,
+            target=routing["target"] or "",
+            arrival=arrival,
+        )
+    except ReplyRefused as refused:
+        return {"error": refused.code, "detail": refused.detail}
+
+    thread, subject = routing["thread"] or None, routing["subject"] or None
+    if channel == "email" and arrival:
+        # Thread under the arrival even when the proposal predates threading.
+        defaults = target_from_arrival(arrival)
+        thread = thread or defaults.get("thread_id")
+        subject = subject or defaults.get("subject")
+
+    with acting_as(principal.user_id, getattr(principal, "role", None)):
+        result_payload = deliver_message(
+            channel=channel,
+            target=routing["target"] or "",
+            thread=thread,
+            body=body,
+            account=routing["account"] or None,
+            subject=subject,
+        )
 
     delivered = not result_payload.get("error")
     event = "sent" if delivered else "failed"

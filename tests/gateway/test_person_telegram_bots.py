@@ -210,3 +210,310 @@ def test_replies_leave_through_the_receiving_bot(monkeypatch):
     assert runner._source_adapter(dm(None, ALICE_TG)) is install
     # A stopped person bot never falls back to the install bot.
     assert runner._source_adapter(dm("tgbot:222222222", BOB_TG)) is None
+
+
+# -- FG-03 P6: other senders' messages become triage batches ------------------
+
+import json  # noqa: E402
+
+import pytest  # noqa: E402
+
+from hermes_cli import source_registry, telegram_triage  # noqa: E402
+from hermes_cli.source_registry import Route, Source  # noqa: E402
+
+STRANGER, OTHER = "7001", "7002"
+
+
+def telegram_source(bot_id, owner, *, enabled=True, routes=(("cfo", True),)):
+    return Source(
+        source_id=f"src-{bot_id}", channel="telegram", address=bot_id, owner_user_id=owner,
+        enabled=enabled, routes=tuple(Route(f"src-{bot_id}", slug, on) for slug, on in routes),
+    )
+
+
+@pytest.fixture
+def capture(monkeypatch, tmp_path):
+    """Capture on (``agent`` mode), Alice's bot routed; returns the knobs."""
+    state = SimpleNamespace(mode="agent", sources=[telegram_source("111111111", "alice")],
+                            fail=False, reads=0, dir=tmp_path / "batches")
+    monkeypatch.setattr(telegram_triage, "mode", lambda config=None: state.mode)
+    monkeypatch.setattr(telegram_triage, "BATCH_DIR", state.dir)
+    monkeypatch.setattr(telegram_triage, "CAPTURE_QUIET_SECONDS", 0.05)
+
+    class Conn:
+        async def close(self):
+            pass
+
+    async def connect_box(**_):
+        state.reads += 1
+        if state.fail:
+            raise OSError("registry down")
+        return Conn()
+
+    async def list_sources(connection, *, channel=None, owner_user_id=None):
+        assert channel == "telegram"
+        return list(state.sources)
+
+    monkeypatch.setattr(source_registry, "connect_box", connect_box)
+    monkeypatch.setattr(source_registry, "list_sources", list_sources)
+    state.batches = lambda: sorted(state.dir.glob("*.json")) if state.dir.exists() else []
+    return state
+
+
+def record(sender=STRANGER, chat=None, message_id="10", text="hi", chat_type="dm", title="Stranger"):
+    return {
+        "chat_id": chat or sender, "chat_type": chat_type, "chat_title": title,
+        "message_id": message_id, "sender_id": sender, "sender_name": "Sam Stranger",
+        "sender_username": "@sam", "text": text, "timestamp": "2026-11-16T08:00:00+00:00", "media": [],
+    }
+
+
+def started(monkeypatch):
+    runner, _ = make_runner(monkeypatch)
+    save(ALICE, ALICE_TOKEN, ALICE_TG)
+    save(BOB, BOB_TOKEN, BOB_TG)
+    return runner
+
+
+def run_capture(runner, account_id, *records, settle=0.2):
+    async def go():
+        sink = runner._make_person_bot_capture(account_id)
+        await runner._reconcile_person_telegram_bots()
+        for rec in records:
+            await sink(rec)
+        await asyncio.sleep(settle)
+
+    asyncio.run(go())
+
+
+def test_person_bot_adapter_gets_a_capture_sink(monkeypatch):
+    runner = started(monkeypatch)
+    asyncio.run(runner._reconcile_person_telegram_bots())
+    linked = {"tgbot:111111111": ALICE_TG, "tgbot:222222222": BOB_TG}
+    for adapter in runner.created:
+        assert adapter.config.extra["allow_from"] == [linked[adapter.config.extra["account_id"]]]
+        adapter.set_refused_message_sink.assert_called_once()
+
+
+def test_stranger_burst_in_one_chat_is_one_batch_in_the_contract_format(monkeypatch, capture):
+    runner = started(monkeypatch)
+    run_capture(runner, "tgbot:111111111",
+                record(message_id="10", text="hello"), record(message_id="11", text="are you there?"),
+                record(sender=OTHER, chat="-1009", chat_type="group", title="Suppliers", message_id="5"))
+    assert runner.handled == []
+    paths = capture.batches()
+    assert [p.name for p in paths] == ["tg_111111111_7001_10.json", "tg_111111111_m1009_5.json"]
+    dm_batch = json.loads(paths[0].read_text())
+    assert set(dm_batch) == {"batch_id", "channel", "source_id", "owner_user_id", "account_id",
+                             "chat_id", "chat_type", "chat_title", "created_at", "messages"}
+    assert dm_batch["batch_id"] == telegram_triage.batch_id_for("111111111", STRANGER, "10")
+    assert (dm_batch["channel"], dm_batch["source_id"], dm_batch["owner_user_id"]) == (
+        "telegram", "src-111111111", "alice")
+    assert (dm_batch["account_id"], dm_batch["chat_id"], dm_batch["chat_type"]) == (
+        "tgbot:111111111", STRANGER, "dm")
+    assert [m["text"] for m in dm_batch["messages"]] == ["hello", "are you there?"]
+    assert set(dm_batch["messages"][0]) == {"message_id", "sender_id", "sender_name", "sender_username",
+                                            "text", "timestamp", "media"}
+    group = json.loads(paths[1].read_text())
+    assert (group["chat_type"], group["chat_title"], group["chat_id"]) == ("group", "Suppliers", "-1009")
+    assert not list(capture.dir.glob("*.tmp"))
+    assert capture.reads == 1, "the registry answer is cached"
+
+
+def test_batch_closes_at_the_size_cap_and_duplicates_are_dropped(monkeypatch, capture):
+    monkeypatch.setattr(telegram_triage, "CAPTURE_MAX_MESSAGES", 2)
+    runner = started(monkeypatch)
+    run_capture(runner, "tgbot:111111111", record(message_id="1"), record(message_id="1"),
+                record(message_id="2"), record(message_id="3"))
+    batches = [json.loads(p.read_text()) for p in capture.batches()]
+    assert [[m["message_id"] for m in b["messages"]] for b in batches] == [["1", "2"], ["3"]]
+
+
+@pytest.mark.parametrize("change", ["off", "unrouted", "route_off", "disabled", "down", "not_a_source",
+                                    "other_owner"])
+def test_others_are_ignored_unless_on_and_routed(monkeypatch, capture, change):
+    if change == "off":
+        capture.mode = "off"
+    elif change == "unrouted":
+        capture.sources = [telegram_source("111111111", "alice", routes=())]
+    elif change == "route_off":
+        capture.sources = [telegram_source("111111111", "alice", routes=(("cfo", False),))]
+    elif change == "disabled":
+        capture.sources = [telegram_source("111111111", "alice", enabled=False)]
+    elif change == "down":
+        capture.fail = True
+    elif change == "not_a_source":
+        capture.sources = [telegram_source("222222222", "bob")]
+    elif change == "other_owner":
+        capture.sources = [telegram_source("111111111", "bob")]
+    runner = started(monkeypatch)
+    run_capture(runner, "tgbot:111111111", record(), record(message_id="11"))
+    assert capture.batches() == [] and runner.handled == []
+    assert capture.reads == (0 if change == "off" else 1)
+
+
+def test_owner_messages_are_never_captured_and_still_handled_as_owner(monkeypatch, capture):
+    runner = started(monkeypatch)
+    run_capture(runner, "tgbot:111111111", record(sender=ALICE_TG))
+    assert capture.batches() == []
+    handler = runner._make_person_bot_message_handler("tgbot:111111111")
+    assert asyncio.run(handler(SimpleNamespace(source=dm(None, ALICE_TG)))) == "ok"
+    assert asyncio.run(handler(SimpleNamespace(source=dm(None, STRANGER)))) is None
+    assert asyncio.run(handler(SimpleNamespace(source=dm(None, STRANGER, chat_type="group")))) is None
+    assert [s.internal_user_id for s in runner.handled] == ["alice"]
+
+
+def test_stopping_a_bot_writes_its_open_batches(monkeypatch, capture):
+    monkeypatch.setattr(telegram_triage, "CAPTURE_QUIET_SECONDS", 60)
+    runner = started(monkeypatch)
+    run_capture(runner, "tgbot:111111111", record(), settle=0)
+    assert capture.batches() == []
+    asyncio.run(runner._stop_all_person_bots())
+    assert [p.name for p in capture.batches()] == ["tg_111111111_7001_10.json"]
+
+
+def flaky_writes(monkeypatch, fail_first):
+    """``write_batch`` that fails the first ``fail_first`` calls; returns the call log."""
+    calls = []
+    real = telegram_triage.write_batch
+
+    def write(batch, *, batch_dir=None):
+        calls.append(batch["batch_id"])
+        if len(calls) <= fail_first:
+            raise OSError("disk full")
+        return real(batch, batch_dir=batch_dir)
+
+    monkeypatch.setattr(telegram_triage, "write_batch", write)
+    return calls
+
+
+def test_a_failed_write_is_retried_and_no_message_is_lost(monkeypatch, capture):
+    import gateway.person_telegram_bots as bots
+
+    monkeypatch.setattr(bots, "_RETRY_FIRST_SECONDS", 0.1)
+    calls = flaky_writes(monkeypatch, fail_first=1)
+    runner = started(monkeypatch)
+
+    async def go():
+        sink = runner._make_person_bot_capture("tgbot:111111111")
+        await runner._reconcile_person_telegram_bots()
+        await sink(record(message_id="10", text="invoice 1"))
+        await sink(record(message_id="11", text="invoice 2"))
+        await asyncio.sleep(0.08)  # first write failed, retry not due yet
+        assert capture.batches() == []
+        await sink(record(message_id="12", text="invoice 3"))  # a new batch, separate from the failed one
+        await asyncio.sleep(0.4)
+
+    asyncio.run(go())
+    batches = {p.name: json.loads(p.read_text()) for p in capture.batches()}
+    assert sorted(batches) == ["tg_111111111_7001_10.json", "tg_111111111_7001_12.json"]
+    assert [m["text"] for m in batches["tg_111111111_7001_10.json"]["messages"]] == ["invoice 1", "invoice 2"]
+    assert [m["text"] for m in batches["tg_111111111_7001_12.json"]["messages"]] == ["invoice 3"]
+    assert calls.count("tg_111111111_7001_10") == 2
+    assert runner._person_bot_capture_state()["retry"] == {}
+
+
+def test_stopping_a_bot_writes_batches_still_waiting_for_a_retry(monkeypatch, capture):
+    flaky_writes(monkeypatch, fail_first=1)
+    runner = started(monkeypatch)
+    run_capture(runner, "tgbot:111111111", record())
+    assert capture.batches() == [] and len(runner._person_bot_capture_state()["retry"]) == 1
+    asyncio.run(runner._stop_all_person_bots())
+    assert [p.name for p in capture.batches()] == ["tg_111111111_7001_10.json"]
+    assert runner._person_bot_capture_state()["retry"] == {}
+
+
+def test_stop_also_writes_a_chat_that_arrives_while_another_chats_write_is_running(monkeypatch, capture):
+    import threading
+
+    monkeypatch.setattr(telegram_triage, "CAPTURE_QUIET_SECONDS", 60)
+    real = telegram_triage.write_batch
+    writing, release = threading.Event(), threading.Event()
+
+    def slow_write(batch, *, batch_dir=None):
+        if batch["chat_id"] == STRANGER:
+            writing.set()
+            assert release.wait(5)
+        return real(batch, batch_dir=batch_dir)
+
+    monkeypatch.setattr(telegram_triage, "write_batch", slow_write)
+    runner = started(monkeypatch)
+
+    async def go():
+        sink = runner._make_person_bot_capture("tgbot:111111111")
+        await runner._reconcile_person_telegram_bots()
+        await sink(record())
+        stop = asyncio.create_task(runner._stop_all_person_bots())
+        while not writing.is_set():
+            await asyncio.sleep(0.01)
+        # Delivered by the adapter while chat A's write is suspended.
+        await sink(record(sender=OTHER, chat="-1009", chat_type="group", title="Suppliers", message_id="5"))
+        release.set()
+        await stop
+
+    asyncio.run(go())
+    assert [p.name for p in capture.batches()] == ["tg_111111111_7001_10.json", "tg_111111111_m1009_5.json"]
+    assert runner.handled == []
+
+
+def test_a_batch_that_failed_many_times_is_still_retried_at_the_max_delay(monkeypatch, capture):
+    import gateway.person_telegram_bots as bots
+
+    runner = started(monkeypatch)
+    delays = []
+
+    async def later(failed, delay):
+        delays.append(delay)
+
+    monkeypatch.setattr(runner, "_retry_person_bot_batch_later", later)
+
+    async def go():
+        failed = bots._FailedBatch("tgbot:111111111", {"batch_id": "tg_1_2_3"}, attempts=5000)
+        runner._queue_person_bot_batch_retry(failed)
+        assert failed.task is not None
+        await failed.task
+
+    asyncio.run(go())
+    assert delays == [bots._RETRY_MAX_SECONDS]
+    assert bots._retry_delay(1) == bots._RETRY_FIRST_SECONDS
+
+
+def test_stop_writes_each_batch_exactly_once_even_when_a_retry_comes_due_mid_drain(monkeypatch, capture):
+    import threading
+
+    import gateway.person_telegram_bots as bots
+
+    monkeypatch.setattr(bots, "_RETRY_FIRST_SECONDS", 0.3)
+    real = telegram_triage.write_batch
+    calls, writing, release = [], threading.Event(), threading.Event()
+
+    def write(batch, *, batch_dir=None):
+        calls.append(batch["batch_id"])
+        if len(calls) == 1:
+            raise OSError("disk full")
+        if batch["chat_id"] == "-1009":
+            writing.set()
+            assert release.wait(5)
+        return real(batch, batch_dir=batch_dir)
+
+    monkeypatch.setattr(telegram_triage, "write_batch", write)
+    runner = started(monkeypatch)
+
+    async def go():
+        sink = runner._make_person_bot_capture("tgbot:111111111")
+        await runner._reconcile_person_telegram_bots()
+        await sink(record())
+        await asyncio.sleep(0.15)  # chat A's write failed; its retry is due at ~0.35 s
+        assert len(runner._person_bot_capture_state()["retry"]) == 1
+        monkeypatch.setattr(telegram_triage, "CAPTURE_QUIET_SECONDS", 60)
+        await sink(record(sender=OTHER, chat="-1009", chat_type="group", title="Suppliers", message_id="5"))
+        stop = asyncio.create_task(runner._stop_all_person_bots())
+        while not writing.is_set():
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.4)  # chat A's retry comes due while chat B's write is suspended
+        release.set()
+        await stop
+
+    asyncio.run(go())
+    assert calls == ["tg_111111111_7001_10", "tg_111111111_m1009_5", "tg_111111111_7001_10"]
+    assert [p.name for p in capture.batches()] == ["tg_111111111_7001_10.json", "tg_111111111_m1009_5.json"]

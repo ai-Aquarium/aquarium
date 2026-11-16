@@ -11,6 +11,17 @@ to the install-wide bot (``TELEGRAM_BOT_TOKEN``, untouched) and:
   from the credential owner, never resolved from the sender);
 * replies through the same bot (``account_id = "tgbot:<bot id>"``).
 
+FG-03 P6 capture: when ``triage.agent.telegram`` is ``agent`` and the bot is an
+enabled ``telegram`` source in the box registry with at least one enabled
+route, messages from anyone else (DMs, and groups the bot is in) that the
+adapter's ``allow_from`` refused are written as triage batch files
+(:mod:`hermes_cli.telegram_triage`): one chat per batch, a burst becomes one
+batch. They never reach :meth:`_handle_message` and get no reply. The registry
+answer is cached for a minute; when the registry can't be read, others are
+ignored, as without capture. A batch whose write fails is kept and retried
+with a capped backoff; stopping a bot first stops its intake, then waits for
+captures under way and writes every batch it still holds.
+
 Adding, changing or removing one person's bot starts/stops only that bot.
 The API touches ``$HERMES_HOME/telegram_bots.changed`` after every change;
 the loop below notices within a few seconds and also re-reads periodically.
@@ -21,9 +32,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import math
 import os
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 from gateway.config import Platform, PlatformConfig
 
@@ -32,6 +46,50 @@ logger = logging.getLogger(__name__)
 ACCOUNT_PREFIX = "tgbot:"
 _POLL_SECONDS = 5.0
 _FULL_RESYNC_SECONDS = 300.0
+#: How long a registry answer for the capture decision is reused.
+_CAPTURE_TTL = 60.0
+_CAPTURE_FAIL_TTL = 15.0
+_REGISTRY_TIMEOUT = 10.0
+#: Backoff between writes of a batch whose write failed (2 s, 4 s, ... at most 5 min).
+_RETRY_FIRST_SECONDS = 2.0
+_RETRY_MAX_SECONDS = 300.0
+
+
+def _retry_delay(attempts: int) -> float:
+    """Backoff before the next write of a batch that failed ``attempts`` times."""
+    cap = math.ceil(math.log2(max(_RETRY_MAX_SECONDS / _RETRY_FIRST_SECONDS, 1.0)))
+    return min(_RETRY_MAX_SECONDS, _RETRY_FIRST_SECONDS * 2 ** min(max(attempts - 1, 0), cap))
+
+
+@dataclass(frozen=True)
+class CaptureTarget:
+    """Where a person bot's captured messages go: its registry source."""
+
+    source_id: str
+    owner_user_id: str
+
+
+@dataclass
+class _PendingBatch:
+    account_id: str
+    target: CaptureTarget
+    chat_id: str
+    chat_type: str
+    chat_title: str
+    started: float
+    messages: List[Dict[str, Any]] = field(default_factory=list)
+    task: Optional[asyncio.Task] = None
+
+
+@dataclass
+class _FailedBatch:
+    account_id: str
+    record: Dict[str, Any]
+    attempts: int
+    task: Optional[asyncio.Task] = None
+
+
+_MESSAGE_KEYS = ("message_id", "sender_id", "sender_name", "sender_username", "text", "timestamp", "media")
 
 
 @dataclass(frozen=True)
@@ -152,6 +210,9 @@ class PersonTelegramBotsMixin:
         adapter.set_session_store(self.session_store)
         adapter.set_busy_session_handler(self._handle_active_session_busy_message)
         adapter.set_authorization_check(self._make_person_bot_auth_check(spec.account_id))
+        set_sink = getattr(adapter, "set_refused_message_sink", None)
+        if callable(set_sink):
+            set_sink(self._make_person_bot_capture(spec.account_id))
         adapter._busy_text_mode = getattr(self, "_busy_text_mode", None)
         # Registered before connect so an early message already routes here.
         self._person_bot_spec_map()[spec.account_id] = spec
@@ -168,10 +229,19 @@ class PersonTelegramBotsMixin:
         return True
 
     async def _stop_person_bot(self, account_id: str) -> None:
-        self._person_bot_spec_map().pop(account_id, None)
-        adapter = self._person_bots().pop(account_id, None)
-        if adapter is not None:
-            await self._safe_adapter_disconnect(adapter, Platform.TELEGRAM)
+        # Stop intake first, then wait for captures already under way and
+        # write everything still held for this bot (open and failed batches).
+        closing = self._person_bot_capture_state()["closing"]
+        spec = self._person_bot_spec_map().pop(account_id, None)
+        if spec is not None:
+            closing[account_id] = spec
+        try:
+            adapter = self._person_bots().pop(account_id, None)
+            if adapter is not None:
+                await self._safe_adapter_disconnect(adapter, Platform.TELEGRAM)
+            await self._drain_person_bot_captures(account_id)
+        finally:
+            closing.pop(account_id, None)
 
     async def _handle_person_bot_fatal_error(self, adapter: Any) -> None:
         for account_id, live in list(self._person_bots().items()):
@@ -205,6 +275,230 @@ class PersonTelegramBotsMixin:
             return await self._handle_message(event)
 
         return _handler
+
+    # -- FG-03 P6: capture of other senders' messages as triage batches --------
+
+    def _person_bot_capture_state(self) -> Dict[str, Any]:
+        state = getattr(self, "_person_bot_capture", None)
+        if state is None:
+            state = self._person_bot_capture = {
+                "sources": None, "expires": 0.0, "lock": asyncio.Lock(), "pending": {},
+                "retry": {}, "busy": {}, "closing": {},
+            }
+        return state
+
+    def _person_bot_capture_spec(self, account_id: str):
+        """The bot's spec while it runs or while its stop drains its captures."""
+        spec = self._person_bot_spec_map().get(account_id)
+        return spec if spec is not None else self._person_bot_capture_state()["closing"].get(account_id)
+
+    def _person_bot_capture_task(self, account_id: str, coro) -> asyncio.Task:
+        """Run ``coro`` as capture work a stop of ``account_id`` waits for."""
+        busy = self._person_bot_capture_state()["busy"].setdefault(account_id, set())
+        task = asyncio.ensure_future(coro)
+        busy.add(task)
+        task.add_done_callback(busy.discard)
+        return task
+
+    async def _load_telegram_capture_sources(self) -> Optional[Dict[str, CaptureTarget]]:
+        """Bot id -> target for routed telegram sources, or ``None`` (capture off)."""
+        from hermes_cli import telegram_triage
+
+        if await asyncio.to_thread(telegram_triage.mode) != "agent":
+            return None
+        from hermes_cli.source_registry import connect_box, list_sources
+
+        connection = await asyncio.wait_for(connect_box(), _REGISTRY_TIMEOUT)
+        try:
+            sources = await asyncio.wait_for(list_sources(connection, channel="telegram"), _REGISTRY_TIMEOUT)
+        finally:
+            await connection.close()
+        return {
+            s.address: CaptureTarget(s.source_id, s.owner_user_id)
+            for s in sources
+            if s.routed_profiles()
+        }
+
+    async def _telegram_capture_sources(self) -> Optional[Dict[str, CaptureTarget]]:
+        state = self._person_bot_capture_state()
+        async with state["lock"]:
+            now = time.monotonic()
+            if now < state["expires"]:
+                return state["sources"]
+            try:
+                sources = await self._load_telegram_capture_sources()
+                ttl = _CAPTURE_TTL
+            except Exception:
+                logger.warning("Could not read the Telegram triage sources; others' messages are ignored", exc_info=True)
+                sources, ttl = None, _CAPTURE_FAIL_TTL
+            state["sources"], state["expires"] = sources, time.monotonic() + ttl
+            return sources
+
+    async def _person_bot_capture_target(self, account_id: str) -> Optional[CaptureTarget]:
+        """The registry source capturing ``account_id``'s other senders, or ``None``."""
+        spec = self._person_bot_capture_spec(account_id)
+        if spec is None:
+            return None
+        sources = await self._telegram_capture_sources()
+        target = (sources or {}).get(account_id[len(ACCOUNT_PREFIX):])
+        if target is None:
+            return None
+        if target.owner_user_id != spec.owner_user_id:
+            logger.warning(
+                "Telegram bot %s is a registry source of another person than the bot's owner; not captured",
+                account_id,
+            )
+            return None
+        return target
+
+    def _make_person_bot_capture(self, account_id: str):
+        async def _capture(record: Dict[str, Any]) -> None:
+            await asyncio.shield(
+                self._person_bot_capture_task(account_id, self._capture_person_bot_record(account_id, record))
+            )
+
+        return _capture
+
+    async def _capture_person_bot_record(self, account_id: str, record: Dict[str, Any]) -> None:
+        spec = self._person_bot_capture_spec(account_id)
+        if spec is None or str(record.get("sender_id") or "") == spec.linked_user_id:
+            return
+        target = await self._person_bot_capture_target(account_id)
+        if target is None:
+            logger.info("Ignored a message to Telegram bot %s from an unlinked sender", account_id)
+            return
+        await self._add_person_bot_capture(account_id, target, record)
+
+    async def _add_person_bot_capture(
+        self, account_id: str, target: CaptureTarget, record: Dict[str, Any]
+    ) -> None:
+        from hermes_cli import telegram_triage
+
+        pending: Dict[Tuple[str, str], _PendingBatch] = self._person_bot_capture_state()["pending"]
+        key = (account_id, str(record["chat_id"]))
+        batch = pending.get(key)
+        if batch is not None and batch.target != target:
+            await self._flush_person_bot_capture(key)
+            batch = None
+        if batch is None:
+            batch = pending[key] = _PendingBatch(
+                account_id, target, key[1], record["chat_type"], record.get("chat_title") or "",
+                time.monotonic(),
+            )
+        message = {k: record.get(k, [] if k == "media" else "") for k in _MESSAGE_KEYS}
+        if any(m["message_id"] == message["message_id"] for m in batch.messages):
+            return
+        batch.messages.append(message)
+        if batch.task is not None and not batch.task.done():
+            batch.task.cancel()
+        if len(batch.messages) >= telegram_triage.CAPTURE_MAX_MESSAGES:
+            await self._flush_person_bot_capture(key)
+            return
+        left = telegram_triage.CAPTURE_MAX_SECONDS - (time.monotonic() - batch.started)
+        delay = max(0.0, min(telegram_triage.CAPTURE_QUIET_SECONDS, left))
+        batch.task = asyncio.create_task(self._flush_person_bot_capture_later(key, batch, delay))
+
+    async def _flush_person_bot_capture_later(self, key, batch: _PendingBatch, delay: float) -> None:
+        await asyncio.sleep(delay)
+        if self._person_bot_capture_state()["pending"].get(key) is batch:
+            batch.task = None
+            await self._flush_person_bot_capture(key)
+
+    async def _flush_person_bot_capture(self, key) -> Optional[Any]:
+        from hermes_cli import telegram_triage
+
+        batch = self._person_bot_capture_state()["pending"].pop(key, None)
+        if batch is None or not batch.messages:
+            return None
+        if batch.task is not None and batch.task is not asyncio.current_task() and not batch.task.done():
+            batch.task.cancel()
+        bot_id = batch.account_id[len(ACCOUNT_PREFIX):]
+        record = {
+            "batch_id": telegram_triage.batch_id_for(bot_id, batch.chat_id, batch.messages[0]["message_id"]),
+            "channel": "telegram",
+            "source_id": batch.target.source_id,
+            "owner_user_id": batch.target.owner_user_id,
+            "account_id": batch.account_id,
+            "chat_id": batch.chat_id,
+            "chat_type": batch.chat_type,
+            "chat_title": batch.chat_title,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "messages": batch.messages,
+        }
+        return await asyncio.shield(
+            self._person_bot_capture_task(batch.account_id, self._write_person_bot_batch(batch.account_id, record))
+        )
+
+    async def _write_person_bot_batch(
+        self, account_id: str, record: Dict[str, Any], *, attempts: int = 0, final: bool = False
+    ) -> Optional[Any]:
+        """Write one batch; a failed write is queued for a retry unless ``final``."""
+        from hermes_cli import telegram_triage
+
+        try:
+            path = await asyncio.to_thread(
+                telegram_triage.write_batch, record, batch_dir=telegram_triage.BATCH_DIR
+            )
+        except Exception:
+            attempts += 1
+            if final:
+                logger.error(
+                    "Could not write Telegram triage batch %s after %d attempt(s); %d message(s) lost",
+                    record["batch_id"], attempts, len(record["messages"]), exc_info=True,
+                )
+                return None
+            logger.warning(
+                "Could not write Telegram triage batch %s (attempt %d); will retry",
+                record["batch_id"], attempts, exc_info=True,
+            )
+            self._queue_person_bot_batch_retry(_FailedBatch(account_id, record, attempts))
+            return None
+        logger.info(
+            "Telegram bot %s: %d message(s) from chat %s -> triage batch %s",
+            account_id, len(record["messages"]), record["chat_id"], record["batch_id"],
+        )
+        return path
+
+    def _queue_person_bot_batch_retry(self, failed: _FailedBatch) -> None:
+        state = self._person_bot_capture_state()
+        state["retry"][failed.record["batch_id"]] = failed
+        if failed.account_id in state["closing"]:
+            return  # the stop's drain makes the last attempt
+        failed.task = asyncio.create_task(self._retry_person_bot_batch_later(failed, _retry_delay(failed.attempts)))
+
+    async def _retry_person_bot_batch_later(self, failed: _FailedBatch, delay: float) -> None:
+        await asyncio.sleep(delay)
+        retry = self._person_bot_capture_state()["retry"]
+        if retry.get(failed.record["batch_id"]) is not failed:
+            return
+        del retry[failed.record["batch_id"]]
+        failed.task = None
+        await asyncio.shield(self._person_bot_capture_task(
+            failed.account_id,
+            self._write_person_bot_batch(failed.account_id, failed.record, attempts=failed.attempts),
+        ))
+
+    async def _drain_person_bot_captures(self, account_id: str) -> None:
+        """Wait for ``account_id``'s capture work, then write every batch it still holds."""
+        state = self._person_bot_capture_state()
+        while True:
+            busy = list(state["busy"].get(account_id, ()))
+            if busy:
+                await asyncio.gather(*busy, return_exceptions=True)
+                continue
+            keys = [k for k in state["pending"] if k[0] == account_id]
+            # Claim the failed batches before any await so a retry timer cannot also write them.
+            failed = [f for f in state["retry"].values() if f.account_id == account_id]
+            for f in failed:
+                del state["retry"][f.record["batch_id"]]
+                if f.task is not None and not f.task.done():
+                    f.task.cancel()
+            if not keys and not failed:
+                return
+            for key in keys:
+                await self._flush_person_bot_capture(key)
+            for f in failed:
+                await self._write_person_bot_batch(account_id, f.record, attempts=f.attempts, final=True)
 
     async def _person_bot_owner(self, owner_user_id: str):
         store = self._get_principal_store()

@@ -9,5 +9,12 @@
   "cancel": "取消",
   "working": "處理中…",
   "loading": "載入中…",
-  "stillWorking": "仍在處理中…伺服器繁忙時可能需要多幾秒。"
+  "stillWorking": "仍在處理中…伺服器繁忙時可能需要多幾秒。",
+  "close": "關閉",
+  "maximize": "⤢ 放大",
+  "minimize": "⤡ 縮小",
+  "maximizeHint": "放大",
+  "minimizeHint": "縮小 (Esc)",
+  "maximizeNamed": "放大「{name}」",
+  "minimizeNamed": "縮小「{name}」"
 }

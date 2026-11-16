@@ -3224,6 +3224,7 @@ _AUX_TASKS: list[tuple[str, str, str]] = [
     ("mcp", "MCP", "MCP tool reasoning"),
     ("title_generation", "Title generation", "session titles"),
     ("session_review", "Session review", "landing pin suggestions"),
+    ("triage_router", "Triage router", "per-batch profile routing"),
     ("tts_audio_tags", "TTS audio tags", "Gemini TTS tag insertion"),
     ("skills_hub", "Skills hub", "skills search/install"),
     ("triage_specifier", "Triage specifier", "kanban spec fleshing"),
@@ -12306,7 +12307,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "project", "projects", "promote", "proxy", "ref",
         "prompt-size",
         "send", "sessions", "setup", "setup-link", "todos", "vpn",
-        "skills", "slack", "status", "tool", "tools", "uninstall", "update",
+        "skills", "slack", "source", "status", "tool", "tools", "triage", "uninstall", "update",
         "version", "webhook", "whatsapp", "whatsapp-cloud", "chat", "secrets", "security",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an
@@ -13152,6 +13153,20 @@ def main():
     from hermes_cli.member import register_member_subparser
 
     register_member_subparser(subparsers)
+
+    # =========================================================================
+    # source command — box-wide incoming source registry (FG-03 P2)
+    # =========================================================================
+    from hermes_cli.source_cli import register_source_subparser
+
+    register_source_subparser(subparsers)
+
+    # =========================================================================
+    # triage command — layered triage skills per user-profile (FG-03 P3)
+    # =========================================================================
+    from hermes_cli.triage_cli import register_triage_subparser
+
+    register_triage_subparser(subparsers)
 
     # =========================================================================
     # changes command — review/undo/redo recorded change events (C5/FG-12)

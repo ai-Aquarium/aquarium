@@ -11,6 +11,7 @@ import { durationLabel } from "@/components/projects/format";
 import { AssignmentDetails, hasAssignment } from "@/components/projects/plan/StepAssignment";
 import { parkedText } from "@/components/projects/live/liveState";
 import { useCardLive } from "@/components/projects/useCardLive";
+import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import { Spinner } from "@/components/ui/Spinner";
 import { RefBadge } from "@/components/refs/RefBadge";
 import { Pill, type Tone } from "@/components/ui/Pill";
@@ -276,12 +277,29 @@ export function CardDetailView({
             </p>
           ) : null}
           {logTail ? (
-            <pre
-              data-component="CardWorkerLog"
-              className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap rounded-lg bg-[var(--color-surface-2)] p-2 text-xs text-[var(--color-muted)]"
+            <Maximizable
+              title="Worker log"
+              component="CardWorkerLogPanel"
+              className="mt-2 flex flex-col gap-1"
             >
-              {logTail}
-            </pre>
+              {({ maximized }) => (
+                <>
+                  {maximized ? null : (
+                    <div className="flex justify-end">
+                      <MaximizeToggle />
+                    </div>
+                  )}
+                  <pre
+                    data-component="CardWorkerLog"
+                    tabIndex={maximized ? 0 : undefined}
+                    aria-label={maximized ? "Worker log" : undefined}
+                    className={`${maximized ? "min-h-0 flex-1" : "max-h-72"} overflow-y-auto whitespace-pre-wrap rounded-lg bg-[var(--color-surface-2)] p-2 text-xs text-[var(--color-muted)]`}
+                  >
+                    {logTail}
+                  </pre>
+                </>
+              )}
+            </Maximizable>
           ) : !heartbeat ? (
             <p className="mt-2 text-sm text-[var(--color-muted)]">
               A worker is on it, in its own process. Waiting for its first

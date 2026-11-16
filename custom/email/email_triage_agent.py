@@ -38,6 +38,8 @@ EMAIL_PROCESSED_DIR = '/opt/data/email-messages/batches/processed'
 
 os.makedirs(EMAIL_PROCESSED_DIR, exist_ok=True)
 
+from shared.profile_triage import triage_routed
+
 # Add contact_manager to path
 sys.path.insert(0, '/opt/data/whatsapp-messages')
 
@@ -325,8 +327,13 @@ def process_email_batch_file(batch_path):
         }
         print(f"[email-triage] Auto-classified as newsletter (skipped LLM)")
     else:
-        # Call LLM for classification
-        result = triage_email_batch(batch)
+        # Route, then classify per triage.agent.email (legacy LLM or profile agents)
+        triage_routed('email', batch, batch_path,
+                      legacy_triage=triage_email_batch,
+                      legacy_act=process_email_triage_result,
+                      get_db=get_db, processed_dir=EMAIL_PROCESSED_DIR,
+                      log=lambda line: print(f"[email-triage] {line}"))
+        return
 
     if result:
         process_email_triage_result(batch, result)

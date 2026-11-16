@@ -24,7 +24,8 @@ pytestmark = pytest.mark.skipif(
     reason="needs a non-root POSIX user whose primary group has its name",
 )
 
-CLOSED = ["email-messages", "whatsapp-messages", "calendar", "backups", "restore-b2c-20261026"]
+CLOSED = ["email-messages", "whatsapp-messages", "telegram-messages", "calendar", "backups",
+          "restore-b2c-20261026"]
 
 
 def run(data: Path, *extra: str) -> subprocess.CompletedProcess:

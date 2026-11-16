@@ -188,7 +188,8 @@ def _migrate(owner_dsn: str) -> None:
     db_setup._setup_allowed.clear()
     rows = db_migrate.migrate(owner_dsn, config=_config("${DATABASE_URL}"))
     assert [r for r in rows if r[2]] == []
-    assert {mode for mode, _, _ in rows} == {"prod", "dev"}
+    assert {mode for mode, _, _ in rows} == {"prod", "dev", "box"}
+    assert ("box", "source registry", None) in rows  # FG-03 aquarium_box
 
 
 def test_owner_login_still_sets_tables_up_on_first_use(postgres_dsn: str) -> None:
@@ -269,7 +270,7 @@ def test_migrate_refuses_a_login_that_does_not_own_the_schema(postgres_dsn: str)
     db_setup._setup_allowed.clear()
     rows = db_migrate.migrate(_app_dsn(postgres_dsn), config=_config("${DATABASE_URL}"))
     assert [(mode, name) for mode, name, error in rows if error] == [
-        ("prod", "schema owner"), ("dev", "schema owner"),
+        ("prod", "schema owner"), ("dev", "schema owner"), ("box", "schema owner"),
     ]
 
 
@@ -339,7 +340,8 @@ def test_migrate_lets_least_privilege_app_login_create_sites(
             ):
                 await conn.execute(f'DROP SCHEMA "{schema}" CASCADE')
             await conn.execute(
-                "DROP TABLE IF EXISTS public.site_source_grants, public.site_sources"
+                "DROP TABLE IF EXISTS public.data_dictionary_versions, public.data_source_grants, "
+                    "public.data_sources, public.site_source_grants, public.site_sources"
             )
             roles = [r for (r,) in await conn.fetch(
                 "SELECT rolname FROM pg_roles WHERE rolname LIKE 'site\\_%' "

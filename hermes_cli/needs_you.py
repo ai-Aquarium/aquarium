@@ -13,7 +13,18 @@ into ``NeedsYouEntry`` rows (``agent-home/src/types/landing.ts``):
   store is unavailable;
 * in-memory approvals — chat tool approvals (``tools.approval``) and
   webview actions (``WebviewSession.pending``);
-* open profile suggestions.
+* open profile suggestions;
+* data dictionary drafts the caller may approve.
+
+Triage raises to-dos and alerts per user-profile (FG-03 P5), so one arrival
+routed to John@CFO and John@CMO lands as a notification in *each* profile's
+store. Those notifications carry the arrival in their ``dedupe_key``
+(``<base>|arrival:<surface>:<account>:<external id>``, see :func:`arrival_key`);
+the route also collects them from the caller's other profiles, and
+:func:`merge_arrivals` folds every row for one arrival into a single entry
+whose id is the arrival key and whose ``context.profiles`` lists where it was
+raised. :func:`claim_arrival_push` keeps it to one push per arrival per person
+across profiles and channels.
 
 Ids are ``<source>:<native id>`` and stable for the life of the wait, so the
 client can tell what is new since it last looked. Row builders are pure;
@@ -47,6 +58,8 @@ SEVERITY_BY_SOURCE = {
     "plan_approval": "approval",
     "clarify": "approval",
     "output_acceptance": "review",
+    "data_draft": "review",
+    "data_schema": "review",
     "card_blocked": "review",
     "todo": "fyi",
     "profile_suggestion": "fyi",
@@ -66,7 +79,13 @@ def _ts(value: Any) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
-        return 0.0
+        pass
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            pass
+    return 0.0
 
 
 def chat_href(session_id: str, profile: Optional[str]) -> str:
@@ -112,6 +131,7 @@ def entry(
     reversible: bool = False,
     notification_id: Optional[str] = None,
     severity: Optional[str] = None,
+    i18n: Optional[dict] = None,
 ) -> dict:
     return {
         "id": id,
@@ -125,7 +145,17 @@ def entry(
         "actions": actions if actions is not None else [_open_action(href)],
         "reversible": bool(reversible),
         "notification_id": notification_id,
+        "i18n": i18n,
     }
+
+
+def _m(key: str, **values: Any) -> dict:
+    """One translatable part: agent-home renders ``needsYou.<key>`` with ``vars``."""
+    return {"key": key, "vars": {k: v for k, v in values.items() if v is not None}}
+
+
+def _title(key: str, **values: Any) -> dict:
+    return {"title": [_m(key, **values)]}
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +193,38 @@ def parse_project_key(dedupe_key: Optional[str]) -> Optional[dict]:
     }
 
 
+ARRIVAL_PREFIX = "arrival:"
+_ARRIVAL_MARK = "|" + ARRIVAL_PREFIX
+#: Dedupe-key base of the in-app alert a profile-scoped triage raises when it
+#: escalates an arrival (``custom/shared/triage_handlers``).
+TRIAGE_ALERT = "triage-alert"
+#: ... and when a batch of a channel with no legacy triage (Telegram, FG-03
+#: P6) could not be triaged at all and was only stored
+#: (``triage-failed:<kind>:<batch id>``).
+TRIAGE_FAILED = "triage-failed"
+
+
+def arrival_key(surface: Any, account_id: Any, external_id: Any) -> str:
+    """The stable key of one channel arrival, the same in every profile.
+
+    ``arrival:<surface>:<account id>:<external id>``, each part
+    percent-encoded so a ``:`` or ``|`` inside an id cannot shift the parts.
+    """
+    parts = (quote(str(p or ""), safe="") for p in (surface, account_id, external_id))
+    return ARRIVAL_PREFIX + ":".join(parts)
+
+
+def with_arrival(base: str, key: Optional[str]) -> str:
+    """``base`` tagged with an arrival key (``base`` unchanged without one)."""
+    return f"{base}|{key}" if key else base
+
+
+def split_arrival(dedupe_key: Optional[str]) -> tuple[str, Optional[str]]:
+    """``(base, arrival key or None)`` of a notification dedupe key."""
+    base, sep, rest = (dedupe_key or "").partition(_ARRIVAL_MARK)
+    return base, (ARRIVAL_PREFIX + rest) if sep and rest else None
+
+
 def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dict]:
     """Pending notifications addressed to ``user_id``.
 
@@ -177,7 +239,7 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
             continue
         if notification_target_user(n) != user_id:
             continue
-        key = n.dedupe_key or ""
+        key, arrival = split_arrival(n.dedupe_key)
         parsed = parse_project_key(key)
         context: dict = {}
         if parsed:
@@ -194,6 +256,8 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
             source, href, severity = "todo", "/todos", "approval"
         elif key.startswith("todo:"):
             source, href, severity = "todo", "/todos", None
+        elif key == TRIAGE_ALERT or key.startswith(TRIAGE_FAILED + ":"):
+            source, href, severity = "notification", "/inbox", "review"
         else:
             source = "notification"
             href = "/inbox"
@@ -207,11 +271,14 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
                 _open_action(href, "Open"),
             ]
             actions[-1]["style"] = "secondary"
+        if arrival:
+            context["arrival_key"] = arrival
         out.append(entry(
             id=f"notif:{n.id}",
             source=source,
             severity=severity,
             title=n.title or "Needs your answer",
+            i18n=None if n.title else _title("titles.needsAnswer"),
             detail=n.body,
             context=context,
             href=href,
@@ -367,6 +434,7 @@ def project_entries(principal, enrolled: Iterable[str], covered: set[tuple]) -> 
             id=f"project_run:{project.slug}:{run['run_no']}",
             source="project_checkpoint",
             title=f"{project.name} · run {run['run_no']} is waiting on you",
+            i18n=_title("titles.runWaiting", project=project.name, run=run["run_no"]),
             context={"project_slug": project.slug, "run_no": run["run_no"]},
             href=href, created_at=run["started_at"],
         ))
@@ -384,6 +452,7 @@ def project_entries(principal, enrolled: Iterable[str], covered: set[tuple]) -> 
                 id=f"card_approval:{card['id']}:{card['approval_key']}",
                 source="card_approval",
                 title=f"Approve: {card['label']}",
+                i18n=_title("titles.approveCard", label=card["label"]),
                 detail=card.get("detail") or f"{project.name} · {card['title']}",
                 context=ctx, href=href, created_at=card["requested_at"],
             ))
@@ -392,6 +461,7 @@ def project_entries(principal, enrolled: Iterable[str], covered: set[tuple]) -> 
                 id=f"card_blocked:{card['id']}",
                 source="card_blocked",
                 title=f"Blocked: {card['title']}",
+                i18n=_title("titles.blocked", title=card["title"]),
                 detail=project.name,
                 context=ctx, href=href, created_at=card["since"],
             ))
@@ -403,6 +473,7 @@ def project_entries(principal, enrolled: Iterable[str], covered: set[tuple]) -> 
             id=f"output:{o['id']}",
             source="output_acceptance",
             title=f"Review output: {o['title']}",
+            i18n=_title("titles.reviewOutput", title=o["title"]),
             detail=project.name,
             context={"project_slug": project.slug},
             href=project_href(project.slug), created_at=o["delivered_at"] or o["created_at"],
@@ -416,6 +487,7 @@ def project_entries(principal, enrolled: Iterable[str], covered: set[tuple]) -> 
             id=f"clarify:{project.slug}:{c['round_no']}",
             source="clarify",
             title=f"{project.name}: {n} question{'s' if n != 1 else ''} to answer",
+            i18n=_title("titles.clarifyOne" if n == 1 else "titles.clarify", project=project.name, n=n),
             context={"project_slug": project.slug},
             href=project_href(project.slug), created_at=c["created_at"],
         ))
@@ -427,6 +499,7 @@ def project_entries(principal, enrolled: Iterable[str], covered: set[tuple]) -> 
             id=f"plan:{project.slug}:{p['rev']}",
             source="plan_approval",
             title=f"{project.name}: plan awaiting approval",
+            i18n=_title("titles.planApproval", project=project.name),
             context={"project_slug": project.slug},
             href=project_href(project.slug), created_at=p["created_at"],
         ))
@@ -466,6 +539,8 @@ def chat_approval_entries(
             id=f"chat_approval:{run_id}:{a['approval_id']}",
             source="chat_tool_approval",
             title=f"Approve tool use: {a.get('description') or 'command'}",
+            i18n=_title("titles.approveTool", what=a["description"]) if a.get("description")
+            else _title("titles.approveToolCommand"),
             detail=command or None,
             context={
                 "session_id": run["session_id"], "run_id": run_id,
@@ -499,6 +574,7 @@ def webview_entries(session) -> list[dict]:
             id=f"webview:{p.id}",
             source="webview_approval",
             title=f"Webview wants to {kind}" + (f" on {url}" if url else ""),
+            i18n=_title("titles.webviewOn" if url else "titles.webview", kind=kind, url=url or None),
             detail=p.reason,
             href="/webview", created_at=p.created_at,
             actions=[
@@ -517,9 +593,86 @@ def profile_suggestion_entries(suggestions: Iterable[Any]) -> list[dict]:
             id=f"profile_suggestion:{s.id}",
             source="profile_suggestion",
             title=f"New profile suggested: {s.proposed_name}",
+            i18n=_title("titles.profileSuggested", name=s.proposed_name),
             detail=s.rationale or s.proposed_role,
             context={"profile": s.origin_profile},
             href="/profiles", created_at=s.created_at,
+        ))
+    return out
+
+
+_ORIGIN_TEXT = {"chat": "from a chat", "feedback": "from answer feedback", "study": "from a study",
+                "schema_check": "from a schema check", "edit": "from an edit"}
+
+
+def data_draft_entries(sources: Iterable[dict]) -> list[dict]:
+    """Open dictionary drafts on sources the caller manages (owner or admin approves)."""
+    out: list[dict] = []
+    for s in sources:
+        if s.get("access") != "manage" or not s.get("draft_version"):
+            continue
+        n = int(s.get("draft_changes") or 0)
+        known = [o for o in s.get("draft_origins") or [] if o in _ORIGIN_TEXT][:2]
+        origins = [_ORIGIN_TEXT[o] for o in known]
+        name = s.get("name")
+        href = f"/data/{quote(str(s['id']), safe='')}/review"
+        out.append(entry(
+            id=f"data_draft:{s['id']}:{s['draft_version']}",
+            source="data_draft",
+            title=f"Dictionary draft v{s['draft_version']} for {name or 'a data source'} is ready",
+            detail=" · ".join([f"{n} change{'s' if n != 1 else ''}"] + origins),
+            i18n={
+                "title": [_m("titles.dataDraft" if name else "titles.dataDraftUnnamed",
+                             v=s["draft_version"], source=name)],
+                "detail": [_m("details.changesOne" if n == 1 else "details.changes", n=n)]
+                + [_m(f"details.origin.{o}") for o in known],
+            },
+            href=href, created_at=s.get("draft_proposed_at"),
+            actions=[_open_action(href, "Review")],
+        ))
+    return out
+
+
+_SCHEMA_DRIFT_TEXT = {
+    "added": "{table} is new", "removed": "{table} is gone", "columns": "{table}: columns changed",
+}
+
+
+def data_schema_entries(sources: Iterable[dict]) -> list[dict]:
+    """Sources whose schema no longer matches their approved dictionary.
+
+    One card per drifted source (``manage`` approves its dictionary); the id
+    is stable while drift persists so a still-open check shows once.
+    """
+    out: list[dict] = []
+    for s in sources:
+        if s.get("access") != "manage":
+            continue
+        drift = [
+            d for d in s.get("schema_drift") or []
+            if d.get("change") in _SCHEMA_DRIFT_TEXT and d.get("table")
+        ]
+        if not drift:
+            continue
+        n, shown = len(drift), drift[:2]
+        name = s.get("name")
+        href = f"/data/{quote(str(s['id']), safe='')}"
+        out.append(entry(
+            id=f"data_schema:{s['id']}",
+            source="data_schema",
+            title=f"The {name or 'data source'} schema changed — its dictionary needs an update",
+            detail=" · ".join(
+                [f"{n} table{'s' if n != 1 else ''} differ"]
+                + [_SCHEMA_DRIFT_TEXT[d["change"]].format(table=d["table"]) for d in shown]
+            ),
+            i18n={
+                "title": [_m("titles.dataSchema" if name else "titles.dataSchemaUnnamed",
+                             source=name)],
+                "detail": [_m("details.schemaDriftOne" if n == 1 else "details.schemaDrift", n=n)]
+                + [_m(f"details.schemaItem.{d['change']}", table=d["table"]) for d in shown],
+            },
+            href=href, created_at=s.get("schema_checked_at"),
+            actions=[_open_action(href, "Open dictionary")],
         ))
     return out
 
@@ -529,11 +682,118 @@ def profile_suggestion_entries(suggestions: Iterable[Any]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+def _profile_href(href: str, profile: Optional[str]) -> str:
+    if not profile or profile == "default" or "profile=" in href:
+        return href
+    return href + ("&" if "?" in href else "?") + urlencode({"profile": profile})
+
+
+def tag_profile(items: Iterable[dict], profile: str, *, link: bool = False) -> list[dict]:
+    """Stamp ``context.profile`` on arrival entries raised in ``profile``.
+
+    With ``link`` (rows from a profile other than the request's) the entry's
+    links also carry ``?profile=`` so opening it lands in that profile.
+    """
+    out: list[dict] = []
+    for item in items:
+        if not item["context"].get("arrival_key"):
+            continue
+        item = {**item, "context": {**item["context"], "profile": profile}}
+        if link:
+            item["href"] = _profile_href(item["href"], profile)
+            item["actions"] = [
+                {**a, "href": _profile_href(a["href"], profile)} if a.get("href") else a
+                for a in item["actions"]
+            ]
+        out.append(item)
+    return out
+
+
+def merge_arrivals(items: Iterable[dict]) -> list[dict]:
+    """One entry per arrival, however many profiles (or rows) raised it.
+
+    Rows sharing ``context.arrival_key`` collapse onto the most severe (then
+    oldest) one, re-keyed with the arrival key as its id so the entry, its
+    "new" badge and its push stay the same as profiles join or leave. Its
+    ``context.profiles`` lists every profile that raised it. Everything else
+    passes through untouched, in order.
+    """
+    order: list[Any] = []
+    groups: dict[str, list[dict]] = {}
+    for item in items:
+        key = (item.get("context") or {}).get("arrival_key")
+        if not key:
+            order.append(item)
+            continue
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(item)
+    out: list[dict] = []
+    for slot in order:
+        if not isinstance(slot, str):
+            out.append(slot)
+            continue
+        group = groups[slot]
+        primary = min(group, key=lambda i: (_SEVERITY_RANK.get(i["severity"], 99), i["created_at"]))
+        profiles = sorted({i["context"].get("profile") for i in group} - {None})
+        context = {**primary["context"], "profiles": profiles}
+        if len(profiles) != 1:
+            context.pop("profile", None)
+        out.append({
+            **primary,
+            "id": slot,
+            "created_at": min(i["created_at"] for i in group),
+            "context": context,
+        })
+    return out
+
+
+async def arrival_entries_elsewhere(
+    user_id: str, *, registry: Optional[list] = None, current_home: Optional[Path] = None,
+) -> list[dict]:
+    """Arrival-keyed pending notifications for ``user_id`` in their other profiles.
+
+    Enters each served profile but the request's own and asks that profile's
+    notification store, as that profile's principal for ``user_id`` (absent or
+    suspended there: nothing). A profile that cannot be read is skipped.
+    """
+    from hermes_cli.access import PrincipalStore
+    from hermes_cli.config import load_config_readonly
+    from hermes_cli.console_scope import _scoped_to
+    from hermes_cli.datastore import get_store
+    from hermes_cli.human_comms import NotificationStore
+    from hermes_constants import get_hermes_home
+
+    if registry is None:
+        from hermes_cli.profile_registry import get_profile_registry
+
+        registry = get_profile_registry()
+    here = Path(current_home or get_hermes_home()).resolve()
+    out: list[dict] = []
+    for profile in registry:
+        home = Path(profile.hermes_home)
+        if not home.is_dir() or home.resolve() == here:
+            continue
+        try:
+            with _scoped_to(home):
+                config = load_config_readonly() or {}
+                app = get_store("supabase-app", "prod", config=config)
+                principal = await PrincipalStore(app).get(user_id)
+                if principal is None or not getattr(principal, "active", True):
+                    continue
+                rows = await NotificationStore(app, config=config).list_pending(principal)
+            out.extend(tag_profile(notification_entries(rows, user_id), profile.name, link=True))
+        except Exception:
+            logger.debug("needs-you: profile %s unreadable", profile.name, exc_info=True)
+    return out
+
+
 def finalize(items: Iterable[dict]) -> list[dict]:
-    """Drop duplicate ids; severity first, then oldest wait first."""
+    """Merge per-arrival rows, drop duplicate ids; severity first, then oldest wait first."""
     seen: set[str] = set()
     unique: list[dict] = []
-    for item in items:
+    for item in merge_arrivals(items):
         if not item.get("href") or item["id"] in seen:
             continue
         seen.add(item["id"])
@@ -567,11 +827,76 @@ def response(items: list[dict], *, count_only: bool = False) -> dict:
 _LEDGER_TTL_SECONDS = 7 * 24 * 3600
 
 
+def _safe_user(user_id: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in user_id) or "anon"
+
+
+def _arrival_ledger_path(user_id: str) -> Path:
+    """Box-level, not per-profile: one arrival raised in N profiles is one push."""
+    from hermes_constants import get_default_hermes_root
+
+    return Path(get_default_hermes_root()) / "needs_you" / f"arrivals-{_safe_user(user_id)}.json"
+
+
+def _update_arrival_ledger(user_id: str, change) -> Any:
+    import fcntl
+
+    path = _arrival_ledger_path(user_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_suffix(".lock"), "a", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            ledger = json.loads(path.read_text())
+            if not isinstance(ledger, dict):
+                ledger = {}
+        except FileNotFoundError:
+            ledger = {}
+        except Exception:
+            logger.debug("needs-you: unreadable arrival ledger %s", path, exc_info=True)
+            ledger = {}
+        now = time.time()
+        ledger = {k: ts for k, ts in ledger.items() if now - float(ts) < _LEDGER_TTL_SECONDS}
+        outcome = change(ledger, now)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(ledger))
+        os.replace(tmp, path)
+        return outcome
+
+
+def claim_arrival_push(user_id: str, key: str) -> bool:
+    """True the first time ``key`` is pushed to ``user_id`` (within a week).
+
+    Shared by every profile and push channel (the triage to-do Telegram push
+    and the needs-you Web Push), so the person is buzzed once per arrival. A
+    ledger that cannot be read or written fails open (a duplicate push beats
+    a lost one).
+    """
+
+    def claim(ledger: dict, now: float) -> bool:
+        if key in ledger:
+            return False
+        ledger[key] = now
+        return True
+
+    try:
+        return bool(_update_arrival_ledger(user_id, claim))
+    except Exception:
+        logger.warning("needs-you: arrival ledger unavailable for %s", user_id, exc_info=True)
+        return True
+
+
+def release_arrival_push(user_id: str, key: str) -> None:
+    """Undo :func:`claim_arrival_push` after the push itself failed."""
+    try:
+        _update_arrival_ledger(user_id, lambda ledger, now: ledger.pop(key, None))
+    except Exception:
+        logger.debug("needs-you: could not release %s for %s", key, user_id, exc_info=True)
+
+
 def _ledger_path(user_id: str) -> Path:
     from hermes_constants import get_hermes_home
 
-    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in user_id) or "anon"
-    return Path(get_hermes_home()) / "needs_you" / f"pushed-{safe}.json"
+    return Path(get_hermes_home()) / "needs_you" / f"pushed-{_safe_user(user_id)}.json"
 
 
 def claim_new_for_push(user_id: str, items: Iterable[dict]) -> list[dict]:
@@ -615,7 +940,11 @@ def claim_new_for_push(user_id: str, items: Iterable[dict]) -> list[dict]:
     except Exception:
         logger.warning("needs-you: could not write push ledger %s", path, exc_info=True)
         return []
-    return fresh
+    return [
+        i for i in fresh
+        if not i["context"].get("arrival_key")
+        or claim_arrival_push(user_id, i["context"]["arrival_key"])
+    ]
 
 
 async def push_new(user_id: str, items: list[dict]) -> int:

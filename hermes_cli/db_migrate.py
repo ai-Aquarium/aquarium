@@ -208,12 +208,15 @@ async def migrate_store(
             else:
                 results.append(("agent_home_app grants", None))
         if site_sources:
+            from hermes_cli import app_data, data_dictionary
             from hermes_cli import site_sources as sites
 
             for name, site_step in (
                 ("site registry", lambda: sites.migrate_registry(connection)),
+                ("data dictionary", lambda: data_dictionary.migrate(connection)),
                 ("site admin login", lambda: sites.ensure_site_admin(
                     connection, password=site_admin_password or None)),
+                ("app data sandbox login", lambda: app_data.ensure_sandbox_role(connection)),
             ):
                 try:
                     await site_step()
@@ -224,6 +227,20 @@ async def migrate_store(
     finally:
         await connection.close()
     return results
+
+
+def _migrate_sources(dsn: str, config: dict) -> Tuple[str, Optional[str]]:
+    """Register today's mailboxes, WhatsApp numbers and Telegram bots (FG-03 P2).
+
+    Runs after the schemas exist; idempotent (see :mod:`hermes_cli.source_migrate`).
+    """
+    from hermes_cli.source_migrate import run_for_db_migrate
+
+    try:
+        summary = run_for_db_migrate(dsn, config)
+    except Exception as error:
+        return "source registry migration", f"{type(error).__name__}: {error}"
+    return f"source registry migration ({summary})", None
 
 
 def _storage(values: Optional[Mapping[str, str]]) -> Any:
@@ -250,6 +267,50 @@ def migrate_bucket(storage: Any) -> Optional[str]:
     return None
 
 
+async def migrate_box(dsn: str, *, app_password: str = "") -> List[Tuple[str, Optional[str]]]:
+    """Create the box-wide ``aquarium_box`` schema (FG-03 source registry).
+
+    It belongs to no profile: its marker is ``box_marker``, never the
+    per-profile ``schema_owner``, so no profile guard claims it.
+    """
+    import asyncpg
+
+    from hermes_cli import db_setup, source_registry
+    from hermes_cli.access import ensure_app_role
+
+    schema = source_registry.BOX_SCHEMA
+    results: List[Tuple[str, Optional[str]]] = []
+    connection = await asyncpg.connect(
+        dsn, server_settings={"search_path": schema},
+        connection_class=db_setup.connection_class(),
+    )
+    try:
+        if not await db_setup.bind(connection, schema):
+            return [(
+                "schema owner",
+                f"this database login does not own schema {schema!r}, so it "
+                "cannot create tables; use the admin address "
+                "(/etc/aquarium/db-admin.env)",
+            )]
+        try:
+            await source_registry.initialize_box(connection)
+        except Exception as error:
+            return [("source registry", f"{type(error).__name__}: {error}")]
+        results.append(("source registry", None))
+        try:
+            await ensure_app_role(
+                connection, schema, grant_membership=False,
+                password=app_password or None,
+            )
+        except Exception as error:
+            results.append(("hermes_app grants", f"{type(error).__name__}: {error}"))
+        else:
+            results.append(("hermes_app grants", None))
+    finally:
+        await connection.close()
+    return results
+
+
 def migrate(
     admin_dsn: str = "",
     *,
@@ -259,7 +320,11 @@ def migrate(
     site_admin_password: str = "",
     storage_env: Optional[Mapping[str, str]] = None,
 ) -> List[Tuple[str, str, Optional[str]]]:
-    """Migrate the prod and dev schemas and the media bucket; ``[(mode, step, error or None)]``.
+    """Migrate the prod and dev schemas, the box source registry and the media bucket.
+
+    Returns ``[(mode, step, error or None)]``. The box schema is created after
+    the profile schemas; today's sources are moved into it only when the prod
+    schema and the box schema could both be set up.
 
     The bucket is box-wide, so its row's mode is ``box``. ``storage_env`` holds
     :data:`STORAGE_KEYS` values (from standard input); each missing one comes from
@@ -270,12 +335,16 @@ def migrate(
 
     config = config if config is not None else load_config_readonly()
     rows: List[Tuple[str, str, Optional[str]]] = []
+    box_dsn: Optional[str] = None
     for mode in ("prod", "dev"):
         store = get_store("supabase-app", mode, config=config)
         if not store.dsn:
             continue  # this profile has no Supabase datastore
         if admin_dsn:
             store = dataclasses.replace(store, dsn=admin_dsn)
+        if mode == "prod":
+            # The sources move only when the prod schema could be set up at all.
+            box_dsn = store.dsn
         for name, error in asyncio.run(
             migrate_store(
                 store, config, app_password=app_password,
@@ -285,6 +354,18 @@ def migrate(
             )
         ):
             rows.append((mode, name, error))
+            if mode == "prod" and name == "schema owner" and error:
+                box_dsn = None
+    box_store = get_store("supabase-app", "prod", config=config)
+    box_ok = False
+    if box_store.dsn:
+        box_rows = asyncio.run(
+            migrate_box(admin_dsn or box_store.dsn, app_password=app_password)
+        )
+        rows.extend(("box", name, error) for name, error in box_rows)
+        box_ok = not any(error for _, error in box_rows)
+    if box_dsn and box_ok:
+        rows.append(("box", *_migrate_sources(box_dsn, config)))
     storage = _storage(storage_env)
     if storage is not None:
         rows.append(("box", f"storage bucket {storage.bucket}", migrate_bucket(storage)))
