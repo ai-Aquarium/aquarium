@@ -675,6 +675,10 @@ async def delete(principal: Any, name: Any) -> bool:
     await release_route(principal, cred)
     deleted = await default_credential_store().delete(principal, PROVIDER, name)
     _update_state(_key(principal.user_id, name), None)
+    if deleted:
+        from hermes_cli import data_engines
+
+        await data_engines.forget_connection(principal.user_id, PROVIDER, name)
     return bool(deleted)
 
 

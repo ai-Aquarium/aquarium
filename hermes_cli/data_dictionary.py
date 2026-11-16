@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 from hermes_cli import site_sources as ss
+from hermes_cli.data_engines import schema_fingerprint
 from hermes_cli.site_sources import SiteError, jsonable
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,8 @@ GRANTS = ("read", "propose")
 ORIGINS = ("edit", "chat", "feedback", "study", "schema_check", "design", "restore")
 APP_SOURCE_NAME = "Aquarium data"
 
-_NAME_RE = re.compile(r"[a-z_][a-z0-9_]{0,62}")
+# Table/column names as the engine spells them (``orders``, ``dbo.Orders``).
+_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_$#@.]{0,127}")
 _TEXT = {"meaning": 2000, "row": 500, "grain": 500}
 _LISTS = {
     "joins": (("to", 63), ("on", 500), ("note", 500)),
@@ -47,7 +49,7 @@ _MAX_COLUMNS = 300
 DDL = """
 CREATE TABLE IF NOT EXISTS public.data_sources (
     id uuid PRIMARY KEY,
-    kind text NOT NULL CHECK (kind IN ('site', 'app')),
+    kind text NOT NULL CHECK (kind IN ('site', 'app', 'connection')),
     site_id uuid UNIQUE REFERENCES public.site_sources (id) ON DELETE CASCADE,
     profile text NOT NULL,
     name text NOT NULL,
@@ -96,6 +98,25 @@ REVOKE ALL ON public.data_sources, public.data_source_grants,
 _ALTER_DDL = """
 ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS schema_checked_at timestamptz;
 ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS schema_drift jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS engine text NOT NULL DEFAULT 'postgres';
+ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS connection_name text;
+ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS schema_fingerprint text;
+DO $$
+DECLARE old text;
+BEGIN
+    SELECT conname INTO old FROM pg_constraint
+     WHERE conrelid = 'public.data_sources'::regclass AND contype = 'c'
+       AND pg_get_constraintdef(oid) LIKE '%kind = ANY%'
+       AND pg_get_constraintdef(oid) NOT LIKE '%connection%';
+    IF old IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE public.data_sources DROP CONSTRAINT %I', old);
+        ALTER TABLE public.data_sources ADD CONSTRAINT data_sources_kind_check
+            CHECK (kind IN ('site', 'app', 'connection'));
+    END IF;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS data_sources_one_connection
+    ON public.data_sources (profile, engine, owner_user_id, connection_name)
+    WHERE kind = 'connection';
 """
 
 _TABLES = ("data_sources", "data_source_grants", "data_dictionary_versions")
@@ -112,6 +133,9 @@ class Source:
     site_id: Optional[str] = None
     schema_checked_at: Optional[Any] = None
     schema_drift: Optional[List[Dict[str, Any]]] = None
+    engine: str = "postgres"
+    connection_name: Optional[str] = None
+    schema_fingerprint: Optional[str] = None
 
     def view(self, access: Optional[str] = None) -> Dict[str, Any]:
         out = {
@@ -122,10 +146,18 @@ class Source:
             "site_id": self.site_id,
             "schema_checked_at": jsonable(self.schema_checked_at),
             "schema_drift": self.schema_drift or [],
+            "engine": self.engine,
+            "connection": self.connection_name,
+            "ref": self.ref,
         }
         if access is not None:
             out["access"] = access
         return out
+
+    @property
+    def ref(self) -> Optional[str]:
+        """How the agent names a connection source: ``<engine>:<connection>``."""
+        return f"{self.engine}:{self.connection_name}" if self.kind == "connection" else None
 
 
 def _source(row: Mapping[str, Any]) -> Source:
@@ -138,6 +170,9 @@ def _source(row: Mapping[str, Any]) -> Source:
         site_id=str(row["site_id"]) if row["site_id"] else None,
         schema_checked_at=row["schema_checked_at"],
         schema_drift=_json(row["schema_drift"]) or [],
+        engine=row["engine"] or "postgres",
+        connection_name=row["connection_name"],
+        schema_fingerprint=row["schema_fingerprint"],
     )
 
 
@@ -154,6 +189,12 @@ def access_level(
     """``manage`` | ``propose`` | ``read`` | ``None`` (may not know it exists)."""
     if principal is None or not getattr(principal, "user_id", None):
         return None
+    if source.kind == "connection":
+        # A Settings connection is private to the person who set it up (admins
+        # included); they share its dictionary with grants.
+        if source.owner_user_id == principal.user_id:
+            return "manage"
+        return grant if grant in GRANTS else None
     if ss._is_profile_admin(principal):
         return "manage"
     if source.owner_user_id and source.owner_user_id == principal.user_id:
@@ -186,7 +227,7 @@ def _text(value: Any, field: str, limit: int) -> str:
 def _name(value: Any, field: str) -> str:
     name = str(value or "").strip()
     if not _NAME_RE.fullmatch(name):
-        raise SiteError(f"{field} {name!r} must be lower-case letters, digits and _")
+        raise SiteError(f"{field} {name!r} must be a table or column name (letters, digits, _ . $ # @)")
     return name
 
 
@@ -302,7 +343,10 @@ async def migrate(conn: Any, *, app_role: Optional[str] = None) -> None:
         )
 
 
-_SOURCE_COLUMNS = "id, kind, site_id, profile, name, owner_user_id, schema_checked_at, schema_drift"
+_SOURCE_COLUMNS = (
+    "id, kind, site_id, profile, name, owner_user_id, schema_checked_at, schema_drift, "
+    "engine, connection_name, schema_fingerprint"
+)
 
 
 def _design_entries(design: Mapping[str, Any]) -> Dict[str, Any]:
@@ -371,6 +415,44 @@ async def sync_sources(profile: str, *, db: Any = None) -> List[Source]:
     return [_source(r) for r in rows]
 
 
+async def sync_connection_sources(principal: Any, profile: str, *, db: Any = None) -> List[Source]:
+    """One source per Settings connection the caller owns (SQL Server, MySQL, SQLite)."""
+    from hermes_cli import data_engines
+
+    if principal is None or not getattr(principal, "user_id", None):
+        return []
+    refs = await data_engines.connection_refs(principal)
+    if not refs:
+        return []
+    out = []
+    async with _Conn(db) as conn:
+        for ref in refs:
+            row = await conn.fetchrow(
+                "INSERT INTO public.data_sources (id, kind, profile, name, owner_user_id, engine, "
+                "connection_name) VALUES ($1, 'connection', $2, $3, $4, $5, $6) "
+                "ON CONFLICT (profile, engine, owner_user_id, connection_name) "
+                "WHERE kind = 'connection' DO UPDATE SET name = EXCLUDED.name, updated_at = now() "
+                f"RETURNING {_SOURCE_COLUMNS}",
+                uuid.uuid4(), profile, ref["label"] or ref["name"], principal.user_id,
+                ref["engine"], ref["name"],
+            )
+            out.append(_source(row))
+    return out
+
+
+async def delete_connection_source(
+    profile: str, engine: str, owner_user_id: str, name: str, *, db: Any = None
+) -> bool:
+    """Forget a deleted connection's source (its dictionary versions and grants go with it)."""
+    async with _Conn(db) as conn:
+        status = await conn.execute(
+            "DELETE FROM public.data_sources WHERE kind = 'connection' AND profile = $1 "
+            "AND engine = $2 AND owner_user_id = $3 AND connection_name = $4",
+            profile, engine, owner_user_id, name,
+        )
+    return status.endswith(" 1")
+
+
 async def get_source(source_id: str, *, db: Any = None) -> Optional[Source]:
     try:
         uuid.UUID(str(source_id))
@@ -386,7 +468,9 @@ async def get_source(source_id: str, *, db: Any = None) -> Optional[Source]:
 async def resolve_access(source: Source, principal: Any, *, db: Any = None) -> Optional[str]:
     if principal is None or not getattr(principal, "user_id", None):
         return None
-    if ss._is_profile_admin(principal) or source.owner_user_id == principal.user_id:
+    if source.owner_user_id == principal.user_id or (
+        source.kind != "connection" and ss._is_profile_admin(principal)
+    ):
         return "manage"
     grant = await grant_for(source.id, principal.user_id, db=db)
     site_access = None
@@ -403,6 +487,10 @@ async def list_sources(principal: Any, profile: str, *, db: Any = None) -> List[
     """Sources ``principal`` may see, each with its dictionary status."""
     if principal is None or not getattr(principal, "user_id", None):
         return []
+    try:
+        await sync_connection_sources(principal, profile, db=db)
+    except Exception:  # noqa: BLE001 - Settings connections never hide the other sources
+        logger.warning("could not sync Settings connections into data sources", exc_info=True)
     sources = await sync_sources(profile, db=db)
     site_grants = await ss.grants_of(principal.user_id, db=db)
     sites = {s.id: s for s in await ss.list_sites(profile=profile, db=db)}
@@ -674,6 +762,7 @@ async def approve(
             )
     result = {"version": int(version), "status": "approved", "changed_tables": changed_tables(before, entries)}
     await _recheck_quiet(source, db=db)
+    await _reindex_quiet(source, db=db)
     return result
 
 
@@ -725,6 +814,7 @@ async def restore(source: Source, version: int, *, by: str, db: Any = None) -> D
             )
     result = {"version": new, "status": "approved", "restored_from": int(version)}
     await _recheck_quiet(source, db=db)
+    await _reindex_quiet(source, db=db)
     return result
 
 
@@ -769,6 +859,10 @@ async def _schema_truth(source: Source, *, db: Any = None) -> Dict[str, Set[str]
         from hermes_cli import app_data
 
         return {name: set(cols) for name, cols in app_data.schema().items()}
+    if source.kind == "connection":
+        from hermes_cli import data_engines
+
+        return await data_engines.source_schema(source, db=db)
     if not source.site_id:
         return {}
     site = await ss.get_site(source.site_id, db=db)
@@ -796,9 +890,9 @@ async def check_source(source: Source, *, db: Any = None) -> List[Dict[str, Any]
         tables = (_json(approved["entries"]) or {}).get("tables") or {} if approved else {}
         drift = schema_diff(truth, tables) if approved else []
         await conn.execute(
-            "UPDATE public.data_sources SET schema_checked_at = now(), schema_drift = $2::jsonb "
-            "WHERE id = $1::uuid",
-            source.id, json.dumps(drift),
+            "UPDATE public.data_sources SET schema_checked_at = now(), schema_drift = $2::jsonb, "
+            "schema_fingerprint = $3 WHERE id = $1::uuid",
+            source.id, json.dumps(drift), schema_fingerprint(truth),
         )
     return drift
 
@@ -820,6 +914,13 @@ async def _recheck_quiet(source: Source, *, db: Any = None) -> None:
         await check_source(source, db=db)
     except Exception:  # noqa: BLE001
         logger.warning("schema re-check failed for source %s", source.id, exc_info=True)
+
+
+async def _reindex_quiet(source: Source, *, db: Any = None) -> None:
+    """Keep the search index on the approved version (plan Phase 7)."""
+    from hermes_cli import data_dictionary_search
+
+    await data_dictionary_search.reindex_quiet(source, db=db)
 
 
 async def schema_check_tick(*, db: Any = None) -> int:
