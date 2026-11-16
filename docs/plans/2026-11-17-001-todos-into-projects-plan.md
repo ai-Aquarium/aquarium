@@ -1,6 +1,6 @@
 ---
 title: "plan: move To-dos into Projects, then remove To-dos in stages"
-status: draft — waiting for Leo's review of the mockup and open questions
+status: draft — Leo decided Q3, Q4 and Q6 (2026-11-17); Q1, Q2 and Q5 still open
 date: 2026-11-17
 type: plan
 origin: >
@@ -31,11 +31,11 @@ stage, and old links keep working.
 
 | Today, in To-dos | After, in Projects |
 |---|---|
-| Triage creates a to-do (silent "staged", or "open" with a ping) | Triage creates a card in **Inbox › Triage**. Silent asks just appear; urgent ones also ping and show in **Needs you** |
+| Triage creates a to-do (silent "staged", or "open" with a ping) | Triage creates a card in **Inbox › Triage**. **Every** new ask shows in **Needs you**; urgent ones also send a push |
 | To-dos page with filters | **Inbox** project board: Triage · Working · Review · Done. Same filters (priority, source, due) |
 | "Work on this" starts a draft session | **Work on this** on the card starts the card worker. The card moves to Working, then Review |
 | Draft (DRAFT.md / REPLY.txt) on the to-do | Draft and reply in the card's **Draft** tab, editable before sending |
-| Reply approval ("hermes todos send") | Card send approval (exists today for cards): **Approve & send**, **Ask for changes**, **Don't send** |
+| Reply approval ("hermes todos send") | Card send approval (exists today for cards): **Approve & send**, **Ask for changes**, **Don't send**. `hermes todos send` keeps working |
 | Promote to project | **Move to project…** (the card keeps its history). Triage can also suggest a project ("Looks like *Tender 2027*") |
 | Snooze / Done / Dismiss | Same three verbs on the card. Dismiss = Archive |
 | Badge on the To-dos tile | Badge on the **Projects** tile (Triage + Needs you count). The To-dos tile goes away |
@@ -70,8 +70,9 @@ Alternatives considered:
    (`custom/shared/todo_registration.py`) is replaced by a card writer: title, why,
    priority, due date, a link to the message (`project_links kind='arrival'`), at most 3
    per batch, and the same duplicate check (same message + same title = same card).
-   "Staged" (silent) vs "open" (ping) becomes a `notify` flag on the card.
-   Silent cards untouched for 14 days are archived, as staged to-dos expire today.
+   "Staged" (silent) vs "open" (ping) becomes a `notify` flag on the card: it only decides
+   whether a push is sent. Every new ask is listed in Needs you either way (Leo, Q3).
+   Quiet cards untouched for 14 days are archived, as staged to-dos expire today.
 2. **Work on this, drafts and revisions.** Work on this = move the card Triage → Ready, so
    the existing card worker runs it with the message as context. The draft lives in the
    card workspace (replaces `$HERMES_HOME/drafts/todo_<id>`). "Ask for changes" puts the
@@ -84,7 +85,8 @@ Alternatives considered:
    The shared sender (`todo_outbound.deliver_message`) moves to a neutral module first,
    because cards already use it.
 4. **Alerts and Needs you.** `todo:` and `todo-action:` notification keys are replaced by
-   card keys: an urgent ask = a Needs you item ("New ask") linking to the card; a reply =
+   card keys: every new ask = a Needs you item ("New ask", or "New urgent ask" plus a push)
+   linking to the card; it leaves Needs you once worked, snoozed, moved or done; a reply =
    the existing card send approval. Quiet hours, rate limits and the once-only ping rule
    from `todo_notifier.py` are kept by reusing the same notification store.
 5. **Inbox links.** `IncomingDetailView`, landing Incomings and Files change "Make a to-do"
@@ -95,7 +97,7 @@ Alternatives considered:
    alias, so typing D88 or opening an old link finds the card. No new D refs are made.
 7. **Existing data.** Small today: on Leo's box 27 to-dos, 5 still live (2 open, 3 in
    review with drafts), 3 draft folders. A one-off, re-runnable migration moves **all**
-   of them: live → Triage/Working/Review, done → Done, dismissed → Archived, drafts copied
+   of them (Leo, Q4): live → Triage/Working/Review, done → Done, dismissed → Archived, drafts copied
    into the card workspace, history copied onto the card. Each install (HSD too) runs it on
    upgrade and prints a count. The old rows are left in the database, untouched (no delete).
 
@@ -107,19 +109,26 @@ Alternatives considered:
 | **1** | Inbox project, Triage column, card Draft tab, Work on this / Snooze / Move to project on cards, "Add to Inbox project" from messages | yes, unchanged | triage still writes to-dos |
 | **2** | Triage writes cards instead of to-dos (setting `triage.asks_to: projects`, default on). Needs you + push for urgent asks. If a card can't be written, it falls back to a to-do and logs it | yes, for old items | one writer at a time (no duplicates), fallback on failure, flip the setting back to undo |
 | **3** | Migration of existing to-dos, D-ref aliases, /todos redirects, To-dos tile hidden, badge moves to Projects. Old pending reply approvals keep working until answered | read-only, then gone from the menu | everything live was moved first; the migration refuses to finish while a to-do is mid-send |
-| **4** | Delete To-dos code: `todos_api.py`, `todos_cmd.py` (one release as a "moved to Projects" alias first), `todo_work.py`, `todo_outbound.py` (after its sender moved), `todo_notifier.py`, `todo_registration.py`, agent-home `/todos` pages, components, BFF routes, i18n, tests, coral tile. `/todos` redirects stay | no | stage 3 has run on every install; the upgrade checks it |
+| **4** | Delete the old To-dos internals: `todos_api.py`, `todo_work.py`, `todo_outbound.py` (after its sender moved), `todo_notifier.py`, `todo_registration.py`, agent-home `/todos` pages, components, BFF routes, i18n, tests, coral tile. `/todos` redirects stay. **`hermes todos` stays** (Leo, Q6) | the `hermes todos` command, now on Inbox cards | stage 3 has run on every install; the upgrade checks it |
 
-Kept on purpose: `tools/todo_tool.py` and the desktop app's chat "todo" list
+**`hermes todos` stays (Leo, Q6).** Projects does not use it underneath: to-dos are rows in
+the Postgres `tasks` table, while Projects cards are Hermes kanban cards in SQLite
+(`kanban.db` + `projects.db`, driven by `hermes kanban` / `hermes projects`). So from stage 2
+`hermes todos list/show/add/stage/done/snooze/send` keeps its verbs and output but reads and
+writes the person's Inbox cards; D refs and T refs both work as ids.
+
+Also kept on purpose: `tools/todo_tool.py` and the desktop app's chat "todo" list
 (`apps/desktop/src/lib/todos.ts`, `store/todos.ts`) — that is the agent's own planning
 checklist, not this feature. The FG-06 `tasks` table stays (other code reads it); its
 to-do columns are just no longer written.
 
 ## Risks
 
-1. **Privacy.** To-dos are owner-only in Postgres. Cards live in the project store, where an
-   instance **admin can see another user's private card**. Moving asks there means admins
+1. **Privacy.** A to-do is private to its person; only the box **owner** can see everyone's.
+   Cards are wider: a private card is visible to its person, the box owner **and box admins**. Moving asks there means admins
    could read other people's triaged mail asks unless we keep admins out of Inbox projects.
-2. **Volume.** Triage makes a lot of asks; a busy Inbox board can get long. Mitigations:
+2. **Volume.** Triage makes a lot of asks; a busy Inbox board, and Needs you (which now
+   lists every new ask), can get long. Mitigations:
    the 3-per-batch cap, 14-day auto-archive of silent asks, and filters on the board.
 3. **Two stores while moving.** Between stages 2 and 3 old to-dos and new cards coexist.
    The Needs you list and badge must count both, or people miss something.
@@ -133,12 +142,16 @@ to-do columns are just no longer written.
 
 1. **Where asks land.** Default A (private Inbox project per person). OK, or do you want
    B (route into matching projects) or C (shared triage project per team mailbox) now?
+   *Example:* Ada emails sales@ about the tender deadline. A: a card in Leo's Inbox › Triage.
+   B: a card in the *Tender 2027* project's Triage column (Ada is a contact there).
+   C: a card in a shared *sales@ triage* project that the whole sales team sees.
 2. **Admin visibility.** Should admins be able to see other people's Inbox cards (as with
-   private cards today), or should Inbox projects be owner-only, as To-dos are?
-3. **Silent vs urgent.** Keep silent asks out of Needs you (only urgent ones show there), or
-   list every new ask in Needs you?
-4. **Old data.** Migrate all to-dos including done/dismissed (default), or only live ones?
-5. **Name.** "Inbox" clashes a little with the Inbox page (all messages). Alternatives:
-   "My asks", "Triage", "Follow-ups".
-6. **CLI.** Remove `hermes todos` in stage 4 after one release of a "moved" alias (default),
-   or keep it longer for scripts?
+   private cards today), or only the person (plus the box owner, as with To-dos)?
+   *Example:* triage makes Leo a card "Reply to the bank about the loan rate". Can Grace,
+   a box admin, open it?
+3. ~~Silent vs urgent~~ — **decided:** every new ask shows in Needs you.
+4. ~~Old data~~ — **decided:** migrate all to-dos, including done and dismissed.
+5. **Name.** The new project's name. "Inbox" is already the Apps tile for all messages, so
+   you would see "Inbox" twice (Apps › Inbox = messages; Projects › Inbox = asks).
+   Alternatives: "My asks", "Triage", "Follow-ups".
+6. ~~CLI~~ — **decided:** keep `hermes todos`, re-pointed at Inbox cards.
