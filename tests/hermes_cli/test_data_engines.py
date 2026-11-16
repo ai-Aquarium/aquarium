@@ -178,6 +178,13 @@ def test_sqlite_adapter_lists_describes_and_queries(shop):
         "customers": {"id", "name"}, "orders": {"order_no", "customer_id", "amount", "note"}}
 
 
+def test_find_tables_adds_ranked_tables_the_keyword_filter_missed(shop):
+    adapter = de.SqliteAdapter({"path": str(shop)})
+    assert [t["name"] for t in run(adapter.find_tables("order"))] == ["orders"]
+    found = run(adapter.find_tables("order", ["customers", "orders", "gone"]))
+    assert [t["name"] for t in found] == ["orders", "customers"]
+
+
 def test_sqlite_adapter_cannot_write(shop):
     adapter = de.SqliteAdapter({"path": str(shop)})
     with pytest.raises(de.EngineError):
