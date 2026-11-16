@@ -23,6 +23,7 @@ import { SlowHint } from "@/components/ui/SlowHint";
 import { Spinner } from "@/components/ui/Spinner";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { ChevronRightIcon } from "@/components/ui/icons";
+import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import { Sheet } from "@/components/ui/Sheet";
 
 /** Wide enough for the three-pane layout; without matchMedia (tests) assume yes. */
@@ -479,7 +480,7 @@ export function BrowseView() {
                 </button>
               )}
             </div>
-            <div className="mt-3">{renderPreview(preview, t)}</div>
+            <div className="mt-3">{renderPreview(preview, t, selected.name)}</div>
             <div className="mt-3 flex flex-col gap-2">
               <ActionButton busyLabel={t("file.attaching")}
                 disabled={action !== null}
@@ -828,7 +829,7 @@ function openingSlow(show: boolean, text: string) {
   );
 }
 
-function renderPreview(preview: Preview | null, t: ReturnType<typeof useT>) {
+function renderPreview(preview: Preview | null, t: ReturnType<typeof useT>, name: string) {
   if (!preview) return null;
   if (preview.state === "loading")
     return (
@@ -845,9 +846,18 @@ function renderPreview(preview: Preview | null, t: ReturnType<typeof useT>) {
     return <img src={preview.url} alt="" className="max-h-72 w-full rounded-lg object-contain" />;
   if (preview.state === "text")
     return (
-      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--color-border)] p-2 text-xs">
-        {preview.text}
-      </pre>
+      <Maximizable component="BrowseFilePreview" title={name} className="flex flex-col gap-1">
+        {({ maximized }) => (
+          <>
+            <div className="flex justify-end">
+              <MaximizeToggle />
+            </div>
+            <pre className={`${maximized ? "min-h-0 flex-1" : "max-h-72"} overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--color-border)] p-2 text-xs`}>
+              {preview.text}
+            </pre>
+          </>
+        )}
+      </Maximizable>
     );
   return (
     <p className="text-xs text-[var(--color-muted)]">

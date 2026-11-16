@@ -67,6 +67,9 @@ export function Sheet({
       if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus();
     });
     function onKey(e: KeyboardEvent) {
+      // A maximized panel inside this sheet is the top layer: it takes Esc
+      // (minimize first) and keeps Tab inside itself.
+      if (panelRef.current?.querySelector('[data-maximized="true"]')) return;
       if (e.key === "Escape") {
         onCloseRef.current();
         return;
