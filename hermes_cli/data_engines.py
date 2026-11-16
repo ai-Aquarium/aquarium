@@ -947,9 +947,11 @@ async def _connection_adapter(source: Any, principal: Any, *, agent: bool) -> En
 async def adapter_for(source: Any, principal: Any, *, agent: bool = True, db: Any = None) -> EngineAdapter:
     """The adapter that reads ``source`` for ``principal``.
 
-    The caller has already checked the principal may see the source. A
-    Settings connection is only ever opened with its owner's own stored
-    login: anyone else it is shared with gets its dictionary, not its data.
+    The caller has already checked the principal may read the source. A
+    Settings data source is always opened with its owner's saved read-only
+    login, also for admins and the people it is shared with, who never see
+    that login; writes ("Allow changes") are never shared — every adapter
+    query is one read-only statement.
     """
     if source.kind == "site":
         site = await ss.get_site(source.site_id, db=db) if source.site_id else None
@@ -959,12 +961,10 @@ async def adapter_for(source: Any, principal: Any, *, agent: bool = True, db: An
     if source.kind == "app":
         return AppAdapter(principal)
     if source.kind == "connection":
+        if not source.owner_user_id:
+            raise EngineError("this data source has no owner", 404)
         if getattr(principal, "user_id", None) != source.owner_user_id:
-            raise EngineError(
-                "only the person who set up this connection in Settings can read its data; "
-                "its dictionary is shared with you",
-                403,
-            )
+            principal = _owner_principal(source.owner_user_id)
         return await _connection_adapter(source, principal, agent=agent)
     raise EngineError(f"unknown source kind {source.kind!r}")
 
@@ -1002,6 +1002,19 @@ async def run_query(
             f"v{dictionary_version}" if dictionary_version else "none", rows, status,
             int((time.monotonic() - started) * 1000),
         )
+
+
+async def remember_connection(principal: Any) -> None:
+    """Make sure the caller's Settings connections are data sources (best effort).
+
+    Run after a save so admins see a new source before its owner opens Data.
+    """
+    from hermes_cli import data_dictionary as dd
+
+    try:
+        await dd.sync_connection_sources(principal, ss.current_profile())
+    except Exception:  # noqa: BLE001 - saving the connection itself already succeeded
+        logger.warning("could not record the data source for a saved connection", exc_info=True)
 
 
 async def forget_connection(owner_user_id: str, engine: str, name: str) -> None:

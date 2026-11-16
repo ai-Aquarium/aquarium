@@ -108,6 +108,17 @@ Log:
   Tests: SQLite in CI; MySQL 8.4, SQL Server 2022 and Postgres 16 real-engine
   tests (env-gated) pass locally in Docker. Backend + API only; not deployed.
 
+- 2026-11-17 — Phase 8 access follow-up, per Leo's decisions (generic name
+  "data source"): admins and the owner read every data source; people a
+  source is shared with query it through its owner's saved read-only login
+  (never shown; "Allow changes" never shared); anyone may add one (SQLite
+  still only under `data_sources.sqlite_roots`), private until shared; the
+  hourly schema check is the health check and keep-alive for every Settings
+  data source and raises a Needs You card on failure; a big source's first
+  study covers its chosen schemas and any undescribed table is studied the
+  first time it is asked about. Sites › Sharing and Data › Access stay
+  separate lists. Backend + API only; not deployed.
+
 ## Deploy (next step — not started)
 
 Nothing below has run on production. Get Yan's go-ahead first, then read
@@ -305,13 +316,25 @@ The site-to-schema plan rejected a skill-only design for the same reason.
   with `engine`, `connection_name`, `schema_fingerprint` (migrated by
   `hermes db migrate`). Listing sources syncs the caller's own SQL Server /
   MySQL / SQLite connections; deleting a connection drops its source.
-  Access: only the connection's owner manages it and reads its data (admins
-  included, as in Settings); `read`/`propose` grants share the dictionary
-  only. Drift checks read the live schema with the owner's stored login.
+  Access (Leo, 2026-11-17): private to the person who added it until they
+  share it; only they manage it. Admins and the profile owner read every one
+  (tables, dictionary and data); `read`/`propose` grants share it. Everyone
+  reads through the owner's saved login, server-side; queries are always one
+  read-only statement, so "Allow changes" (SQL Server writes) is never shared.
+  Saving a connection records its source so admins see it straight away.
+- Health: the hourly sweep checks every Settings data source (dictionary or
+  not) with the owner's login — `health_status` / `health_error` /
+  `health_checked_at` — which also keeps the connection and its VPN route
+  alive; a failure is a blocking Needs You card (`data_health`) for the owner.
+- Big sources: `study_schemas` (`GET`/`PUT /api/data/sources/{id}/study-schemas`)
+  picks the schemas a first `study` covers (`study schemas=` / `entities=`
+  override); undescribed tables are studied first, and `dictionary entity=`
+  on a table not yet described returns its live structure to propose
+  (studied on demand).
 - MySQL / SQLite connections: `hermes_cli/db_connections.py` +
   `/api/db/connections` (owner-only, passwords write-only, never
-  materialized to agent terminals). SQLite files only from the owner/admin and
-  only under `data_sources.sqlite_roots` (default `<HERMES_HOME>/data-sources`).
+  materialized to agent terminals). SQLite files only under
+  `data_sources.sqlite_roots` (default `<HERMES_HOME>/data-sources`).
 - `site_db`: `list_sources`; `describe` / `query` take `source=` (slug, `app`,
   `<engine>:<connection>` ref or id) and `params`; `study` / dictionary
   actions work on connection sources. `/api/data/sources/{id}/tables`,

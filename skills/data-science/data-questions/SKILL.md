@@ -24,8 +24,8 @@ person asking: they only ever see rows they may see.
    (`list_sites`). Their own Aquarium data → `source` = `app`. A database
    connected in Settings (SQL Server, MySQL, SQLite) → `source` = its `ref`,
    e.g. `mssql:erp` (`list_sources` lists every source with its ref and id).
-   Only the person who connected a database can read its rows; others it is
-   shared with see its dictionary only — say so instead of retrying.
+   You see a database if you connected it, it was shared with you, or you
+   are an admin; you read it through its owner's saved read-only login.
 2. **Read the dictionary**: `site_db action=dictionary source=… q="<the
    question>"`. It says what each table and column means, the grain, the joins
    and the agreed metric definitions. A small dictionary comes back whole
@@ -37,7 +37,9 @@ person asking: they only ever see rows they may see.
    `search.more` matched but didn't fit). If nothing matches, rephrase in the
    dictionary's words or pick from the `index`. Not sure which source?
    `source=all q=…` lists matching tables in every source shared with you. Use those definitions; never invent a different one for
-   a metric it defines. If you get an error or nothing is approved, carry on
+   a metric it defines. `entity=` on a table not described yet returns its live structure
+   (`studied`): answer from it, say it isn't described, and offer to propose
+   its entry. If you get an error or nothing is approved, carry on
    from the structure and say in your answer that the tables aren't described.
    **Stale entries**: when the source shows `schema_drift`, the schema changed
    since the dictionary was approved — entries marked `stale` may no longer
@@ -83,8 +85,9 @@ Only the source's owner approves; you only add to the draft.
   "Yes, save as example" under the answer does this without you.
 - **They correct an answer** (or say "No, correct it"): fix the answer, then
   offer to fix the definition with `origin=feedback`.
-- **"Build dictionary" / "describe these tables"**: call `study`, draft an
-  entry per undescribed table (meaning, what one row is, grain, column notes,
+- **"Build dictionary" / "describe these tables"**: call `study` (it reads
+  undescribed tables first, from the schemas the owner chose on a big
+  database; `schemas=` or `entities=` narrow it), draft an entry per undescribed table (meaning, what one row is, grain, column notes,
   joins, metrics), ask about anything you can't tell from the data, then one
   `propose_dictionary` with `origin=study`.
 

@@ -662,6 +662,9 @@ async def save(principal: Any, name: Any, body: Mapping[str, Any]) -> Dict[str, 
             or existing.payload.get("host") != payload.get("host")
         ):
             await release_route(principal, existing)
+    from hermes_cli import data_engines
+
+    await data_engines.remember_connection(principal)
     return view_of(cred)
 
 

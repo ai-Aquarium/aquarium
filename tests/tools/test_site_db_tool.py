@@ -421,3 +421,12 @@ def test_dictionary_search_and_describe_ranking(fake_registry, monkeypatch):
     described = call("reader", "member", action="describe", site="shop", q="refund")
     assert described["tables"][0]["name"] == "refunds"
     assert call("stranger", "member", action="describe", site="shop", q="refund").get("success") is False
+
+
+def test_study_reads_named_tables_else_chosen_schemas_undescribed_first():
+    found = [{"name": "dbo.a", "schema": "dbo"}, {"name": "dbo.b", "schema": "dbo"},
+             {"name": "hr.c", "schema": "hr"}]
+    names = lambda ts: [t["name"] for t in ts]  # noqa: E731
+    assert names(tool.study_order(found, {"dbo.a"})) == ["dbo.b", "hr.c", "dbo.a"]
+    assert names(tool.study_order(found, {"dbo.a"}, schemas=["dbo"])) == ["dbo.b", "dbo.a"]
+    assert names(tool.study_order(found, set(), schemas=["dbo"], tables=["hr.c", "x"])) == ["hr.c"]

@@ -205,13 +205,9 @@ def _payload(engine: str, body: Mapping[str, Any]) -> Dict[str, Any]:
 
 async def save(principal: Any, engine: Any, name: Any, body: Mapping[str, Any]) -> Dict[str, Any]:
     """Create or replace the caller's connection; an omitted password is kept."""
-    from hermes_cli import site_sources as ss
-
     engine, name = _engine(engine), normalize_name(name)
     if not isinstance(body, Mapping):
         raise EngineError("body must be an object")
-    if engine == "sqlite" and not ss._is_profile_admin(principal):
-        raise EngineError("only the owner or an admin can add SQLite files", 403)
     payload = _payload(engine, body)
     existing = await find_own(principal, engine, name)
     if engine == "mysql":
@@ -232,6 +228,9 @@ async def save(principal: Any, engine: Any, name: Any, body: Mapping[str, Any]) 
         )
     except CredentialError as exc:
         raise EngineError(str(exc).replace(str(payload.get("password") or "\0"), "***")) from exc
+    from hermes_cli import data_engines
+
+    await data_engines.remember_connection(principal)
     return view_of(cred)
 
 

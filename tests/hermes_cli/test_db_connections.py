@@ -79,20 +79,19 @@ def test_mysql_needs_password_and_valid_fields():
         run(dbc.save(ALICE, "postgres", "new", mysql_body()))
 
 
-def test_sqlite_is_admin_only_and_inside_a_root(root, tmp_path, file_store):
-    with pytest.raises(EngineError) as err:
-        run(dbc.save(ALICE, "sqlite", "shop", {"path": str(root / "shop.db")}))
-    assert err.value.status == 403
+def test_anyone_adds_sqlite_but_only_inside_a_root(root, tmp_path, file_store):
     outside = tmp_path / "other.db"
     sqlite3.connect(outside).close()
     with pytest.raises(EngineError):
         run(dbc.save(BOSS, "sqlite", "other", {"path": str(outside)}))
-    saved = run(dbc.save(BOSS, "sqlite", "shop", {"path": str(root / "shop.db")}))
+    with pytest.raises(EngineError):
+        run(dbc.save(ALICE, "sqlite", "other", {"path": str(outside)}))
+    saved = run(dbc.save(ALICE, "sqlite", "shop", {"path": str(root / "shop.db")}))
     assert saved["path"] == str(root / "shop.db")
-    tested = run(dbc.run_test(BOSS, "sqlite", "shop"))
+    tested = run(dbc.run_test(ALICE, "sqlite", "shop"))
     assert tested["test"] == {"ok": True, "tables": 1}
-    assert run(dbc.delete(BOSS, "sqlite", "shop")) is True
-    assert file_store == [("boss", "sqlite", "shop")]
+    assert run(dbc.delete(ALICE, "sqlite", "shop")) is True
+    assert file_store == [("alice", "sqlite", "shop")]
 
 
 def test_api_routes_act_on_the_caller_only(monkeypatch):

@@ -101,6 +101,10 @@ ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS schema_drift jsonb NOT 
 ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS engine text NOT NULL DEFAULT 'postgres';
 ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS connection_name text;
 ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS schema_fingerprint text;
+ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS health_status text;
+ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS health_error text;
+ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS health_checked_at timestamptz;
+ALTER TABLE public.data_sources ADD COLUMN IF NOT EXISTS study_schemas jsonb NOT NULL DEFAULT '[]'::jsonb;
 DO $$
 DECLARE old text;
 BEGIN
@@ -136,6 +140,10 @@ class Source:
     engine: str = "postgres"
     connection_name: Optional[str] = None
     schema_fingerprint: Optional[str] = None
+    health_status: Optional[str] = None
+    health_error: Optional[str] = None
+    health_checked_at: Optional[Any] = None
+    study_schemas: Optional[List[str]] = None
 
     def view(self, access: Optional[str] = None) -> Dict[str, Any]:
         out = {
@@ -149,6 +157,12 @@ class Source:
             "engine": self.engine,
             "connection": self.connection_name,
             "ref": self.ref,
+            "health": {
+                "status": self.health_status,
+                "error": self.health_error,
+                "checked_at": jsonable(self.health_checked_at),
+            } if self.kind == "connection" else None,
+            "study_schemas": list(self.study_schemas or []),
         }
         if access is not None:
             out["access"] = access
@@ -173,6 +187,10 @@ def _source(row: Mapping[str, Any]) -> Source:
         engine=row["engine"] or "postgres",
         connection_name=row["connection_name"],
         schema_fingerprint=row["schema_fingerprint"],
+        health_status=row["health_status"],
+        health_error=row["health_error"],
+        health_checked_at=row["health_checked_at"],
+        study_schemas=_json(row["study_schemas"]) or [],
     )
 
 
@@ -190,11 +208,16 @@ def access_level(
     if principal is None or not getattr(principal, "user_id", None):
         return None
     if source.kind == "connection":
-        # A Settings connection is private to the person who set it up (admins
-        # included); they share its dictionary with grants.
+        # A data source added in Settings is private to the person who added
+        # it until they share it with a grant; admins and the profile owner
+        # may read every one. Only its owner manages it.
         if source.owner_user_id == principal.user_id:
             return "manage"
-        return grant if grant in GRANTS else None
+        levels = [grant if grant in GRANTS else None]
+        if ss._is_profile_admin(principal):
+            levels.append("read")
+        best = max(levels, key=_rank)
+        return best if _rank(best) else None
     if ss._is_profile_admin(principal):
         return "manage"
     if source.owner_user_id and source.owner_user_id == principal.user_id:
@@ -345,7 +368,8 @@ async def migrate(conn: Any, *, app_role: Optional[str] = None) -> None:
 
 _SOURCE_COLUMNS = (
     "id, kind, site_id, profile, name, owner_user_id, schema_checked_at, schema_drift, "
-    "engine, connection_name, schema_fingerprint"
+    "engine, connection_name, schema_fingerprint, health_status, health_error, "
+    "health_checked_at, study_schemas"
 )
 
 
@@ -822,6 +846,8 @@ async def restore(source: Source, version: int, *, by: str, db: Any = None) -> D
 
 #: How long a recorded check stays fresh before the scheduled job re-checks.
 SCHEMA_CHECK_EVERY = timedelta(hours=24)
+#: Just under the hourly sweep, so every tick checks every Settings data source.
+HEALTH_CHECK_EVERY = timedelta(minutes=50)
 
 
 def schema_diff(
@@ -879,8 +905,20 @@ async def _schema_truth(source: Source, *, db: Any = None) -> Dict[str, Set[str]
 
 
 async def check_source(source: Source, *, db: Any = None) -> List[Dict[str, Any]]:
-    """Compare the source's schema with its approved dictionary; record the drift."""
-    truth = await _schema_truth(source, db=db)
+    """Compare the source's schema with its approved dictionary; record the drift.
+
+    For a Settings data source this opens a real connection with its owner's
+    login, so it doubles as the health check (and keep-alive): the outcome is
+    recorded either way and a failure is raised to the caller.
+    """
+    try:
+        truth = await _schema_truth(source, db=db)
+    except Exception as exc:
+        if source.kind == "connection":
+            await _record_health(source, str(exc) or type(exc).__name__, db=db)
+        raise
+    if source.kind == "connection":
+        await _record_health(source, None, db=db)
     async with _Conn(db) as conn:
         approved = await conn.fetchrow(
             "SELECT entries FROM public.data_dictionary_versions "
@@ -895,6 +933,30 @@ async def check_source(source: Source, *, db: Any = None) -> List[Dict[str, Any]
             source.id, json.dumps(drift), schema_fingerprint(truth),
         )
     return drift
+
+
+async def _record_health(source: Source, error: Optional[str], *, db: Any = None) -> None:
+    async with _Conn(db) as conn:
+        await conn.execute(
+            "UPDATE public.data_sources SET health_status = $2, health_error = $3, "
+            "health_checked_at = now() WHERE id = $1::uuid",
+            source.id, "failed" if error else "ok", (error or None) and error[:500],
+        )
+
+
+async def set_study_schemas(source: Source, schemas: Any, *, db: Any = None) -> List[str]:
+    """The schemas a first study of ``source`` covers (empty: all of them)."""
+    if not isinstance(schemas, list) or not all(isinstance(x, str) for x in schemas):
+        raise SiteError("schemas must be a list of schema names")
+    chosen = list(dict.fromkeys(x.strip() for x in schemas if x.strip()))[:200]
+    async with _Conn(db) as conn:
+        await conn.execute(
+            "UPDATE public.data_sources SET study_schemas = $2::jsonb, updated_at = now() "
+            "WHERE id = $1::uuid",
+            source.id, json.dumps(chosen),
+        )
+    source.study_schemas = chosen
+    return chosen
 
 
 async def recheck_site(site_id: Any, *, db: Any = None) -> None:
@@ -924,15 +986,21 @@ async def _reindex_quiet(source: Source, *, db: Any = None) -> None:
 
 
 async def schema_check_tick(*, db: Any = None) -> int:
-    """Re-check every approved source whose last check is missing or stale."""
-    cutoff = datetime.now(timezone.utc) - SCHEMA_CHECK_EVERY
+    """Re-check every approved source whose last check is missing or stale.
+
+    Settings data sources are checked every hour whether or not they have a
+    dictionary: the check is their health check and keeps the connection
+    (and its VPN route) alive.
+    """
+    now = datetime.now(timezone.utc)
     async with _Conn(db) as conn:
         rows = await conn.fetch(
             f"SELECT {_SOURCE_COLUMNS} FROM public.data_sources s "
-            "WHERE EXISTS (SELECT 1 FROM public.data_dictionary_versions v "
+            "WHERE (EXISTS (SELECT 1 FROM public.data_dictionary_versions v "
             "WHERE v.source_id = s.id AND v.status = 'approved') "
-            "AND (s.schema_checked_at IS NULL OR s.schema_checked_at < $1)",
-            cutoff,
+            "AND (s.schema_checked_at IS NULL OR s.schema_checked_at < $1)) "
+            "OR (s.kind = 'connection' AND (s.health_checked_at IS NULL OR s.health_checked_at < $2))",
+            now - SCHEMA_CHECK_EVERY, now - HEALTH_CHECK_EVERY,
         )
     checked = 0
     for row in rows:

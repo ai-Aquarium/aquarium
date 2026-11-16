@@ -61,13 +61,14 @@ SCHEMA = {
         "app, and databases connected in Settings (SQL Server, MySQL, SQLite) with ref "
         "<engine>:<connection>; describe / query also take source= (site slug, app, ref or id) "
         "instead of site=, and query takes params {name: value} for :name placeholders — put "
-        "values in params, never paste them into sql. A connection's data can only be read "
-        "by the person who connected it. "
+        "values in params, never paste them into sql. Admins and everyone a connection is shared "
+        "with read it through its owner's saved read-only login. "
         "Data dictionary (source = site slug, app, connection ref or source id): dictionary — the "
         "approved meaning of each table, its grain, joins, metrics and examples; read it before "
         "writing SQL (q? the question — a large dictionary returns only the top_k? best-matching "
         "entries, or without q an index of table names; entity? one table's entry; source=all "
-        "with q finds the matching tables in every source you can read); study — structure and samples of every table plus which are undescribed; "
+        "with q finds the matching tables in every source you can read); study (source, schemas? entities?) — structure and samples of the undescribed tables "
+        "first (a big source: the schemas its owner chose, or schemas=/entities= table names) plus which are undescribed; "
         "propose_dictionary (source, tables: {table: {meaning, row, grain, columns: {col: text}, "
         "joins: [{to, on}], metrics: [{name, definition, sql}], examples: [{question, sql}]}}, "
         "remove?, glossary?, note, origin? chat|study|feedback) — adds to the draft the owner "
@@ -102,6 +103,8 @@ SCHEMA = {
                 "description": "site slug, app, a connection ref like mssql:erp, a source id, or all (dictionary q)",
             },
             "params": {"type": "object", "description": "query: values for :name placeholders"},
+            "schemas": {"type": "array", "items": {"type": "string"},
+                        "description": "study: only tables in these schemas"},
             "tables": {"type": "object", "description": "propose_dictionary: {table: entry}"},
             "remove": {"type": "array", "items": {"type": "string"}},
             "glossary": {"type": "array", "items": {"type": "object"}},
@@ -255,6 +258,10 @@ async def _dictionary_action(action: str, principal: Any, args: Mapping[str, Any
         if approved and "index" in out["approved"]:
             out["note"] = ("This dictionary is large: call dictionary again with q= (the question) "
                            "or entity= to read the entries you need.")
+        entity = str(args.get("entity") or "").strip()
+        described = ((approved or {}).get("entries") or {}).get("tables") or {}
+        if entity and entity not in described:
+            out.update(await _study_on_demand(source, principal, entity))
         if found.get("draft"):
             out["draft"] = {k: found["draft"][k] for k in ("version", "changed_tables")}
         if approved is None:
@@ -267,19 +274,22 @@ async def _dictionary_action(action: str, principal: Any, args: Mapping[str, Any
             ).strip()
         return _result(**out)
     if action == "study":
+        described = set(((approved or {}).get("entries") or {}).get("tables") or {})
         if site is not None:
-            tables = await ss.table_summaries(site)
+            tables = study_order(await ss.table_summaries(site), described, tables=args.get("entities"))
             detail = [await ss.describe_entity(site, t["name"]) for t in tables[:STUDY_TABLES]]
         elif source.kind == "connection":
             from hermes_cli import data_engines as de
 
             adapter = await de.adapter_for(source, principal)
-            tables = await adapter.list_tables()
+            tables = study_order(
+                await adapter.list_tables(), described,
+                schemas=args.get("schemas") or source.study_schemas, tables=args.get("entities"),
+            )
             detail = [await adapter.describe_table(t["name"]) for t in tables[:STUDY_TABLES]]
         else:
             detail = tables = await app_data.describe(principal)
         names = [t.get("name") or t.get("table") for t in tables]
-        described = set(((approved or {}).get("entries") or {}).get("tables") or {})
         return _result(
             source=source.view(access),
             tables=detail,
@@ -302,6 +312,38 @@ async def _dictionary_action(action: str, principal: Any, args: Mapping[str, Any
         next=(f"Tell the person draft v{proposed['version']} waits for the source owner's "
               "approval in agent-home under Data. Answers keep using the approved version."),
     )
+
+
+def study_order(
+    found: list, described: set, *, schemas: Any = None, tables: Any = None
+) -> list:
+    """What a study reads first: the named tables, else the chosen schemas'
+    undescribed tables before the described ones."""
+    wanted = [str(t) for t in tables] if isinstance(tables, list) else []
+    if wanted:
+        by_name = {t.get("name"): t for t in found}
+        return [by_name[n] for n in dict.fromkeys(wanted) if n in by_name]
+    chosen = set(schemas or []) if isinstance(schemas, list) else set()
+    if chosen:
+        found = [t for t in found if t.get("schema") in chosen]
+    return sorted(found, key=lambda t: t.get("name") in described)
+
+
+async def _study_on_demand(source: Any, principal: Any, entity: str) -> dict:
+    """A table the dictionary doesn't describe yet, studied the first time it is asked about."""
+    from hermes_cli import data_engines as de
+
+    try:
+        adapter = await de.adapter_for(source, principal)
+        table = await adapter.describe_table(entity)
+    except Exception as exc:  # noqa: BLE001 - the dictionary answer still stands
+        return {"undescribed": [entity], "note": f"{entity} isn't described yet ({exc})."}
+    return {
+        "undescribed": [entity],
+        "studied": table,
+        "next": (f"{entity} isn't in the dictionary yet: answer from this structure, say so, "
+                 "and offer to propose its entry with propose_dictionary origin=study."),
+    }
 
 
 async def _source_action(action: str, principal: Any, args: Mapping[str, Any]) -> str:

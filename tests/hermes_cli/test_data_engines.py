@@ -104,7 +104,7 @@ def test_connection_kinds_never_reach_agent_terminals(kind):
     assert CREDENTIAL_KINDS[kind].materialize is False
 
 
-# -- access: a connection is its owner's; grants share the dictionary only ---------------
+# -- access: private to its owner until shared; admins read all; read via the owner's login --
 
 
 def _connection(owner="alice"):
@@ -114,21 +114,29 @@ def _connection(owner="alice"):
     )
 
 
-def test_connection_access_is_owner_or_grant_never_admin():
+def test_connection_access_is_owner_grant_or_admin_read():
     source = _connection()
     assert dd.access_level(source, ALICE, None) == "manage"
-    assert dd.access_level(source, BOSS, None) is None
+    assert dd.access_level(source, BOSS, None) == "read"
+    assert dd.access_level(source, BOSS, "propose") == "propose"
     assert dd.access_level(source, BOB, None) is None
     assert dd.access_level(source, BOB, "read") == "read"
     assert source.view("read")["ref"] == "mssql:erp"
 
 
-def test_only_the_owner_opens_a_connection():
-    with pytest.raises(de.EngineError) as err:
-        run(de.adapter_for(_connection(), BOB))
-    assert err.value.status == 403
+def test_everyone_who_may_read_opens_it_with_the_owners_login(monkeypatch):
+    opened = []
+
+    async def connection_adapter(source, principal, *, agent):
+        opened.append((principal.user_id, principal.role))
+        return de.SqliteAdapter({"path": ":memory:"})
+
+    monkeypatch.setattr(de, "_connection_adapter", connection_adapter)
+    for who in (ALICE, BOB, BOSS):
+        run(de.adapter_for(_connection(), who))
+    assert opened == [("alice", "member")] * 3
     with pytest.raises(de.EngineError):
-        run(de.adapter_for(_connection(), BOSS))
+        run(de.adapter_for(_connection(owner=""), BOSS))
 
 
 # -- SQLite, for real ------------------------------------------------------------------------
