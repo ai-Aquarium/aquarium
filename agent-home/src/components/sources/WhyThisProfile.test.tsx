@@ -74,7 +74,9 @@ describe("WhyThisProfile", () => {
     expect(screen.getByRole("link", { name: "Recent routing for john@acme.com" }).getAttribute("href")).toBe(
       "/sources/src-mail",
     );
-    expect(screen.getByRole("link", { name: "Edit what CFO cares about" }).getAttribute("href")).toBe("/profiles");
+    expect(screen.getByRole("link", { name: "Edit what CFO cares about" }).getAttribute("href")).toBe(
+      "/profiles/CFO/triage?kind=email",
+    );
   });
 
   it("flips above a link near the bottom of the window", async () => {
@@ -87,6 +89,15 @@ describe("WhyThisProfile", () => {
     const style = screen.getByTestId("why-this-profile-popover").style;
     expect(style.top).toBe("");
     expect(style.bottom).toBe("48px");
+  });
+
+  it("opens My triage skills for the profile on the batch's channel tab", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply({ decisions: [decision({ channel: "whatsapp" })] })));
+    render(<WhyThisProfile sourceId="src-wa" batchId="b-2" profile="Sales & Ops" />);
+    await press(link());
+    expect(screen.getByRole("link", { name: "Edit what Sales & Ops cares about" }).getAttribute("href")).toBe(
+      "/profiles/Sales%20%26%20Ops/triage?kind=whatsapp",
+    );
   });
 
   it("Esc closes the popover", async () => {

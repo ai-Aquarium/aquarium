@@ -10,7 +10,12 @@ import { InlineAlert } from "@/components/ui/InlineAlert";
 import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { useT, type Translator } from "@/i18n";
-import type { RoutingDecision } from "@/types";
+import type { RoutingDecision, SourceChannel } from "@/types";
+
+/** Profile › My triage skills (`/profiles/[name]/triage`), opened on this channel's tab; open to members too. */
+export function triageSkillsHref(profile: string, channel: SourceChannel): string {
+  return `/profiles/${encodeURIComponent(profile)}/triage?kind=${channel}`;
+}
 
 /** Popover at `lg` and up (the landing's desktop breakpoint); a bottom sheet below. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -276,7 +281,10 @@ function ReadyBody({
           </Link>
         ) : null}
         {profile ? (
-          <Link href="/profiles" className="text-[var(--color-accent)] underline-offset-2 hover:underline">
+          <Link
+            href={triageSkillsHref(profile, decision.channel)}
+            className="text-[var(--color-accent)] underline-offset-2 hover:underline"
+          >
             {t("editCares", { profile })}
           </Link>
         ) : null}
