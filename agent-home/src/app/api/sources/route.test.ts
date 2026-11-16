@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DELETE } from "@/app/api/sources/[sourceId]/route";
 import { PUT } from "@/app/api/sources/[sourceId]/routes/[profile]/route";
 import { GET as CONFLICTS } from "@/app/api/sources/conflicts/route";
+import { GET as COMPARISONS } from "@/app/api/sources/comparisons/route";
 import { GET as DECISIONS } from "@/app/api/sources/decisions/route";
 import { GET, POST } from "@/app/api/sources/route";
 import { HermesApiError } from "@/lib/api/client";
@@ -20,11 +21,13 @@ const putSourceRoute = vi.fn();
 const deleteSource = vi.fn();
 const sourceConflicts = vi.fn();
 const sourceDecisions = vi.fn();
+const sourceComparisons = vi.fn();
 
 vi.mock("@/lib/auth/principal", () => ({
   getPrincipal: () => getPrincipal(),
   apiClientForRequest: async () => ({
     sources, registerSource, putSourceRoute, deleteSource, sourceConflicts, sourceDecisions,
+    sourceComparisons,
   }),
 }));
 
@@ -53,10 +56,12 @@ describe("unauthenticated", () => {
       await DELETE(new Request("http://localhost"), sourceCtx),
       await CONFLICTS(new Request("http://localhost/api/sources/conflicts")),
       await DECISIONS(new Request("http://localhost/api/sources/decisions")),
+      await COMPARISONS(new Request("http://localhost/api/sources/comparisons")),
     ];
-    expect(responses.map((r) => r.status)).toEqual([401, 401, 401, 401, 401, 401]);
+    expect(responses.map((r) => r.status)).toEqual([401, 401, 401, 401, 401, 401, 401]);
     for (const fn of [
       sources, registerSource, putSourceRoute, deleteSource, sourceConflicts, sourceDecisions,
+      sourceComparisons,
     ]) {
       expect(fn).not.toHaveBeenCalled();
     }
@@ -110,6 +115,26 @@ describe("forwarding", () => {
     });
     sourceDecisions.mockRejectedValue(new HermesApiError(403, "Only the box owner"));
     expect((await DECISIONS(new Request("http://localhost/api/sources/decisions?all=1"))).status).toBe(403);
+  });
+
+  it("GET comparisons forwards the filters; Hermes scopes them to the caller", async () => {
+    sourceComparisons.mockResolvedValue({ comparisons: [] });
+    const r = await COMPARISONS(new Request(
+      "http://localhost/api/sources/comparisons?source_id=s1&batch_id=b1&limit=5",
+    ));
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ comparisons: [] });
+    expect(sourceComparisons).toHaveBeenLastCalledWith({
+      sourceId: "s1", batchId: "b1", limit: 5, all: false,
+    });
+    await COMPARISONS(new Request("http://localhost/api/sources/comparisons?all=1&limit=x"));
+    expect(sourceComparisons).toHaveBeenLastCalledWith({
+      sourceId: undefined, batchId: undefined, limit: undefined, all: true,
+    });
+    sourceComparisons.mockRejectedValue(new HermesApiError(403, "Only the box owner"));
+    expect(
+      (await COMPARISONS(new Request("http://localhost/api/sources/comparisons?all=1"))).status,
+    ).toBe(403);
   });
 
   it("502s when Hermes is unreachable", async () => {

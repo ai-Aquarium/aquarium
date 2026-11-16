@@ -957,6 +957,17 @@ DEFAULT_CONFIG = {
             "retries": 3,
             "retry_delay_seconds": 5,
         },
+        # FG-03 P5: full triage in each routed user-profile's agent, per
+        # channel: legacy (today's pipeline only) | shadow (both; the agent's
+        # result is only recorded for comparison) | agent (the agent's result
+        # is acted on). Empty model = the profile's default model.
+        "agent": {
+            "email": "legacy",
+            "whatsapp": "legacy",
+            "calendar": "legacy",
+            "model": "",
+            "max_iterations": 2,
+        },
     },
     "source_registry": {
         # Where the email poller and WhatsApp batcher get the sources to read

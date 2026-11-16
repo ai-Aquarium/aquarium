@@ -15,7 +15,7 @@ import sys
 from typing import Any, Awaitable, Callable
 
 from hermes_cli import source_registry as registry
-from hermes_cli import triage_router
+from hermes_cli import triage_agent, triage_router
 
 
 def _owner_user_id() -> str:
@@ -193,6 +193,45 @@ def source_decisions_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _verdict(result: Any) -> str:
+    if not isinstance(result, dict):
+        return "-"
+    flag = " escalate" if result.get("escalate") else ""
+    return f"{result.get('classification') or result.get('importance') or '?'}{flag}"
+
+
+def _describe_comparison(row: dict) -> str:
+    when = f"{row['created_at'][:16].replace('T', ' ')} " if row.get("created_at") else ""
+    agent = f"error: {row['agent_error']}" if row.get("agent_error") else _verdict(row.get("agent_result"))
+    return "\n".join([
+        f"{when}{row['channel']:9} batch {row['batch_id']} @ {row['profile']}: "
+        f"legacy {_verdict(row.get('legacy_result'))} | agent {agent}",
+        f"          source {row['source_id']}  owner {row['owner_user_id']}"
+        f"  session {row.get('session_id') or '-'}  skills {row.get('skills_layer') or '-'}",
+    ])
+
+
+def source_comparisons_command(args: argparse.Namespace) -> int:
+    owner = None if args.all else _actor(args)
+
+    async def run(connection):
+        source_id = None
+        if args.source:
+            source_id = (await _resolve(connection, args.source)).source_id
+        return await triage_agent.list_comparisons(
+            connection, owner_user_id=owner, source_id=source_id,
+            batch_id=args.batch, limit=args.limit,
+        )
+
+    rows = _run(run)
+    _emit(
+        args,
+        {"comparisons": rows},
+        "\n".join(_describe_comparison(r) for r in rows) or "No triage comparisons.",
+    )
+    return 0
+
+
 def register_source_subparser(subparsers: argparse._SubParsersAction) -> None:
     """Register ``hermes source`` and its sub-actions."""
     parser = subparsers.add_parser(
@@ -259,3 +298,14 @@ def register_source_subparser(subparsers: argparse._SubParsersAction) -> None:
     dec.add_argument("--all", action="store_true", help="Every owner's decisions")
     common(dec)
     dec.set_defaults(func=source_decisions_command)
+
+    cmp_ = sub.add_parser(
+        "comparisons",
+        help="Legacy vs profile-agent triage of each batch (the shadow period)",
+    )
+    cmp_.add_argument("--source", default=None, help="Source id or channel:address")
+    cmp_.add_argument("--batch", default=None, help="One batch id")
+    cmp_.add_argument("--limit", type=int, default=50, help="Newest N (default 50)")
+    cmp_.add_argument("--all", action="store_true", help="Every owner's comparisons")
+    common(cmp_)
+    cmp_.set_defaults(func=source_comparisons_command)

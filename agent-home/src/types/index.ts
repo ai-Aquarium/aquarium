@@ -1567,6 +1567,25 @@ export interface RoutingDecision {
   decided_at: string | null;
 }
 
+/** FG-03 P5: today's triage vs one picked profile's agent, for one batch. */
+export interface TriageComparison {
+  comparison_id: number;
+  source_id: string;
+  batch_id: string;
+  channel: SourceChannel;
+  owner_user_id: string;
+  profile: string;
+  /** Today's pipeline result (the triage JSON), null when it had none. */
+  legacy_result: Record<string, unknown> | null;
+  /** The profile agent's result; null when it failed (see agent_error). */
+  agent_result: Record<string, unknown> | null;
+  agent_error: string | null;
+  session_id: string | null;
+  /** Which layer's "What I care about" applied: user, template or builtin. */
+  skills_layer: string | null;
+  created_at: string | null;
+}
+
 export interface SourceInput {
   channel: SourceChannel;
   address: string;
