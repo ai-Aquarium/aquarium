@@ -9,13 +9,14 @@ import { InlineAlert } from "@/components/ui/InlineAlert";
 import { CheckIcon, ChevronLeftIcon, PlusIcon } from "@/components/ui/icons";
 import { Sheet } from "@/components/ui/Sheet";
 import { useT } from "@/i18n/client";
-import { AdminFetchError, errorText } from "@/lib/admin-fetch";
+import { errorText } from "@/lib/admin-fetch";
 import {
   CHANNELS,
   CONNECT_HREF,
   connectedAccounts,
   putSourceRoute,
   registerBody,
+  registerErrorHint,
   registerSource,
   sameAccount,
   saveCare,
@@ -68,6 +69,8 @@ export function RegisterSourceWizard({
   const [own, setOwn] = useState<Record<string, boolean>>({});
   const [conflict, setConflict] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The failure is fixed in the connect-account flow (e.g. pair the bridge first). */
+  const [errorSetup, setErrorSetup] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -142,11 +145,13 @@ export function RegisterSourceWizard({
         sourceId = source.source_id;
         address = source.address || account.address;
       } catch (err) {
-        if (err instanceof AdminFetchError && err.status === 409) {
+        const hint = registerErrorHint(err, account.channel);
+        if (hint?.kind === "claim") {
           setConflict(t("wizard.conflict", { address: account.address }));
           return;
         }
-        setError(errorText(err));
+        setError(hint ? t(hint.key) : errorText(err));
+        setErrorSetup(hint?.setup ?? false);
         return;
       }
       const failed: string[] = [];
@@ -438,7 +443,17 @@ export function RegisterSourceWizard({
           {conflict ? (
             <InlineAlert tone="danger">{conflict}</InlineAlert>
           ) : error ? (
-            <InlineAlert tone="danger">{error}</InlineAlert>
+            <InlineAlert tone="danger">
+              <span data-testid="register-error">{error}</span>
+              {errorSetup ? (
+                <>
+                  {" "}
+                  <Link href={CONNECT_HREF[account.channel]} className="font-semibold underline" data-action="open-setup">
+                    {t("wizard.err.openSetup")}
+                  </Link>
+                </>
+              ) : null}
+            </InlineAlert>
           ) : (
             <p className="text-xs text-[var(--color-muted)]">{t("wizard.reviewNote")}</p>
           )}

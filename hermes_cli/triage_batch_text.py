@@ -11,7 +11,7 @@ Telegram group) for WhatsApp and Telegram. The same batch always gives the same 
 from __future__ import annotations
 
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 MAX_BYTES = 4096
 EMAIL_BODY_CHARS = 600
@@ -91,6 +91,33 @@ def _telegram_lines(batch: Mapping[str, Any]) -> list[str]:
         text = " ".join(p for p in (_flat(m.get("text")), _media(m)) if p) or "[media]"
         lines.append(f"- {_telegram_sender(m)}: {text}" if group else f"- {text}")
     return lines
+
+
+def _known(sender: str) -> Optional[str]:
+    return None if sender == "unknown" else sender
+
+
+def batch_summary(kind: str, batch: Mapping[str, Any]) -> tuple[Optional[int], Optional[str]]:
+    """``(message count, first sender)`` of a batch, for the stored routing
+    decision's summary. Names and addresses only, never message text."""
+    if kind == "email":
+        emails = [e for e in batch.get("emails") or [] if isinstance(e, Mapping)]
+        if emails:
+            first = emails[0]
+            return len(emails), _known(_sender(first.get("from_name"), first.get("from_addr")))
+        count = batch.get("email_count")
+        return (count if isinstance(count, int) else None,
+                _known(_sender(batch.get("sender_name"), batch.get("sender"))))
+    messages = [m for m in batch.get("messages") or [] if isinstance(m, Mapping)]
+    first = messages[0] if messages else {}
+    if kind == "whatsapp":
+        sender = _sender(first.get("sender_name"),
+                         first.get("sender_phone") or batch.get("sender_phone"))
+    elif kind == "telegram":
+        sender = _telegram_sender(first) if first else "unknown"
+    else:
+        raise ValueError(f"unknown batch kind {kind!r}")
+    return len(messages), _known(sender)
 
 
 def batch_text(kind: str, batch: Mapping[str, Any]) -> str:

@@ -51,18 +51,21 @@ def route(kind: str, batch: Mapping[str, Any], *,
     mode = "off"
     try:
         from hermes_cli import triage_router
-        from hermes_cli.triage_batch_text import batch_text
+        from hermes_cli.triage_batch_text import batch_summary, batch_text
 
         if config is None:
             config = _hermes_config()
         mode = triage_router.router_settings(config).get("mode")
         if mode not in ("shadow", "enforce"):
             return Outcome(True, mode="off")
+        message_count, first_sender = batch_summary(kind, batch)
         decision = triage_router.route_batch_sync(
             source_id=source_id,
             batch_id=str(batch.get("batch_id") or ""),
             batch_text=batch_text(kind, batch),
             config=config,
+            message_count=message_count,
+            first_sender=first_sender,
         )
     except Exception as e:
         log(f"routing failed, triaging as usual: {e!r}")

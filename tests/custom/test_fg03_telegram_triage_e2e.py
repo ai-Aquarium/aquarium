@@ -267,3 +267,22 @@ def test_without_a_decision_the_batch_waits_then_is_stored(setup, box, router, m
     rows = _profile_rows(box)
     assert rows["cfo"]["todos"] == rows["cmo"]["todos"] == []
     assert sum(len(v) for v in _failed_notices(box).values()) <= 1
+
+
+def test_routing_link_and_decision_summary(setup, box, monkeypatch):  # noqa: F811
+    tg, model, turns, sent = setup()
+    path = tg.write("invoice")
+    assert tg.run() == 1 and tg.done(path)
+    batch_id = telegram_triage.batch_id_for(BOT, CHAT, "11")
+
+    async def read(c):
+        rows = await c.fetch(
+            f"SELECT routing_source_id, routing_batch_id "
+            f"FROM {app_schema('prod', profile='cfo')}.tasks")
+        decision = await tr.get_decision(c, tg.source_id, batch_id)
+        return [tuple(r) for r in rows], decision
+
+    todos, decision = _box(box["dsn"], read)
+    assert todos == [(tg.source_id, batch_id)]
+    assert (decision.message_count, decision.first_sender) == (1, "Ann <@ann>")
+    assert "INV-77" not in json.dumps(decision.as_dict())

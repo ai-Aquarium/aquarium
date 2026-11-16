@@ -156,7 +156,9 @@ ALTER TABLE {TASKS_TABLE}
     ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS outcome TEXT,
-    ADD COLUMN IF NOT EXISTS work_result JSONB;
+    ADD COLUMN IF NOT EXISTS work_result JSONB,
+    ADD COLUMN IF NOT EXISTS routing_source_id TEXT,
+    ADD COLUMN IF NOT EXISTS routing_batch_id TEXT;
 
 CREATE INDEX IF NOT EXISTS tasks_owner_stage_idx
     ON {TASKS_TABLE} (owner_user_id, stage, priority, created_at DESC);
@@ -182,7 +184,8 @@ _SELECT_COLUMNS = (
     "id, owner_user_id, visibility, title, description, trigger_state, "
     "completion_state, current_state, status, origin, stage, priority, "
     "due_at, source_kind, source_ref, source_note, dedupe_key, notified_at, "
-    "snoozed_until, closed_at, outcome, work_result, created_at, updated_at"
+    "snoozed_until, closed_at, outcome, work_result, created_at, updated_at, "
+    "routing_source_id, routing_batch_id"
 )
 
 _WHITESPACE = re.compile(r"\s+")
@@ -230,6 +233,10 @@ class Todo:
     work_result: Optional[dict] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    #: The routed batch (FG-03 source registry) triage filed this from, so the
+    #: page can show "Why this profile?"; ``None`` for anything else.
+    routing_source_id: Optional[str] = None
+    routing_batch_id: Optional[str] = None
     #: False when a write collapsed onto an existing live row. The caller that
     #: decides whether to notify needs this: re-running triage over the same
     #: batch must not announce the same to-do twice.
@@ -267,6 +274,8 @@ class Todo:
             "work_result": self.work_result,
             "created_at": _iso(self.created_at),
             "updated_at": _iso(self.updated_at),
+            "routing_source_id": self.routing_source_id,
+            "routing_batch_id": self.routing_batch_id,
         }
 
 
@@ -300,6 +309,8 @@ def _row_to_todo(row: Any, *, created: bool = True) -> Todo:
         ),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        routing_source_id=row["routing_source_id"],
+        routing_batch_id=row["routing_batch_id"],
         created=created,
     )
 
@@ -354,6 +365,14 @@ def validate_source_kind(source_kind: Optional[str]) -> Optional[str]:
     if source_kind not in TODO_SOURCE_KINDS:
         raise TodoError(f"Unknown to-do source kind: {source_kind!r}")
     return source_kind
+
+
+MAX_ROUTING_ID_CHARS = 200
+
+
+def _routing_id(value: Optional[str]) -> Optional[str]:
+    text = str(value).strip() if value is not None else ""
+    return text[:MAX_ROUTING_ID_CHARS] or None
 
 
 def encode_cursor(todo: Todo) -> str:
@@ -448,8 +467,13 @@ class TodoStore:
         actor: Optional[str] = None,
         visibility: Optional[str] = None,
         connection: Optional["asyncpg.Connection"] = None,
+        routing_source_id: Optional[str] = None,
+        routing_batch_id: Optional[str] = None,
     ) -> Todo:
         """Create a to-do, or return the live one it duplicates.
+
+        ``routing_source_id`` / ``routing_batch_id``: the routed batch triage
+        filed it from (both or neither); a re-seen to-do keeps its first.
 
         A collapse is reported through :attr:`Todo.created` rather than raised:
         the triage bridge re-sees batches routinely, and the only caller that
@@ -458,6 +482,10 @@ class TodoStore:
         clean_title = _WHITESPACE.sub(" ", (title or "").strip())[:MAX_TITLE_CHARS]
         if not clean_title:
             raise TodoError("a to-do needs a title")
+        routing_source_id = _routing_id(routing_source_id)
+        routing_batch_id = _routing_id(routing_batch_id)
+        if (routing_source_id is None) != (routing_batch_id is None):
+            routing_source_id = routing_batch_id = None
         validate_stage(stage)
         validate_priority(priority)
         validate_source_kind(source_kind)
@@ -479,10 +507,11 @@ class TodoStore:
                         owner_user_id, visibility, title, description,
                         trigger_state, completion_state, current_state,
                         status, origin, stage, priority, due_at,
-                        source_kind, source_ref, source_note, dedupe_key)
+                        source_kind, source_ref, source_note, dedupe_key,
+                        routing_source_id, routing_batch_id)
                     VALUES ($1, $2, $3, $4, $5, $6, $5, $7, $8, $9, $10,
                             $11::timestamptz, $12::text, $13::uuid,
-                            $14::text, $15::text)
+                            $14::text, $15::text, $16::text, $17::text)
                     ON CONFLICT (owner_user_id, dedupe_key)
                         WHERE dedupe_key IS NOT NULL
                           AND stage IN ('staged', 'open', 'working', 'review')
@@ -498,6 +527,14 @@ class TodoStore:
                         ),
                         source_ref = COALESCE(
                             EXCLUDED.source_ref, {TASKS_TABLE}.source_ref
+                        ),
+                        routing_source_id = COALESCE(
+                            {TASKS_TABLE}.routing_source_id,
+                            EXCLUDED.routing_source_id
+                        ),
+                        routing_batch_id = COALESCE(
+                            {TASKS_TABLE}.routing_batch_id,
+                            EXCLUDED.routing_batch_id
                         ),
                         updated_at = NOW()
                     RETURNING {_SELECT_COLUMNS}, (xmax = 0) AS inserted
@@ -517,6 +554,8 @@ class TodoStore:
                     source_ref,
                     source_note,
                     dedupe_key,
+                    routing_source_id,
+                    routing_batch_id,
                 )
                 created = bool(row["inserted"])
                 if created:

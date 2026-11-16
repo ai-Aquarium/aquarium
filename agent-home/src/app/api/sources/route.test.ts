@@ -88,6 +88,9 @@ describe("forwarding", () => {
     const body = { channel: "email", address: "John@Example.com" };
     expect((await POST(json("POST", body))).status).toBe(200);
     expect(registerSource).toHaveBeenCalledWith(body);
+    const wa = { channel: "whatsapp", credential_ref: { kind: "wa-bridge", bridge: "johnwa" } };
+    expect((await POST(json("POST", wa))).status).toBe(200);
+    expect(registerSource).toHaveBeenLastCalledWith(wa);
     expect((await POST(json("POST", "{nope"))).status).toBe(400);
     expect((await POST(json("POST", [1]))).status).toBe(400);
   });

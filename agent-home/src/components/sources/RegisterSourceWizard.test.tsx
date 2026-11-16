@@ -103,6 +103,27 @@ describe("RegisterSourceWizard", () => {
     expect(calls.filter((c) => c.method === "PUT")).toEqual([]);
   });
 
+  it("explains an unpaired WhatsApp bridge in plain words and links to its setup", async () => {
+    const calls = mockFetch({
+      "GET /api/wa-bridges": () =>
+        new Response(JSON.stringify({ bridges: [{ name: "john-wa", paired: true, number: "+852****4567", status: "connected" }] })),
+      "POST /api/sources": () =>
+        new Response(JSON.stringify({ detail: "This WhatsApp bridge is not linked to a phone yet." }), { status: 409 }),
+    });
+    render(<RegisterSourceWizard list={LIST} onClose={vi.fn()} onRegistered={vi.fn()} />);
+    fireEvent.click(screen.getByRole("radio", { name: /WhatsApp/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /\+852\*{4}4567/ }));
+    next();
+    fireEvent.click(screen.getByRole("checkbox", { name: "cfo" }));
+    next();
+    next();
+    fireEvent.click(screen.getByRole("button", { name: "Register" }));
+    expect((await screen.findByTestId("register-error")).textContent).toMatch(/isn't linked to a phone yet\. Scan the QR code/);
+    expect(screen.getByRole("link", { name: "Open In&Out settings" }).getAttribute("href")).toBe("/settings/in-out");
+    expect(screen.queryByRole("link", { name: "Ask an admin" })).toBeNull();
+    expect(calls.filter((c) => c.method === "PUT")).toEqual([]);
+  });
+
   it("explains when I have no profiles and keeps Next disabled", async () => {
     mockFetch();
     render(<RegisterSourceWizard list={{ ...LIST, profiles: [] }} onClose={vi.fn()} onRegistered={vi.fn()} />);

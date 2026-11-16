@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { AdminFetchError } from "@/lib/admin-fetch";
 import {
   connectedAccounts,
   decisionOutcome,
   registerBody,
+  registerErrorHint,
   sameAccount,
   sameAddress,
   saveCare,
@@ -107,5 +109,18 @@ describe("sources api helpers", () => {
     expect(sameAccount(wa, src({ credential_ref: { kind: "wa-bridge", bridge: "other" } }))).toBe(false);
     expect(sameAccount(tg, src({ channel: "telegram", address: "123456", credential_ref: { kind: "telegram-bot" } }))).toBe(true);
     expect(sameAccount(mail, src({ channel: "email", address: "John@acme.com" }))).toBe(true);
+  });
+
+  it("maps each register failure from Hermes to a plain-language hint", () => {
+    const e = (status: number, detail = "x") => new AdminFetchError(status, detail);
+    expect(registerErrorHint(e(400), "whatsapp")).toEqual({ kind: "hint", key: "wizard.err.badRef", setup: false });
+    expect(registerErrorHint(e(403), "telegram")).toEqual({ kind: "hint", key: "wizard.err.notYours.telegram", setup: false });
+    expect(registerErrorHint(e(404), "whatsapp")).toEqual({ kind: "hint", key: "wizard.err.missing.whatsapp", setup: true });
+    expect(registerErrorHint(e(409, "This WhatsApp bridge is not linked to a phone yet."), "whatsapp")).toMatchObject({ key: "wizard.err.notLinked" });
+    expect(registerErrorHint(e(409, "This Telegram bot has no valid token saved."), "telegram")).toMatchObject({ key: "wizard.err.noToken" });
+    expect(registerErrorHint(e(409, "This is the profile's own Telegram bot, not one person's source."), "telegram")).toMatchObject({ key: "wizard.err.profileBot" });
+    expect(registerErrorHint(e(409, "This WhatsApp number is already registered to another user."), "whatsapp")).toEqual({ kind: "claim" });
+    expect(registerErrorHint(e(500), "email")).toBeNull();
+    expect(registerErrorHint(new Error("offline"), "email")).toBeNull();
   });
 });

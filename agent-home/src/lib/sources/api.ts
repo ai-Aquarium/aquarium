@@ -2,13 +2,14 @@
  * Browser side of FG-03 P7 (Settings › Sources): BFF calls and the pure
  * helpers the Sources page, the register wizard and Recent routing share.
  */
-import { getJson, sendJson } from "@/lib/admin-fetch";
+import { AdminFetchError, getJson, sendJson } from "@/lib/admin-fetch";
 import type {
   EmailMailbox,
   RoutingDecision,
   Source,
   SourceChannel,
   SourceClaimConflict,
+  SourceCredentialRef,
   SourceInput,
   SourceRoute,
   SourceUpdate,
@@ -91,7 +92,7 @@ export interface ConnectedAccount {
   display: string | null;
   /** Plain-words state, e.g. "checked 2 min ago". */
   detail: "working" | "attention" | "untested";
-  credential_ref: SourceInput["credential_ref"];
+  credential_ref: SourceCredentialRef;
 }
 
 async function safe<T>(fn: () => Promise<T>): Promise<T | null> {
@@ -154,13 +155,41 @@ export function decisionOutcome(d: RoutingDecision): DecisionOutcome {
  * the browser sees a masked number / `@username`, so Hermes derives the address.
  */
 export function registerBody(account: ConnectedAccount): SourceInput {
-  const body: SourceInput = {
-    channel: account.channel,
-    display: account.display,
-    credential_ref: account.credential_ref,
-  };
-  if (account.channel === "email") body.address = account.address;
-  return body;
+  const ref = account.credential_ref;
+  if (account.channel === "whatsapp" && ref.kind === "wa-bridge" && ref.bridge)
+    return { channel: "whatsapp", display: account.display, credential_ref: { kind: "wa-bridge", bridge: ref.bridge } };
+  if (account.channel === "telegram" && ref.kind === "telegram-bot")
+    return { channel: "telegram", display: account.display, credential_ref: { kind: "telegram-bot" } };
+  return { channel: account.channel, address: account.address, display: account.display, credential_ref: ref };
+}
+
+export type RegisterErrorHint =
+  | { kind: "claim" }
+  | { kind: "hint"; key: string; /** Fixable in the connect-account flow. */ setup: boolean };
+
+/**
+ * Plain-language hint for a failed `POST /api/sources` (Hermes `sources_api.register`):
+ * 400 bad / mismatched ref, 403 someone else's bridge or bot, 404 unknown bridge or
+ * no bot saved, 409 bridge not paired / bot unusable, or else a claim conflict.
+ */
+export function registerErrorHint(err: unknown, channel: SourceChannel): RegisterErrorHint | null {
+  if (!(err instanceof AdminFetchError)) return null;
+  const detail = err.message;
+  switch (err.status) {
+    case 400:
+      return { kind: "hint", key: "wizard.err.badRef", setup: false };
+    case 403:
+      return { kind: "hint", key: `wizard.err.notYours.${channel}`, setup: false };
+    case 404:
+      return { kind: "hint", key: `wizard.err.missing.${channel}`, setup: true };
+    case 409:
+      if (/not linked to a phone/i.test(detail)) return { kind: "hint", key: "wizard.err.notLinked", setup: true };
+      if (/no valid token/i.test(detail)) return { kind: "hint", key: "wizard.err.noToken", setup: true };
+      if (/profile's own telegram bot/i.test(detail)) return { kind: "hint", key: "wizard.err.profileBot", setup: false };
+      return { kind: "claim" };
+    default:
+      return null;
+  }
 }
 
 /** Whether `account` is already registered as `source` (by credential for WhatsApp / Telegram). */

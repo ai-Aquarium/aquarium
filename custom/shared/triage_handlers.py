@@ -52,6 +52,16 @@ def _scope_owner(batch):
     return scope['owner_user_id'] if scope else None
 
 
+def _routing(batch):
+    """The routed batch's identity, for a profile-scoped call; else ``{}``."""
+    if not _scope_owner(batch):
+        return {}
+    source_id, batch_id = batch.get('source_id'), batch.get('batch_id')
+    if not source_id or not batch_id:
+        return {}
+    return {'routing_source_id': str(source_id), 'routing_batch_id': str(batch_id)}
+
+
 def _arrival_key(arrival):
     if not arrival:
         return None
@@ -163,7 +173,8 @@ def _handle_todos(todos, batch, db):
     summary = batch.get('summary', '')
     owner = _scope_owner(batch)
     scoped = {'owner_user_id': owner,
-              'arrival_key': _arrival_key(arrivals[0] if arrivals else None)} if owner else {}
+              'arrival_key': _arrival_key(arrivals[0] if arrivals else None),
+              **_routing(batch)} if owner else {}
 
     for candidate in select_candidates(
         [t for t in todos if isinstance(t, dict)]
@@ -235,7 +246,8 @@ def _handle_work_request(request, batch, db):
     auto_started = False
     owner = _scope_owner(batch)
     scoped = {'owner_user_id': owner,
-              'arrival_key': _arrival_key(arrivals[0] if arrivals else None)} if owner else {}
+              'arrival_key': _arrival_key(arrivals[0] if arrivals else None),
+              **_routing(batch)} if owner else {}
 
     ranked = select_candidates(
         [{**c, "notify": True} for c in candidates],
@@ -725,8 +737,10 @@ def _raise_profile_alert(result, batch, owner_user_id):
     title = f"Needs your attention: {who}"
     text = " — ".join(str(p) for p in (result.get('escalation_reason'),
                                         result.get('summary')) if p)
+    routing = _routing(batch)
     owner_routing.notify_in_app(person, title=title, text=text or title,
-                                dedupe_key=with_arrival(TRIAGE_ALERT, key))
+                                dedupe_key=with_arrival(TRIAGE_ALERT, key),
+                                context=routing or None)
 
 
 def _profile_person_active(owner_user_id):

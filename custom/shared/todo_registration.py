@@ -153,8 +153,14 @@ def register_todo(
     origin: str = "triage",
     owner_user_id: Optional[str] = None,
     arrival_key: Optional[str] = None,
+    routing_source_id: Optional[str] = None,
+    routing_batch_id: Optional[str] = None,
 ) -> Optional[dict]:
     """Record one to-do. Never raises.
+
+    ``routing_source_id`` / ``routing_batch_id``: the routed batch (FG-03)
+    a profile-scoped triage filed it from; kept on the to-do and its
+    announcement so the page can ask the router "why this profile?".
 
     ``owner_user_id`` (profile-scoped triage, FG-03 P5) files it for that
     person, resolved in the current profile scope, instead of the arrival's
@@ -235,6 +241,8 @@ def register_todo(
                 source_note=note,
                 origin=origin,
                 actor=actor,
+                routing_source_id=routing_source_id,
+                routing_batch_id=routing_batch_id,
             )
             pushed = False
             if todo.stage == "open" and todo.notified_at is None:
