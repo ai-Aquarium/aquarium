@@ -1850,6 +1850,44 @@ export interface MssqlConnection extends MssqlSettings {
   } | null;
 }
 
+/** Engines behind `/api/db/connections` (SQL Server has its own routes). */
+export type DbEngine = "mysql" | "sqlite";
+export type DbTls = "verify" | "on" | "off";
+
+/** One of the caller's MySQL / SQLite connections; the password is never returned. */
+export interface DbConnection {
+  engine: DbEngine;
+  name: string;
+  label: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  tls?: DbTls;
+  vpn?: string;
+  password_set?: boolean;
+  path?: string;
+}
+
+/** Body of `PUT /api/db/connections/{engine}/{name}`; an omitted password is kept. */
+export interface DbConnectionInput {
+  label?: string;
+  host?: string;
+  port?: number | null;
+  database?: string;
+  username?: string;
+  password?: string;
+  tls?: DbTls;
+  vpn?: string;
+  path?: string;
+}
+
+/** `POST /api/db/connections/{engine}/{name}/test`: ok + table count, or the plain reason. */
+export interface DbConnectionTest {
+  connection: DbConnection;
+  test: { ok: boolean; tables?: number; error?: string };
+}
+
 /** Body of `PUT /api/mssql/connections/{name}`; empty password keeps the saved one. */
 export interface MssqlConnectionInput extends Partial<MssqlSettings> {
   host: string;

@@ -1,11 +1,12 @@
 {
   "title": "Data",
-  "subtitle": "What your data means, so agents answer questions about it correctly.",
+  "subtitle": "Every data source the agent can use: is it working, who can use it, and what it means.",
   "info": "What is a data dictionary?",
-  "infoBody": "A dictionary explains each table in plain words: what one row is, what the columns mean, how tables join and how metrics are counted. Agents only use approved versions. Anyone with access can suggest changes; the source's owner or an admin approves them.",
+  "infoBody": "One list for websites kept as tables, Aquarium's own data and databases you connect. A dictionary explains each table in plain words: what one row is, what the columns mean, how tables join and how metrics are counted. Agents only use approved versions. Anyone with access can suggest changes; the source's owner or an admin approves them.",
   "kind": {
     "app": "Aquarium data",
-    "site": "Website data"
+    "site": "Website data",
+    "connection": "Connected database"
   },
   "status": {
     "approved": "Approved v{v}",
@@ -16,11 +17,19 @@
   "access": {
     "read": "Can read",
     "propose": "Can propose changes",
-    "manage": "Owner or admin"
+    "manage": "Owner or admin",
+    "always": "Owners and admins always have access.",
+    "note": {
+      "app": "Members only ever see their own rows; sharing shows them the dictionary, not other people's rows.",
+      "site": "This list is who can ask about it in chat and see its dictionary. Who can open the rows in Sites is set separately:",
+      "connection": "People you share with ask through this connection's read-only login and never see the password."
+    },
+    "siteSharing": "Sites › Sharing",
+    "readOnly": "Only the owner or an admin can change who has access."
   },
   "list": {
     "emptyTitle": "No data sources yet",
-    "emptyBody": "Sites you add, and data shared with you, appear here.",
+    "emptyBody": "Sites you add, databases you connect and data shared with you appear here.",
     "described": "{n} tables described",
     "owner": "Owner: {who}",
     "ownerAdmins": "Owner: admins",
@@ -28,8 +37,39 @@
       "review": "Review {n} changes",
       "build": "Build dictionary",
       "none": "Not described yet",
-      "open": "Open"
-    }
+      "open": "Open",
+      "fix": "Fix connection",
+      "drift": "Update dictionary"
+    },
+    "draftPill": "Draft · review {n}",
+    "admins": "admins",
+    "you": "You",
+    "ownerLabel": "Owner",
+    "filterLabel": "Which data sources",
+    "filter": {
+      "all": "All",
+      "needs": "Needs you",
+      "mine": "Mine",
+      "shared": "Shared with me"
+    },
+    "search": "Search data sources",
+    "searchPlaceholder": "Search by name",
+    "type": "Type",
+    "allTypes": "All types",
+    "col": {
+      "source": "Data source",
+      "connection": "Connection",
+      "dictionary": "Dictionary",
+      "who": "Who"
+    },
+    "noneInFilter": "No data sources here.",
+    "ask": "Ask ✦",
+    "askAbout": "Ask about {name} in chat",
+    "add": "Add data source",
+    "footSites": "Websites are added and refreshed in",
+    "footSitesLink": "Sites",
+    "footVpn": "VPNs databases go through are in",
+    "footVpnLink": "Settings › In&Out"
   },
   "detail": {
     "answersUse": "Answers use this version · approved by {who}, {when}",
@@ -50,12 +90,35 @@
       "added": "{table} is new",
       "removed": "{table} is gone",
       "columns": "{table}: columns changed"
-    }
+    },
+    "search": "Search the dictionary",
+    "searchPlaceholder": "Search {n} tables, columns and meanings",
+    "only": {
+      "all": "All tables",
+      "stale": "Changed only"
+    },
+    "noMatch": "No table matches.",
+    "ask": "Ask in chat ✦",
+    "tabsLabel": "Data source sections"
   },
   "build": {
     "label": "Build dictionary",
     "hint": "Opens a chat with the request filled in. Nothing starts until you press send.",
-    "prompt": "Study the {source} data source and draft dictionary entries for the tables that aren't described yet. Ask me about anything unclear before proposing."
+    "prompt": "Study the {source} data source and draft dictionary entries for the tables that aren't described yet. Ask me about anything unclear before proposing.",
+    "title": "Build dictionary — {name}",
+    "open": "Open chat",
+    "scope": "What to study now",
+    "scopeSchemas": "Schemas I pick",
+    "scopeUndescribed": "Tables not described yet",
+    "scopeChanged": "Only the changed tables ({n})",
+    "onDemand": "Study on demand",
+    "onDemandHint": "Any other table is studied the first time someone asks about it.",
+    "bigNote": "There is no “all tables” study for a big source: the agent studies the picked schemas in batches and adds them to the draft as it goes.",
+    "scopePrompt": {
+      "schemas": "Study the {source} data source, schemas {schemas} only, and draft dictionary entries for their tables that aren't described yet. Ask me about anything unclear before proposing.",
+      "changed": "The {source} schema changed. Re-study these tables and draft updated dictionary entries: {tables}. Ask me about anything unclear before proposing."
+    },
+    "onDemandPrompt": "Leave the other tables for now; study one the first time someone asks about it."
   },
   "field": {
     "meaning": "What this table is",
@@ -157,5 +220,141 @@
     "correctHint": "Tell the agent what's wrong in your next message. It will fix the answer and suggest a dictionary change for the owner to approve.",
     "undescribed": "{tables} isn't described yet, so this answer is based only on column names. Ask the agent to describe it, and the owner approves the description under Data.",
     "failed": "Couldn't save the example: {error}"
+  },
+  "type": {
+    "app": "Aquarium",
+    "site": "Website",
+    "mssql": "SQL Server",
+    "mysql": "MySQL",
+    "postgres": "PostgreSQL",
+    "sqlite": "SQLite"
+  },
+  "health": {
+    "ok": "Working",
+    "okSite": "Up to date",
+    "attention": "Needs attention",
+    "untested": "Not checked yet",
+    "builtin": "Built in"
+  },
+  "tabs": {
+    "overview": "Overview",
+    "dictionary": "Dictionary",
+    "access": "Access",
+    "history": "History",
+    "website": "Website",
+    "about": "About",
+    "connection": "Connection"
+  },
+  "overview": {
+    "brokenTitle": "The connection isn't working",
+    "brokenBody": "Answers about this data source fail until it's fixed.",
+    "connection": "Connection",
+    "checked": "checked {when}",
+    "healthHint": {
+      "app": "Aquarium's own data is always available.",
+      "site": "From the site's last refresh run.",
+      "connection": "Checked every hour; the check also keeps the connection open."
+    },
+    "dictionary": "Dictionary",
+    "openDictionary": "Open dictionary",
+    "who": "Who can use it",
+    "manageAccess": "Manage access",
+    "seeAccess": "See access",
+    "linked": "Linked from",
+    "linkedSite": "Sites › {name}",
+    "linkedVpn": "Settings › In&Out › VPN",
+    "builtIn": "Built in — nothing to configure",
+    "linkedChat": "Chat"
+  },
+  "source": {
+    "about": "Aquarium's own database. Agents never query the real tables: for each question they read a private copy of only the rows the asker may see.",
+    "openInSites": "Open in Sites",
+    "siteBody": "Design, refresh runs and schedule stay in Sites; dictionary, access and questions are here.",
+    "manageConnection": "Manage connection",
+    "connectionBody": "Server, login, VPN and tests are under Add data source.",
+    "connectionOwnerOnly": "Only {who} can see the connection settings.",
+    "testNow": "Test now"
+  },
+  "add": {
+    "title": "Add data source",
+    "subtitle": "Pick what to add. You can test it before anyone else can use it.",
+    "connect": "Connect a database",
+    "mssqlBody": "Microsoft SQL Server 2008 R2 and newer. Ask IT for a read-only login.",
+    "mysqlBody": "MySQL 5.7+ and MariaDB.",
+    "postgresBody": "PostgreSQL 11+.",
+    "sqliteBody": "A .sqlite or .db file in Files, read-only.",
+    "soon": "Coming next",
+    "website": "Turn a website into tables",
+    "siteBody": "The agent studies the site, proposes tables for you to approve, then keeps them up to date. Continues in Sites › Add site.",
+    "siteLocked": "Not for your role",
+    "siteLockedBody": "Your role can't add sites. Ask the owner or an admin.",
+    "later": "Later",
+    "sheet": "Spreadsheet",
+    "sheetBody": "Google Sheets or Excel in Files.",
+    "api": "API",
+    "apiBody": "A REST API the agent can read.",
+    "laterPill": "Later",
+    "privateNote": "A data source you add is private to you until you share it. Owners and admins can always see it."
+  },
+  "ask": {
+    "label": "Ask about:",
+    "auto": "Let the agent choose",
+    "autoHint": "It picks from the data sources you can use and asks if unsure.",
+    "pinnedHint": "Answers use its approved dictionary.",
+    "title": "Ask about"
+  },
+  "db": {
+    "title": {
+      "mysql": "MySQL databases",
+      "sqlite": "SQLite files"
+    },
+    "description": {
+      "mysql": "Your own MySQL / MariaDB connections. Private to you until you share the data source; people you share with ask through this read-only login and never see the password.",
+      "sqlite": "SQLite files on this server, read-only. Only files under the folders set in config.yaml (data_sources.sqlite_roots) can be added."
+    },
+    "add": {
+      "mysql": "Add MySQL database",
+      "sqlite": "Add SQLite file"
+    },
+    "driverMissing": "The driver for this engine isn't installed on the server yet.",
+    "sqliteAdminOnly": "Only the owner or an admin can add SQLite files.",
+    "errLoad": "Couldn't load your connections.",
+    "errTest": "Couldn't run the test.",
+    "errSave": "Couldn't save: {reason}",
+    "errRemove": "Couldn't remove it.",
+    "errRequired": "Fill in every required field.",
+    "errName": "Use letters, numbers, spaces, dots, dashes or underscores (up to 64).",
+    "errPort": "The port must be a number from 1 to 65535.",
+    "errPassword": "Enter the password.",
+    "loading": "Loading…",
+    "viaVpn": "via {vpn}",
+    "readOnly": "read-only",
+    "testOk": "Connected · {n} tables",
+    "testFail": "Failed: {reason}",
+    "test": "Test",
+    "testing": "Testing…",
+    "edit": "Edit",
+    "remove": "Remove",
+    "name": "Name",
+    "namePlaceholder": "e.g. CRM",
+    "label": "Display name (optional)",
+    "path": "File path",
+    "pathPlaceholder": "/srv/data/prices.sqlite",
+    "host": "Server",
+    "port": "Port",
+    "database": "Database",
+    "username": "Login",
+    "password": "Password",
+    "passwordKept": "Leave empty to keep the saved password.",
+    "tls": "Encryption",
+    "tlsVerify": "On, check the certificate",
+    "tlsOn": "On, don't check the certificate",
+    "tlsOff": "Off",
+    "vpn": "Through VPN",
+    "vpnNone": "No VPN",
+    "readOnlyNote": "Use a read-only login: the agent only reads from this database.",
+    "saveTest": "Save and test",
+    "removeTitle": "Remove {name}?",
+    "removeBody": "The agent stops using it, and its data source and dictionary are removed from Data."
   }
 }

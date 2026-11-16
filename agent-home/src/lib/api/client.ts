@@ -156,6 +156,9 @@ import type {
   SourceRoute,
   MssqlConnection,
   MssqlConnectionInput,
+  DbConnection,
+  DbConnectionInput,
+  DbConnectionTest,
   WinrmConnection,
   WinrmConnectionInput,
   EmailPollerAccount,
@@ -3747,6 +3750,32 @@ export class HermesApiClient {
       `/api/mssql/connections/${encodeURIComponent(name)}/test`,
       { method: "POST" },
     );
+  }
+
+  /** The caller's own MySQL / SQLite connections and which drivers are installed. */
+  async dbConnections(): Promise<{ connections: DbConnection[]; drivers: Record<string, boolean> }> {
+    return this.request("/api/db/connections");
+  }
+
+  /** Create or replace the caller's MySQL / SQLite connection; an omitted password is kept. */
+  async putDbConnection(engine: string, name: string, body: DbConnectionInput): Promise<{ connection: DbConnection }> {
+    return this.request(`/api/db/connections/${encodeURIComponent(engine)}/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      json: body,
+    });
+  }
+
+  async deleteDbConnection(engine: string, name: string): Promise<{ deleted: boolean }> {
+    return this.request(`/api/db/connections/${encodeURIComponent(engine)}/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+  }
+
+  /** Open the connection and count its tables (through the VPN when one is set). */
+  async testDbConnection(engine: string, name: string): Promise<DbConnectionTest> {
+    return this.request(`/api/db/connections/${encodeURIComponent(engine)}/${encodeURIComponent(name)}/test`, {
+      method: "POST",
+    });
   }
 
   /** The caller's own Windows servers (PowerShell over WinRM; never any password). */

@@ -138,6 +138,17 @@ registerApp({
   order: 95,
 });
 
+registerApp({
+  id: "data",
+  name: "Data",
+  glyph: "⛁",
+  hint: "Every data source",
+  kind: "next-route",
+  route: "/data",
+  category: "workspace",
+  order: 96,
+});
+
 // ── System cluster ─────────────────────────────────────────────────────────
 
 registerApp({

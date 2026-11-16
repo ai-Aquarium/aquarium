@@ -17,6 +17,7 @@
   "mode": { "incremental": "Incremental", "full": "Full" },
   "trigger": { "manual": "Manual", "schedule": "Schedule", "agent": "Agent" },
   "list": {
+    "openInData": "Dictionary and questions: open in Data ›",
     "add": "Add site",
     "filterLabel": "Which sites",
     "filter": { "all": "All", "mine": "Mine", "shared": "Shared with me" },
@@ -56,6 +57,9 @@
     "notAllowedBody": "Ask the owner or an admin to add it, or to let your role add sites."
   },
   "detail": {
+    "inData": "These tables are also a data source in Data.",
+    "openDictionary": "Open dictionary",
+    "askInChat": "Ask in chat",
     "owner": "Owner: {who}",
     "loginSaved": "Login saved",
     "loginMissing": "Login URL set, no saved login",
@@ -152,6 +156,8 @@
     "starting": "Starting…"
   },
   "sharing": {
+    "separate": "Who can ask about this site in chat and see its dictionary is a separate list:",
+    "dataAccess": "Data › Access",
     "owner": "Owner",
     "levelFor": "Access for {who}",
     "revoke": "Revoke",

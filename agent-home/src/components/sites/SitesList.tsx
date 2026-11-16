@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+
+import type { DataSource } from "@/types/data";
 import { useMemo, useState } from "react";
 
 import { Pill } from "@/components/ui/Pill";
@@ -22,8 +24,11 @@ export function SitesList({
   people,
   me,
   canCreate,
+  dataSources,
   now = new Date(),
 }: {
+  /** The site's data source in Data, by site id. */
+  dataSources?: Record<string, DataSource>;
   items: SiteListItem[];
   people: Record<string, string>;
   me: string;
@@ -120,6 +125,13 @@ export function SitesList({
                   </div>
                 </div>
               </Link>
+              {dataSources?.[site.id] ? (
+                <div className="px-4 pb-3 text-xs">
+                  <Link href={`/data/${dataSources[site.id].id}`} data-action="open-in-data" className="font-medium text-[var(--color-accent)] hover:underline">
+                    {t("list.openInData")}
+                  </Link>
+                </div>
+              ) : null}
             </li>
           );
         })}
