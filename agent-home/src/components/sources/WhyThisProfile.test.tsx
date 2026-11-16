@@ -50,9 +50,7 @@ describe("WhyThisProfile", () => {
     expect(screen.getAllByTestId("route-choice")).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toBe("/api/sources/decisions?source_id=src-mail&batch_id=b-1&limit=1");
-    expect(screen.getByRole("link", { name: "Recent routing for john@acme.com" }).getAttribute("href")).toBe(
-      "/sources?source=src-mail",
-    );
+    expect(screen.queryByRole("link", { name: /Recent routing/ })).toBeNull();
 
     // Close, reopen: the decision is kept, not fetched again.
     await press(screen.getByRole("button", { name: "Close" }));
@@ -60,6 +58,23 @@ describe("WhyThisProfile", () => {
     await press(link());
     expect(screen.getByTestId("why-this-profile-popover")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("links to recent routing when the caller gives a Sources href", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply({ decisions: [decision()] })));
+    render(
+      <WhyThisProfile
+        sourceId="src-mail"
+        batchId="b-1"
+        profile="CFO"
+        recentRoutingHref={(id) => `/sources/${id}`}
+      />,
+    );
+    await press(link());
+    expect(screen.getByRole("link", { name: "Recent routing for john@acme.com" }).getAttribute("href")).toBe(
+      "/sources/src-mail",
+    );
+    expect(screen.getByRole("link", { name: "Edit what CFO cares about" }).getAttribute("href")).toBe("/profiles");
   });
 
   it("Esc closes the popover", async () => {

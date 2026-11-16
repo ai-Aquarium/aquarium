@@ -41,6 +41,8 @@ export interface WhyThisProfileProps {
   profile?: string | null;
   /** Which edge of the link the desktop popover lines up with. */
   align?: "start" | "end";
+  /** Where "Recent routing for …" goes (the Sources page); the link is hidden without it. */
+  recentRoutingHref?: (sourceId: string) => string;
   className?: string;
 }
 
@@ -60,6 +62,7 @@ function WhyThisProfileLink({
   batchId,
   profile,
   align = "start",
+  recentRoutingHref,
   className = "",
 }: WhyThisProfileProps & { sourceId: string; batchId: string }) {
   const t = useT("routing");
@@ -139,7 +142,14 @@ function WhyThisProfileLink({
         : t("whyLink");
 
   const body = (
-    <DecisionBody t={t} load={load} profile={profile} sourceId={sourceId} onRetry={() => void fetchDecision()} />
+    <DecisionBody
+      t={t}
+      load={load}
+      profile={profile}
+      recentHref={recentRoutingHref?.(sourceId) ?? null}
+      sourceId={sourceId}
+      onRetry={() => void fetchDecision()}
+    />
   );
 
   return (
@@ -195,17 +205,19 @@ function DecisionBody({
   t,
   load,
   profile,
+  recentHref,
   sourceId,
   onRetry,
 }: {
   t: Translator;
   load: Load;
   profile?: string | null;
+  recentHref: string | null;
   sourceId: string;
   onRetry(): void;
 }) {
   if (load.status === "ready") {
-    return <ReadyBody t={t} decision={load.decision} profile={profile} sourceId={sourceId} />;
+    return <ReadyBody t={t} decision={load.decision} profile={profile} recentHref={recentHref} sourceId={sourceId} />;
   }
   if (load.status === "idle" || load.status === "loading") {
     return (
@@ -233,11 +245,13 @@ function ReadyBody({
   t,
   decision,
   profile,
+  recentHref,
   sourceId,
 }: {
   t: Translator;
   decision: RoutingDecision;
   profile?: string | null;
+  recentHref: string | null;
   sourceId: string;
 }) {
   const sender = decision.first_sender?.trim();
@@ -245,12 +259,11 @@ function ReadyBody({
     <div className="flex flex-col gap-3">
       <RoutingDecisionCard decision={decision} />
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium leading-4">
-        <Link
-          href={`/sources?source=${encodeURIComponent(sourceId)}`}
-          className="text-[var(--color-accent)] underline-offset-2 hover:underline"
-        >
-          {t("recentRouting", { sender: sender || sourceId })}
-        </Link>
+        {recentHref ? (
+          <Link href={recentHref} className="text-[var(--color-accent)] underline-offset-2 hover:underline">
+            {t("recentRouting", { sender: sender || sourceId })}
+          </Link>
+        ) : null}
         {profile ? (
           <Link href="/profiles" className="text-[var(--color-accent)] underline-offset-2 hover:underline">
             {t("editCares", { profile })}
