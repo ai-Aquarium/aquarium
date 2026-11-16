@@ -135,5 +135,6 @@
   "wizard.registering": "Registering…",
   "wizard.conflict": "{address} is already a source of another person. An address can have only one owner, so it wasn't added. We saved this as a claim; an admin can move it to you.",
   "wizard.done": "{address} registered.",
-  "wizard.partial": "{address} is registered, but some steps did not finish: {detail}. Fix them from My sources."
+  "wizard.partial": "{address} is registered, but some steps did not finish: {detail}. Fix them from My sources.",
+  "readsLabel": "Reads it:"
 }

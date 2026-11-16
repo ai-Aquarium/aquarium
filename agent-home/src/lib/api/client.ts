@@ -150,11 +150,12 @@ import type {
   EmailMailboxInput,
   Source,
   SourceClaimConflict,
+  SourceConflictAction,
   RoutingDecision,
   TriageComparison,
   SourceInput,
-  SourceUpdate,
   SourceRoute,
+  SourceUpdate,
   MssqlConnection,
   MssqlConnectionInput,
   WinrmConnection,
@@ -3508,13 +3509,7 @@ export class HermesApiClient {
     );
   }
 
-  async deleteSource(sourceId: string): Promise<{ deleted: boolean }> {
-    return this.request(`/api/sources/${encodeURIComponent(sourceId)}`, {
-      method: "DELETE",
-    });
-  }
-
-  /** Turn one of the caller's sources on/off or rename it (owner only). */
+  /** FG-03 P7: pause/resume or relabel a source (its owner, or box owner/admin). */
   async updateSource(sourceId: string, body: SourceUpdate): Promise<{ source: Source }> {
     return this.request(`/api/sources/${encodeURIComponent(sourceId)}`, {
       method: "PATCH",
@@ -3522,19 +3517,25 @@ export class HermesApiClient {
     });
   }
 
-  /** Box owner/admin: keep the source with its owner, or give it to the claimant. */
-  async resolveSourceConflict(
-    conflictId: number,
-    action: "keep" | "transfer",
-  ): Promise<{ conflict: SourceClaimConflict }> {
-    return this.request(`/api/sources/conflicts/${encodeURIComponent(String(conflictId))}/resolve`, {
-      method: "POST",
-      json: { action },
+  async deleteSource(sourceId: string): Promise<{ deleted: boolean }> {
+    return this.request(`/api/sources/${encodeURIComponent(sourceId)}`, {
+      method: "DELETE",
     });
   }
 
   async sourceConflicts(all = false): Promise<{ conflicts: SourceClaimConflict[] }> {
     return this.request(`/api/sources/conflicts${all ? "?all=1" : ""}`);
+  }
+
+  /** FG-03 P7: settle a claim conflict (box owner/admin). */
+  async resolveSourceConflict(
+    conflictId: number,
+    action: SourceConflictAction,
+  ): Promise<{ conflict: SourceClaimConflict }> {
+    return this.request(
+      `/api/sources/conflicts/${encodeURIComponent(String(conflictId))}/resolve`,
+      { method: "POST", json: { action } },
+    );
   }
 
   /** FG-03 P4: the caller's routing decisions, newest first (`all`: box owner/admin). */

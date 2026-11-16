@@ -6,7 +6,7 @@ import { SourcesView } from "@/components/sources/SourcesView";
 import type { SourcesList } from "@/lib/sources/api";
 import type { Source, SourceClaimConflict } from "@/types";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), usePathname: () => "/settings/sources" }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), usePathname: () => "/settings/sources", useSearchParams: () => new URLSearchParams() }));
 
 afterEach(() => {
   cleanup();

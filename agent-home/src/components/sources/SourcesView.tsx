@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import { RegisterSourceWizard } from "@/components/sources/RegisterSourceWizard";
@@ -15,7 +16,7 @@ import {
 } from "@/components/sources/ui";
 import { ActionButton } from "@/components/ui/ActionButton";
 import { InlineAlert } from "@/components/ui/InlineAlert";
-import { PlusIcon, TrashIcon } from "@/components/ui/icons";
+import { TrashIcon } from "@/components/ui/icons";
 import { Sheet } from "@/components/ui/Sheet";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useT } from "@/i18n/client";
@@ -46,7 +47,10 @@ export function SourcesView({
   const [conflicts, setConflicts] = useState(initialConflicts);
   const [editing, setEditing] = useState<Source | null>(null);
   const [claimsOpen, setClaimsOpen] = useState(false);
-  const [registering, setRegistering] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname() ?? "/settings/sources";
+  const registering = useSearchParams()?.get("register") === "1";
+  const closeWizard = () => router.replace(pathname, { scroll: false });
   const [notice, setNotice] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
   const { ask, dialog } = useConfirm();
 
@@ -69,19 +73,7 @@ export function SourcesView({
   const tgOn = telegramTriageOn(list);
 
   return (
-    <div data-component="SourcesView" className="space-y-4">
-      <div className="flex justify-end">
-        <button
-          type="button"
-          data-action="register-source"
-          className={BTN_PRIMARY}
-          onClick={() => setRegistering(true)}
-        >
-          <PlusIcon size={16} />
-          {t("register")}
-        </button>
-      </div>
-
+    <div data-component="SourcesView" className="space-y-4 pb-20 sm:pb-0">
       {notice ? (
         <InlineAlert tone={notice.tone} action={
           <button type="button" className={BTN_GHOST} onClick={() => setNotice(null)}>{t("close")}</button>
@@ -100,12 +92,12 @@ export function SourcesView({
           <p className="mx-auto mt-1 max-w-md text-sm text-[var(--color-muted)]">{t("emptyBody")}</p>
         </div>
       ) : (
-        <section className={CARD} aria-label={t("title")}>
-          <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-2.5 text-xs text-[var(--color-muted)]">
+        <section className={`sm:${CARD.split(" ").join(" sm:")}`} aria-label={t("title")}>
+          <header className="hidden flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-2.5 text-xs text-[var(--color-muted)] sm:flex">
             <span>{t("count", { count: list.sources.length })}</span>
-            <span className="hidden sm:inline">{t("readsIt")}</span>
+            <span>{t("readsIt")}</span>
           </header>
-          <ul className="divide-y divide-[var(--color-border)]">
+          <ul className="space-y-3 sm:space-y-0 sm:divide-y sm:divide-[var(--color-border)]">
             {list.sources.map((source) => (
               <SourceRow
                 key={source.source_id}
@@ -164,7 +156,7 @@ export function SourcesView({
       {registering ? (
         <RegisterSourceWizard
           list={list}
-          onClose={() => setRegistering(false)}
+          onClose={closeWizard}
           onRegistered={(text) => {
             setNotice(text);
             void reload().catch(() => undefined);
@@ -175,6 +167,12 @@ export function SourcesView({
     </div>
   );
 }
+
+const sm = (cls: string) => cls.split(" ").map((c) => `sm:${c}`).join(" ");
+/** Phone rows use accent text links (Figma 2a phone); desktop keeps the table's buttons. */
+const PHONE_LINK = "inline-flex min-h-9 items-center text-sm font-medium text-[var(--color-accent)]";
+const SM_GHOST = sm(BTN_GHOST);
+const SM_SECONDARY = sm(BTN_SECONDARY);
 
 function sourceMeta(t: ReturnType<typeof useT>, source: Source, telegramOn: boolean): string {
   if (source.channel === "telegram") return t(telegramOn ? "meta.telegram" : "meta.telegramOff");
@@ -213,13 +211,13 @@ function SourceRow({
       data-component="SourceRow"
       data-source={source.source_id}
       data-enabled={source.enabled ? "true" : "false"}
-      className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center"
+      className={`${CARD} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:rounded-none sm:border-0 sm:bg-transparent sm:px-4 sm:py-3`}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-3 sm:max-w-[13rem]">
+      <div className="flex min-w-0 flex-1 items-center gap-3 sm:w-64 sm:flex-none">
         <ChannelBadge channel={source.channel} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{source.address}</p>
-          <p className="truncate text-xs text-[var(--color-muted)]">{sourceMeta(t, source, telegramOn)}</p>
+          <p className="text-xs text-[var(--color-muted)]">{sourceMeta(t, source, telegramOn)}</p>
         </div>
         <div className="flex items-center gap-1 sm:hidden">
           <Switch
@@ -230,7 +228,8 @@ function SourceRow({
           />
         </div>
       </div>
-      <div className="flex min-w-0 flex-1 flex-wrap gap-1.5" data-testid="route-chips">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5" data-testid="route-chips">
+        <span className="text-xs text-[var(--color-muted)] sm:hidden">{t("readsLabel")}</span>
         {source.routes.length === 0 ? (
           <span className="text-xs text-[var(--color-muted)]">{t("noRoutes")}</span>
         ) : (
@@ -241,8 +240,8 @@ function SourceRow({
           ))
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-1 sm:shrink-0 sm:justify-end">
-        <span className="hidden items-center sm:inline-flex">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:shrink-0 sm:justify-end sm:gap-1">
+        <span className="hidden items-center sm:order-first sm:inline-flex">
           <Switch
             on={source.enabled}
             busy={toggle.pending}
@@ -253,21 +252,26 @@ function SourceRow({
             {toggle.pending ? "…" : t(source.enabled ? "on" : "off")}
           </span>
         </span>
-        <Link href={routingHref} data-action="recent-routing" className={BTN_GHOST}>
+        <Link href={routingHref} data-action="recent-routing" className={`${PHONE_LINK} order-2 sm:order-none ${SM_GHOST}`}>
           {t("recentRouting")}
         </Link>
-        <button type="button" data-action="edit-routes" className={BTN_SECONDARY} onClick={onEdit}>
+        <button
+          type="button"
+          data-action="edit-routes"
+          className={`${PHONE_LINK} order-1 sm:order-none ${SM_SECONDARY}`}
+          onClick={onEdit}
+        >
           {t("editRoutes")}
         </button>
         <button
           type="button"
           data-action="remove-source"
-          className={BTN_GHOST}
+          className={`order-3 ml-auto inline-flex min-h-9 items-center gap-1.5 text-sm text-[var(--color-danger)] disabled:opacity-50 sm:order-none sm:ml-0 ${SM_GHOST}`}
           disabled={remove.pending}
           aria-busy={remove.pending}
           onClick={() => void remove.run()}
         >
-          <TrashIcon size={16} />
+          <span className="hidden sm:inline-flex"><TrashIcon size={16} /></span>
           {t("remove")}
         </button>
       </div>

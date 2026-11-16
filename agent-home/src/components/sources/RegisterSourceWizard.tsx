@@ -209,7 +209,7 @@ export function RegisterSourceWizard({
       {step === 0 ? (
         <section aria-labelledby="wiz-channel" className="space-y-3">
           <StepHeading id="wiz-channel" title={t("wizard.channelTitle")} hint={t("wizard.channelHint")} />
-          <div role="radiogroup" aria-label={t("wizard.step.channel")} className="grid grid-cols-3 gap-2">
+          <div role="radiogroup" aria-label={t("wizard.step.channel")} className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {CHANNELS.map((c) => (
               <button
                 key={c}
@@ -218,13 +218,18 @@ export function RegisterSourceWizard({
                 aria-checked={channel === c}
                 data-channel={c}
                 onClick={() => pickChannel(c)}
-                className={`${CARD} flex flex-col items-start gap-1 p-3 text-left ${
+                className={`${CARD} flex items-center gap-3 p-3 text-left sm:flex-col sm:items-start sm:gap-1 ${
                   channel === c ? "border-[var(--color-accent)] ring-1 ring-[var(--color-accent)]" : ""
                 }`}
               >
                 <ChannelBadge channel={c} />
-                <span className="text-sm font-semibold">{t(`channel.${c}`)}</span>
-                <span className="hidden text-xs text-[var(--color-muted)] sm:block">{t(`channelHint.${c}`)}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">{t(`channel.${c}`)}</span>
+                  <span className="block text-xs text-[var(--color-muted)]">{t(`channelHint.${c}`)}</span>
+                </span>
+                <span className="sm:hidden">
+                  <Radio on={channel === c} />
+                </span>
               </button>
             ))}
           </div>
@@ -412,7 +417,27 @@ export function RegisterSourceWizard({
 function Stepper({ step }: { step: number }) {
   const t = useT("sources");
   return (
-    <ol className="mb-4 flex items-center gap-2 text-xs" aria-label={t("wizard.stepOf", { n: step + 1 })}>
+    <>
+    <div className="mb-4 sm:hidden" data-testid="stepper-phone">
+      <p className="text-xs text-[var(--color-muted)]">
+        {t("wizard.stepOf", { n: step + 1 })} · {t(`wizard.step.${STEPS[step]}`)}
+      </p>
+      <div className="mt-2 grid grid-cols-4 gap-1.5" aria-hidden>
+        {STEPS.map((s, i) => (
+          <span
+            key={s}
+            className={`h-1 rounded-full ${
+              i < step
+                ? "bg-[var(--color-success)]"
+                : i === step
+                  ? "bg-[var(--color-accent)]"
+                  : "bg-[var(--color-surface-2)]"
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+    <ol className="mb-4 hidden items-center gap-2 text-xs sm:flex" aria-label={t("wizard.stepOf", { n: step + 1 })}>
       {STEPS.map((s, i) => (
         <li key={s} className="flex min-w-0 items-center gap-2" aria-current={i === step ? "step" : undefined}>
           <span
@@ -426,13 +451,14 @@ function Stepper({ step }: { step: number }) {
           >
             {i < step ? <CheckIcon size={12} /> : i + 1}
           </span>
-          <span className={`${i === step ? "text-[var(--color-fg)]" : "hidden text-[var(--color-muted)] sm:inline"}`}>
+          <span className={i === step ? "text-[var(--color-fg)]" : "text-[var(--color-muted)]"}>
             {t(`wizard.step.${s}`)}
           </span>
           {i < STEPS.length - 1 ? <span aria-hidden className="h-px w-4 bg-[var(--color-border)] sm:w-6" /> : null}
         </li>
       ))}
     </ol>
+    </>
   );
 }
 

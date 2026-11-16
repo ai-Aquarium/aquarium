@@ -1,4 +1,5 @@
 import { MobileShell } from "@/components/MobileShell";
+import { RegisterSourceLink } from "@/components/sources/RegisterSourceLink";
 import { SourcesView } from "@/components/sources/SourcesView";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { InfoTip } from "@/components/ui/InfoTip";
@@ -39,6 +40,7 @@ export default async function Page() {
       title={t("title")}
       subtitle={t("subtitle")}
       info={<InfoTip label={t("infoLabel")}>{t("info")}</InfoTip>}
+      actions={list ? <RegisterSourceLink /> : undefined}
       wide
     >
       {list ? (

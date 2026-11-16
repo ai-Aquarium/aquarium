@@ -135,5 +135,6 @@
   "wizard.registering": "登記中…",
   "wizard.conflict": "{address} 已是其他人的來源。每個地址只能有一個擁有者，所以沒有加入。我們已把這記錄為申索；管理員可以把它轉給你。",
   "wizard.done": "已登記 {address}。",
-  "wizard.partial": "{address} 已登記，但有些步驟未完成：{detail}。請在 我的來源 修正。"
+  "wizard.partial": "{address} 已登記，但有些步驟未完成：{detail}。請在 我的來源 修正。",
+  "readsLabel": "閱讀者："
 }
