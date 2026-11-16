@@ -10,14 +10,14 @@ import { NextResponse } from "next/server";
 import { hermesError, unauthenticated } from "@/app/api/email/mailboxes/_shared";
 import { badRequest, str } from "@/lib/api/admin-route";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
-import { profileFromUrl } from "@/lib/chat/profile";
+import { targetProfileFromUrl } from "@/lib/chat/profile";
 
 export async function GET(request: Request): Promise<NextResponse> {
   if (!(await getPrincipal())) return unauthenticated();
   const kind = str(new URL(request.url).searchParams.get("kind"));
   if (!kind) return badRequest("kind is required.");
   try {
-    const client = await apiClientForRequest({ profile: profileFromUrl(request.url) });
+    const client = await apiClientForRequest({ profile: targetProfileFromUrl(request.url) });
     return NextResponse.json(await client.triageLayers(kind));
   } catch (err) {
     return hermesError(err);

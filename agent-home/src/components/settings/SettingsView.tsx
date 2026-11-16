@@ -31,6 +31,7 @@ import { WhatsAppBridges } from "@/components/settings/WhatsAppBridges";
 import { BusyRegion } from "@/components/ui/BusyRegion";
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import {
+  ArchiveIcon,
   ArrowRightIcon,
   BellIcon,
   CheckIcon,
@@ -131,6 +132,7 @@ const ENTRY_ICON: Record<SettingsEntryId, (p: IconProps) => ReactNode> = {
   theme: SparklesIcon,
   notifications: BellIcon,
   "in-out": ArrowRightIcon,
+  sources: ArchiveIcon,
   tags: PencilIcon,
   "get-ready": CheckIcon,
   activity: ClockIcon,

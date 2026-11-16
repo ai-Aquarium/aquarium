@@ -235,6 +235,10 @@
   "accounts.loadFailed": "無法載入帳戶：{error}",
   "accounts.saveFailed": "無法儲存：{error}",
   "accounts.saved": "已儲存。此帳戶的新項目會歸入 {name}。",
+  "section.sources": "我的來源",
+  "section.sources.hint": "每個郵箱、WhatsApp 和 Telegram 由哪些 profile 閱讀",
+  "entry.sources": "我的來源",
+  "entry.sources.hint": "每個郵箱、WhatsApp 和 Telegram 由哪些 profile 閱讀。",
   "dataSources": {
     "title": "數據來源",
     "body": "SQL Server 及其他資料庫、網站和 Aquarium 數據在「數據」頁管理，包括狀態、存取權及字典。"

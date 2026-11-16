@@ -157,6 +157,8 @@ PAGES: Tuple[PageSpec, ...] = (
     PageSpec("/settings/account", ("SettingsView", "AccountSecurity")),
     PageSpec("/settings/tools", ("ToolsSettings", "RoleLimitsSection")),
     PageSpec("/settings/get-ready", ("GetReadyView",)),
+    PageSpec("/settings/sources", ("SourcesView",)),
+    PageSpec("/settings/sources/zz-smoke-missing/routing", ("ErrorState",)),
     # Smoke accounts are never the owner, so GoogleClientSetup (owner-only) does not render.
     PageSpec("/settings/in-out/google", ("ConnectGooglePage", "ConnectedAccounts")),
     PageSpec(

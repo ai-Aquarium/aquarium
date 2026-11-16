@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { unauthenticated } from "@/app/api/email/mailboxes/_shared";
 import { BAD_JSON, badRequest, readJsonBody, str, upstream } from "@/lib/api/admin-route";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
-import { profileFromUrl } from "@/lib/chat/profile";
+import { targetProfileFromUrl } from "@/lib/chat/profile";
 import type { TriageEditableLayer } from "@/types";
 
 export async function PUT(request: Request): Promise<NextResponse> {
@@ -22,6 +22,6 @@ export async function PUT(request: Request): Promise<NextResponse> {
     return badRequest("kind, layer (template or user) and content are required.");
   }
   const content = body.content;
-  const client = await apiClientForRequest({ profile: profileFromUrl(request.url) });
+  const client = await apiClientForRequest({ profile: targetProfileFromUrl(request.url) });
   return upstream(() => client.saveTriageCare(kind, layer as TriageEditableLayer, content));
 }

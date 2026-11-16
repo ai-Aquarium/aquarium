@@ -235,6 +235,10 @@
   "accounts.loadFailed": "Couldn't load the accounts: {error}",
   "accounts.saveFailed": "Couldn't save: {error}",
   "accounts.saved": "Saved. New items from this account go to {name}.",
+  "section.sources": "My sources",
+  "section.sources.hint": "Which profiles read each mailbox, WhatsApp and Telegram",
+  "entry.sources": "My sources",
+  "entry.sources.hint": "Which profiles read each mailbox, WhatsApp and Telegram.",
   "dataSources": {
     "title": "Data sources",
     "body": "SQL Server and other databases, websites and Aquarium data are managed in Data, with their health, access and dictionary."

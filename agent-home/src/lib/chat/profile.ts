@@ -19,6 +19,15 @@ export function profileFromUrl(url: string): string | undefined {
   return clean(new URL(url).searchParams.get("profile"));
 }
 
+/**
+ * Like `profileFromUrl`, but an explicit `?profile=default` stays `"default"`
+ * (the box's own home) instead of falling back to the session's profile.
+ */
+export function targetProfileFromUrl(url: string): string | undefined {
+  const raw = (new URL(url).searchParams.get("profile") ?? "").trim();
+  return raw === "default" ? "default" : clean(raw);
+}
+
 /** Read `profile` from an already-parsed JSON body. */
 export function profileFromBody(body: unknown): string | undefined {
   if (!body || typeof body !== "object") return undefined;
