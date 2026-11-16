@@ -406,6 +406,9 @@ chown root:root /etc/aquarium/db-admin.env
 chmod 600 /etc/aquarium/db-admin.env
 # Also makes hermes_app and agent_home_app login roles with the passwords in that file.
 run_env "$APP/.venv/bin/python" -I -m hermes_cli.db_migrate --dsn-stdin < /etc/aquarium/db-admin.env
+# pg_net leaves its tables open to every login, so app-data questions would be refused;
+# only supabase_admin can close them (deploy/hermes-deploy.sh re-runs this).
+bash deploy/hermes-lock-pg-net || aq_warn "could not lock down pg_net; app-data questions stay refused"
 # `owner show` exits 0 even when no owner is set, so test its output.
 hermes_db owner show 2>/dev/null | grep -q "^Owner:" || hermes_db owner init "$OWNER_ID" --display "$OWNER_ID"
 hermes_db owner alias "$OWNER_ID" >/dev/null 2>&1 || true
