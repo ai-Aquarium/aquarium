@@ -3,7 +3,6 @@
  * helpers the Sources page, the register wizard and Recent routing share.
  */
 import { getJson, sendJson } from "@/lib/admin-fetch";
-import { withProfileQuery } from "@/lib/chat/profile";
 import type {
   EmailMailbox,
   RoutingDecision,
@@ -69,13 +68,17 @@ export function triageKind(channel: SourceChannel): string {
   return channel;
 }
 
+/** Always name the profile, `default` too: the BFF would otherwise use the session's. */
+const inProfile = (path: string, profile: string) =>
+  `${path}${path.includes("?") ? "&" : "?"}profile=${encodeURIComponent(profile)}`;
+
 /** The caller's resolved triage layers in `profile` (the BFF binds `?profile=`). */
 export const triageLayers = (profile: string, channel: SourceChannel) =>
-  getJson<TriageLayers>(withProfileQuery(`/api/triage/layers?kind=${triageKind(channel)}`, profile));
+  getJson<TriageLayers>(inProfile(`/api/triage/layers?kind=${triageKind(channel)}`, profile));
 
 /** Save "What I care about" in the caller's own layer of `profile`. */
 export const saveCare = (profile: string, channel: SourceChannel, content: string) =>
-  sendJson<TriageCareWriteResult>(withProfileQuery("/api/triage/layers/care", profile), "PUT", {
+  sendJson<TriageCareWriteResult>(inProfile("/api/triage/layers/care", profile), "PUT", {
     kind: triageKind(channel),
     layer: "user",
     content,

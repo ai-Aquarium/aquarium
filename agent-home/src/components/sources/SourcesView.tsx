@@ -143,6 +143,7 @@ export function SourcesView({
             replace(source);
             setEditing(null);
           }}
+          onProgress={replace}
         />
       ) : null}
       {claimsOpen ? (
@@ -429,11 +430,14 @@ function EditRoutesSheet({
   profiles,
   onClose,
   onSaved,
+  onProgress,
 }: {
   source: Source;
   profiles: string[];
   onClose(): void;
   onSaved(source: Source): void;
+  /** Some routes saved before a failure: keep the page in step with the server. */
+  onProgress?(source: Source): void;
 }) {
   const t = useT("sources");
   const names = Array.from(new Set([...profiles, ...source.routes.map((r) => r.profile)]));
@@ -441,22 +445,30 @@ function EditRoutesSheet({
     names.map((p) => [p, source.routes.find((r) => r.profile === p)?.enabled ?? false]),
   );
   const [on, setOn] = useState<Record<string, boolean>>(initial);
+  // What the server has acknowledged, so a retry after a partial failure diffs against it.
+  const [base, setBase] = useState<Record<string, boolean>>(initial);
+  const [routes, setRoutes] = useState(source.routes);
   const [error, setError] = useState<string | null>(null);
-  const changed = names.filter((p) => on[p] !== initial[p]);
+  const changed = names.filter((p) => on[p] !== base[p]);
 
   const save = async () => {
     setError(null);
-    const routes = [...source.routes];
+    const current = [...routes];
+    const acked = { ...base };
     try {
       for (const profile of changed) {
         const { route } = await putSourceRoute(source.source_id, profile, on[profile]);
-        const i = routes.findIndex((r) => r.profile === profile);
-        if (i >= 0) routes[i] = route;
-        else routes.push(route);
+        const i = current.findIndex((r) => r.profile === profile);
+        if (i >= 0) current[i] = route;
+        else current.push(route);
+        acked[profile] = on[profile];
       }
-      onSaved({ ...source, routes });
+      onSaved({ ...source, routes: current });
     } catch (err) {
       setError(errorText(err));
+      setBase(acked);
+      setRoutes(current);
+      onProgress?.({ ...source, routes: current });
     }
   };
 

@@ -133,6 +133,25 @@ describe("RegisterSourceWizard", () => {
     ]);
   });
 
+  it("keeps my existing version instead of claiming the template, and checks the 4 KB byte limit", async () => {
+    mockFetch({
+      "GET /api/triage/layers?kind=email&profile=cfo": () =>
+        new Response(JSON.stringify({ care: { key: "care", layer: "user", content: "Invoices only" } })),
+    });
+    render(<RegisterSourceWizard list={LIST} onClose={vi.fn()} onRegistered={vi.fn()} />);
+    await pickEmailAndProfiles(["cfo", "cmo"]);
+    expect(await screen.findByRole("radio", { name: /Keep my version/ })).toBeTruthy();
+    expect(screen.getAllByRole("radio", { name: /Use the template's triage skills/ }).length).toBe(1);
+    fireEvent.click(screen.getAllByRole("radio", { name: /View and change/ })[1]);
+    const care = (await screen.findByDisplayValue("Template care")) as HTMLTextAreaElement;
+    fireEvent.change(care, { target: { value: "發".repeat(1400) } });
+    expect(screen.getByRole("alert").textContent).toContain("4200 / 4096");
+    expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(care, { target: { value: "Campaign briefs" } });
+    next();
+    expect(screen.getByText("cfo: my version (kept) · cmo: my version (What I care about edited)")).toBeTruthy();
+  });
+
   it("offers triage per channel only where it runs", () => {
     expect(channelHasTriage("email", false)).toBe(true);
     expect(channelHasTriage("telegram", false)).toBe(false);

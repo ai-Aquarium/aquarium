@@ -107,6 +107,33 @@ describe("SourcesView", () => {
     expect(screen.getByText("cmo").getAttribute("data-on")).toBe("true");
   });
 
+  it("after a partial failure, a retry diffs against what the server saved", async () => {
+    const route = (profile: string, enabled: boolean) =>
+      new Response(JSON.stringify({ route: { source_id: "s1", profile, enabled, created_at: null, updated_at: null } }));
+    const cfo: boolean[] = [];
+    const calls = mockFetch({
+      "PUT /api/sources/s1/routes/cfo": (init) => {
+        const enabled = JSON.parse(String(init?.body)).enabled as boolean;
+        cfo.push(enabled);
+        return route("cfo", enabled);
+      },
+      "PUT /api/sources/s1/routes/cmo": () => new Response(JSON.stringify({ error: "boom" }), { status: 500 }),
+    });
+    render(<SourcesView initial={LIST} initialConflicts={[]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit routes" }));
+    fireEvent.click(screen.getByRole("switch", { name: "cfo" }));
+    fireEvent.click(screen.getByRole("switch", { name: "cmo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save routes" }));
+    await waitFor(() => expect(cfo).toEqual([false]));
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Save routes" }) as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("switch", { name: "cfo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save routes" }));
+    await waitFor(() => expect(cfo).toEqual([false, true]));
+    expect(calls.filter(([m, u]) => m === "PUT" && u.endsWith("/cmo")).length).toBe(2);
+  });
+
   it("asks before removing, then deletes", async () => {
     const calls = mockFetch({ "DELETE /api/sources/s1": () => new Response(JSON.stringify({ deleted: true })) });
     render(<SourcesView initial={LIST} initialConflicts={[]} />);

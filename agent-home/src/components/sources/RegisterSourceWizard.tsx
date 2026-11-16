@@ -27,6 +27,9 @@ import type { SourceChannel } from "@/types";
 
 const STEPS = ["channel", "profiles", "triage", "review"] as const;
 const CARE_MAX = 2000;
+/** Hermes `write_care` limit (UTF-8 bytes). */
+const CARE_MAX_BYTES = 4096;
+const careBytes = (text: string) => new TextEncoder().encode(text).length;
 
 type Choice = "template" | "custom";
 
@@ -60,6 +63,8 @@ export function RegisterSourceWizard({
   const [choice, setChoice] = useState<Record<string, Choice>>({});
   const [care, setCare] = useState<Record<string, string>>({});
   const [careLoading, setCareLoading] = useState<Record<string, boolean>>({});
+  /** Profiles where I already have my own "What I care about" for this channel. */
+  const [own, setOwn] = useState<Record<string, boolean>>({});
   const [conflict, setConflict] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -82,16 +87,17 @@ export function RegisterSourceWizard({
     setChannel(c);
     setAccount(null);
     setCare({});
+    setOwn({});
     setChoice({});
   };
 
-  const customize = async (profile: string) => {
-    setChoice((cur) => ({ ...cur, [profile]: "custom" }));
-    if (care[profile] !== undefined) return;
+  const loadCare = async (profile: string) => {
+    if (care[profile] !== undefined || careLoading[profile]) return;
     setCareLoading((cur) => ({ ...cur, [profile]: true }));
     try {
       const layers = await triageLayers(profile, channel);
       setCare((cur) => ({ ...cur, [profile]: cur[profile] ?? layers.care.content }));
+      setOwn((cur) => ({ ...cur, [profile]: layers.care.layer === "user" }));
     } catch {
       setCare((cur) => ({ ...cur, [profile]: cur[profile] ?? "" }));
     } finally {
@@ -99,11 +105,27 @@ export function RegisterSourceWizard({
     }
   };
 
+  const customize = (profile: string) => {
+    setChoice((cur) => ({ ...cur, [profile]: "custom" }));
+    void loadCare(profile);
+  };
+
+  const goNext = () => {
+    if (step === 1 && triage) for (const p of picked) void loadCare(p);
+    setStep(step + 1);
+  };
+
   const custom = triage ? picked.filter((p) => choice[p] === "custom") : [];
   const valid = [
     account !== null,
     picked.length > 0,
-    custom.every((p) => (care[p] ?? "").trim().length > 0 && (care[p] ?? "").length <= CARE_MAX),
+    custom.every(
+      (p) =>
+        !careLoading[p] &&
+        (care[p] ?? "").trim().length > 0 &&
+        (care[p] ?? "").length <= CARE_MAX &&
+        careBytes(care[p] ?? "") <= CARE_MAX_BYTES,
+    ),
     conflict === null,
   ][step];
 
@@ -184,7 +206,7 @@ export function RegisterSourceWizard({
           data-action="wizard-next"
           className={BTN_PRIMARY}
           disabled={!valid}
-          onClick={() => setStep(step + 1)}
+          onClick={goNext}
         >
           {t("wizard.next")}
         </button>
@@ -337,8 +359,8 @@ export function RegisterSourceWizard({
                   <ChoiceRow
                     name={`triage-${p}`}
                     checked={mode === "template"}
-                    label={t("wizard.useTemplate")}
-                    hint={t("wizard.useTemplateHint")}
+                    label={own[p] ? t("wizard.keepMine") : t("wizard.useTemplate")}
+                    hint={own[p] ? t("wizard.keepMineHint", { profile: p, channel }) : t("wizard.useTemplateHint")}
                     onPick={() => setChoice((cur) => ({ ...cur, [p]: "template" }))}
                   />
                   <ChoiceRow
@@ -365,6 +387,11 @@ export function RegisterSourceWizard({
                         <span className="block text-xs text-[var(--color-muted)]">
                           {t("wizard.careHint", { profile: p, count: text.length })}
                         </span>
+                        {careBytes(text) > CARE_MAX_BYTES ? (
+                          <span className="block text-xs text-[var(--color-danger)]" role="alert">
+                            {t("wizard.careTooLong", { bytes: careBytes(text) })}
+                          </span>
+                        ) : null}
                         <span className="block text-xs text-[var(--color-muted)]">{t("wizard.careLater")}</span>
                       </label>
                     )
@@ -396,7 +423,16 @@ export function RegisterSourceWizard({
             <dd>
               {triage
                 ? picked
-                    .map((p) => t(choice[p] === "custom" ? "wizard.review.custom" : "wizard.review.template", { profile: p }))
+                    .map((p) =>
+                      t(
+                        choice[p] === "custom"
+                          ? "wizard.review.custom"
+                          : own[p]
+                            ? "wizard.review.kept"
+                            : "wizard.review.template",
+                        { profile: p },
+                      ),
+                    )
                     .join(" · ")
                 : t("wizard.review.telegramOff")}
             </dd>

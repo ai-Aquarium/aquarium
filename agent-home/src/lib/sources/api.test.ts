@@ -62,7 +62,7 @@ describe("sources api helpers", () => {
     expect(calls[0][0]).toBe("/api/triage/layers?kind=email&profile=cfo");
     expect(calls[1][0]).toBe("/api/triage/layers/care?profile=cmo");
     expect(JSON.parse(String(calls[1][1]?.body))).toEqual({ kind: "whatsapp", layer: "user", content: "Campaign briefs" });
-    expect(calls[2][0]).toBe("/api/triage/layers/care");
+    expect(calls[2][0]).toBe("/api/triage/layers/care?profile=default");
   });
 
   it("lists connected accounts from the existing setup endpoints and survives one failing", async () => {
