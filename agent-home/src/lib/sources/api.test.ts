@@ -3,12 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   connectedAccounts,
   decisionOutcome,
+  registerBody,
+  sameAccount,
   sameAddress,
   saveCare,
   telegramTriageOn,
   triageLayers,
 } from "@/lib/sources/api";
-import type { RoutingDecision } from "@/types";
+import type { RoutingDecision, Source } from "@/types";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -87,5 +89,23 @@ describe("sources api helpers", () => {
     ]);
     expect(accounts.whatsapp.map((a) => a.address)).toEqual(["+852 6178 2290"]);
     expect(accounts.telegram).toEqual([]);
+  });
+
+  it("lets Hermes derive WhatsApp / Telegram addresses from the credential ref", () => {
+    const wa = { channel: "whatsapp" as const, address: "+852****4567", display: "john-wa", detail: "working" as const, credential_ref: { kind: "wa-bridge", bridge: "john-wa" } };
+    const tg = { channel: "telegram" as const, address: "@JohnBot", display: null, detail: "working" as const, credential_ref: { kind: "telegram-bot" } };
+    const mail = { channel: "email" as const, address: "john@acme.com", display: null, detail: "working" as const, credential_ref: { kind: "email-imap", name: "john@acme.com" } };
+    expect(registerBody(wa)).toEqual({ channel: "whatsapp", display: "john-wa", credential_ref: { kind: "wa-bridge", bridge: "john-wa" } });
+    expect(registerBody(tg)).not.toHaveProperty("address");
+    expect(registerBody(mail).address).toBe("john@acme.com");
+
+    const src = (over: Partial<Source>): Source => ({
+      source_id: "s", channel: "whatsapp", address: "+85291234567", owner_user_id: "john", display: null,
+      credential_ref: null, enabled: true, created_at: null, updated_at: null, routes: [], ...over,
+    });
+    expect(sameAccount(wa, src({ credential_ref: { kind: "wa-bridge", bridge: "john-wa" } }))).toBe(true);
+    expect(sameAccount(wa, src({ credential_ref: { kind: "wa-bridge", bridge: "other" } }))).toBe(false);
+    expect(sameAccount(tg, src({ channel: "telegram", address: "123456", credential_ref: { kind: "telegram-bot" } }))).toBe(true);
+    expect(sameAccount(mail, src({ channel: "email", address: "John@acme.com" }))).toBe(true);
   });
 });

@@ -133,6 +133,31 @@ describe("RegisterSourceWizard", () => {
     ]);
   });
 
+  it("registers a WhatsApp bridge by credential only and reports the address Hermes derived", async () => {
+    const calls = mockFetch({
+      "GET /api/wa-bridges": () =>
+        new Response(JSON.stringify({ bridges: [{ name: "john-wa", paired: true, number: "+852****4567", status: "connected" }] })),
+      "POST /api/sources": () =>
+        new Response(JSON.stringify({ source: { source_id: "s9", address: "85291234567", routes: [] } })),
+    });
+    const onRegistered = vi.fn();
+    render(<RegisterSourceWizard list={LIST} onClose={vi.fn()} onRegistered={onRegistered} />);
+    fireEvent.click(screen.getByRole("radio", { name: /WhatsApp/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /\+852\*{4}4567/ }));
+    next();
+    fireEvent.click(screen.getByRole("checkbox", { name: "cfo" }));
+    next();
+    next();
+    fireEvent.click(screen.getByRole("button", { name: "Register" }));
+    await waitFor(() => expect(onRegistered).toHaveBeenCalled());
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({
+      channel: "whatsapp",
+      display: "john-wa",
+      credential_ref: { kind: "wa-bridge", bridge: "john-wa" },
+    });
+    expect(onRegistered.mock.calls[0][0].text).toContain("85291234567");
+  });
+
   it("keeps my existing version instead of claiming the template, and checks the 4 KB byte limit", async () => {
     mockFetch({
       "GET /api/triage/layers?kind=email&profile=cfo": () =>

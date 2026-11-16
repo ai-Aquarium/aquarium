@@ -1519,6 +1519,8 @@ export interface SourceCredentialRef {
   kind?: string;
   name?: string;
   provider?: string;
+  /** `wa-bridge` refs: the bridge name. */
+  bridge?: string;
 }
 
 /** One incoming source (mailbox / WhatsApp number / Telegram bot) and its single owner. */
@@ -1607,7 +1609,8 @@ export interface TriageComparison {
 
 export interface SourceInput {
   channel: SourceChannel;
-  address: string;
+  /** Omitted for `wa-bridge` / `telegram-bot` refs: Hermes derives it from the caller's own credential. */
+  address?: string;
   display?: string | null;
   credential_ref?: SourceCredentialRef | null;
 }

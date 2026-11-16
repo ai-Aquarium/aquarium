@@ -123,7 +123,7 @@ export async function connectedAccounts(): Promise<Record<SourceChannel, Connect
       address: b.number as string,
       display: b.name,
       detail: b.status === "connected" ? "working" : "attention",
-      credential_ref: { kind: "wa-bridge", name: b.name },
+      credential_ref: { kind: "wa-bridge", bridge: b.name },
     }));
   const telegram: ConnectedAccount[] =
     tg?.configured && tg.bot_username
@@ -149,6 +149,30 @@ export function decisionOutcome(d: RoutingDecision): DecisionOutcome {
 }
 
 /** Same address in another form (e.g. `+852 6178 2290` vs `+85261782290`). */
+/**
+ * `POST /api/sources` body. WhatsApp / Telegram send only the credential ref:
+ * the browser sees a masked number / `@username`, so Hermes derives the address.
+ */
+export function registerBody(account: ConnectedAccount): SourceInput {
+  const body: SourceInput = {
+    channel: account.channel,
+    display: account.display,
+    credential_ref: account.credential_ref,
+  };
+  if (account.channel === "email") body.address = account.address;
+  return body;
+}
+
+/** Whether `account` is already registered as `source` (by credential for WhatsApp / Telegram). */
+export function sameAccount(account: ConnectedAccount, source: Source): boolean {
+  if (account.channel !== source.channel) return false;
+  if (sameAddress(account.channel, source.address, account.address)) return true;
+  const a = account.credential_ref;
+  const s = source.credential_ref;
+  if (account.channel === "email" || !a?.kind || !s || s.kind !== a.kind) return false;
+  return account.channel === "telegram" || (!!a.bridge && (s.bridge ?? s.name) === a.bridge);
+}
+
 export function sameAddress(channel: SourceChannel, a: string, b: string): boolean {
   const norm = (s: string) =>
     channel === "email" ? s.trim().toLowerCase() : channel === "whatsapp" ? s.replace(/[^\d*]/g, "") : s.trim().replace(/^@/, "").toLowerCase();

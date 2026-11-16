@@ -15,8 +15,9 @@ import {
   CONNECT_HREF,
   connectedAccounts,
   putSourceRoute,
+  registerBody,
   registerSource,
-  sameAddress,
+  sameAccount,
   saveCare,
   telegramTriageOn,
   triageLayers,
@@ -81,7 +82,7 @@ export function RegisterSourceWizard({
 
   const triage = channelHasTriage(channel, telegramOn);
   const isTaken = (a: ConnectedAccount) =>
-    list.sources.some((s) => s.channel === a.channel && sameAddress(a.channel, s.address, a.address));
+    list.sources.some((s) => sameAccount(a, s));
 
   const pickChannel = (c: SourceChannel) => {
     setChannel(c);
@@ -135,14 +136,11 @@ export function RegisterSourceWizard({
     setSubmitting(true);
     try {
       let sourceId: string;
+      let address = account.address;
       try {
-        const { source } = await registerSource({
-          channel: account.channel,
-          address: account.address,
-          display: account.display,
-          credential_ref: account.credential_ref,
-        });
+        const { source } = await registerSource(registerBody(account));
         sourceId = source.source_id;
+        address = source.address || account.address;
       } catch (err) {
         if (err instanceof AdminFetchError && err.status === 409) {
           setConflict(t("wizard.conflict", { address: account.address }));
@@ -168,8 +166,8 @@ export function RegisterSourceWizard({
       }
       onRegistered(
         failed.length
-          ? { tone: "danger", text: t("wizard.partial", { address: account.address, detail: failed.join("; ") }) }
-          : { tone: "success", text: t("wizard.done", { address: account.address }) },
+          ? { tone: "danger", text: t("wizard.partial", { address, detail: failed.join("; ") }) }
+          : { tone: "success", text: t("wizard.done", { address }) },
       );
       onClose();
     } finally {
