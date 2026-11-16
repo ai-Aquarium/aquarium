@@ -712,11 +712,18 @@ class TelegramAdapter(BasePlatformAdapter):
                 if isinstance(value, (str, int)):
                     entry[key] = value
             media.append(entry)
-        location = getattr(message, "location", None)
-        if location is not None:
-            media.append({"type": "location",
-                          "latitude": getattr(location, "latitude", None),
-                          "longitude": getattr(location, "longitude", None)})
+        venue = getattr(message, "venue", None)
+        location = getattr(venue, "location", None) if venue else None
+        location = location or getattr(message, "location", None)
+        if location is not None or venue:
+            entry = {"type": "location",
+                     "latitude": getattr(location, "latitude", None),
+                     "longitude": getattr(location, "longitude", None)}
+            for key in ("title", "address"):
+                value = getattr(venue, key, None) if venue else None
+                if isinstance(value, str) and value:
+                    entry[key] = value
+            media.append(entry)
         return media
 
     def _refused_message_record(self, message: Message) -> Optional[Dict[str, Any]]:

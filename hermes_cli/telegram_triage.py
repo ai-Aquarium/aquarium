@@ -34,8 +34,9 @@ Batch file (one chat per batch, written atomically, complete when it appears)::
 supergroup. Each ``media`` descriptor is ``{"type": "photo" | "video" |
 "audio" | "voice" | "document" | "sticker", "file_id", "file_unique_id",
 optional "mime_type" / "file_name" / "file_size"}`` (download it through the
-receiving bot) or ``{"type": "location", "latitude", "longitude"}``; nothing is
-downloaded at capture time. Edits of an already captured message are not
+receiving bot) or ``{"type": "location", "latitude", "longitude"}`` (plus
+``"title"`` / ``"address"`` for a shared venue); nothing is downloaded at
+capture time. Edits of an already captured message are not
 captured again.
 
 Replies always go back through the receiving bot (``account_id``) to
