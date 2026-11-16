@@ -56,6 +56,7 @@ DEFAULT_RETRY_DELAY_SECONDS = 5.0
 MAX_BATCH_CHARS = 20_000
 MAX_REASON_CHARS = 200
 MAX_ERROR_CHARS = 500
+MAX_SENDER_CHARS = 200
 MAX_LIST_LIMIT = 500
 FALLBACK_REASON = "Router unavailable; sent to every routed profile."
 
@@ -77,11 +78,14 @@ CREATE TABLE IF NOT EXISTS {BOX_SCHEMA}.routing_decisions (
 );
 CREATE INDEX IF NOT EXISTS routing_decisions_owner_idx
     ON {BOX_SCHEMA}.routing_decisions (owner_user_id, decided_at DESC);
+ALTER TABLE {BOX_SCHEMA}.routing_decisions
+    ADD COLUMN IF NOT EXISTS message_count INTEGER,
+    ADD COLUMN IF NOT EXISTS first_sender TEXT;
 """
 
 _COLS = (
     "decision_id, batch_id, source_id, channel, owner_user_id, choices, "
-    "model, attempts, fallback, error, decided_at"
+    "model, attempts, fallback, error, decided_at, message_count, first_sender"
 )
 
 #: ``(system_prompt, user_prompt) -> raw model text``; injectable for tests.
@@ -111,6 +115,10 @@ class RoutingDecision:
     error: Optional[str] = None
     decision_id: Optional[int] = None
     decided_at: Optional[datetime] = None
+    #: How many messages the batch held and who sent the first one, for the
+    #: "Why this profile?" summary. Never any message text.
+    message_count: Optional[int] = None
+    first_sender: Optional[str] = None
 
     @property
     def selected(self) -> list[str]:
@@ -130,6 +138,8 @@ class RoutingDecision:
             "fallback": self.fallback,
             "error": self.error,
             "decided_at": self.decided_at.isoformat() if self.decided_at else None,
+            "message_count": self.message_count,
+            "first_sender": self.first_sender,
         }
 
 
@@ -202,6 +212,8 @@ def _decision(row: Mapping[str, Any]) -> RoutingDecision:
         error=row["error"],
         decision_id=int(row["decision_id"]),
         decided_at=row["decided_at"],
+        message_count=row["message_count"],
+        first_sender=row["first_sender"],
     )
 
 
@@ -269,8 +281,8 @@ async def _store(connection: Any, decision: RoutingDecision) -> RoutingDecision:
         f"""
         INSERT INTO {BOX_SCHEMA}.routing_decisions
             (batch_id, source_id, channel, owner_user_id, choices, selected,
-             model, attempts, fallback, error)
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10)
+             model, attempts, fallback, error, message_count, first_sender)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (source_id, batch_id) DO NOTHING
         RETURNING {_COLS}
         """,
@@ -284,6 +296,8 @@ async def _store(connection: Any, decision: RoutingDecision) -> RoutingDecision:
         decision.attempts,
         decision.fallback,
         decision.error,
+        decision.message_count,
+        decision.first_sender,
     )
     if row is not None:
         return _decision(row)
@@ -411,6 +425,21 @@ def _configured_model(config: Mapping[str, Any]) -> Optional[str]:
     return str(model) if model else None
 
 
+def _count(value: Any) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return None
+    return count if count >= 0 else None
+
+
+def _sender(value: Any) -> Optional[str]:
+    text = _one_line(value, MAX_SENDER_CHARS) if value is not None else ""
+    return text or None
+
+
 def _error_text(exc: BaseException) -> str:
     return _one_line(f"{type(exc).__name__}: {exc}", MAX_ERROR_CHARS)
 
@@ -424,10 +453,16 @@ async def route_batch(
     config: Optional[Mapping[str, Any]] = None,
     llm: Optional[LLMCall] = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    message_count: Optional[int] = None,
+    first_sender: Optional[str] = None,
 ) -> RoutingDecision:
     """Decide and store which of the source owner's user-profiles get this
     batch. Idempotent per ``(source_id, batch_id)``: a stored decision is
-    returned without a new call."""
+    returned without a new call.
+
+    ``message_count`` / ``first_sender`` (see
+    :func:`hermes_cli.triage_batch_text.batch_summary`) are stored with the
+    decision for its summary line; the batch text itself never is."""
     from hermes_cli import source_registry as registry
     from hermes_cli.triage_skills import care_sections_for_source
 
@@ -451,6 +486,8 @@ async def route_batch(
         source_id=source.source_id,
         channel=source.channel,
         owner_user_id=source.owner_user_id,
+        message_count=_count(message_count),
+        first_sender=_sender(first_sender),
     )
     if not profiles:
         return await _store(connection, RoutingDecision(**base))

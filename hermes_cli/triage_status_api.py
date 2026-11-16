@@ -199,6 +199,19 @@ def _require_layer_edit(layer: str, principal, user_id: Optional[str]) -> None:
         raise HTTPException(status_code=403, detail=ADMIN_DENIED)
 
 
+def _care_payload(kind: str, home, user_id: Optional[str]) -> dict:
+    """The caller's winning care section plus the template's own text.
+
+    ``template`` is read with no user id, so it is only ever the template or
+    built-in layer, never anyone's own version.
+    """
+    from hermes_cli import triage_skills
+
+    care = _skills_call(triage_skills.care_section, kind, home, user_id)
+    template = _skills_call(triage_skills.care_section, kind, home, None)
+    return {"key": triage_skills.CARE_KEY, **care, "template": template}
+
+
 def _public_version(version: dict) -> dict:
     return {k: v for k, v in version.items() if k != "content"}
 
@@ -215,13 +228,12 @@ async def get_triage_layers(
     user_id = _own_user_id(principal)
     home = _layers_home()
     files = _skills_call(triage_skills.resolve, kind, home, user_id, with_content=False)
-    care = _skills_call(triage_skills.care_section, kind, home, user_id)
     return {
         "profile": _profile_name(request, target),
         "kind": kind,
         "user_id": user_id,
         "files": [f.as_dict() for f in files],
-        "care": {"key": triage_skills.CARE_KEY, **care},
+        "care": _care_payload(kind, home, user_id),
         "can_edit_template": triage_skills.can_edit_layer("template", principal),
     }
 
@@ -387,6 +399,5 @@ async def put_triage_layer_care(
         triage_skills.write_care, body.kind, body.content, layer=body.layer,
         home=_layers_home(), user_id=user_id, author=author,
     )
-    care = _skills_call(triage_skills.care_section, body.kind, _layers_home(), user_id)
     return {"ok": True, "kind": body.kind, "layer": body.layer,
-            "care": {"key": triage_skills.CARE_KEY, **care}, "version": _public_version(version)}
+            "care": _care_payload(body.kind, _layers_home(), user_id), "version": _public_version(version)}

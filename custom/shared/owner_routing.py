@@ -104,7 +104,8 @@ def _plain(text: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", text or "")).strip()
 
 
-def notify_in_app(person, *, title: str, text: str, dedupe_key: str) -> bool:
+def notify_in_app(person, *, title: str, text: str, dedupe_key: str,
+                  context: Optional[dict] = None) -> bool:
     """Put ``text`` in ``person``'s agent-home notifications. Never raises."""
     try:
         from hermes_cli.todo_notifier import default_stores
@@ -117,6 +118,7 @@ def notify_in_app(person, *, title: str, text: str, dedupe_key: str) -> bool:
                 title=title,
                 body=_plain(text),
                 dedupe_key=dedupe_key,
+                context=context,
             )
         )
         return True

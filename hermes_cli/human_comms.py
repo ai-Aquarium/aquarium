@@ -36,6 +36,7 @@ never mutates a system prompt or splices a toolset (prompt-cache safety).
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -151,7 +152,7 @@ _GRANTED_ANSWERS = frozenset({"approved", "yes", "allow"})
 _SELECT_COLUMNS = (
     "id, kind, owner_user_id, visibility, title, body, command, reversible, "
     "status, answer, answered_by, answered_via, dedupe_key, delivered, "
-    "created_at, answered_at"
+    "created_at, answered_at, context"
 )
 
 _SCHEMA_SQL = f"""
@@ -181,7 +182,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS {NOTIFICATIONS_TABLE}_dedupe
     WHERE status = 'pending' AND dedupe_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS {NOTIFICATIONS_TABLE}_pending_idx
     ON {NOTIFICATIONS_TABLE} (status, owner_user_id);
+-- What the item is about, for the client (e.g. the routed batch behind a
+-- triage to-do); never message text.
+ALTER TABLE {NOTIFICATIONS_TABLE} ADD COLUMN IF NOT EXISTS context JSONB;
 """
+
+
+def _context(value: object) -> Optional[dict]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = json.loads(value)
+    return dict(value) if isinstance(value, dict) else None
 
 
 @dataclass(frozen=True)
@@ -204,6 +216,7 @@ class Notification:
     delivered: bool
     created_at: Optional[datetime]
     answered_at: Optional[datetime]
+    context: Optional[dict] = None
 
     @property
     def is_pending(self) -> bool:
@@ -231,6 +244,7 @@ class Notification:
             "delivered": self.delivered,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "answered_at": self.answered_at.isoformat() if self.answered_at else None,
+            "context": self.context,
         }
 
     @classmethod
@@ -252,6 +266,7 @@ class Notification:
             delivered=row["delivered"],
             created_at=row["created_at"],
             answered_at=row["answered_at"],
+            context=_context(row.get("context")),
         )
 
 
@@ -353,6 +368,7 @@ class NotificationStore:
         now: Optional[datetime] = None,
         recent_auto_approvals: int = 0,
         connection: "Optional[asyncpg.Connection]" = None,
+        context: Optional[dict] = None,
     ) -> CreateResult:
         """Raise a pending item for ``target_user_id``, applying C6.
 
@@ -417,9 +433,9 @@ class NotificationStore:
                 INSERT INTO {NOTIFICATIONS_TABLE}
                     (id, kind, owner_user_id, visibility, title, body, command,
                      reversible, status, answer, answered_via, dedupe_key,
-                     delivered, answered_at)
+                     delivered, answered_at, context)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                        {'NOW()' if status == 'answered' else 'NULL'})
+                        {'NOW()' if status == 'answered' else 'NULL'}, $14::jsonb)
                 RETURNING {_SELECT_COLUMNS}
                 """,
                 new_id,
@@ -435,6 +451,7 @@ class NotificationStore:
                 answered_via,
                 dedupe_key,
                 deliver_now,
+                json.dumps(context) if context else None,
             )
             return CreateResult(
                 Notification._from_row(row),

@@ -16,9 +16,10 @@ export const dynamic = "force-dynamic";
  * and viewers, the middleware blocks the URL, and this check is the last
  * line before the Python `_ADMIN` gate.
  */
-export default async function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<{ open?: string }> }) {
   const principal = await requirePrincipal();
   const t = await getT("system");
+  const { open } = await searchParams;
   if (!canAdminister(principal)) redirect("/not-available?app=profiles");
 
   let profiles: ProfileInfo[] = [];
@@ -37,7 +38,7 @@ export default async function Page() {
 
   return (
     <MobileShell title={t("cards.profiles.name")} subtitle={t("pages.profiles.subtitle")} wide>
-      <ProfilesView initialProfiles={profiles} providers={providers} error={error} />
+      <ProfilesView initialProfiles={profiles} providers={providers} error={error} initialOpen={open ?? null} />
     </MobileShell>
   );
 }

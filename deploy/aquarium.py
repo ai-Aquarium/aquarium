@@ -891,6 +891,17 @@ def close_raw_stores(cfg: Dict[str, str]) -> None:
             say(f"  WARNING: could not close {d}: {e}")
 
 
+def lock_pg_net(cfg: Dict[str, str], rel: Path) -> None:
+    """Close Supabase's pg_net schema to every login but its Supabase users
+    (deploy/hermes-lock-pg-net, which the git-checkout deploy runs)."""
+    script = rel / "deploy" / "hermes-lock-pg-net"
+    if test_mode() or not script.is_file() or not db_running(cfg):
+        return
+    proc = run(["bash", str(script), "--container", cfg["DB_CONTAINER"]], check=False, timeout=300)
+    if proc.returncode != 0:
+        say("  WARNING: could not lock down pg_net; app-data questions stay refused")
+
+
 def _uid(name: str) -> int:
     try:
         return pwd.getpwnam(name).pw_uid
@@ -973,6 +984,7 @@ def cmd_update(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
             restore_configs(config_copies)
             raise Fail("the migration step failed; the running version was not changed",
                        f"Nothing was switched. Details: journal above; the backup is in {cfg['BACKUP_DIR']}.")
+        lock_pg_net(cfg, rel)
 
         mark("restart")
         step(f"Switching to {version} and restarting")

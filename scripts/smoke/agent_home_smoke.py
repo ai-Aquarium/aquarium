@@ -145,6 +145,7 @@ PAGES: Tuple[PageSpec, ...] = (
     PageSpec("/sites/new", admin_markers=("AddSiteForm",), member_markers=("AddSiteNotAllowed",)),
     PageSpec("/sites/zz-smoke-missing", not_found=True),
     PageSpec("/data", ("DataList",)),
+    # Anyone may connect a database (private to them), so every role gets the form.
     PageSpec("/data/new", ("AddDataSource",)),
     PageSpec("/data/zz-smoke-missing", not_found=True),
     PageSpec("/data/zz-smoke-missing/review", not_found=True),
@@ -164,6 +165,8 @@ PAGES: Tuple[PageSpec, ...] = (
         member_redirect="/not-available",
     ),
     PageSpec("/profiles/suggestions", ("ProfileSuggestionsView",)),
+    # Every signed-in role edits only their own triage layer.
+    PageSpec("/profiles/default/triage", ("TriageSkillsView",)),
     # Owner/admin only: members and viewers get the not-available page.
     PageSpec(
         "/profiles",

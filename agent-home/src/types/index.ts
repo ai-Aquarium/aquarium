@@ -1288,6 +1288,10 @@ export interface Todo {
   work_result: TodoWorkResult | null; // what a work session produced
   created_at: string | null;
   updated_at: string | null;
+  /** FG-03: the routed batch triage filed this from (null for anything else);
+   *  `sourceDecisions({ sourceId, batchId })` explains "Why this profile?". */
+  routing_source_id: string | null;
+  routing_batch_id: string | null;
 }
 
 /** What a finished work session left behind (the launcher's snapshot). */
@@ -1515,6 +1519,8 @@ export interface SourceCredentialRef {
   kind?: string;
   name?: string;
   provider?: string;
+  /** `wa-bridge`: the bridge's name (as listed by `/api/wa-bridges`). */
+  bridge?: string;
 }
 
 /** One incoming source (mailbox / WhatsApp number / Telegram bot) and its single owner. */
@@ -1541,6 +1547,17 @@ export interface SourceClaimConflict {
   detail: string;
   created_at: string | null;
   resolved_at: string | null;
+  /** How the box admin settled it; null while open or when closed another way. */
+  resolution: SourceConflictAction | null;
+}
+
+/** FG-03 P7: settling a claim conflict — the owner keeps it, or it moves to the claimant. */
+export type SourceConflictAction = "keep" | "transfer";
+
+/** FG-03 P7: `PATCH /api/sources/{id}`; omitted fields stay, `display: null` clears it. */
+export interface SourceUpdate {
+  enabled?: boolean;
+  display?: string | null;
 }
 
 /** FG-03 P4: the router's call on one profile for one batch. */
@@ -1565,6 +1582,10 @@ export interface RoutingDecision {
   fallback: boolean;
   error: string | null;
   decided_at: string | null;
+  /** How many messages the batch held and who sent the first (never any text);
+   *  null for decisions stored before P7. */
+  message_count: number | null;
+  first_sender: string | null;
 }
 
 /** FG-03 P5: today's triage vs one picked profile's agent, for one batch. */
@@ -1586,12 +1607,30 @@ export interface TriageComparison {
   created_at: string | null;
 }
 
-export interface SourceInput {
-  channel: SourceChannel;
-  address: string;
-  display?: string | null;
-  credential_ref?: SourceCredentialRef | null;
-}
+/**
+ * `POST /api/sources`. Email needs `address`. WhatsApp / Telegram may omit it
+ * and name the caller's own credential — `{ kind: "wa-bridge", bridge }` or
+ * `{ kind: "telegram-bot" }` — and Hermes reads the number / bot id itself.
+ */
+export type SourceInput =
+  | {
+      channel: SourceChannel;
+      address: string;
+      display?: string | null;
+      credential_ref?: SourceCredentialRef | null;
+    }
+  | {
+      channel: "whatsapp";
+      address?: undefined;
+      display?: string | null;
+      credential_ref: { kind: "wa-bridge"; bridge: string };
+    }
+  | {
+      channel: "telegram";
+      address?: undefined;
+      display?: string | null;
+      credential_ref: { kind: "telegram-bot"; name?: string };
+    };
 
 /** One of the caller's own IMAP/SMTP mailboxes. Never carries the password. */
 export interface EmailMailbox extends EmailServerSettings {
@@ -1706,6 +1745,9 @@ export interface TriageSkillFileHistory {
   versions: TriageSkillFileVersion[];
 }
 
+/** Triage kinds with layered skills: the status card's three plus Telegram (FG-03 P6). */
+export type TriageLayerKind = TriageKindStatus["kind"] | "telegram";
+
 /** FG-03 P3 triage skill layers, lowest first; the highest present wins. */
 export type TriageLayer = "builtin" | "template" | "user";
 /** Layers a person can change: the profile template (owner/admin) or their own. */
@@ -1731,12 +1773,14 @@ export interface TriageCareSection {
   key: string;
   layer: TriageLayer;
   content: string;
+  /** The profile template's own text (template, else built-in); never another user's version. */
+  template?: { layer: TriageLayer; content: string };
 }
 
 /** `GET /api/triage/layers?kind=` */
 export interface TriageLayers {
   profile: string | null;
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   /** The caller; the user layer is always theirs. */
   user_id: string | null;
   files: TriageLayeredFile[];
@@ -1747,7 +1791,7 @@ export interface TriageLayers {
 
 /** `GET /api/triage/layers/file` */
 export interface TriageLayerFile {
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   key: string;
   /** The layer shown (the winner for `effective`, `null` if turned off). */
   layer: TriageLayer | null;
@@ -1763,7 +1807,7 @@ export interface TriageLayerFile {
 
 /** `GET /api/triage/layers/diff` — template vs the caller's version. */
 export interface TriageLayerDiff {
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   key: string;
   template_disabled: boolean;
   mine_disabled: boolean;
@@ -1786,7 +1830,7 @@ export interface TriageLayerVersion {
 }
 
 export interface TriageLayerHistory {
-  kind: TriageKindStatus["kind"];
+  kind: TriageLayerKind;
   key: string;
   layer: TriageEditableLayer;
   versions: TriageLayerVersion[];

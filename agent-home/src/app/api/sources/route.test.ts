@@ -5,8 +5,9 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DELETE } from "@/app/api/sources/[sourceId]/route";
+import { DELETE, PATCH } from "@/app/api/sources/[sourceId]/route";
 import { PUT } from "@/app/api/sources/[sourceId]/routes/[profile]/route";
+import { POST as RESOLVE } from "@/app/api/sources/conflicts/[conflictId]/resolve/route";
 import { GET as CONFLICTS } from "@/app/api/sources/conflicts/route";
 import { GET as COMPARISONS } from "@/app/api/sources/comparisons/route";
 import { GET as DECISIONS } from "@/app/api/sources/decisions/route";
@@ -22,12 +23,14 @@ const deleteSource = vi.fn();
 const sourceConflicts = vi.fn();
 const sourceDecisions = vi.fn();
 const sourceComparisons = vi.fn();
+const updateSource = vi.fn();
+const resolveSourceConflict = vi.fn();
 
 vi.mock("@/lib/auth/principal", () => ({
   getPrincipal: () => getPrincipal(),
   apiClientForRequest: async () => ({
     sources, registerSource, putSourceRoute, deleteSource, sourceConflicts, sourceDecisions,
-    sourceComparisons,
+    sourceComparisons, updateSource, resolveSourceConflict,
   }),
 }));
 
@@ -40,6 +43,7 @@ const json = (method: string, body: unknown) =>
   });
 const routeCtx = { params: Promise.resolve({ sourceId: "s1", profile: "cfo" }) };
 const sourceCtx = { params: Promise.resolve({ sourceId: "s1" }) };
+const conflictCtx = (conflictId: string) => ({ params: Promise.resolve({ conflictId }) });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -57,11 +61,13 @@ describe("unauthenticated", () => {
       await CONFLICTS(new Request("http://localhost/api/sources/conflicts")),
       await DECISIONS(new Request("http://localhost/api/sources/decisions")),
       await COMPARISONS(new Request("http://localhost/api/sources/comparisons")),
+      await PATCH(json("PATCH", { enabled: false }), sourceCtx),
+      await RESOLVE(json("POST", { action: "keep" }), conflictCtx("7")),
     ];
-    expect(responses.map((r) => r.status)).toEqual([401, 401, 401, 401, 401, 401, 401]);
+    expect(responses.map((r) => r.status)).toEqual([401, 401, 401, 401, 401, 401, 401, 401, 401]);
     for (const fn of [
       sources, registerSource, putSourceRoute, deleteSource, sourceConflicts, sourceDecisions,
-      sourceComparisons,
+      sourceComparisons, updateSource, resolveSourceConflict,
     ]) {
       expect(fn).not.toHaveBeenCalled();
     }
@@ -82,6 +88,9 @@ describe("forwarding", () => {
     const body = { channel: "email", address: "John@Example.com" };
     expect((await POST(json("POST", body))).status).toBe(200);
     expect(registerSource).toHaveBeenCalledWith(body);
+    const wa = { channel: "whatsapp", credential_ref: { kind: "wa-bridge", bridge: "johnwa" } };
+    expect((await POST(json("POST", wa))).status).toBe(200);
+    expect(registerSource).toHaveBeenLastCalledWith(wa);
     expect((await POST(json("POST", "{nope"))).status).toBe(400);
     expect((await POST(json("POST", [1]))).status).toBe(400);
   });
@@ -91,6 +100,38 @@ describe("forwarding", () => {
     expect((await PUT(json("PUT", { enabled: true }), routeCtx)).status).toBe(200);
     expect(putSourceRoute).toHaveBeenCalledWith("s1", "cfo", true);
     expect((await PUT(json("PUT", { enabled: "yes" }), routeCtx)).status).toBe(400);
+  });
+
+  it("PATCH forwards only the given fields; null clears display; bad types are a 400", async () => {
+    updateSource.mockResolvedValue({ source: { source_id: "s1", enabled: false } });
+    expect((await PATCH(json("PATCH", { enabled: false }), sourceCtx)).status).toBe(200);
+    expect(updateSource).toHaveBeenLastCalledWith("s1", { enabled: false });
+    await PATCH(json("PATCH", { display: null, extra: 1 }), sourceCtx);
+    expect(updateSource).toHaveBeenLastCalledWith("s1", { display: null });
+    await PATCH(json("PATCH", { enabled: true, display: "Work" }), sourceCtx);
+    expect(updateSource).toHaveBeenLastCalledWith("s1", { enabled: true, display: "Work" });
+    expect((await PATCH(json("PATCH", { enabled: "no" }), sourceCtx)).status).toBe(400);
+    expect((await PATCH(json("PATCH", { display: 5 }), sourceCtx)).status).toBe(400);
+    expect((await PATCH(json("PATCH", "{nope"), sourceCtx)).status).toBe(400);
+    expect(updateSource).toHaveBeenCalledTimes(3);
+    updateSource.mockRejectedValue(new HermesApiError(403, "Only the source's owner"));
+    expect((await PATCH(json("PATCH", { enabled: true }), sourceCtx)).status).toBe(403);
+  });
+
+  it("POST resolve forwards keep/transfer; bad ids and actions are a 400", async () => {
+    resolveSourceConflict.mockResolvedValue({ conflict: { conflict_id: 7, resolution: "keep" } });
+    const r = await RESOLVE(json("POST", { action: "keep" }), conflictCtx("7"));
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ conflict: { conflict_id: 7, resolution: "keep" } });
+    expect(resolveSourceConflict).toHaveBeenLastCalledWith(7, "keep");
+    await RESOLVE(json("POST", { action: "transfer" }), conflictCtx("7"));
+    expect(resolveSourceConflict).toHaveBeenLastCalledWith(7, "transfer");
+    expect((await RESOLVE(json("POST", { action: "maybe" }), conflictCtx("7"))).status).toBe(400);
+    expect((await RESOLVE(json("POST", { action: "keep" }), conflictCtx("x7"))).status).toBe(400);
+    expect((await RESOLVE(json("POST", "{nope"), conflictCtx("7"))).status).toBe(400);
+    expect(resolveSourceConflict).toHaveBeenCalledTimes(2);
+    resolveSourceConflict.mockRejectedValue(new HermesApiError(403, "Only the box owner"));
+    expect((await RESOLVE(json("POST", { action: "keep" }), conflictCtx("7"))).status).toBe(403);
   });
 
   it("passes Hermes refusals (409 claimed, 403 not the owner) through", async () => {
