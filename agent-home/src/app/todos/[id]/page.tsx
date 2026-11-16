@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { MobileShell } from "@/components/MobileShell";
 import { TodoDetailView } from "@/components/todos/TodoDetailView";
 import { apiClientForRequest, requirePrincipal } from "@/lib/auth/principal";
+import { readSession } from "@/lib/auth/session";
 import type { TodoDetail } from "@/types";
 
 // The to-do is C2-scoped, so it is read per request under the live principal.
@@ -46,7 +47,7 @@ export default async function Page({
       title={todo.title}
       back={{ href: todosBackHref((await searchParams)?.from), label: "To-dos" }}
     >
-      <TodoDetailView todo={todo} />
+      <TodoDetailView todo={todo} profile={(await readSession())?.profile ?? null} />
     </MobileShell>
   );
 }
