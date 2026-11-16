@@ -95,7 +95,7 @@ def _name_tokens(name: str) -> List[str]:
 
 
 def table_text(name: str, entry: Mapping[str, Any]) -> str:
-    """What one table entry says, as the text that gets embedded and searched."""
+    """What one table entry says, as the text that gets searched (and embedded, cut)."""
     lines = [f"Table {name}: {entry.get('meaning') or ''}".strip()]
     if entry.get("row") or entry.get("grain"):
         lines.append(f"One row: {entry.get('row') or ''}. Grain: {entry.get('grain') or ''}.")
@@ -109,23 +109,23 @@ def table_text(name: str, entry: Mapping[str, Any]) -> str:
         lines.append(f"Metric {metric.get('name')}: {metric.get('definition') or ''}")
     for example in entry.get("examples") or []:
         lines.append(f"Example: {example.get('question')}")
-    return "\n".join(lines)[:EMBED_CHARS]
+    return "\n".join(lines)
 
 
 def term_text(term: Mapping[str, Any]) -> str:
-    return f"Term {term.get('term')}: {term.get('definition') or ''}"[:EMBED_CHARS]
+    return f"Term {term.get('term')}: {term.get('definition') or ''}"
 
 
 def units(entries: Mapping[str, Any]) -> List[Tuple[str, str, str]]:
-    """``(kind, key, text)`` for every table and glossary term."""
-    out = [("table", name, table_text(name, entry))
+    """``(kind, key, text)`` for every table and glossary term, cut to what gets embedded."""
+    out = [("table", name, table_text(name, entry)[:EMBED_CHARS])
            for name, entry in sorted((entries.get("tables") or {}).items())]
     seen = set()
     for term in entries.get("glossary") or []:
         key = str(term.get("term") or "")
         if key and key not in seen:
             seen.add(key)
-            out.append(("term", key, term_text(term)))
+            out.append(("term", key, term_text(term)[:EMBED_CHARS]))
     return out
 
 
@@ -334,21 +334,36 @@ async def index_state(source: dd.Source, *, db: Any = None) -> Optional[Dict[str
 
 
 async def reindex(source: dd.Source, *, db: Any = None, embedder: Any = "config") -> Dict[str, Any]:
-    """Make the index match the approved version; embeds only what changed."""
+    """Make the index match the approved version; embeds only what changed.
+
+    One run per source at a time: a session lock is held from reading the
+    approved version to recording it, so overlapping approve/restore runs
+    can't certify each other's stale rows.
+    """
     if embedder == "config":
         embedder = get_embedder()
+    lock = f"dd-index:{source.id}"
     async with _Conn(db) as conn:
-        approved = await _approved(source, conn)
-        vectors_ok = await _has_embedding_column(conn) and embedder is not None
-        existing = {
-            (r["kind"], r["key"]): r
-            for r in await conn.fetch(
-                "SELECT kind, key, body_hash, embedding_model, "
-                + ("embedding IS NOT NULL" if vectors_ok else "false")
-                + " AS embedded FROM public.data_dictionary_index WHERE source_id = $1::uuid",
-                source.id,
-            )
-        }
+        await conn.execute("SELECT pg_advisory_lock(hashtext($1))", lock)
+        try:
+            return await _reindex_locked(conn, source, embedder)
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock(hashtext($1))", lock)
+
+
+async def _reindex_locked(conn: Any, source: dd.Source, embedder: Any) -> Dict[str, Any]:
+    approved = await _approved(source, conn)
+    has_column = await _has_embedding_column(conn)
+    vectors_ok = has_column and embedder is not None
+    existing = {
+        (r["kind"], r["key"]): r
+        for r in await conn.fetch(
+            "SELECT kind, key, body_hash, embedding_model, "
+            + ("embedding IS NOT NULL" if has_column else "false")
+            + " AS embedded FROM public.data_dictionary_index WHERE source_id = $1::uuid",
+            source.id,
+        )
+    }
     version = approved["version"] if approved else None
     wanted = units(dd._json(approved["entries"]) or {}) if approved else []
     model = _model_key(embedder) if vectors_ok else ""
@@ -362,48 +377,47 @@ async def reindex(source: dd.Source, *, db: Any = None, embedder: Any = "config"
     if model and todo and vectors is None:
         model = ""
     keep = {(u[0], u[1]) for u in wanted}
-    async with _Conn(db) as conn:
-        async with conn.transaction():
-            await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", f"dd-index:{source.id}")
-            gone = [k for k in existing if k not in keep]
-            if gone:
-                await conn.executemany(
-                    "DELETE FROM public.data_dictionary_index "
-                    "WHERE source_id = $1::uuid AND kind = $2 AND key = $3",
-                    [(source.id, kind, key) for kind, key in gone],
-                )
-            if not model and vectors_ok:
-                # One model per source: a failed embed leaves no mixed column.
-                await conn.execute(
-                    "UPDATE public.data_dictionary_index SET embedding = NULL, embedding_model = '' "
-                    "WHERE source_id = $1::uuid",
-                    source.id,
-                )
-            if todo:
-                if vectors is not None:
-                    schema = _quote_ident(await _vector_schema(conn))
-                    await conn.executemany(
-                        "INSERT INTO public.data_dictionary_index (source_id, kind, key, body, body_hash, "
-                        f"embedding_model, embedding) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::{schema}.vector) "
-                        "ON CONFLICT (source_id, kind, key) DO UPDATE SET body = EXCLUDED.body, "
-                        "body_hash = EXCLUDED.body_hash, embedding_model = EXCLUDED.embedding_model, "
-                        "embedding = EXCLUDED.embedding",
-                        [(source.id, k, key, text, _hash(text), model, _literal(v))
-                         for (k, key, text), v in zip(todo, vectors)],
-                    )
-                else:
-                    await conn.executemany(
-                        "INSERT INTO public.data_dictionary_index (source_id, kind, key, body, body_hash) "
-                        "VALUES ($1::uuid, $2, $3, $4, $5) ON CONFLICT (source_id, kind, key) DO UPDATE "
-                        "SET body = EXCLUDED.body, body_hash = EXCLUDED.body_hash",
-                        [(source.id, k, key, text, _hash(text)) for k, key, text in todo],
-                    )
-            await conn.execute(
-                "INSERT INTO public.data_dictionary_index_state (source_id, version, embedding_model, indexed_at) "
-                "VALUES ($1::uuid, $2, $3, now()) ON CONFLICT (source_id) DO UPDATE SET "
-                "version = EXCLUDED.version, embedding_model = EXCLUDED.embedding_model, indexed_at = now()",
-                source.id, version, model,
+    async with conn.transaction():
+        gone = [k for k in existing if k not in keep]
+        if gone:
+            await conn.executemany(
+                "DELETE FROM public.data_dictionary_index "
+                "WHERE source_id = $1::uuid AND kind = $2 AND key = $3",
+                [(source.id, kind, key) for kind, key in gone],
             )
+        if not model and vectors_ok:
+            # One model per source: a failed embed leaves no mixed column.
+            await conn.execute(
+                "UPDATE public.data_dictionary_index SET embedding = NULL, embedding_model = '' "
+                "WHERE source_id = $1::uuid",
+                source.id,
+            )
+        if todo and vectors is not None:
+            schema = _quote_ident(await _vector_schema(conn))
+            await conn.executemany(
+                "INSERT INTO public.data_dictionary_index (source_id, kind, key, body, body_hash, "
+                f"embedding_model, embedding) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::{schema}.vector) "
+                "ON CONFLICT (source_id, kind, key) DO UPDATE SET body = EXCLUDED.body, "
+                "body_hash = EXCLUDED.body_hash, embedding_model = EXCLUDED.embedding_model, "
+                "embedding = EXCLUDED.embedding",
+                [(source.id, k, key, text, _hash(text), model, _literal(v))
+                 for (k, key, text), v in zip(todo, vectors)],
+            )
+        elif todo:
+            # Changed text without a new vector must not keep the old one.
+            clear = ", embedding = NULL" if has_column else ""
+            await conn.executemany(
+                "INSERT INTO public.data_dictionary_index (source_id, kind, key, body, body_hash) "
+                "VALUES ($1::uuid, $2, $3, $4, $5) ON CONFLICT (source_id, kind, key) DO UPDATE "
+                f"SET body = EXCLUDED.body, body_hash = EXCLUDED.body_hash, embedding_model = ''{clear}",
+                [(source.id, k, key, text, _hash(text)) for k, key, text in todo],
+            )
+        await conn.execute(
+            "INSERT INTO public.data_dictionary_index_state (source_id, version, embedding_model, indexed_at) "
+            "VALUES ($1::uuid, $2, $3, now()) ON CONFLICT (source_id) DO UPDATE SET "
+            "version = EXCLUDED.version, embedding_model = EXCLUDED.embedding_model, indexed_at = now()",
+            source.id, version, model,
+        )
     return {"version": version, "embedding_model": model, "embedded": len(todo) if vectors else 0,
             "entries": len(wanted)}
 
@@ -461,12 +475,24 @@ def _short(text: Any) -> str:
 
 
 def _trim(entry: Mapping[str, Any], budget: int) -> Dict[str, Any]:
-    """``entry`` with examples, then metrics and joins, dropped until it fits."""
+    """``entry`` cut until it fits ``budget``: examples, metrics and joins first,
+    then column notes, then columns, then the text. ``entity=`` reads it whole."""
     out = dict(entry)
+    out["trimmed"] = True
     for key in ("examples", "metrics", "joins"):
         while out.get(key) and _size(out) > budget:
             out[key] = out[key][:-1]
-    out["trimmed"] = True
+    columns = dict(out.get("columns") or {})
+    if _size(out) > budget and columns:
+        out["columns"] = columns = {c: _short(d) for c, d in columns.items()}
+    if _size(out) > budget and columns:
+        out["columns"] = columns = dict.fromkeys(columns, "")
+    while _size(out) > budget and columns:
+        columns.popitem()
+        out["columns"] = columns
+    for key in ("grain", "row", "meaning"):
+        if _size(out) > budget and out.get(key):
+            out[key] = _short(out[key])
     return out
 
 
@@ -526,9 +552,10 @@ async def search(
     used = 0
     for kind, key in ranked:
         if kind == "term":
-            if key in glossary and len(terms) < top_k:
+            size = _size(glossary.get(key))
+            if key in glossary and len(terms) < top_k and used + size <= budget:
                 terms.append(glossary[key])
-                used += _size(glossary[key])
+                used += size
             continue
         if key not in tables:
             continue

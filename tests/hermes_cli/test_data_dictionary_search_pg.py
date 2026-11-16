@@ -132,3 +132,50 @@ def test_search_all_only_reads_shared_sources(search_env):
     alice = run(dds.search_all(ALICE, profile, "refund orders"))
     assert {m["source"]["kind"] for m in alice} == {"site"}
     assert run(dds.search_all(BOB, profile, "refund orders")) == []
+
+
+def test_text_changed_without_embedder_is_reembedded_later(search_env, monkeypatch):
+    profile, _site = search_env
+    app = app_source(profile)
+    approve_big(app)
+    before = run(rows(app))[("table", "refunds")]
+    assert before["has_vec"]
+    monkeypatch.setattr(dds, "get_embedder", lambda: None)
+    draft = run(dd.propose(app, tables={"refunds": {"meaning": "Chargebacks from the bank"}}, by="boss"))
+    run(dd.approve(app, draft["version"], by="boss"))
+    after = run(rows(app))[("table", "refunds")]
+    assert not after["has_vec"] and after["embedding_model"] == ""
+    redo = run(dds.reindex(app, embedder=HashingEmbedder(64)))
+    assert redo["embedded"] >= 1 and run(rows(app))[("table", "refunds")]["has_vec"]
+
+
+def test_overlapping_reindexes_end_on_the_approved_version(search_env):
+    import time
+
+    profile, _site = search_env
+    app = app_source(profile)
+    first = approve_big(app)
+
+    class Slow(HashingEmbedder):
+        def embed_batch(self, texts):
+            time.sleep(0.3)
+            return super().embed_batch(texts)
+
+    async def go():
+        draft = await dd.propose(app, tables={"refunds": {"meaning": "Chargebacks"}}, by="boss")
+        await dd.approve(app, draft["version"], by="boss")
+        await asyncio.gather(
+            dds.reindex(app, embedder=Slow(64)),
+            dd.restore(app, first, by="boss"),
+            dds.reindex(app, embedder=Slow(64)),
+        )
+        approved = (await dd.dictionary(app))["approved"]
+        async with dds._Conn() as conn:
+            body = await conn.fetchval(
+                "SELECT body FROM public.data_dictionary_index "
+                "WHERE source_id = $1::uuid AND kind = 'table' AND key = 'refunds'", app.id)
+        return approved, body, await dds.index_state(app)
+
+    approved, body, state = run(go())
+    assert state["version"] == approved["version"]
+    assert body == dds.table_text("refunds", approved["entries"]["tables"]["refunds"])[:dds.EMBED_CHARS]

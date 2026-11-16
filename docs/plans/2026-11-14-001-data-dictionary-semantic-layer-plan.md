@@ -273,8 +273,8 @@ The site-to-schema plan rejected a skill-only design for the same reason.
   failing embedding service → keywords alone (`search.mode: keyword`).
 - `site_db dictionary`: dictionaries up to 12,000 characters come back whole
   as before; larger ones return the top `top_k` (default 8, max 20) entries for
-  `q` within 12,000 characters (an oversized entry drops examples, then
-  metrics and joins, marked `trimmed`), with `search.more` naming matches that
+  `q` within 12,000 characters, glossary terms included (an oversized entry drops examples, then
+  metrics and joins, then column notes and columns, marked `trimmed`), with `search.more` naming matches that
   didn't fit; without `q`, an `index` of table names and short meanings;
   `entity` returns one entry. `source=all q=…` lists the best tables in every
   source `list_sources` lets the person read. `describe q=…` adds the tables

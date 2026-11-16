@@ -112,3 +112,22 @@ def test_failing_embedder_falls_back_to_keywords(monkeypatch):
     monkeypatch.setattr(dds, "index_state", state)
     out = run(dds.search(SOURCE, big_dictionary(), 1, "refund", embedder=Broken()))
     assert out["search"]["mode"] == "keyword" and "refunds" in out["entries"]["tables"]
+
+
+def test_oversized_entries_and_glossary_stay_within_budget():
+    wide = {"meaning": "refunds " + "m" * 400,
+            "columns": {f"c{i}": "d" * 345 for i in range(300)}}
+    out = run(dds.search(SOURCE, {"tables": {"refunds": wide}}, 1, "refunds", embedder=None))
+    entry = out["entries"]["tables"]["refunds"]
+    assert entry["trimmed"] is True and dds._size(entry) <= dds.BUDGET_CHARS
+    terms = [{"term": f"refund {i}", "definition": "refund " + "x" * 990} for i in range(20)]
+    out = run(dds.search(SOURCE, {"tables": {}, "glossary": terms}, 1, "refund", top_k=20, embedder=None))
+    assert out["entries"]["glossary"] and dds._size(out["entries"]) <= dds.BUDGET_CHARS + 100
+
+
+def test_keyword_search_reads_past_the_embedding_cut():
+    entry = {"meaning": "Orders", "columns": {f"c{i}": "z" * 345 for i in range(40)},
+             "metrics": [{"name": "chargeback", "definition": "disputed orders"}]}
+    assert len(dds.table_text("orders", entry)) > dds.EMBED_CHARS
+    assert dds.keyword_rank({"tables": {"orders": entry}}, "chargeback")[0][1] == "orders"
+    assert all(len(text) <= dds.EMBED_CHARS for _k, _key, text in dds.units({"tables": {"orders": entry}}))
