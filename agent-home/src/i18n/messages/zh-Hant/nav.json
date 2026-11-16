@@ -18,6 +18,7 @@
     "graph": { "name": "圖譜", "hint": "目標、任務、技能" },
     "capacity": { "name": "容量", "hint": "這部伺服器的剩餘資源" },
     "sites": { "name": "網站", "hint": "把網站存成資料表" },
+    "data": { "name": "數據", "hint": "所有數據來源" },
     "users": { "name": "用戶", "hint": "名冊及登記" },
     "profiles": { "name": "代理設定檔", "hint": "這部機器上的代理" },
     "suggestions": { "name": "建議", "hint": "建議的子目標" },

@@ -1,11 +1,12 @@
 {
   "title": "數據",
-  "subtitle": "說明你的數據代表甚麼，讓代理準確回答相關問題。",
+  "subtitle": "代理可用的所有數據來源：是否運作正常、誰可使用，以及代表甚麼。",
   "info": "甚麼是數據字典？",
-  "infoBody": "字典以淺白文字解釋每個資料表：一行代表甚麼、各欄位的意思、資料表之間如何連接，以及指標如何計算。代理只會使用已批准的版本。有權限的人都可以建議修改，由來源擁有人或管理員批准。",
+  "infoBody": "一個清單涵蓋存成資料表的網站、Aquarium 自身數據及你連接的資料庫。字典以淺白文字解釋每個資料表：一行代表甚麼、各欄位的意思、資料表之間如何連接，以及指標如何計算。代理只會使用已批准的版本。有權限的人都可以建議修改，由來源擁有人或管理員批准。",
   "kind": {
     "app": "Aquarium 數據",
-    "site": "網站數據"
+    "site": "網站數據",
+    "connection": "已連接的資料庫"
   },
   "status": {
     "approved": "已批准 v{v}",
@@ -16,11 +17,19 @@
   "access": {
     "read": "可閱讀",
     "propose": "可建議修改",
-    "manage": "擁有人或管理員"
+    "manage": "擁有人或管理員",
+    "always": "擁有人及管理員一定有存取權。",
+    "note": {
+      "app": "成員只會看到自己的資料行；分享只讓他們看到字典，不會看到他人的資料。",
+      "site": "此清單決定誰可在對話中詢問及查看字典。誰可在網站頁面開啟資料行另行設定：",
+      "connection": "獲分享的人經此連線的唯讀登入提問，永遠看不到密碼。"
+    },
+    "siteSharing": "網站 › 分享",
+    "readOnly": "只有擁有人或管理員可以更改存取權。"
   },
   "list": {
     "emptyTitle": "暫時沒有數據來源",
-    "emptyBody": "你新增的網站及與你分享的數據會在這裡出現。",
+    "emptyBody": "你新增的網站、連接的資料庫及與你分享的數據會在這裡出現。",
     "described": "已描述 {n} 個資料表",
     "owner": "擁有人：{who}",
     "ownerAdmins": "擁有人：管理員",
@@ -28,8 +37,39 @@
       "review": "審閱 {n} 項修改",
       "build": "建立字典",
       "none": "尚未描述",
-      "open": "開啟"
-    }
+      "open": "開啟",
+      "fix": "修正連線",
+      "drift": "更新字典"
+    },
+    "draftPill": "草稿 · 審閱 {n} 項",
+    "admins": "管理員",
+    "you": "你",
+    "ownerLabel": "擁有人",
+    "filterLabel": "顯示哪些數據來源",
+    "filter": {
+      "all": "全部",
+      "needs": "待你處理",
+      "mine": "我的",
+      "shared": "與我分享"
+    },
+    "search": "搜尋數據來源",
+    "searchPlaceholder": "按名稱搜尋",
+    "type": "類型",
+    "allTypes": "所有類型",
+    "col": {
+      "source": "數據來源",
+      "connection": "連線",
+      "dictionary": "字典",
+      "who": "使用者"
+    },
+    "noneInFilter": "這裡沒有數據來源。",
+    "ask": "提問 ✦",
+    "askAbout": "在對話中詢問 {name}",
+    "add": "新增數據來源",
+    "footSites": "網站在以下位置新增及更新：",
+    "footSitesLink": "網站",
+    "footVpn": "資料庫經由的 VPN 在：",
+    "footVpnLink": "設定 › 收發渠道"
   },
   "detail": {
     "answersUse": "回答使用此版本 · 由 {who} 於 {when} 批准",
@@ -50,12 +90,35 @@
       "added": "{table} 是新增的",
       "removed": "{table} 已移除",
       "columns": "{table}：欄位有變"
-    }
+    },
+    "search": "搜尋字典",
+    "searchPlaceholder": "搜尋 {n} 個資料表、欄位及意思",
+    "only": {
+      "all": "所有資料表",
+      "stale": "只看有變的"
+    },
+    "noMatch": "沒有相符的資料表。",
+    "ask": "在對話中提問 ✦",
+    "tabsLabel": "數據來源分頁"
   },
   "build": {
     "label": "建立字典",
     "hint": "開啟已填好請求的對話。按下傳送前不會開始。",
-    "prompt": "請研究 {source} 數據來源，為尚未描述的資料表草擬字典條目。提出前如有不清楚的地方請先問我。"
+    "prompt": "請研究 {source} 數據來源，為尚未描述的資料表草擬字典條目。提出前如有不清楚的地方請先問我。",
+    "title": "建立字典 — {name}",
+    "open": "開啟對話",
+    "scope": "現在研究甚麼",
+    "scopeSchemas": "我選擇的結構",
+    "scopeUndescribed": "尚未描述的資料表",
+    "scopeChanged": "只限有變的資料表（{n}）",
+    "onDemand": "按需研究",
+    "onDemandHint": "其他資料表會在有人首次問及時研究。",
+    "bigNote": "大型來源不設「所有資料表」研究：代理會分批研究所選結構，並逐步加入草稿。",
+    "scopePrompt": {
+      "schemas": "請研究 {source} 數據來源，只限結構 {schemas}，為其中尚未描述的資料表草擬字典條目。提出前如有不清楚的地方請先問我。",
+      "changed": "{source} 的結構有變。請重新研究以下資料表並草擬更新的字典條目：{tables}。提出前如有不清楚的地方請先問我。"
+    },
+    "onDemandPrompt": "其他資料表暫時不用研究；有人首次問及時才研究。"
   },
   "field": {
     "meaning": "此資料表是甚麼",
@@ -157,5 +220,86 @@
     "correctHint": "請在下一則訊息告訴代理哪裡不對。它會修正答案，並建議資料字典的修改，交由擁有者核准。",
     "undescribed": "{tables} 尚未有描述，所以這個答案只根據欄位名稱。請代理描述它，再由擁有者在「資料」中核准。",
     "failed": "無法儲存範例：{error}"
+  },
+  "type": {
+    "app": "Aquarium",
+    "site": "網站",
+    "mssql": "SQL Server",
+    "mysql": "MySQL",
+    "postgres": "PostgreSQL",
+    "sqlite": "SQLite"
+  },
+  "health": {
+    "ok": "運作正常",
+    "okSite": "已是最新",
+    "attention": "需要處理",
+    "untested": "尚未檢查",
+    "builtin": "內置"
+  },
+  "tabs": {
+    "overview": "概覽",
+    "dictionary": "字典",
+    "access": "存取權",
+    "history": "記錄",
+    "website": "網站",
+    "about": "關於",
+    "connection": "連線"
+  },
+  "overview": {
+    "brokenTitle": "連線無法運作",
+    "brokenBody": "修正前，有關此數據來源的回答會失敗。",
+    "connection": "連線",
+    "checked": "{when} 檢查",
+    "healthHint": {
+      "app": "Aquarium 自身數據隨時可用。",
+      "site": "根據網站上次更新的結果。",
+      "connection": "每小時檢查一次，檢查亦會保持連線。"
+    },
+    "dictionary": "字典",
+    "openDictionary": "開啟字典",
+    "who": "誰可使用",
+    "manageAccess": "管理存取權",
+    "seeAccess": "查看存取權",
+    "linked": "連結自",
+    "linkedSite": "網站 › {name}",
+    "linkedVpn": "設定 › 收發渠道 › VPN",
+    "builtIn": "內置 — 無需設定",
+    "linkedChat": "對話"
+  },
+  "source": {
+    "about": "Aquarium 自身的資料庫。代理不會直接查詢真實資料表：每個問題只會讀取提問者可見資料行的私人副本。",
+    "openInSites": "在網站頁面開啟",
+    "siteBody": "設計、更新記錄及排程留在網站頁面；字典、存取權及提問在這裡。",
+    "manageConnection": "管理連線",
+    "connectionBody": "伺服器、登入、VPN 及測試在「新增數據來源」內。",
+    "connectionOwnerOnly": "只有 {who} 可以查看連線設定。"
+  },
+  "add": {
+    "title": "新增數據來源",
+    "subtitle": "選擇要新增的項目。其他人使用前你可以先測試。",
+    "connect": "連接資料庫",
+    "mssqlBody": "Microsoft SQL Server 2008 R2 或更新版本。請向 IT 索取唯讀登入。",
+    "mysqlBody": "MySQL 5.7 或以上及 MariaDB。",
+    "postgresBody": "PostgreSQL 11 或以上。",
+    "sqliteBody": "「檔案」內的 .sqlite 或 .db 檔案，唯讀。",
+    "soon": "即將推出",
+    "website": "把網站轉成資料表",
+    "siteBody": "代理研究網站，提出資料表供你批准，然後保持更新。接著在網站 › 新增網站繼續。",
+    "siteLocked": "你的角色不可使用",
+    "siteLockedBody": "你的角色不能新增網站。請聯絡擁有人或管理員。",
+    "later": "稍後",
+    "sheet": "試算表",
+    "sheetBody": "「檔案」內的 Google 試算表或 Excel。",
+    "api": "API",
+    "apiBody": "代理可讀取的 REST API。",
+    "laterPill": "稍後",
+    "privateNote": "你新增的數據來源在分享前只屬於你。擁有人及管理員一定看得到。"
+  },
+  "ask": {
+    "label": "詢問：",
+    "auto": "由代理選擇",
+    "autoHint": "代理會從你可用的數據來源中選擇，不確定時會問你。",
+    "pinnedHint": "回答會使用其已批准的字典。",
+    "title": "詢問哪個數據來源"
   }
 }

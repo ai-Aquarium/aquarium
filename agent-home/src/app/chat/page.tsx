@@ -31,6 +31,7 @@ export default async function Page({
     new?: string;
     autosend?: string;
     find?: string;
+    source?: string;
   }>;
 }) {
   await requirePrincipal();
@@ -48,6 +49,7 @@ export default async function Page({
     new: startNew,
     autosend,
     find,
+    source,
   } = await searchParams;
   // `?new=1` opens a fresh conversation (the landing composer's hand-off);
   // `&autosend=1` sends `draft` as its first turn.
@@ -113,6 +115,7 @@ export default async function Page({
           initialDraft={(draft ?? "").trim() || undefined}
           autoSend={freshChat && autosend === "1"}
           initialHighlight={sessionId && find?.trim() ? find.trim() : undefined}
+          initialDataSourceId={source?.trim() || undefined}
         />
       )}
     </MobileShell>

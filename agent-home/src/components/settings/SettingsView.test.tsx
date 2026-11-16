@@ -57,6 +57,8 @@ describe("SettingsView", () => {
     expect(inside).toContain('data-component="WhatsAppBridges"');
     expect(inside).toContain('data-component="TelegramLinks"');
     expect(inside).not.toContain('href="/users"');
+    expect(inside).toContain('data-component="DataSourcesLink"');
+    expect(inside).not.toContain('data-component="SqlServerConnections"');
   });
 
   it("renders the Tags section header", () => {
