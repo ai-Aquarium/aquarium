@@ -222,4 +222,47 @@ describe("Maximizable", () => {
     expect(onChange).toHaveBeenLastCalledWith(false);
     expect(screen.getByText("small")).toBeTruthy();
   });
+
+  it("puts back scroll offsets that the full-screen layout clamped", () => {
+    render(<Panel />);
+    const area = screen.getByLabelText("Your question");
+    let top = 80;
+    Object.defineProperty(area, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (v: number) => {
+        top = v;
+      },
+    });
+    fireEvent.click(screen.getByText("⤢ Maximize"));
+    top = 0;
+    fireEvent.click(screen.getByText("⤡ Minimize"));
+    expect(top).toBe(80);
+  });
+
+  it("fits the frame above an on-screen keyboard while maximized", async () => {
+    const vv = Object.assign(new EventTarget(), { height: 400, offsetTop: 30 });
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: vv,
+    });
+    try {
+      render(<Panel />);
+      fireEvent.click(screen.getByText("⤢ Maximize"));
+      const area = screen.getByLabelText("Your question");
+      act(() => area.focus());
+      act(() => {
+        vv.dispatchEvent(new Event("resize"));
+      });
+      expect(panel().style.height).toBe("400px");
+      expect(panel().style.top).toBe("30px");
+      act(() => area.blur());
+      await flushFrame();
+      expect(panel().style.height).toBe("");
+      fireEvent.click(screen.getByText("⤡ Minimize"));
+      expect(panel().style.top).toBe("");
+    } finally {
+      Reflect.deleteProperty(window, "visualViewport");
+    }
+  });
 });
