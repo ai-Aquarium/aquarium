@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -43,7 +44,10 @@ export function SiteDetail({
   directory,
   me,
   initialTab,
+  dataSourceId = null,
 }: {
+  /** This site's data source in Data (dictionary, access, questions). */
+  dataSourceId?: string | null;
   site: SiteSource;
   designs: SiteDesign[];
   tables: SiteTable[];
@@ -141,7 +145,29 @@ export function SiteDetail({
       </div>
       <div role="tabpanel">
         {tab === "design" ? <DesignTab siteId={site.id} designs={designs} canManage={canManage} people={people} /> : null}
+        {tab === "data" && dataSourceId ? (
+          <div className="mb-3">
+            <InlineAlert tone="info">
+              {t("detail.inData")}{" "}
+              <Link href={`/data/${dataSourceId}?tab=dictionary`} className="font-medium underline">
+                {t("detail.openDictionary")}
+              </Link>
+              {" · "}
+              <Link href={`/chat?new=1&source=${encodeURIComponent(dataSourceId)}`} className="font-medium underline">
+                {t("detail.askInChat")}
+              </Link>
+            </InlineAlert>
+          </div>
+        ) : null}
         {tab === "data" ? <DataTab siteId={site.id} tables={tables} /> : null}
+        {tab === "sharing" && grants && dataSourceId ? (
+          <p className="mb-3 text-[13px] text-[var(--color-muted)]">
+            {t("sharing.separate")}{" "}
+            <Link href={`/data/${dataSourceId}?tab=access`} className="font-medium text-[var(--color-accent)] hover:underline">
+              {t("sharing.dataAccess")}
+            </Link>
+          </p>
+        ) : null}
         {tab === "runs" ? (
           <RunsTab
             siteId={site.id}
