@@ -1541,6 +1541,14 @@ export interface SourceClaimConflict {
   detail: string;
   created_at: string | null;
   resolved_at: string | null;
+  /** How a box owner/admin settled it: kept with the owner or transferred; null while open. */
+  resolution?: "keep" | "transfer" | null;
+}
+
+/** `PATCH /api/sources/{id}`: turn a source on/off or rename it. */
+export interface SourceUpdate {
+  enabled?: boolean;
+  display?: string | null;
 }
 
 /** FG-03 P4: the router's call on one profile for one batch. */
@@ -1565,6 +1573,10 @@ export interface RoutingDecision {
   fallback: boolean;
   error: string | null;
   decided_at: string | null;
+  /** Messages in the batch; null for decisions recorded before it was kept. */
+  message_count?: number | null;
+  /** Who sent the batch's first message; null when unknown. */
+  first_sender?: string | null;
 }
 
 /** FG-03 P5: today's triage vs one picked profile's agent, for one batch. */

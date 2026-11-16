@@ -153,6 +153,7 @@ import type {
   RoutingDecision,
   TriageComparison,
   SourceInput,
+  SourceUpdate,
   SourceRoute,
   MssqlConnection,
   MssqlConnectionInput,
@@ -3510,6 +3511,25 @@ export class HermesApiClient {
   async deleteSource(sourceId: string): Promise<{ deleted: boolean }> {
     return this.request(`/api/sources/${encodeURIComponent(sourceId)}`, {
       method: "DELETE",
+    });
+  }
+
+  /** Turn one of the caller's sources on/off or rename it (owner only). */
+  async updateSource(sourceId: string, body: SourceUpdate): Promise<{ source: Source }> {
+    return this.request(`/api/sources/${encodeURIComponent(sourceId)}`, {
+      method: "PATCH",
+      json: body,
+    });
+  }
+
+  /** Box owner/admin: keep the source with its owner, or give it to the claimant. */
+  async resolveSourceConflict(
+    conflictId: number,
+    action: "keep" | "transfer",
+  ): Promise<{ conflict: SourceClaimConflict }> {
+    return this.request(`/api/sources/conflicts/${encodeURIComponent(String(conflictId))}/resolve`, {
+      method: "POST",
+      json: { action },
     });
   }
 

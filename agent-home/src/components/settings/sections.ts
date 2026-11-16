@@ -9,6 +9,7 @@ export const SETTINGS_SECTIONS = [
   "theme",
   "notifications",
   "in-out",
+  "sources",
   "uploads",
   "apps",
   "menu",
@@ -35,6 +36,7 @@ export interface SettingsAccess {
 const OWN_ROUTE: Partial<Record<SettingsSectionId, string>> = {
   tools: "/settings/tools",
   "get-ready": "/settings/get-ready",
+  sources: "/settings/sources",
   upgrade: "/settings/upgrade",
 };
 
@@ -93,6 +95,7 @@ export const YOU_ENTRIES: SettingsEntryId[] = [
   "theme",
   "notifications",
   "in-out",
+  "sources",
   "tags",
   "get-ready",
   "activity",
