@@ -32,12 +32,8 @@ export async function POST(
     );
   }
   return withPrincipal((client) =>
-    client.decideProjectCardApproval(
-      slug,
-      taskId,
-      key,
-      decision,
-      decision === "revise" ? note : undefined,
-    ),
+    decision === "revise"
+      ? client.decideProjectCardApproval(slug, taskId, key, decision, note)
+      : client.decideProjectCardApproval(slug, taskId, key, decision),
   );
 }
