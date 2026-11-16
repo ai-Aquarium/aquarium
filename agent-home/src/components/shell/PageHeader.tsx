@@ -33,7 +33,8 @@ export function PageHeader({ title, subtitle, info, actions, back, labels, compa
   const pathname = usePathname() ?? "/";
   const trail = routeTrail(pathname, labels);
   const parent = back ?? (trail.length > 1 ? trail[trail.length - 2] : null);
-  const crumbs = back ? [...trail.slice(0, -2), back] : trail.slice(0, -1);
+  const backAt = back ? trail.findIndex((c) => c.href === back.href) : -1;
+  const crumbs = back ? [...trail.slice(0, backAt >= 0 ? backAt : -2), back] : trail.slice(0, -1);
 
   return (
     <header

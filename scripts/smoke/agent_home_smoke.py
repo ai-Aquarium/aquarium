@@ -165,6 +165,8 @@ PAGES: Tuple[PageSpec, ...] = (
         member_redirect="/not-available",
     ),
     PageSpec("/profiles/suggestions", ("ProfileSuggestionsView",)),
+    # Every signed-in role edits only their own triage layer.
+    PageSpec("/profiles/default/triage", ("TriageSkillsView",)),
     # Owner/admin only: members and viewers get the not-available page.
     PageSpec(
         "/profiles",
