@@ -93,6 +93,13 @@ Log:
   from the sticky top bar was under the review page's Approve bar).
   Browser-tested locally. Nothing deployed yet.
 
+- 2026-11-16 — Phase 7 built: one engine-adapter interface for Supabase
+  (unchanged behaviour), SQL Server, MySQL and SQLite; Settings connections
+  are data sources with dictionaries, grants and drift checks; MySQL / SQLite
+  connections API; `site_db` `list_sources` + `source=` describe/query.
+  Tests: SQLite in CI; MySQL 8.4, SQL Server 2022 and Postgres 16 real-engine
+  tests (env-gated) pass locally in Docker. Backend + API only; not deployed.
+
 ## Deploy (next step — not started)
 
 Nothing below has run on production. Get Yan's go-ahead first, then read
@@ -248,8 +255,36 @@ The site-to-schema plan rejected a skill-only design for the same reason.
   a warn banner naming the drifted tables on the dictionary page, and a
   `stale` pill on affected entries — en + zh-Hant strings throughout.
 
+### Phase 7 — Other engines behind one interface
+- `hermes_cli/data_engines.py`: one `EngineAdapter` ABC — `list_tables(q)`,
+  `describe_table` (columns, primary/foreign keys, comments, row estimates,
+  sample values), `query(sql, params, max_rows)` (one read-only statement,
+  `:name` parameters bound by the driver, 30 s timeout, 500 rows, 200 KB),
+  `schema()` and `fingerprint()` (SHA-256 of `{table: sorted columns}`).
+  Adapters: `SiteAdapter` / `AppAdapter` wrap the existing Supabase paths
+  unchanged; `MssqlAdapter` (Settings SQL Server connections, VPN routing,
+  python-tds), `MysqlAdapter` (PyMySQL, `mysql` extra, read-only transaction +
+  `MAX_EXECUTION_TIME`), `SqliteAdapter` (stdlib, `mode=ro`, `query_only`,
+  progress-handler timeout). Every query is logged (person, source, engine,
+  dictionary version, rows, status, ms).
+- Settings connections are data sources: `data_sources.kind = 'connection'`
+  with `engine`, `connection_name`, `schema_fingerprint` (migrated by
+  `hermes db migrate`). Listing sources syncs the caller's own SQL Server /
+  MySQL / SQLite connections; deleting a connection drops its source.
+  Access: only the connection's owner manages it and reads its data (admins
+  included, as in Settings); `read`/`propose` grants share the dictionary
+  only. Drift checks read the live schema with the owner's stored login.
+- MySQL / SQLite connections: `hermes_cli/db_connections.py` +
+  `/api/db/connections` (owner-only, passwords write-only, never
+  materialized to agent terminals). SQLite files only from the owner/admin and
+  only under `data_sources.sqlite_roots` (default `<HERMES_HOME>/data-sources`).
+- `site_db`: `list_sources`; `describe` / `query` take `source=` (slug, `app`,
+  `<engine>:<connection>` ref or id) and `params`; `study` / dictionary
+  actions work on connection sources. `/api/data/sources/{id}/tables`,
+  `/tables/{table}` and `/check` (re-run the drift check). No UI yet (the
+  unified Sites + Settings UI is designed separately).
+
 ### Later (not scheduled)
-- Other engines (SQL Server, MySQL, SQLite) as adapters behind one interface.
 - Embedding search over large dictionaries.
 
 ## 5. Testing

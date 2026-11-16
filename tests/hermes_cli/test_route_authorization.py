@@ -247,6 +247,9 @@ SIGNED_IN = {
     "GET /api/data/sources/{source_id}/grants",
     "POST /api/data/sources/{source_id}/grants",
     "DELETE /api/data/sources/{source_id}/grants",
+    "GET /api/data/sources/{source_id}/tables",
+    "GET /api/data/sources/{source_id}/tables/{table}",
+    "POST /api/data/sources/{source_id}/check",
     # site_sources_api: the handler checks the caller's grant on the site (404 otherwise)
     "GET /api/sites/settings",
     "GET /api/sites",
@@ -270,6 +273,11 @@ SIGNED_IN = {
     "PUT /api/mssql/connections/{name}",
     "DELETE /api/mssql/connections/{name}",
     "POST /api/mssql/connections/{name}/test",
+    # db_connections_api: the caller's own MySQL / SQLite connections
+    "GET /api/db/connections",
+    "PUT /api/db/connections/{engine}/{name}",
+    "DELETE /api/db/connections/{engine}/{name}",
+    "POST /api/db/connections/{engine}/{name}/test",
     # winrm_connections_api: the caller's own Windows servers (PowerShell)
     "GET /api/winrm/connections",
     "PUT /api/winrm/connections/{name}",

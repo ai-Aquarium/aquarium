@@ -35,6 +35,7 @@ ACTIONS = (
     "dictionary",
     "study",
     "propose_dictionary",
+    "list_sources",
 )
 
 SCHEMA = {
@@ -56,7 +57,13 @@ SCHEMA = {
         "Aquarium's own data (no site): app_describe — areas (todos, goals, files, inbox) with "
         "columns and the rows this person can see; app_query (areas, sql) — one SELECT over "
         "private copies of those areas, each a table named after its area, at most 500 rows. "
-        "Data dictionary (source = site slug, or app for Aquarium's own data): dictionary — the "
+        "Data sources beyond sites: list_sources — every source this person can see: sites, "
+        "app, and databases connected in Settings (SQL Server, MySQL, SQLite) with ref "
+        "<engine>:<connection>; describe / query also take source= (site slug, app, ref or id) "
+        "instead of site=, and query takes params {name: value} for :name placeholders — put "
+        "values in params, never paste them into sql. A connection's data can only be read "
+        "by the person who connected it. "
+        "Data dictionary (source = site slug, app, connection ref or source id): dictionary — the "
         "approved meaning of each table, its grain, joins, metrics and examples; read it before "
         "writing SQL; study — structure and samples of every table plus which are undescribed; "
         "propose_dictionary (source, tables: {table: {meaning, row, grain, columns: {col: text}, "
@@ -87,7 +94,11 @@ SCHEMA = {
             "version": {"type": "integer", "description": "approve_design: design version"},
             "entity": {"type": "string", "description": "describe: one table name"},
             "q": {"type": "string", "description": "describe: keep tables matching these words"},
-            "source": {"type": "string", "description": "dictionary actions: site slug, or app"},
+            "source": {
+                "type": "string",
+                "description": "site slug, app, a connection ref like mssql:erp, or a source id",
+            },
+            "params": {"type": "object", "description": "query: values for :name placeholders"},
             "tables": {"type": "object", "description": "propose_dictionary: {table: entry}"},
             "remove": {"type": "array", "items": {"type": "string"}},
             "glossary": {"type": "array", "items": {"type": "object"}},
@@ -157,13 +168,31 @@ async def _dict_source(principal: Any, ref: Any, *, need: str = "read"):
     from hermes_cli import site_sources as ss
 
     ref = str(ref or "app").strip()
-    sources = await dd.sync_sources(ss.current_profile())
+    profile = ss.current_profile()
+    own = []
+    if ref != "app":
+        try:
+            own = await dd.sync_connection_sources(principal, profile)
+        except Exception:  # noqa: BLE001 - no credential store: sites and app still work
+            own = []
+    sources = await dd.sync_sources(profile)
     site = None
+    source = None
     if ref == "app":
         source = next((s for s in sources if s.kind == "app"), None)
+    elif ":" in ref:
+        source = next((s for s in own if s.ref == ref), None)
+        if source is None:
+            shared = [s for s in sources if s.ref == ref]
+            shared = [s for s in shared if await dd.resolve_access(s, principal)]
+            source = shared[0] if len(shared) == 1 else None
     else:
-        site, _access = await _site(principal, ref)
-        source = next((s for s in sources if s.site_id == site.id), None)
+        source = next((s for s in sources if s.id == ref), None)
+        if source is not None and source.kind == "site" and source.site_id:
+            site = await ss.get_site(source.site_id)
+        if source is None:
+            site, _access = await _site(principal, ref)
+            source = next((s for s in sources if s.site_id == site.id), None)
     access = await dd.resolve_access(source, principal) if source is not None else None
     if access is None:
         raise ss.SiteError(
@@ -201,6 +230,12 @@ async def _dictionary_action(action: str, principal: Any, args: Mapping[str, Any
         if site is not None:
             tables = await ss.table_summaries(site)
             detail = [await ss.describe_entity(site, t["name"]) for t in tables[:STUDY_TABLES]]
+        elif source.kind == "connection":
+            from hermes_cli import data_engines as de
+
+            adapter = await de.adapter_for(source, principal)
+            tables = await adapter.list_tables()
+            detail = [await adapter.describe_table(t["name"]) for t in tables[:STUDY_TABLES]]
         else:
             detail = tables = await app_data.describe(principal)
         names = [t.get("name") or t.get("table") for t in tables]
@@ -227,6 +262,30 @@ async def _dictionary_action(action: str, principal: Any, args: Mapping[str, Any
         next=(f"Tell the person draft v{proposed['version']} waits for the source owner's "
               "approval in agent-home under Data. Answers keep using the approved version."),
     )
+
+
+async def _source_action(action: str, principal: Any, args: Mapping[str, Any]) -> str:
+    """describe / query against any data source through its engine adapter."""
+    from hermes_cli import data_dictionary as dd
+    from hermes_cli import data_engines as de
+
+    source, access, site = await _dict_source(principal, args.get("source"), need="read")
+    if site is not None:
+        site, _site_access = await _site(principal, site.slug)
+    adapter = await de.adapter_for(source, principal)
+    view = source.view(access)
+    if action == "describe":
+        if args.get("entity"):
+            return _result(source=view, table=await adapter.describe_table(str(args["entity"])))
+        return _result(source=view, tables=await adapter.list_tables(args.get("q") or None))
+    found = await dd.dictionary(source)
+    approved = found.get("approved")
+    result = await de.run_query(
+        source, adapter, principal, str(args.get("sql") or ""), args.get("params"),
+        max_rows=args.get("max_rows") or de.MAX_ROWS,
+        dictionary_version=approved and approved["version"],
+    )
+    return _result(source=view, **result)
 
 
 async def site_db_tool(args: Mapping[str, Any], **_kw: Any) -> str:
@@ -258,14 +317,21 @@ async def site_db_tool(args: Mapping[str, Any], **_kw: Any) -> str:
 
             return _result(areas=await app_data.describe(principal))
         if action == "app_query":
-            from hermes_cli import app_data
+            from hermes_cli import data_engines as de
 
-            return _result(**await app_data.query(
-                principal, args.get("areas") or [], str(args.get("sql") or ""),
-                max_rows=int(args.get("max_rows") or ss.MAX_QUERY_ROWS),
+            return _result(**await de.run_query(
+                "app", de.AppAdapter(principal), principal, str(args.get("sql") or ""),
+                args.get("params"), max_rows=args.get("max_rows") or ss.MAX_QUERY_ROWS,
+                areas=args.get("areas") or None,
             ))
         if action in ("dictionary", "study", "propose_dictionary"):
             return await _dictionary_action(action, principal, args)
+        if action == "list_sources":
+            from hermes_cli import data_dictionary as dd
+
+            return _result(sources=await dd.list_sources(principal, ss.current_profile()))
+        if action in ("describe", "query") and args.get("source") and not args.get("site"):
+            return await _source_action(action, principal, args)
         need = "admin" if action in ("propose_design", "approve_design", "refresh", "explore", "preview") else "read"
         site, access = await _site(principal, args.get("site"), need=need)
         if action == "get_design":
@@ -286,14 +352,18 @@ async def site_db_tool(args: Mapping[str, Any], **_kw: Any) -> str:
             if args.get("version") is None:
                 raise ss.SiteError("approve_design needs version=")
             return _result(approved=await ss.apply_design(site, int(args["version"]), approved_by=principal.user_id))
-        if action == "describe":
-            if args.get("entity"):
-                return _result(site=site.slug, table=await ss.describe_entity(site, str(args["entity"])))
-            return _result(
-                site=site.slug, tables=await ss.table_summaries(site, q=args.get("q") or None)
+        if action in ("describe", "query"):
+            from hermes_cli import data_engines as de
+
+            adapter = de.SiteAdapter(site)
+            if action == "describe" and args.get("entity"):
+                return _result(site=site.slug, table=await adapter.describe_table(str(args["entity"])))
+            if action == "describe":
+                return _result(site=site.slug, tables=await adapter.list_tables(args.get("q") or None))
+            result = await de.run_query(
+                f"site:{site.slug}", adapter, principal, str(args.get("sql") or ""),
+                args.get("params"), max_rows=args.get("max_rows") or ss.MAX_QUERY_ROWS,
             )
-        if action == "query":
-            result = await ss.query(site, str(args.get("sql") or ""), max_rows=int(args.get("max_rows") or ss.MAX_QUERY_ROWS))
             return _result(site=site.slug, **result)
         if action == "refresh":
             run = await ss.start_refresh(

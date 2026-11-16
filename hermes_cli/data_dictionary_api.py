@@ -176,3 +176,32 @@ async def revoke_grant(source_id: str, request: Request):
     if not user_id:
         raise HTTPException(400, "Give user_id.")
     return {"revoked": await _run(dd.revoke_grant(source.id, user_id))}
+
+
+# -- live structure (engine adapters, plan Phase 7) ---------------------------------------
+
+
+@router.get("/sources/{source_id}/tables")
+async def source_tables(source_id: str, request: Request, q: str = ""):
+    from hermes_cli import data_engines as de
+
+    principal, source, access = await _source_for(request, source_id)
+    adapter = await _run(de.adapter_for(source, principal, agent=False))
+    return {"source": source.view(access), "tables": await _run(adapter.list_tables(q or None))}
+
+
+@router.get("/sources/{source_id}/tables/{table}")
+async def source_table(source_id: str, table: str, request: Request):
+    from hermes_cli import data_engines as de
+
+    principal, source, access = await _source_for(request, source_id)
+    adapter = await _run(de.adapter_for(source, principal, agent=False))
+    return {"source": source.view(access), "table": await _run(adapter.describe_table(table))}
+
+
+@router.post("/sources/{source_id}/check")
+async def check_schema(source_id: str, request: Request):
+    _principal, source, access = await _source_for(request, source_id, "manage")
+    drift = await _run(dd.check_source(source))
+    fresh = await _run(dd.get_source(source.id))
+    return {"source": (fresh or source).view(access), "schema_drift": drift}
