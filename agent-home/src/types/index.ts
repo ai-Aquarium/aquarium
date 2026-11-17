@@ -1312,6 +1312,8 @@ export interface SuggestedTaskSource {
   ref?: string | null;
   surface: string;
   account_id: string | null;
+  /** The channel's own id: with surface + account, the arrival's key. */
+  external_id?: string | null;
   sender_name: string | null;
   sender_id: string | null;
   subject: string | null;
@@ -1333,6 +1335,8 @@ export interface SuggestedTask {
 export interface SuggestedTasksResponse {
   items: SuggestedTask[];
   next_cursor: string | null;
+  /** The profile these to-dos were read in (the session's). */
+  profile?: string | null;
 }
 
 /** What a finished work session left behind (the launcher's snapshot). */

@@ -39,6 +39,27 @@ export function channelOf(source: Pick<SuggestedTaskSource, "surface"> | null): 
   return surface || "other";
 }
 
+/** Python's `quote(s, safe="")`: everything but `A-Za-z0-9_.-~` is escaped. */
+function pyQuote(value: string): string {
+  return encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+/**
+ * The arrival key Needs you groups a message's alerts by
+ * (`hermes_cli/needs_you.py#arrival_key`), or null without the channel id.
+ */
+export function arrivalKeyOf(
+  source: Pick<SuggestedTaskSource, "surface" | "account_id" | "external_id"> | null,
+): string | null {
+  if (!source?.external_id) return null;
+  return `arrival:${[source.surface, source.account_id, source.external_id]
+    .map((p) => pyQuote(String(p ?? "")))
+    .join(":")}`;
+}
+
 /** Who sent the source message, for one line on a card. */
 export function senderOf(source: SuggestedTaskSource | null): string {
   if (!source) return "";

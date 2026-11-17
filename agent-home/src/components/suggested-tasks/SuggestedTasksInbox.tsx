@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { ActionButton } from "@/components/ui/ActionButton";
 import { CHANNELS, channelLabel } from "@/lib/suggested-tasks/channels";
 
 import { SuggestedTaskList } from "./SuggestedTaskList";
@@ -63,11 +64,23 @@ export function SuggestedTasksInbox({
         >
           {feed.items.length === 0
             ? "No suggested tasks. When triage spots something you may want to do, it shows here."
-            : "No suggested tasks from this channel."}
+            : feed.nextCursor
+              ? "None from this channel in the ones loaded so far."
+              : "No suggested tasks from this channel."}
         </p>
       ) : (
         <SuggestedTaskList tasks={shown} canStart={canStart} onRemoved={feed.remove} />
       )}
+      {feed.nextCursor && feed.loadMore ? (
+        <ActionButton
+          data-action="suggested-load-more"
+          onAction={() => feed.loadMore?.()}
+          busyLabel="Loading…"
+          className="inline-flex min-h-10 items-center justify-center self-center rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 text-sm"
+        >
+          Load more suggestions
+        </ActionButton>
+      ) : null}
     </section>
   );
 }
