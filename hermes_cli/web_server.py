@@ -3701,25 +3701,15 @@ def _request_acting_profile(request) -> Optional[str]:
     return getattr(request.state, "acting_profile", None)
 
 
-class _EnrolmentStore:
-    """A profile's principals, read as "no row" where it has no datastore."""
+def _enrolment_store(_profile_home):
+    """The scoped profile's principals for an :func:`enrolments` fan-out.
 
-    def __init__(self) -> None:
-        from hermes_cli.access import PrincipalStore
+    A profile with no app datastore reads as "no row" inside ``enrolments``;
+    any other failure (a configured DSN that cannot connect) surfaces.
+    """
+    from hermes_cli.access import PrincipalStore
 
-        self._store = PrincipalStore(_comms_app_store())
-
-    async def resolve_alias(self, subject: str):
-        try:
-            return await self._store.resolve_alias(subject)
-        except RuntimeError:
-            return None
-
-    async def get(self, user_id: str):
-        try:
-            return await self._store.get(user_id)
-        except RuntimeError:
-            return None
+    return PrincipalStore(_comms_app_store())
 
 
 @app.get("/api/auth/my-profiles")
@@ -3737,7 +3727,7 @@ async def auth_my_profiles(request: Request):
     subject = _comms_session_subject(request)
     if not subject:
         raise HTTPException(status_code=401, detail=_CONSOLE_NO_SUBJECT)
-    rows = await enrolments(subject, store_factory=lambda home: _EnrolmentStore())
+    rows = await enrolments(subject, store_factory=_enrolment_store)
     return {
         "profiles": [
             {
@@ -3770,7 +3760,7 @@ async def comms_person_profiles(user_id: str, request: Request):
     if not subject:
         raise HTTPException(status_code=401, detail=_CONSOLE_NO_SUBJECT)
     rows = await person_enrolments(
-        subject, user_id.strip(), store_factory=lambda home: _EnrolmentStore()
+        subject, user_id.strip(), store_factory=_enrolment_store
     )
     return {
         "user_id": user_id,
@@ -4727,7 +4717,7 @@ async def _account_login(request: "Request"):
         # The account id differs from the subject only for an aliased owner
         # (resolved per profile anyway) and the basic-auth operator login.
         for who in dict.fromkeys((subject, user_id)):
-            rows = await enrolments(who, store_factory=lambda home: _EnrolmentStore())
+            rows = await enrolments(who, store_factory=_enrolment_store)
             if rows:
                 break
     except RuntimeError as exc:

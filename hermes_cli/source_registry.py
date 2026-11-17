@@ -679,18 +679,14 @@ async def is_active_in_profile(user_id: str, profile_slug: str) -> bool:
     (the FG-28 console-scope seam), so the answer is that profile's, never a
     copy held here.
     """
-    from hermes_cli.console_scope import (
-        _principal_for_subject,
-        _scoped_to,
-        principal_store_factory,
-    )
+    from hermes_cli.console_scope import principal_in_profile, principal_store_factory
 
     entry = _registry_entry(profile_slug)
     if entry is None or not entry.hermes_home.is_dir():
         return False
-    factory = principal_store_factory()
-    with _scoped_to(entry.hermes_home):
-        principal = await _principal_for_subject(factory(entry.hermes_home), user_id)
+    principal = await principal_in_profile(
+        entry, user_id, store_factory=principal_store_factory()
+    )
     return principal is not None and bool(getattr(principal, "active", True))
 
 
@@ -733,18 +729,14 @@ async def is_box_admin(user_id: str) -> bool:
     The default profile is the install's own (its owner is the install owner
     that unowned sources fall back to), so its owners/admins run the box.
     """
-    from hermes_cli.console_scope import (
-        _principal_for_subject,
-        _scoped_to,
-        principal_store_factory,
-    )
+    from hermes_cli.console_scope import principal_in_profile, principal_store_factory
 
     entry = _registry_entry("default")
     if not user_id or entry is None:
         return False
-    factory = principal_store_factory()
-    with _scoped_to(entry.hermes_home):
-        principal = await _principal_for_subject(factory(entry.hermes_home), user_id)
+    principal = await principal_in_profile(
+        entry, user_id, store_factory=principal_store_factory()
+    )
     return (
         principal is not None
         and bool(getattr(principal, "active", True))
