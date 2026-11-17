@@ -349,7 +349,8 @@ async def start_todo_as_task(request: Request, todo_id: str) -> dict[str, Any]:
     to-do moves to ``working`` and closes when the project is done.
     Starting runs the agent, so it is a human act (``_require_human``).
     Body (all optional): ``host_profile`` (default: the serving profile),
-    ``autonomy`` (default ``manual``), ``check_plan_first``.
+    ``autonomy`` (default ``manual``), ``check_plan_first``, ``request`` (the
+    person's own wording; replaces the to-do's title/description in the brief).
     """
     from hermes_cli import todo_task
     from hermes_cli.projects_api import _require_human
