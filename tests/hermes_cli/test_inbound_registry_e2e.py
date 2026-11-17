@@ -1371,6 +1371,9 @@ async def test_todo_counts_are_batched_and_scoped(postgres_dsn: str) -> None:
     first = (await todos.list(leo, source_ref=one.id))[0][0]
     assert await todos.suggested_among(leo, [first.id, working.id, "nope"]) == [first.id]
     assert await todos.suggested_among(ada, [first.id]) == []
+    # No probe limit: the one suggested id is found among 300.
+    many = [str(uuid.uuid4()) for _ in range(299)] + [first.id]
+    assert await todos.suggested_among(leo, many) == [first.id]
 
 
 @pytest.mark.asyncio

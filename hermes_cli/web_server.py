@@ -13427,6 +13427,11 @@ async def needs_you(request: Request):
         )
     except Exception:
         _log.warning("needs-you: notifications source failed", exc_info=True)
+    suggested_count = None
+    try:
+        suggested_count = await ny.suggested_tasks(items, principal)
+    except Exception:
+        _log.warning("needs-you: suggested tasks source failed", exc_info=True)
     covered = ny.notification_dedupe_keys(items)
 
     # Triage raises an arrival's to-dos/alerts in each of the caller's chosen
@@ -13499,7 +13504,7 @@ async def needs_you(request: Request):
         task = asyncio.create_task(ny.push_new(principal.user_id, items))
         _NEEDS_YOU_PUSH_TASKS.add(task)
         task.add_done_callback(_NEEDS_YOU_PUSH_TASKS.discard)
-    return ny.response(items, count_only=count_only)
+    return ny.response(items, count_only=count_only, suggested_count=suggested_count)
 
 
 @app.post("/api/sessions/{session_id}/chat/stream/attach")

@@ -17,6 +17,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { NeedsYouEntry, NeedsYouResponse, NeedsYouSeverity } from "@/types/landing";
 
+import { SUGGESTED_TASKS_CHANGED } from "@/components/suggested-tasks/useSuggestedTasks";
+
 import { landingApi } from "./api";
 
 export const NEEDS_YOU_POLL_MS = 15_000;
@@ -69,6 +71,8 @@ export interface UseNeedsYou {
   items: NeedsYouEntry[];
   count: number;
   bySeverity: Record<NeedsYouSeverity, number>;
+  /** Server-side suggested-task count from the same read; null when unavailable. */
+  suggestedCount: number | null;
   /** Ids present now that were not there when `markSeen()` last ran. */
   newIds: string[];
   /** No response yet (first load still in flight or failing). */
@@ -137,6 +141,7 @@ export function useNeedsYou(): UseNeedsYou {
       if (type === NEEDS_YOU_REFRESH_MESSAGE) void refresh();
     };
     window.addEventListener("focus", onFocus);
+    window.addEventListener(SUGGESTED_TASKS_CHANGED, onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     const sw = typeof navigator !== "undefined" ? navigator.serviceWorker : undefined;
     sw?.addEventListener("message", onMessage);
@@ -144,6 +149,7 @@ export function useNeedsYou(): UseNeedsYou {
       mounted.current = false;
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener(SUGGESTED_TASKS_CHANGED, onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
       sw?.removeEventListener("message", onMessage);
     };
@@ -181,6 +187,7 @@ export function useNeedsYou(): UseNeedsYou {
     items,
     count,
     bySeverity: data?.by_severity ?? EMPTY_SEVERITY,
+    suggestedCount: typeof data?.suggested_count === "number" ? data.suggested_count : null,
     newIds,
     loading: data === null,
     stale,

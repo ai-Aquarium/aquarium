@@ -193,7 +193,6 @@ SIGNED_IN = {
     # todos_api: to-dos scoped to the caller
     "GET /api/registry/todos",
     "GET /api/registry/todos/facets",
-    "GET /api/registry/todos/suggested-count",
     "POST /api/registry/todos",
     "GET /api/registry/todos/{todo_id}",
     "GET /api/registry/todos/{todo_id}/draft",

@@ -2,7 +2,6 @@
 
 import { SuggestedTasksNeedsYou } from "@/components/suggested-tasks/SuggestedTasksNeedsYou";
 import { type UseSuggestedTasks, useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
-import type { SuggestedTally } from "@/components/suggested-tasks/useSuggestedTally";
 import { useNeedsYouText } from "@/lib/landing/needsYouText";
 import { arrivalKeyOf } from "@/lib/suggested-tasks/channels";
 import type { NeedsYouEntry } from "@/types/landing";
@@ -146,13 +145,25 @@ export function NeedsYouPanelView({
   );
 }
 
+/** The server-side suggested-task count for the Needs-you badge. */
+export interface SuggestedTally {
+  /** Every suggested task the caller has (staged/open, not snoozed). */
+  count: number;
+}
+
+/** The tally from a Needs-you read, or null when it had none. */
+export function tallyOf(needsYou: { suggestedCount: number | null }): SuggestedTally | null {
+  return needsYou.suggestedCount === null ? null : { count: needsYou.suggestedCount };
+}
+
 /**
  * What Needs you counts: the backend's count, minus the to-do alerts a
  * suggested task stands for, plus every suggested task, quiet (staged) ones
  * included. The top-bar badge and the panel header show the same number.
  *
  * With `tally` (the server-side count) it counts past the loaded page, and
- * drops an alert by its to-do id, so loading more cards never changes it.
+ * drops the alerts the server marked `suggested`, so loading more cards never
+ * changes it.
  * Without one it falls back to the loaded cards.
  */
 export function needsYouCount(
@@ -168,8 +179,7 @@ export function needsYouCount(
   const here = suggested?.profile ?? null;
   const dropped = items.filter((e) => {
     if (e.source !== "todo" || e.severity === "approval") return false;
-    const id = e.context?.todo_id;
-    if (!id || !tally.suggestedTodoIds.has(id)) return false;
+    if (!e.context?.suggested) return false;
     const raisedIn = (e.context.profiles ?? [e.context.profile]).filter((p): p is string => !!p);
     return !raisedIn.some((p) => p !== here);
   }).length;

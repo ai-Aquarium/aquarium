@@ -2,9 +2,8 @@
 
 import { TopBarView } from "@/components/landing/topbar";
 import { NeedsYouPanel, type NeedsYouFeed } from "@/components/landing/work";
-import { needsYouCount } from "@/components/landing/work/NeedsYouPanel";
+import { needsYouCount, tallyOf } from "@/components/landing/work/NeedsYouPanel";
 import { useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
-import { alertTodoIds, useSuggestedTally } from "@/components/suggested-tasks/useSuggestedTally";
 import { Sheet } from "@/components/ui/Sheet";
 import { useActivityRunning } from "@/components/ui/useActivityRunning";
 import { useStatusSummary } from "@/components/ui/useStatusSummary";
@@ -37,7 +36,7 @@ export function ShellTopBar({
   const activity = useActivityRunning();
   const needsYou = useNeedsYou();
   const suggested = useSuggestedTasks();
-  const tally = useSuggestedTally(alertTodoIds(needsYou.items));
+  const tally = tallyOf(needsYou);
   const [open, setOpen] = useState(false);
   const tn = useT("needsYou");
 

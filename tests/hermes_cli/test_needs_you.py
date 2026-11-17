@@ -302,7 +302,7 @@ def test_finalize_sorts_by_severity_then_oldest_and_dedupes():
     assert resp["items"] == rows
     count = ny.response(rows, count_only=True)
     assert count["items"] == [] and count["count"] == 5
-    assert set(resp) == {"items", "count", "by_severity", "collected_at"}
+    assert set(resp) == {"items", "count", "by_severity", "suggested_count", "collected_at"}
 
 
 # ---------------------------------------------------------------------------
@@ -397,7 +397,7 @@ def test_route_lists_the_callers_waits(route):
     state["actor"] = SimpleNamespace(user_id="ada", role="member", is_owner=False,
                                      private_visibility="private:ada")
     body = client.get("/api/needs-you").json()
-    assert set(body) == {"items", "count", "by_severity", "collected_at"}
+    assert set(body) == {"items", "count", "by_severity", "suggested_count", "collected_at"}
     assert [i["source"] for i in body["items"]] == ["chat_tool_approval"]
     assert body["items"][0]["href"] == "/chat?session=s-ada"
     assert body["count"] == 1 and body["by_severity"]["blocking"] == 1
@@ -565,3 +565,56 @@ def test_an_arrival_is_pushed_once_per_person_across_profiles(tmp_path, monkeypa
     assert ny.claim_arrival_push("mary", key) is True
     ny.release_arrival_push("john", key)
     assert ny.claim_arrival_push("john", key) is True
+
+
+class _SuggestedStore:
+    """``TodoStore``'s suggested-task reads: ids starting with ``s`` are suggested."""
+
+    def __init__(self, count=0):
+        self.count, self.asked, self.closed = count, None, 0
+
+    async def _connect(self):
+        store = self
+
+        class _Conn:
+            async def close(self):
+                store.closed += 1
+
+        return _Conn()
+
+    async def count_suggested(self, principal, *, connection=None):
+        return self.count
+
+    async def suggested_among(self, principal, ids, *, connection=None):
+        self.asked = list(ids)
+        return [i for i in ids if i.startswith("s")]
+
+
+@pytest.mark.asyncio
+async def test_suggested_tasks_marks_every_suggested_alert_however_many():
+    """A suggested task and its alert count once past any page or probe limit."""
+    notifs = [_notif(f"n{i}", dedupe_key=f"todo:s{i}", kind="fyi") for i in range(250)]
+    notifs.append(_notif("started", dedupe_key="todo:w1", kind="fyi"))
+    notifs.append(_notif("reply", dedupe_key="todo-action:s1", kind="approval"))
+    items = ny.notification_entries(notifs, "leo")
+    store = _SuggestedStore(count=260)
+    assert await ny.suggested_tasks(items, object(), store=store) == 260
+    marked = [i for i in items if i["context"].get("suggested")]
+    assert len(marked) == 250
+    assert len(store.asked) == 251
+    assert store.closed == 1
+    assert not any(i["context"].get("suggested") for i in items if i["severity"] == "approval")
+    assert not [i for i in items if i["context"].get("todo_id") == "w1"][0]["context"].get("suggested")
+
+
+@pytest.mark.asyncio
+async def test_suggested_tasks_counts_without_todo_alerts():
+    items = ny.notification_entries([_notif("a", dedupe_key="triage:x", kind="fyi")], "leo")
+    store = _SuggestedStore(count=3)
+    assert await ny.suggested_tasks(items, object(), store=store) == 3
+    assert store.asked is None
+
+
+def test_response_carries_the_suggested_count():
+    assert ny.response([], suggested_count=4)["suggested_count"] == 4
+    assert ny.response([], count_only=True)["suggested_count"] is None
