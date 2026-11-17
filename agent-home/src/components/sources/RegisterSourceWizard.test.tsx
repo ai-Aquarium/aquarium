@@ -151,13 +151,69 @@ describe("RegisterSourceWizard", () => {
     expect(calls.filter((c) => c.method === "PUT")).toEqual([]);
   });
 
-  it("explains when I have no profiles and keeps Next disabled", async () => {
-    mockFetch();
-    render(<RegisterSourceWizard list={{ ...LIST, profiles: [] }} onClose={vi.fn()} onRegistered={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("radio", { name: /john@acme\.com/ }));
-    next();
+  it("with no profiles opens on the Profiles step, explains, offers Ask an admin and reads no accounts", async () => {
+    const calls = mockFetch();
+    const onClose = vi.fn();
+    render(<RegisterSourceWizard list={{ ...LIST, profiles: [] }} onClose={onClose} onRegistered={vi.fn()} />);
     expect(screen.getByText("You have no profiles yet")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+    const ask = screen.getByRole("button", { name: "Ask an admin" });
+    fireEvent.click(ask);
+    expect(ask.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByTestId("ask-admin-hint").textContent).toMatch(/add you to a profile/);
+    expect(calls.filter((c) => c.url.startsWith("/api/email") || c.url.startsWith("/api/wa") || c.url.startsWith("/api/telegram"))).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("shows a failed account endpoint as an error with one Try again, not as no accounts", async () => {
+    let mailboxes = 0;
+    let release: () => void = () => undefined;
+    const calls = mockFetch({
+      "GET /api/email/mailboxes": () => {
+        mailboxes += 1;
+        return new Response(JSON.stringify({ detail: "unavailable" }), { status: 503 });
+      },
+    });
+    render(<RegisterSourceWizard list={LIST} onClose={vi.fn()} onRegistered={vi.fn()} />);
+    const failed = await screen.findByTestId("accounts-failed");
+    expect(failed.textContent).toMatch(/Couldn't check your mailboxes/);
+    expect(screen.queryByTestId("accounts-empty")).toBeNull();
+    expect(screen.getByRole("link", { name: /Connect a new mailbox/ })).toBeTruthy();
+
+    // The retry is single-flight: a second click while it runs sends nothing.
+    vi.mocked(globalThis.fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      calls.push({ method: "GET", url, body: null });
+      if (url === "/api/email/mailboxes") {
+        mailboxes += 1;
+        await new Promise<void>((r) => (release = r));
+        return new Response(JSON.stringify({ mailboxes: [{ address: "john@acme.com", state: "working" }] }));
+      }
+      return new Response("{}");
+    });
+    const retry = screen.getByRole("button", { name: "Try again" });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    await waitFor(() => expect(retry.getAttribute("aria-busy")).toBe("true"));
+    expect(mailboxes).toBe(2);
+    release();
+    fireEvent.click(await screen.findByRole("radio", { name: /john@acme\.com/ }));
+    expect(screen.queryByTestId("accounts-failed")).toBeNull();
+  });
+
+  it("keeps each channel's failure separate and says 'not yet' for a genuine empty one", async () => {
+    mockFetch({
+      "GET /api/telegram-bot": () => new Response(JSON.stringify({ detail: "down" }), { status: 503 }),
+    });
+    render(<RegisterSourceWizard list={LIST} onClose={vi.fn()} onRegistered={vi.fn()} />);
+    expect(await screen.findByRole("radio", { name: /john@acme\.com/ })).toBeTruthy();
+    expect(screen.queryByTestId("accounts-failed")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: /WhatsApp/ }));
+    expect(screen.getByTestId("accounts-empty").textContent).toMatch(/haven't connected a WhatsApp number yet/);
+    expect(screen.queryByTestId("accounts-failed")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: /Telegram/ }));
+    expect(screen.getByTestId("accounts-failed").getAttribute("data-channel")).toBe("telegram");
   });
 
   it("with Telegram triage off: warns, offers no triage choice and saves no care", async () => {

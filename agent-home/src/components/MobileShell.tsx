@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { AppMcpBridge } from "@/components/app-mcp/AppMcpBridge";
 import { CoralHost } from "@/components/coral/CoralHost";
 import { LeadChatHost } from "@/components/coral/LeadChatHost";
+import { ProfileScope } from "@/components/ProfileScope";
 import { ProfileSwitcher } from "@/components/ProfileSwitcher";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { ShellTopBar } from "@/components/shell/ShellTopBar";
@@ -153,7 +154,7 @@ export async function MobileShell({
   if (bare) {
     return (
       <div data-component="MobileShell" data-variant="bare" className="min-h-dvh bg-[var(--color-bg)]">
-        {children}
+        {showCoral ? <ProfileScope current={sessionProfile}>{children}</ProfileScope> : children}
         {showCoral ? <CoralHost badgeCounts={badgeCounts} hiddenApps={hiddenApps} /> : null}
         {showCoral ? <LeadChatHost storageEnabled={storageConfigured()} /> : null}
         {showCoral ? <AppMcpBridge /> : null}
@@ -216,7 +217,7 @@ export async function MobileShell({
         </>
       }
     >
-      {children}
+      <ProfileScope current={sessionProfile}>{children}</ProfileScope>
     </ShellFrame>
   );
 }
