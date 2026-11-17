@@ -706,3 +706,108 @@ def test_describe_entity_counts_live_rows_and_common_values(site):
         assert await ss.table_summaries(site, q="order title") == []
 
     run(go())
+
+
+def _blocking_runner(monkeypatch, started, release):
+    def run_recipe(recipe, credential, *, entities=None, mode, cursors):
+        started.set()
+        release.wait(30)
+        yield ("orders", "variable", "A1", {"order_no": "A1", "amount": 1})
+
+    fake = types.ModuleType("hermes_cli.site_recipe_runner")
+    fake.run_recipe = run_recipe
+    monkeypatch.setitem(sys.modules, "hermes_cli.site_recipe_runner", fake)
+    import hermes_cli
+
+    monkeypatch.setattr(hermes_cli, "site_recipe_runner", fake, raising=False)
+
+
+def _until_finished(site, timeout=30.0):
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        runs = run(ss.list_runs(site))
+        if runs and runs[0]["status"] != "running":
+            return runs
+        time.sleep(0.1)
+    raise AssertionError("the refresh never finished")
+
+
+def test_agent_refresh_finishes_after_the_tool_loop_is_closed(site, monkeypatch):
+    """model_tools._run_async closes the tool's loop (cancelling its tasks) once the call returns."""
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+    _blocking_runner(monkeypatch, started, release)
+    approve(site)
+    site = run(ss.get_site(site.id))
+
+    loop = asyncio.new_event_loop()
+    try:
+        view = loop.run_until_complete(ss.start_refresh(site, trigger="agent"))
+    finally:
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        loop.close()
+    assert started.wait(10)
+    release.set()
+
+    runs = _until_finished(site)
+    assert runs[0]["id"] == view["id"] and runs[0]["status"] == "ok" and runs[0]["inserted"] == 1
+    # The advisory lock went with it: the next refresh is not refused as "already running".
+    run(ss.start_refresh(site, trigger="manual", wait=True))
+    assert run(ss.list_runs(site))[0]["status"] == "ok"
+
+
+def test_cancelled_refresh_is_closed_and_unlocked(site, monkeypatch):
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+    _blocking_runner(monkeypatch, started, release)
+    approve(site)
+    site = run(ss.get_site(site.id))
+
+    async def cancel_midway():
+        task = asyncio.create_task(ss.start_refresh(site, trigger="manual", wait=True))
+        await asyncio.to_thread(started.wait, 10)
+        task.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    run(cancel_midway())
+    latest = run(ss.list_runs(site))[0]
+    assert latest["status"] == "error" and latest["error"] == ss.CANCELLED_RUN_ERROR
+    run(ss.start_refresh(site, trigger="manual", wait=True))
+    assert run(ss.list_runs(site))[0]["status"] == "ok"
+
+
+def test_next_refresh_marks_orphaned_running_runs_interrupted(site, monkeypatch):
+    """A process killed mid-refresh (e.g. a service restart) leaves its run 'running'."""
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+    release.set()
+    _blocking_runner(monkeypatch, started, release)
+    approve(site)
+    site = run(ss.get_site(site.id))
+
+    async def orphan():
+        w = await _writer(site)
+        try:
+            return (await w.begin_run("incremental", "agent")).id
+        finally:
+            await w.conn.close()
+
+    orphan_id = run(orphan())
+    run(ss.start_refresh(site, trigger="manual", wait=True))
+
+    runs = {r["id"]: r for r in run(ss.list_runs(site))}
+    assert runs[orphan_id]["status"] == "error"
+    assert runs[orphan_id]["error"] == ss.ORPHANED_RUN_ERROR
+    assert runs[orphan_id]["finished_at"] is not None
+    assert [r["status"] for r in runs.values() if r["id"] != orphan_id] == ["ok"]

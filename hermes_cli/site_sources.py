@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Awaitable, Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Set, Tuple
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -1849,6 +1849,21 @@ class SiteWriter:
             raise SiteError("begin_run first")
         return self.run
 
+    async def close_orphaned_runs(self) -> int:
+        """Mark runs left 'running' as interrupted; call only under the site's refresh lock.
+
+        Holding the lock proves no other refresh of this site is alive, so a
+        'running' row is an orphan (its process was killed mid-refresh).
+        """
+        status = await self.conn.execute(
+            "UPDATE _runs SET status = 'error', finished_at = now(), error = $1 WHERE status = 'running'",
+            ORPHANED_RUN_ERROR,
+        )
+        count = int(str(status).split()[-1]) if str(status or "").startswith("UPDATE ") else 0
+        if count:
+            logger.warning("site %s: marked %d orphaned run(s) interrupted", self.site.slug, count)
+        return count
+
     async def begin_run(self, mode: str, trigger: str) -> SiteRun:
         if mode not in REFRESH_MODES:
             raise SiteError("mode must be incremental or full")
@@ -2604,6 +2619,26 @@ def plan_modes(
 
 _LOCK_NS = 0x5173  # advisory-lock namespace for site refreshes
 _background: Set["asyncio.Task[Any]"] = set()
+ORPHANED_RUN_ERROR = "interrupted: the process running this refresh stopped before it finished"
+CANCELLED_RUN_ERROR = "interrupted: refresh was cancelled"
+_refresh_loop: Optional[asyncio.AbstractEventLoop] = None
+_refresh_loop_guard = threading.Lock()
+
+
+def _background_loop() -> asyncio.AbstractEventLoop:
+    """The process-wide loop that background refreshes run on (started on first use).
+
+    A caller's loop may end with the call (agent tools run on a loop that
+    ``model_tools._run_async`` closes, or stops running, when the tool returns),
+    which would orphan the run, the browser and the site's advisory lock.
+    """
+    global _refresh_loop
+    with _refresh_loop_guard:
+        if _refresh_loop is None or _refresh_loop.is_closed():
+            loop = asyncio.new_event_loop()
+            threading.Thread(target=loop.run_forever, name="site-refresh-loop", daemon=True).start()
+            _refresh_loop = loop
+        return _refresh_loop
 
 
 def _lock_key(site: Site) -> int:
@@ -2658,8 +2693,22 @@ async def start_refresh(
 
     One refresh per site at a time (Postgres advisory lock, so two processes on
     the box can't double-run). ``due(conn)`` re-checks a schedule under the
-    lock; when it says no, nothing runs and ``None`` comes back.
+    lock; when it says no, nothing runs and ``None`` comes back. Without
+    ``wait`` the refresh runs on :func:`_background_loop`, so it outlives the
+    caller's loop.
     """
+    if not wait:
+        loop = _background_loop()
+        try:
+            here = asyncio.get_running_loop()
+        except RuntimeError:
+            here = None
+        if here is not loop:
+            # run_coroutine_threadsafe carries this context (profile HERMES_HOME override) along.
+            started = asyncio.run_coroutine_threadsafe(
+                start_refresh(site, trigger=trigger, entities=entities, mode=mode, due=due, db=db), loop
+            )
+            return await asyncio.wrap_future(started)
     db = db or database()
     if site.status == "paused" and trigger == "schedule":
         return None
@@ -2705,6 +2754,7 @@ async def start_refresh(
         run_mode = "incremental" if "incremental" in modes.values() else "full"
         try:
             cursors = await _cursors(writer_conn, design, modes)
+            await writer.close_orphaned_runs()
             run = await writer.begin_run(run_mode, trigger)
         except BaseException:
             await writer_conn.close()
@@ -2740,6 +2790,7 @@ async def _drive(
     site: Site,
 ) -> None:
     error: Optional[str] = None
+    interrupted: Optional[BaseException] = None
     full: List[str] = []
     next_cursors: Dict[str, Any] = {}
     try:
@@ -2786,17 +2837,27 @@ async def _drive(
         if password:
             error = error.replace(password, "***")
         logger.warning("site %s refresh failed: %s", site.slug, error)
-    try:
-        await writer.finish_run(run, full_entities=full, error=error, cursors=next_cursors)
-    except Exception:  # noqa: BLE001
-        logger.exception("site %s: could not close run %s", site.slug, run.id)
-    finally:
-        with contextlib.suppress(Exception):
-            await writer.conn.close()
-        with contextlib.suppress(Exception):
-            await lock_conn.execute("SELECT pg_advisory_unlock($1, $2)", _LOCK_NS, _lock_key(site))
-        with contextlib.suppress(Exception):
-            await lock_conn.close()
+    except BaseException as exc:  # cancelled (its loop is closing) or shutting down
+        interrupted = exc
+        error = CANCELLED_RUN_ERROR
+        logger.warning("site %s refresh interrupted: %s", site.slug, type(exc).__name__)
+    # Close the run, then release everything, even if cancelled again on the way.
+    steps: List[Callable[[], Awaitable[Any]]] = [
+        lambda: writer.finish_run(run, full_entities=full, error=error, cursors=next_cursors),
+        writer.conn.close,
+        lambda: lock_conn.execute("SELECT pg_advisory_unlock($1, $2)", _LOCK_NS, _lock_key(site)),
+        lock_conn.close,
+    ]
+    for i, step in enumerate(steps):
+        try:
+            await step()
+        except Exception:  # noqa: BLE001
+            if i == 0:
+                logger.exception("site %s: could not close run %s", site.slug, run.id)
+        except BaseException as exc:
+            interrupted = interrupted or exc
+    if interrupted is not None:
+        raise interrupted
 
 
 # ---------------------------------------------------------------------------
