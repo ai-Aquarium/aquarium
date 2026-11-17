@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { Pill } from "@/components/ui/Pill";
 import { Spinner } from "@/components/ui/Spinner";
 import type {
@@ -474,7 +475,7 @@ function AddForm({
   const { run: saveOnce } = useAction(() => onSave());
 
   return (
-    <form
+    <CredentialForm
       data-component="PersonalMcpAddForm"
       className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
       onSubmit={(e) => {
@@ -547,14 +548,14 @@ function AddForm({
               <Spinner /> {t("saving")}
             </span>
           ) : (
-            t("save")
+            <SubmitLabel>{t("save")}</SubmitLabel>
           )}
         </button>
         <button type="button" className={btnCls} disabled={saving} onClick={onCancel}>
           {t("cancel")}
         </button>
       </div>
-    </form>
+    </CredentialForm>
   );
 }
 

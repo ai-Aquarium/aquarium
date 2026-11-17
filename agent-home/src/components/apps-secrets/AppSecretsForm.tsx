@@ -22,6 +22,7 @@ import { ActionButton } from "@/components/projects/ActionButton";
 import { useProjectAction } from "@/components/projects/useProjectAction";
 import { timeAgo } from "@/components/tools/timeAgo";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { Pill } from "@/components/ui/Pill";
 import { useLocale, useT } from "@/i18n";
@@ -189,7 +190,7 @@ export function AppSecretsForm({ name, mode, secretNames, secrets, canEdit = tru
       ) : null}
 
       {canEdit && managing ? (
-        <form onSubmit={onSave} className="space-y-2" autoComplete="off" noValidate>
+        <CredentialForm onSubmit={onSave} className="space-y-2" autoComplete="off" noValidate>
           <label className="block space-y-1 text-xs">
             <span>{t("nameLabel")}</span>
             <input
@@ -224,9 +225,9 @@ export function AppSecretsForm({ name, mode, secretNames, secrets, canEdit = tru
             pendingLabel={t("saving")}
             data-appmcp-deny="secret"
           >
-            {t("save")}
+            <SubmitLabel>{t("save")}</SubmitLabel>
           </ActionButton>
-        </form>
+        </CredentialForm>
       ) : null}
 
       {saved ? (

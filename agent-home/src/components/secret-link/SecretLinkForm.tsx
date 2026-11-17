@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { AuthIllustration } from "@/components/auth/AuthLayout";
 import { authField, authHint, authLabel, authPrimary, authSecondary } from "@/components/auth/styles";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { Spinner } from "@/components/ui/Spinner";
 import { useT } from "@/i18n";
@@ -119,7 +120,7 @@ export function SecretLinkForm({ token, info }: { token: string; info: SecretLin
 
   const fieldLabel = isPassword ? t("password") : t("value");
   return (
-    <form
+    <CredentialForm
       data-component="SecretLinkForm"
       onSubmit={(e) => void submitOnce(e)}
       aria-busy={busy}
@@ -187,7 +188,7 @@ export function SecretLinkForm({ token, info }: { token: string; info: SecretLin
             <Spinner /> {t("saving")}
           </>
         ) : (
-          t("save")
+          <SubmitLabel>{t("save")}</SubmitLabel>
         )}
       </button>
       <button
@@ -200,6 +201,6 @@ export function SecretLinkForm({ token, info }: { token: string; info: SecretLin
         {t("decline")}
       </button>
       <p className="text-xs text-[var(--color-muted)]">{t("privacy")}</p>
-    </form>
+    </CredentialForm>
   );
 }

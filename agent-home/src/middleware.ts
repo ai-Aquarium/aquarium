@@ -15,6 +15,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { guardAgentHomeRequest } from "@/lib/apps/guard";
+import { stripLoginCredentials } from "@/lib/auth/login-query";
 import { notAvailableForRole, roleBlockedApp } from "@/lib/http/body-route-guard";
 import { NOT_AVAILABLE_PATH } from "@/lib/nav/menu-access";
 import { DEFAULT_PROFILE_ONLY_PATH, gatedToDefaultProfile } from "@/lib/nav/profile-gate";
@@ -48,7 +49,24 @@ async function profileGate(request: NextRequest): Promise<NextResponse | null> {
   );
 }
 
+/**
+ * `/login?username=…&password=…` (a native GET submit of an unhydrated form, or
+ * a hand-made link) is never rendered: the page would echo its own URL in the
+ * RSC payload. Redirect to the same URL without them, so history keeps only that.
+ */
+function loginCredentialRedirect(request: NextRequest): NextResponse | null {
+  if (request.nextUrl.pathname !== "/login" || (request.method !== "GET" && request.method !== "HEAD")) return null;
+  const clean = stripLoginCredentials(request.nextUrl);
+  if (!clean) return null;
+  const response = NextResponse.redirect(clean, 303);
+  response.headers.set("cache-control", "no-store");
+  response.headers.set("referrer-policy", "no-referrer");
+  return response;
+}
+
 export async function middleware(request: NextRequest): Promise<NextResponse> {
+  const stripped = loginCredentialRedirect(request);
+  if (stripped) return stripped;
   const verdict = guardAgentHomeRequest(request.method, request.nextUrl.pathname, request.headers);
   if (!verdict.ok) {
     return NextResponse.json({ error: "forbidden", detail: verdict.reason }, { status: 403 });

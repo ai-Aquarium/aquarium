@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { errorKey, type TelegramBotKey } from "@/components/settings/telegramBotStrings";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { useT } from "@/i18n";
 import { Spinner } from "@/components/ui/Spinner";
 import type { TelegramBotView } from "@/types";
@@ -163,7 +164,7 @@ export function TelegramBotSetup() {
           <div className="space-y-2">
             <Step n={1} text={t("step1")} />
             {showTokenForm ? (
-              <form
+              <CredentialForm
                 className="flex flex-col gap-2 sm:flex-row sm:items-end"
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -185,7 +186,7 @@ export function TelegramBotSetup() {
                 </label>
                 <div className="flex gap-2">
                   <button type="submit" className={BTN_PRIMARY} disabled={busy !== null || token.trim() === ""}>
-                    {label("save", "saveTest", "testing")}
+                    <SubmitLabel>{label("save", "saveTest", "testing")}</SubmitLabel>
                   </button>
                   {replacing ? (
                     <button type="button" className={BTN} disabled={busy !== null} onClick={() => setReplacing(false)}>
@@ -193,7 +194,7 @@ export function TelegramBotSetup() {
                     </button>
                   ) : null}
                 </div>
-              </form>
+              </CredentialForm>
             ) : (
               <div className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
