@@ -13,6 +13,7 @@ import { useT } from "@/i18n/client";
 import { errorText } from "@/lib/admin-fetch";
 import {
   accountsOf,
+  canRouteTo,
   channelAccounts,
   CHANNELS,
   claimOwnerName,
@@ -26,6 +27,7 @@ import {
   saveCare,
   telegramTriageOn,
   triageLayers,
+  viewerOnly,
   type ChannelAccounts,
   type ConnectedAccount,
   type SourcesList,
@@ -66,7 +68,9 @@ export function RegisterSourceWizard({
   // Nobody to route to (no active enrolment anywhere): the Profiles step's
   // explanation is the whole story, so open there instead of on a channel
   // picker whose account reads would be refused anyway.
-  const noProfiles = list.profiles.length === 0;
+  // A viewer everywhere is the same story: nothing of theirs may read it.
+  const noRoutable = viewerOnly(list);
+  const noProfiles = list.profiles.length === 0 || noRoutable;
   const [step, setStep] = useState(noProfiles ? 1 : 0);
   const [channel, setChannel] = useState<SourceChannel>("email");
   const [accounts, setAccounts] = useState<Record<SourceChannel, ChannelAccounts> | null>(null);
@@ -367,22 +371,42 @@ export function RegisterSourceWizard({
         <section aria-labelledby="wiz-profiles" className="space-y-3">
           <StepHeading id="wiz-profiles" title={t("wizard.profilesTitle")} hint={t("wizard.profilesHint")} />
           {noProfiles ? (
-            <NoProfilesCard />
+            <NoProfilesCard viewerOnly={noRoutable} />
           ) : (
             <div className="space-y-2">
               {list.profiles.map((p) => {
                 const on = picked.includes(p);
                 const role = list.profile_roles?.[p];
+                const readOnly = !canRouteTo(list, p);
+                const hintId = `wiz-profile-${p}-readonly`;
                 return (
-                  <label key={p} className={`${CARD} flex cursor-pointer items-center gap-3 p-3 ${on ? "border-[var(--color-accent)]" : ""}`}>
+                  <label
+                    key={p}
+                    data-readonly={readOnly ? "true" : undefined}
+                    className={`${CARD} flex items-center gap-3 p-3 ${
+                      readOnly ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+                    } ${on ? "border-[var(--color-accent)]" : ""}`}
+                  >
                     <input
                       type="checkbox"
                       checked={on}
+                      disabled={readOnly}
+                      aria-describedby={readOnly ? hintId : undefined}
                       data-profile={p}
-                      onChange={() => setPicked((cur) => (on ? cur.filter((x) => x !== p) : [...cur, p]))}
+                      onChange={() => {
+                        if (readOnly) return;
+                        setPicked((cur) => (on ? cur.filter((x) => x !== p) : [...cur, p]));
+                      }}
                       className="h-4 w-4 accent-[var(--color-accent)]"
                     />
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{p}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{p}</span>
+                      {readOnly ? (
+                        <span id={hintId} data-testid="profile-readonly" className="block text-xs text-[var(--color-muted)]">
+                          {t("wizard.viewerReadOnly")}
+                        </span>
+                      ) : null}
+                    </span>
                     {role ? (
                       <span
                         data-testid="profile-role"

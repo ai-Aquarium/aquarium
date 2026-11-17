@@ -31,17 +31,19 @@ function BowlWaiting() {
  * read a source. Shared by Settings › Sources and the register wizard's
  * Profiles step. "Ask an admin" opens the plain steps to get added: whoever
  * can add people is an admin of a profile this account isn't active in, so
- * there is no screen here to send them to.
+ * there is no screen here to send them to. `viewerOnly`: enrolled, but a
+ * viewer (read-only) everywhere, so the same card asks for a role change.
  */
-export function NoProfilesCard() {
+export function NoProfilesCard({ viewerOnly = false }: { viewerOnly?: boolean }) {
   const t = useT("sources");
+  const key = viewerOnly ? "wizard.viewerOnly" : "wizard.noProfiles";
   const [asking, setAsking] = useState(false);
   const hintId = useId();
   return (
-    <div className={`${CARD} px-4 py-8 text-center sm:px-8`} data-testid="no-profiles">
+    <div className={`${CARD} px-4 py-8 text-center sm:px-8`} data-testid={viewerOnly ? "viewer-only" : "no-profiles"}>
       <BowlWaiting />
-      <p className="mt-4 text-lg font-semibold">{t("wizard.noProfilesTitle")}</p>
-      <p className="mx-auto mt-1 max-w-md text-sm text-[var(--color-muted)]">{t("wizard.noProfilesBody")}</p>
+      <p className="mt-4 text-lg font-semibold">{t(`${key}Title`)}</p>
+      <p className="mx-auto mt-1 max-w-md text-sm text-[var(--color-muted)]">{t(`${key}Body`)}</p>
       <button
         type="button"
         data-action="ask-admin"
@@ -59,7 +61,7 @@ export function NoProfilesCard() {
           data-testid="ask-admin-hint"
           className="mx-auto mt-3 max-w-md rounded-[var(--radius-lg)] bg-[var(--color-surface-2)] p-3 text-left text-sm"
         >
-          {t("wizard.askAdminHint")}
+          {t(viewerOnly ? "wizard.viewerOnlyAskHint" : "wizard.askAdminHint")}
         </p>
       ) : null}
     </div>

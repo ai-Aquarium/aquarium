@@ -1352,7 +1352,8 @@ class TransferResult:
 
 
 async def _disable_source_routes(store: object, conn: object, user_id: str) -> None:
-    """FG-03: a person leaving (or suspended from) a profile stops its source routes."""
+    """FG-03: a person leaving, suspended from, or made a viewer in a profile
+    stops their source routes there."""
     schema = getattr(store, "schema", None)
     if not isinstance(schema, str):
         return
@@ -1798,6 +1799,10 @@ class PrincipalStore:
                 user_id,
                 role,
             )
+            if role == "viewer":
+                # FG-03: a viewer is read-only, so their sources stop feeding
+                # this profile, the same as on suspension.
+                await _disable_source_routes(self._store, conn, user_id)
             channels = await self._channels_for(conn, user_id)
             return _row_to_principal(row, channels)
         finally:

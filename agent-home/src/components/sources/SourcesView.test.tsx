@@ -6,9 +6,11 @@ import { SourcesView } from "@/components/sources/SourcesView";
 import type { SourcesList } from "@/lib/sources/api";
 import type { Source, SourceClaimConflict } from "@/types";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), usePathname: () => "/settings/sources", useSearchParams: () => new URLSearchParams() }));
+const search = { params: new URLSearchParams() };
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), usePathname: () => "/settings/sources", useSearchParams: () => search.params }));
 
 afterEach(() => {
+  search.params = new URLSearchParams();
   cleanup();
   vi.restoreAllMocks();
 });
@@ -105,6 +107,64 @@ describe("SourcesView", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "Save routes" })).toBeNull());
     expect(calls.filter(([m]) => m === "PUT").map(([, u]) => u)).toEqual(["/api/sources/s1/routes/cmo"]);
     expect(screen.getByText("cmo").getAttribute("data-on")).toBe("true");
+  });
+
+  it("Edit routes can't turn a viewer profile on, but can turn a stale one off", async () => {
+    const calls = mockFetch({
+      "PUT /api/sources/s1/routes/cfo": () =>
+        new Response(JSON.stringify({ route: { source_id: "s1", profile: "cfo", enabled: false, created_at: null, updated_at: null } })),
+    });
+    render(
+      <SourcesView
+        initial={{ ...LIST, profiles: ["cfo", "cmo", "hr"], profile_roles: { cfo: "viewer", cmo: "viewer", hr: "member" } }}
+        initialConflicts={[]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit routes" }));
+    const sheet = screen.getByRole("dialog");
+    // cmo is off and read-only: locked. cfo is on (a stale route): may go off.
+    expect((within(sheet).getByRole("switch", { name: "cmo" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(sheet).getByRole("switch", { name: "hr" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(within(sheet).getAllByTestId("profile-readonly").map((el) => el.textContent)).toEqual([
+      "Viewer — read-only",
+      "Viewer — read-only",
+    ]);
+    fireEvent.click(within(sheet).getByRole("switch", { name: "cfo" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save routes" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Save routes" })).toBeNull());
+    expect(calls.filter(([m]) => m === "PUT").map(([, u]) => u)).toEqual(["/api/sources/s1/routes/cfo"]);
+  });
+
+  it("a viewer in every profile gets the explanation instead of Register, Edit routes or the wizard", () => {
+    search.params = new URLSearchParams("register=1");
+    const calls = mockFetch({});
+    render(
+      <SourcesView
+        initial={{ ...LIST, profile_roles: { cfo: "viewer", cmo: "viewer" } }}
+        initialConflicts={[]}
+      />,
+    );
+    expect(screen.getByTestId("viewer-only").textContent).toMatch(/You can view, but not connect sources/);
+    expect(screen.queryByRole("button", { name: "Edit routes" })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByText("Register a source")).toBeNull();
+    // Existing sources still show, and can still be removed.
+    expect(screen.getByRole("button", { name: /Remove/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Ask an admin" }));
+    expect(screen.getByTestId("ask-admin-hint").textContent).toMatch(/make you a member/);
+    expect(calls.filter(([m]) => m !== "GET")).toEqual([]);
+  });
+
+  it("a viewer with no sources sees only the explanation, not the empty state", () => {
+    mockFetch({});
+    render(
+      <SourcesView
+        initial={{ ...LIST, sources: [], profile_roles: { cfo: "viewer", cmo: "viewer" } }}
+        initialConflicts={[]}
+      />,
+    );
+    expect(screen.getByTestId("viewer-only")).toBeTruthy();
+    expect(screen.queryByTestId("sources-empty")).toBeNull();
   });
 
   it("after a partial failure, a retry diffs against what the server saved", async () => {

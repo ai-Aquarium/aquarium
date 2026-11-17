@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
 
+import { NoProfilesCard } from "@/components/sources/NoProfilesCard";
 import { RegisterSourceWizard } from "@/components/sources/RegisterSourceWizard";
 import {
   BTN_GHOST,
@@ -22,6 +23,7 @@ import { useConfirm } from "@/components/ui/useConfirm";
 import { useT } from "@/i18n/client";
 import { errorText } from "@/lib/admin-fetch";
 import {
+  canRouteTo,
   deleteSource,
   listConflicts,
   listSources,
@@ -29,6 +31,7 @@ import {
   resolveConflict,
   telegramTriageOn,
   updateSource,
+  viewerOnly,
   type SourcesList,
 } from "@/lib/sources/api";
 import { useAction } from "@/lib/use-action";
@@ -54,7 +57,9 @@ export function SourcesView({
   const [claimsFailed, setClaimsFailed] = useState(initialConflictsFailed);
   const router = useRouter();
   const pathname = usePathname() ?? "/settings/sources";
-  const registering = useSearchParams()?.get("register") === "1";
+  // A viewer in every profile can't route anything: no Register, no Edit routes.
+  const readOnly = viewerOnly(list);
+  const registering = useSearchParams()?.get("register") === "1" && !readOnly;
   const closeWizard = () => router.replace(pathname, { scroll: false });
   const [notice, setNotice] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
   const { ask, dialog } = useConfirm();
@@ -118,8 +123,10 @@ export function SourcesView({
         <ClaimsBanner conflicts={open} isAdmin={list.is_box_admin} onOpen={() => setClaimsOpen(true)} />
       ) : null}
 
+      {readOnly ? <NoProfilesCard viewerOnly /> : null}
+
       {list.sources.length === 0 ? (
-        <div className={`${CARD} px-4 py-8 text-center`} data-testid="sources-empty">
+        readOnly ? null : <div className={`${CARD} px-4 py-8 text-center`} data-testid="sources-empty">
           <p className="font-semibold">{t("emptyTitle")}</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-[var(--color-muted)]">{t("emptyBody")}</p>
         </div>
@@ -139,7 +146,7 @@ export function SourcesView({
                 source={source}
                 telegramOn={tgOn}
                 onChanged={replace}
-                onEdit={() => setEditing(source)}
+                onEdit={readOnly ? undefined : () => setEditing(source)}
                 onError={(text) => setNotice({ tone: "danger", text })}
                 onRemove={async () => {
                   const enabled = source.routes.filter((r) => r.enabled).map((r) => r.profile);
@@ -170,6 +177,7 @@ export function SourcesView({
         <EditRoutesSheet
           source={editing}
           profiles={list.profiles}
+          canRoute={(p) => canRouteTo(list, p)}
           onClose={() => setEditing(null)}
           onSaved={(source) => {
             replace(source);
@@ -228,7 +236,8 @@ function SourceRow({
   source: Source;
   telegramOn: boolean;
   onChanged(source: Source): void;
-  onEdit(): void;
+  /** Absent: the caller may route nowhere, so there is nothing to edit. */
+  onEdit?(): void;
   onRemove(): Promise<void>;
   onError(text: string): void;
 }) {
@@ -293,14 +302,16 @@ function SourceRow({
         <Link href={routingHref} data-action="recent-routing" className={`${PHONE_LINK} order-2 sm:order-none ${SM_GHOST}`}>
           {t("recentRouting")}
         </Link>
-        <button
-          type="button"
-          data-action="edit-routes"
-          className={`${PHONE_LINK} order-1 sm:order-none ${SM_SECONDARY}`}
-          onClick={onEdit}
-        >
-          {t("editRoutes")}
-        </button>
+        {onEdit ? (
+          <button
+            type="button"
+            data-action="edit-routes"
+            className={`${PHONE_LINK} order-1 sm:order-none ${SM_SECONDARY}`}
+            onClick={onEdit}
+          >
+            {t("editRoutes")}
+          </button>
+        ) : null}
         <button
           type="button"
           data-action="remove-source"
@@ -460,12 +471,15 @@ function ClaimActions({ onSettle }: { onSettle(action: "keep" | "transfer"): Pro
 function EditRoutesSheet({
   source,
   profiles,
+  canRoute,
   onClose,
   onSaved,
   onProgress,
 }: {
   source: Source;
   profiles: string[];
+  /** False for a viewer profile: a route there can be turned off, never on. */
+  canRoute(profile: string): boolean;
   onClose(): void;
   onSaved(source: Source): void;
   /** Some routes saved before a failure: keep the page in step with the server. */
@@ -529,12 +543,27 @@ function EditRoutesSheet({
       <p className="mb-3 text-sm text-[var(--color-muted)]">{t("editIntro", { address: displayAddress(source.channel, source.address) })}</p>
       {error ? <InlineAlert tone="danger" className="mb-3">{error}</InlineAlert> : null}
       <ul className="space-y-2">
-        {names.map((p) => (
-          <li key={p} className={`${CARD} flex items-center gap-3 px-3 py-2`}>
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{p}</span>
-            <Switch on={on[p]} label={p} onToggle={() => setOn((cur) => ({ ...cur, [p]: !cur[p] }))} />
-          </li>
-        ))}
+        {names.map((p) => {
+          const readOnly = !canRoute(p);
+          return (
+            <li key={p} data-readonly={readOnly ? "true" : undefined} className={`${CARD} flex items-center gap-3 px-3 py-2`}>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{p}</span>
+                {readOnly ? (
+                  <span data-testid="profile-readonly" className="block text-xs text-[var(--color-muted)]">
+                    {t("wizard.viewerReadOnly")}
+                  </span>
+                ) : null}
+              </span>
+              <Switch
+                on={on[p]}
+                label={p}
+                disabled={readOnly && !base[p]}
+                onToggle={() => setOn((cur) => ({ ...cur, [p]: !cur[p] }))}
+              />
+            </li>
+          );
+        })}
       </ul>
       <p className="mt-3 text-xs text-[var(--color-muted)]">{t("editHint")}</p>
     </Sheet>

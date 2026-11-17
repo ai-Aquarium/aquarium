@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { ProfilePicker } from "@/components/chat/ProfilePicker";
+import { withoutInternalIds } from "@/lib/refusal";
 import { useAction } from "@/lib/use-action";
 import type { ProfileSummary } from "@/types";
 
@@ -23,7 +24,8 @@ export async function switchSessionProfile(
     });
     if (res.ok) return { ok: true };
     const body = (await res.json().catch(() => null)) as { detail?: string } | null;
-    return { ok: false, error: body?.detail ?? `You can't work in ${profile}.` };
+    const detail = body?.detail ? withoutInternalIds(body.detail) : "";
+    return { ok: false, error: detail || `You can't work in ${profile}.` };
   } catch {
     return { ok: false, error: "Could not reach the server." };
   }

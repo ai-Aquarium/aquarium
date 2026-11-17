@@ -479,6 +479,154 @@ def test_api_owner_only_writes(box, monkeypatch):
     assert john.get("/api/sources").json()["sources"] == []
 
 
+# -- viewers are read-only (FG-03) ---------------------------------------------------
+
+
+#: Viewers added on top of :data:`ROSTERS` (which other suites share): Mary
+#: is a viewer in cmo only; Vic is a viewer everywhere he is enrolled.
+VIEWERS = {"default": [("vic", "viewer", True)], "cfo": [("vic", "viewer", True)],
+           "cmo": [("mary", "viewer", True)]}
+
+
+@pytest.fixture
+def viewers(box):
+    for name, roster in VIEWERS.items():
+        asyncio.run(_seed(box["homes"][name], box["dsn"], roster))
+    datastore._verified_schemas.clear()
+    return box
+
+
+def test_viewer_cannot_route_but_member_can(box, viewers):
+    async def scenario(c):
+        src = await registry.register_source(
+            c, channel="email", address="mary@example.com", owner_user_id="mary"
+        )
+        with pytest.raises(registry.ViewerCannotRoute) as refused:
+            await registry.set_route(
+                c, source_id=src.source_id, profile_slug="cmo", enabled=True,
+                actor_user_id="mary",
+            )
+        assert str(refused.value) == (
+            "Viewers can't connect sources to cmo. Ask an admin to change your role."
+        )
+        assert refused.value.status == 403
+        # Mary is a member in cfo: still allowed.
+        route = await registry.set_route(
+            c, source_id=src.source_id, profile_slug="cfo", enabled=True,
+            actor_user_id="mary",
+        )
+        assert route.enabled
+        # Turning a viewer-profile route off is always allowed.
+        off = await registry.set_route(
+            c, source_id=src.source_id, profile_slug="cmo", enabled=False,
+            actor_user_id="mary",
+        )
+        assert not off.enabled
+        assert await registry.routed_profiles(c, src.source_id) == ["cfo"]
+
+    _box(box["dsn"], scenario)
+    assert asyncio.run(registry.may_route_to("mary", "cfo")) is True
+    assert asyncio.run(registry.may_route_to("mary", "cmo")) is False
+    assert asyncio.run(registry.may_route_to("vic", "default")) is False
+    assert asyncio.run(registry.may_route_to("sus", "cmo")) is False
+
+
+def test_api_viewer_refusals(box, viewers, monkeypatch):
+    _session_as(monkeypatch, "vic")
+    vic = _client("vic")
+    body = vic.get("/api/sources").json()
+    assert body["profile_roles"] == {"default": "viewer", "cfo": "viewer"}
+    r = vic.post("/api/sources", json={"channel": "email", "address": "vic@example.com"})
+    assert r.status_code == 403
+    assert r.json()["detail"] == registry.VIEWER_REGISTER_REFUSED
+    assert vic.get("/api/sources").json()["sources"] == []
+
+    _session_as(monkeypatch, "mary")
+    mary = _client("mary")
+    r = mary.post("/api/sources", json={"channel": "email", "address": "mary@example.com"})
+    assert r.status_code == 200, r.text
+    source_id = r.json()["source"]["source_id"]
+    r = mary.put(f"/api/sources/{source_id}/routes/cmo", json={"enabled": True})
+    assert r.status_code == 403
+    assert r.json()["detail"] == (
+        "Viewers can't connect sources to cmo. Ask an admin to change your role."
+    )
+    r = mary.put(f"/api/sources/{source_id}/routes/cfo", json={"enabled": True})
+    assert r.status_code == 200, r.text
+    [src] = mary.get("/api/sources").json()["sources"]
+    assert {r["profile"]: r["enabled"] for r in src["routes"]} == {"cfo": True}
+
+
+def test_claim_cannot_give_a_source_to_a_viewer_only_claimant(box, viewers, monkeypatch):
+    async def claim(c):
+        john = await registry.register_source(
+            c, channel="email", address=MAILBOX, owner_user_id="john"
+        )
+        # Vic claims John's mailbox (a claim is recorded, not a source).
+        with pytest.raises(registry.SourceOwnedByAnotherUser):
+            await registry.register_source(
+                c, channel="email", address=MAILBOX, owner_user_id="vic"
+            )
+        with pytest.raises(registry.SourceOwnedByAnotherUser):
+            await registry.register_source(
+                c, channel="email", address=MAILBOX, owner_user_id="mary"
+            )
+        return john.source_id, {
+            cf.claimant_user_id: cf.conflict_id for cf in await registry.list_conflicts(c)
+        }
+
+    source_id, conflicts = _box(box["dsn"], claim)
+    _session_as(monkeypatch, "leo")
+    leo = _client("leo")
+    r = leo.post(f"/api/sources/conflicts/{conflicts['vic']}/resolve", json={"action": "transfer"})
+    assert r.status_code == 403
+    assert r.json()["detail"] == registry.VIEWER_TRANSFER_REFUSED
+    r = leo.post(f"/api/sources/{source_id}/transfer", json={"new_owner_user_id": "vic"})
+    assert r.status_code == 403
+    # The source stays John's; Vic's claim stays open for the admin.
+    owner = _box(box["dsn"], lambda c: registry.get_source(c, source_id)).owner_user_id
+    assert owner == "john"
+    assert conflicts["vic"] in [
+        cf.conflict_id for cf in _box(box["dsn"], registry.list_conflicts)
+    ]
+    # A member claimant may still be given it.
+    r = leo.post(f"/api/sources/conflicts/{conflicts['mary']}/resolve", json={"action": "transfer"})
+    assert r.status_code == 200, r.text
+    assert _box(box["dsn"], lambda c: registry.get_source(c, source_id)).owner_user_id == "mary"
+
+
+def test_owner_made_viewer_stops_that_route(box):
+    """A route into a profile where its owner became a viewer no longer delivers.
+
+    :meth:`PrincipalStore.set_role` disables it (as on suspension), and the
+    router itself skips any user-profile whose owner is not eligible now,
+    so a role changed outside member management is refused too.
+    """
+    from hermes_cli.triage_skills import care_sections_for_source
+
+    john_src, mary_src = _john_routed(box)
+    _in_profile(box, "cmo", lambda s: s.set_role("john", "viewer"))
+    assert _box(box["dsn"], lambda c: registry.routed_profiles(c, john_src)) == ["cfo"]
+    [src] = _box(box["dsn"], lambda c: registry.list_sources(c, owner_user_id="john"))
+    assert {r.profile_slug: r.enabled for r in src.routes} == {"cfo": True, "cmo": False}
+
+    async def demote_in_cfo_directly(store):
+        connection = await store._store.connect()
+        try:
+            await connection.execute("UPDATE principals SET role = 'viewer' WHERE user_id = 'john'")
+        finally:
+            await connection.close()
+
+    _in_profile(box, "cfo", demote_in_cfo_directly)
+    # The route row is still enabled, but the router skips it.
+    assert _box(box["dsn"], lambda c: registry.routed_profiles(c, john_src)) == ["cfo"]
+    assert _box(box["dsn"], lambda c: care_sections_for_source(c, john_src)) == []
+    # Mary (still a member in cfo) keeps delivering there.
+    assert [s["profile"] for s in _box(
+        box["dsn"], lambda c: care_sections_for_source(c, mary_src)
+    )] == ["cfo"]
+
+
 # -- CLI ---------------------------------------------------------------------------
 
 

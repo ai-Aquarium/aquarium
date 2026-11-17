@@ -31,6 +31,7 @@ through untouched.
 from __future__ import annotations
 
 import inspect
+import logging
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
 
@@ -48,6 +49,8 @@ SELF_SCOPED_PREFIXES = (
     "/api/setup",
     "/api/profiles",
 )
+
+logger = logging.getLogger(__name__)
 
 #: Routes whose effect is the host or the whole box (upgrades, VPN, git
 #: worktrees, raw filesystem, process-wide dashboard state, box quotas, ops
@@ -264,9 +267,10 @@ async def _target_principal(conn: HTTPConnection, entry: Any) -> Optional[Any]:
     except ProfileScopeError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except (RuntimeError, LookupError, OSError) as exc:
+        logger.warning("profile %r could not resolve the caller: %s", entry.name, exc)
         raise HTTPException(
             status_code=403,
-            detail=f"profile {entry.name!r} cannot verify who you are there: {exc}",
+            detail=f"{entry.name} can't verify who you are right now. Try again later.",
         ) from exc
 
 

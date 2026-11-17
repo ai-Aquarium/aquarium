@@ -130,6 +130,44 @@ describe("RegisterSourceWizard", () => {
     expect(screen.getByRole("checkbox", { name: /cfo/ })).toBeTruthy();
   });
 
+  it("shows a viewer profile disabled with 'Viewer — read-only' and never routes it", async () => {
+    const calls = mockFetch();
+    render(
+      <RegisterSourceWizard
+        list={{ ...LIST, profile_roles: { cfo: "member", cmo: "viewer" } }}
+        onClose={vi.fn()}
+        onRegistered={vi.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("radio", { name: /john@acme\.com/ }));
+    next();
+    const cmo = screen.getByRole("checkbox", { name: /cmo/ }) as HTMLInputElement;
+    expect(cmo.disabled).toBe(true);
+    expect(cmo.getAttribute("aria-describedby")).toBeTruthy();
+    expect(screen.getAllByTestId("profile-readonly").map((el) => el.textContent)).toEqual(["Viewer — read-only"]);
+    fireEvent.click(cmo);
+    expect((screen.getByRole("checkbox", { name: /cfo/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: /cfo/ }));
+    expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(calls.filter((c) => c.method === "PUT")).toEqual([]);
+  });
+
+  it("a viewer in every profile opens on the explanation and reads no accounts", () => {
+    const calls = mockFetch();
+    render(
+      <RegisterSourceWizard
+        list={{ ...LIST, profile_roles: { cfo: "viewer", cmo: "viewer" } }}
+        onClose={vi.fn()}
+        onRegistered={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("viewer-only").textContent).toMatch(/viewer in every profile/);
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(calls).toEqual([]);
+  });
+
   it("explains an unpaired WhatsApp bridge in plain words and links to its setup", async () => {
     const calls = mockFetch({
       "GET /api/wa-bridges": () =>
