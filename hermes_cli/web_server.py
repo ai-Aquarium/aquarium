@@ -4939,7 +4939,8 @@ async def _request_password_reset(email: str, hint: str) -> None:
     if not user_id:
         return
     chosen = pick_enrolment(
-        await enrolments(user_id, store_factory=principal_store_factory()), hint
+        await enrolments(user_id, store_factory=principal_store_factory(), strict=True),
+        hint,
     )
     if chosen is None:
         return
