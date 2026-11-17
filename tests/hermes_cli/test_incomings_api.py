@@ -236,10 +236,10 @@ class _Todos:
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
 
-    async def live_counts_by_source(self, principal, source_kind, refs):
+    async def todo_counts_by_source(self, principal, source_kind, refs):
         assert source_kind == "inbound"
         self.calls.append(list(refs))
-        return {"11111111-1111-1111-1111-111111111111": 2}
+        return {"11111111-1111-1111-1111-111111111111": {"live": 2, "suggested": 1}}
 
 
 class _Body:
@@ -289,6 +289,7 @@ async def test_todo_counts_are_one_batched_read_per_page(attention):
     attention.items = [_item(), _item(id="22222222-2222-2222-2222-222222222222")]
     page = await incomings_api.list_incomings(request=None, attention="open")
     assert [i["todo_count"] for i in page["items"]] == [2, 0]
+    assert [i["suggested_todo_count"] for i in page["items"]] == [1, 0]
     assert len(attention.todos.calls) == 1
     assert len(attention.todos.calls[0]) == 2
 
@@ -301,6 +302,7 @@ async def test_a_missing_todo_store_is_a_zero_not_a_500(attention, monkeypatch):
     monkeypatch.setattr(incomings_api, "_todos", _broken)
     page = await incomings_api.list_incomings(request=None)
     assert page["items"][0]["todo_count"] == 0
+    assert page["items"][0]["suggested_todo_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -315,6 +317,7 @@ async def test_the_item_payload_carries_the_attention_fields(attention):
     assert detail["attention_cleared_at"] is None
     assert detail["attention_outcome"] is None
     assert detail["todo_count"] == 2
+    assert detail["suggested_todo_count"] == 1
 
 
 @pytest.mark.asyncio

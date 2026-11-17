@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { RefBadge } from "@/components/refs/RefBadge";
+import { SuggestedTag } from "@/components/suggested-tasks/ChannelTag";
 import type { IncomingItem } from "@/types";
 
 /** A glyph per channel: the fastest way to read a mixed list at a glance. */
@@ -107,6 +108,7 @@ export function IncomingRow({ item, from = "" }: { item: IncomingItem; from?: st
               ) : null}
               {range ? <span>{range}</span> : null}
               {item.has_attachments ? <span title="Has attachments">📎</span> : null}
+              {(item.suggested_todo_count ?? 0) > 0 ? <SuggestedTag /> : null}
               {item.importance && item.importance !== "normal" ? (
                 <span className="rounded-full border border-[var(--color-accent)] px-1.5 text-[var(--color-accent)]">
                   {item.importance}

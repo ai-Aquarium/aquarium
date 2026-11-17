@@ -127,15 +127,17 @@ def _todos(mode: Optional[str] = None):
     return default_store(mode)
 
 
-async def _todo_counts(principal, item_ids: list[str]) -> dict[str, int]:
-    """Live to-dos linked to each arrival, in one query per page.
+async def _todo_counts(principal, item_ids: list[str]) -> dict[str, dict[str, int]]:
+    """``{"live", "suggested"}`` to-dos linked to each arrival, in one query
+    per page. ``suggested`` = not started yet (staged/open), so the Inbox can
+    tag a row "Suggested task" without counting started ones.
 
     Best-effort: a box with no to-do store yet shows ``0``, not a 500.
     """
     if not item_ids:
         return {}
     try:
-        return await _todos().live_counts_by_source(principal, ENTITY_KIND, item_ids)
+        return await _todos().todo_counts_by_source(principal, ENTITY_KIND, item_ids)
     except Exception as exc:  # noqa: BLE001 - a count is never worth a 500
         logger.debug("incomings: to-do counts unavailable (%s)", exc)
         return {}
@@ -151,7 +153,9 @@ async def _decorate(tag_registry, principal, items: list) -> list[dict[str, Any]
             tag.as_dict()
             for tag in await tag_registry.for_entity(principal, ENTITY_KIND, item.id)
         ]
-        payload["todo_count"] = counts.get(str(item.id), 0)
+        count = counts.get(str(item.id)) or {}
+        payload["todo_count"] = count.get("live", 0)
+        payload["suggested_todo_count"] = count.get("suggested", 0)
         out.append(payload)
     return await _with_refs(out)
 
@@ -302,7 +306,9 @@ async def get_incoming(request: Request, item_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="No such item")
 
     payload = (await _with_refs([item.as_dict()]))[0]
-    payload["todo_count"] = (await _todo_counts(principal, [item.id])).get(item.id, 0)
+    count = (await _todo_counts(principal, [item.id])).get(item.id) or {}
+    payload["todo_count"] = count.get("live", 0)
+    payload["suggested_todo_count"] = count.get("suggested", 0)
     payload["attachments"] = await registry.attachments(principal, item_id)
     payload["tags"] = [
         tag.as_dict()

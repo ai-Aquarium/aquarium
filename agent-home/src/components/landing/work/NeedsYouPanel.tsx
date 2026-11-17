@@ -78,9 +78,7 @@ export function NeedsYouPanelView({
   const kept = withoutSuggestedAsks(items, suggested);
   const sorted = sortBySeverity(kept);
   const suggestions = suggested?.items.length ?? 0;
-  const shownCount = loaded
-    ? Math.max(count - (items.length - kept.length), kept.length) + suggestions
-    : null;
+  const shownCount = loaded ? needsYouCount(count, items, suggested) : null;
 
   return (
     <section
@@ -144,9 +142,53 @@ export function NeedsYouPanelView({
   );
 }
 
-/** Self-fetching Needs-you panel. Pass `feed` to share one poll with the page. */
-export function NeedsYouPanel({ feed, canStart = true }: { feed?: NeedsYouFeed; canStart?: boolean }) {
-  const suggested = useSuggestedTasks();
+/**
+ * What Needs you counts: the backend's count, minus the to-do alerts a
+ * suggested-task card stands for, plus every suggested task, quiet (staged)
+ * ones included. The top-bar badge and the panel header show the same number.
+ */
+export function needsYouCount(
+  count: number,
+  items: NeedsYouEntry[],
+  suggested?: UseSuggestedTasks,
+): number {
+  const kept = withoutSuggestedAsks(items, suggested);
+  return Math.max(count - (items.length - kept.length), kept.length) + (suggested?.items.length ?? 0);
+}
+
+/**
+ * Self-fetching Needs-you panel. Pass `feed` to share one poll with the page,
+ * and `suggested` to share the page's suggested-task read (the badge uses it).
+ */
+export function NeedsYouPanel({
+  feed,
+  canStart = true,
+  suggested,
+}: {
+  feed?: NeedsYouFeed;
+  canStart?: boolean;
+  suggested?: UseSuggestedTasks;
+}) {
+  return suggested ? (
+    <PanelWith feed={feed} canStart={canStart} suggested={suggested} />
+  ) : (
+    <PanelReadingSuggestions feed={feed} canStart={canStart} />
+  );
+}
+
+function PanelReadingSuggestions({ feed, canStart }: { feed?: NeedsYouFeed; canStart: boolean }) {
+  return <PanelWith feed={feed} canStart={canStart} suggested={useSuggestedTasks()} />;
+}
+
+function PanelWith({
+  feed,
+  canStart,
+  suggested,
+}: {
+  feed?: NeedsYouFeed;
+  canStart: boolean;
+  suggested: UseSuggestedTasks;
+}) {
   return feed ? (
     <NeedsYouPanelView {...feed} suggested={suggested} canStart={canStart} onActed={() => void feed.refresh()} />
   ) : (

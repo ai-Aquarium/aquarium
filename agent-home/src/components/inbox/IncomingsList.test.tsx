@@ -54,6 +54,17 @@ describe("IncomingRow", () => {
     expect(html).toContain("/inbox/inb_1");
   });
 
+  it("tags a row Suggested task only while one of its to-dos is not started", () => {
+    const suggested = renderToStaticMarkup(
+      <IncomingRow item={{ ...BASE, todo_count: 2, suggested_todo_count: 1 }} />,
+    );
+    expect(suggested).toContain('data-component="SuggestedTag"');
+    const started = renderToStaticMarkup(
+      <IncomingRow item={{ ...BASE, todo_count: 1, suggested_todo_count: 0 }} />,
+    );
+    expect(started).not.toContain('data-component="SuggestedTag"');
+  });
+
   it("shows an email's subject with the sender demoted to the meta line", () => {
     const html = renderToStaticMarkup(
       <IncomingRow
