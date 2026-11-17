@@ -27,7 +27,7 @@ function bridge(over: Partial<WaBridge> = {}): WaBridge {
     qr_age_seconds: null,
     qr_stale: false,
     status: "connected",
-    number: "+852****5432",
+    number: "+85••••••32",
     ...over,
   };
 }
@@ -51,18 +51,18 @@ describe("WhatsAppBridges", () => {
       { bridges: [bridge()], others: [], can_add: true },
       {
         "/api/wa-bridges/amy/test": () =>
-          new Response(JSON.stringify({ sent: true, to: "+852****5432" })),
+          new Response(JSON.stringify({ sent: true, to: "+85••••••32" })),
       },
     );
     render(<WhatsAppBridges />);
-    await screen.findByText(/sends to this phone's own number \+852\*\*\*\*5432/);
+    await screen.findByText(/sends to this phone's own number \+85•{6}32/);
     const send = screen.getByRole("button", { name: "Send test" });
     fireEvent.click(send);
     await screen.findByRole("status");
     const testCall = calls.find(([u]) => u === "/api/wa-bridges/amy/test");
     expect(testCall?.[1]?.method).toBe("POST");
     expect(testCall?.[1]?.body).toBeUndefined();
-    expect(screen.getByRole("status").textContent).toContain("+852****5432");
+    expect(screen.getByRole("status").textContent).toContain("+85••••••32");
   });
 
   it("keeps Send test off until the phone is linked", async () => {

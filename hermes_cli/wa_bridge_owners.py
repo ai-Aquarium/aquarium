@@ -186,12 +186,22 @@ def own_number(name: str) -> Optional[str]:
     return digits if digits.isdigit() else None
 
 
+#: What stands in for the hidden digits of a WhatsApp number. Always this
+#: long, so the masked form doesn't give away how many digits are hidden.
+NUMBER_MASK = "\u2022" * 6
+
+
 def mask_number(digits: Optional[str]) -> Optional[str]:
+    """``+15550002001`` → ``+15••••••01``: the first 2 and last 2 digits only.
+
+    The one masked form of a WhatsApp number anything shown in a browser uses.
+    """
+    digits = "".join(ch for ch in str(digits or "") if ch.isdigit())
     if not digits:
         return None
-    if len(digits) <= 7:
-        return f"+{digits[:1]}****{digits[-2:]}"
-    return f"+{digits[:3]}****{digits[-4:]}"
+    if len(digits) <= 4:
+        return f"+{NUMBER_MASK}"
+    return f"+{digits[:2]}{NUMBER_MASK}{digits[-2:]}"
 
 
 def bridge_name_for_session_path(path: Any) -> Optional[str]:

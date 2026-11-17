@@ -221,7 +221,7 @@ def test_send_test_goes_only_to_the_bridges_own_number(home, monkeypatch, fake_b
     owners.record_owner("amy", "amy", port=fake_bridge.server_port)
     _as(monkeypatch, AMY)
     out = run(api.send_test(_Req({"to": "+85211112222"}), "amy"))
-    assert out == {"sent": True, "to": "+852****5432"}
+    assert out == {"sent": True, "to": "+85••••••32"}
     assert len(_FakeBridge.sent) == 1
     path, body = _FakeBridge.sent[0]
     assert path == "/send"
@@ -267,4 +267,4 @@ def test_owner_file_helpers(home):
     assert owners.load_owners() == {}
     assert owners.bridge_name_for_session_path(home / "session-amy") == "amy"
     assert owners.bridge_name_for_session_path("/x/platforms/whatsapp/session") is None
-    assert owners.mask_number("85298765432") == "+852****5432"
+    assert owners.mask_number("85298765432") == "+85••••••32"

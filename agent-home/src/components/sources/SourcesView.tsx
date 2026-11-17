@@ -33,6 +33,7 @@ import {
 } from "@/lib/sources/api";
 import { useAction } from "@/lib/use-action";
 import type { Source, SourceClaimConflict } from "@/types";
+import { displayAddress } from "@/lib/sources/mask";
 
 /** Settings › Sources (FG-03 P7, Figma 2a–2c): the caller's sources and their routes. */
 export function SourcesView({
@@ -143,7 +144,7 @@ export function SourcesView({
                 onRemove={async () => {
                   const enabled = source.routes.filter((r) => r.enabled).map((r) => r.profile);
                   const ok = await ask({
-                    title: t("removeTitle", { address: source.address }),
+                    title: t("removeTitle", { address: displayAddress(source.channel, source.address) }),
                     body: t("removeBody", { profiles: enabled.join(", ") || "—" }),
                     confirmLabel: t("removeConfirm"),
                     cancelLabel: t("cancel"),
@@ -153,7 +154,7 @@ export function SourcesView({
                   try {
                     await deleteSource(source.source_id);
                     setList((cur) => ({ ...cur, sources: cur.sources.filter((s) => s.source_id !== source.source_id) }));
-                    setNotice({ tone: "success", text: t("removed", { address: source.address }) });
+                    setNotice({ tone: "success", text: t("removed", { address: displayAddress(source.channel, source.address) }) });
                   } catch (err) {
                     setNotice({ tone: "danger", text: errorText(err) });
                   }
@@ -253,14 +254,14 @@ function SourceRow({
       <div className="flex min-w-0 flex-1 items-center gap-3 sm:w-64 sm:flex-none">
         <ChannelBadge channel={source.channel} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{source.address}</p>
+          <p className="truncate text-sm font-semibold">{displayAddress(source.channel, source.address)}</p>
           <p className="text-xs text-[var(--color-muted)]">{sourceMeta(t, source, telegramOn)}</p>
         </div>
         <div className="flex items-center gap-1 sm:hidden">
           <Switch
             on={source.enabled}
             busy={toggle.pending}
-            label={t("toggleLabel", { address: source.address })}
+            label={t("toggleLabel", { address: displayAddress(source.channel, source.address) })}
             onToggle={() => void toggle.run()}
           />
         </div>
@@ -282,7 +283,7 @@ function SourceRow({
           <Switch
             on={source.enabled}
             busy={toggle.pending}
-            label={t("toggleLabel", { address: source.address })}
+            label={t("toggleLabel", { address: displayAddress(source.channel, source.address) })}
             onToggle={() => void toggle.run()}
           />
           <span className="w-14 text-sm text-[var(--color-muted)]">
@@ -340,7 +341,7 @@ function ClaimsBanner({
         <p className="text-[var(--color-warn-text)]/90">
           {isAdmin && conflicts.length > 1
             ? t("claimBannerAdmin")
-            : t("claimBannerBody", { claimant: first.claimant_user_id, address: first.address })}
+            : t("claimBannerBody", { claimant: first.claimant_user_id, address: displayAddress(first.channel, first.address) })}
         </p>
       </div>
       <button type="button" data-action="see-claims" className={BTN_SECONDARY} onClick={onOpen}>
@@ -403,8 +404,8 @@ function ClaimsSheet({
           <li key={c.conflict_id} className={`${CARD} p-3 text-sm`} data-conflict={c.conflict_id}>
             <p>
               {isAdmin
-                ? t("claimLine", { claimant: c.claimant_user_id, address: c.address, owner: c.existing_owner_user_id ?? "—" })
-                : t("claimMine", { claimant: c.claimant_user_id, address: c.address })}
+                ? t("claimLine", { claimant: c.claimant_user_id, address: displayAddress(c.channel, c.address), owner: c.existing_owner_user_id ?? "—" })
+                : t("claimMine", { claimant: c.claimant_user_id, address: displayAddress(c.channel, c.address) })}
             </p>
             {done[c.conflict_id] ? (
               <p className="mt-2 text-[var(--color-success)]">{done[c.conflict_id]}</p>
@@ -525,7 +526,7 @@ function EditRoutesSheet({
         </div>
       }
     >
-      <p className="mb-3 text-sm text-[var(--color-muted)]">{t("editIntro", { address: source.address })}</p>
+      <p className="mb-3 text-sm text-[var(--color-muted)]">{t("editIntro", { address: displayAddress(source.channel, source.address) })}</p>
       {error ? <InlineAlert tone="danger" className="mb-3">{error}</InlineAlert> : null}
       <ul className="space-y-2">
         {names.map((p) => (

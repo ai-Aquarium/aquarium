@@ -133,13 +133,13 @@ describe("RegisterSourceWizard", () => {
   it("explains an unpaired WhatsApp bridge in plain words and links to its setup", async () => {
     const calls = mockFetch({
       "GET /api/wa-bridges": () =>
-        new Response(JSON.stringify({ bridges: [{ name: "john-wa", paired: true, number: "+852****4567", status: "connected" }] })),
+        new Response(JSON.stringify({ bridges: [{ name: "john-wa", paired: true, number: "+85••••••67", status: "connected" }] })),
       "POST /api/sources": () =>
         new Response(JSON.stringify({ detail: "This WhatsApp bridge is not linked to a phone yet." }), { status: 409 }),
     });
     render(<RegisterSourceWizard list={LIST} onClose={vi.fn()} onRegistered={vi.fn()} />);
     fireEvent.click(screen.getByRole("radio", { name: /WhatsApp/ }));
-    fireEvent.click(await screen.findByRole("radio", { name: /\+852\*{4}4567/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /\+85•{6}67/ }));
     next();
     fireEvent.click(screen.getByRole("checkbox", { name: "cfo" }));
     next();
@@ -240,14 +240,14 @@ describe("RegisterSourceWizard", () => {
   it("registers a WhatsApp bridge by credential only and reports the address Hermes derived", async () => {
     const calls = mockFetch({
       "GET /api/wa-bridges": () =>
-        new Response(JSON.stringify({ bridges: [{ name: "john-wa", paired: true, number: "+852****4567", status: "connected" }] })),
+        new Response(JSON.stringify({ bridges: [{ name: "john-wa", paired: true, number: "+85••••••67", status: "connected" }] })),
       "POST /api/sources": () =>
         new Response(JSON.stringify({ source: { source_id: "s9", address: "85291234567", routes: [] } })),
     });
     const onRegistered = vi.fn();
     render(<RegisterSourceWizard list={LIST} onClose={vi.fn()} onRegistered={onRegistered} />);
     fireEvent.click(screen.getByRole("radio", { name: /WhatsApp/ }));
-    fireEvent.click(await screen.findByRole("radio", { name: /\+852\*{4}4567/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /\+85•{6}67/ }));
     next();
     fireEvent.click(screen.getByRole("checkbox", { name: "cfo" }));
     next();
@@ -259,7 +259,8 @@ describe("RegisterSourceWizard", () => {
       display: "john-wa",
       credential_ref: { kind: "wa-bridge", bridge: "john-wa" },
     });
-    expect(onRegistered.mock.calls[0][0].text).toContain("85291234567");
+    expect(onRegistered.mock.calls[0][0].text).toContain("+85••••••67");
+    expect(onRegistered.mock.calls[0][0].text).not.toContain("85291234567");
   });
 
   it("keeps my existing version instead of claiming the template, and checks the 4 KB byte limit", async () => {

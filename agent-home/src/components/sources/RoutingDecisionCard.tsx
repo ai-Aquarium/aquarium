@@ -3,6 +3,7 @@
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { useT, type Translator } from "@/i18n";
 import type { RouteChoice, RoutingDecision } from "@/types";
+import { displaySender } from "@/lib/sources/mask";
 
 type Translate = Translator;
 
@@ -50,7 +51,7 @@ function decidedTime(iso: string | null): string | null {
 export function routingMetaLine(t: Translate, decision: RoutingDecision): string {
   const attempts = decision.attempts;
   return [
-    decision.first_sender?.trim() ? t("from", { sender: decision.first_sender.trim() }) : null,
+    decision.first_sender?.trim() ? t("from", { sender: displaySender(decision.channel, decision.first_sender.trim()) }) : null,
     batchSize(t, decision),
     decidedTime(decision.decided_at),
     attempts > 0 ? (attempts === 1 ? t("tryOne") : t("tryMany", { count: attempts })) : null,

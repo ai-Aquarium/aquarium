@@ -17,7 +17,7 @@ function source(over: Partial<Source> = {}): Source {
   return {
     source_id: "s1",
     channel: "whatsapp",
-    address: "+852 9123 4567",
+    address: "+85••••••67",
     owner_user_id: "john",
     display: null,
     credential_ref: null,
@@ -61,7 +61,7 @@ function mockFetch(handlers: Record<string, (init?: RequestInit) => Response>) {
 describe("SourcesView", () => {
   it("shows channel badge, address and paused route chips", () => {
     render(<SourcesView initial={LIST} initialConflicts={[]} />);
-    const row = screen.getByText("+852 9123 4567").closest("li")!;
+    const row = screen.getByText("+85••••••67").closest("li")!;
     expect(within(row).getByText("WA")).toBeTruthy();
     expect(within(row).getByText("cfo").getAttribute("data-on")).toBe("true");
     expect(within(row).getByText("cmo · paused").getAttribute("data-on")).toBe("false");
@@ -82,7 +82,7 @@ describe("SourcesView", () => {
       return new Response(JSON.stringify({ source: source({ enabled: false }) }));
     });
     render(<SourcesView initial={LIST} initialConflicts={[]} />);
-    const [toggle] = screen.getAllByRole("switch", { name: "Read new messages from +852 9123 4567" });
+    const [toggle] = screen.getAllByRole("switch", { name: "Read new messages from +85••••••67" });
     fireEvent.click(toggle);
     fireEvent.click(toggle);
     release();
@@ -138,10 +138,10 @@ describe("SourcesView", () => {
     const calls = mockFetch({ "DELETE /api/sources/s1": () => new Response(JSON.stringify({ deleted: true })) });
     render(<SourcesView initial={LIST} initialConflicts={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    expect(await screen.findByText("Remove +852 9123 4567?")).toBeTruthy();
+    expect(await screen.findByText("Remove +85••••••67?")).toBeTruthy();
     expect(calls.some(([m]) => m === "DELETE")).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Remove source" }));
-    await screen.findByText("+852 9123 4567 removed.");
+    await screen.findByText("+85••••••67 removed.");
     expect(calls.filter(([m]) => m === "DELETE")).toEqual([["DELETE", "/api/sources/s1"]]);
   });
 
