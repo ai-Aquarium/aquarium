@@ -1,6 +1,8 @@
 {
   "tabs": {
     "arrived": "Arrived",
+    "suggested": "Suggested tasks",
+    "suggestedShort": "Suggested",
     "approvals": "Approvals",
     "changes": "Changes",
     "label": "Inbox sections"

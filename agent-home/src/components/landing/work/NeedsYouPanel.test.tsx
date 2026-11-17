@@ -6,7 +6,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
 }));
 
-import { NeedsYouPanel, NeedsYouPanelView, sortBySeverity } from "./NeedsYouPanel";
+import type { NeedsYouEntry } from "@/types/landing";
+
+import { NeedsYouPanel, NeedsYouPanelView, sortBySeverity, withoutSuggestedAsks } from "./NeedsYouPanel";
 import { needsYouEntry, needsYouResponse } from "./fixtures";
 import { resetNeedsYouFeedCache, useNeedsYouFeed } from "./useNeedsYouFeed";
 
@@ -87,5 +89,18 @@ describe("useNeedsYouFeed", () => {
     render(<NeedsYouPanel />);
     await waitFor(() => expect(screen.getByText(/Couldn’t check right now/)).toBeTruthy());
     expect(screen.queryByTestId("needs-you-all-clear")).toBeNull();
+  });
+});
+
+describe("NeedsYouPanelView with suggested tasks", () => {
+  const ask = (id: string, source: NeedsYouEntry["source"], severity: NeedsYouEntry["severity"]) =>
+    ({ id, source, severity, title: id, context: {}, created_at: 0, href: "/", actions: [] }) as NeedsYouEntry;
+
+  it("drops a to-do's ask once its suggested task shows, keeping reply approvals", () => {
+    const items = [ask("todo-alert", "todo", "fyi"), ask("todo-reply", "todo", "approval"), ask("card", "card_wait", "approval")];
+    const suggested = { items: [], loaded: true, error: null, refresh: async () => {}, remove: () => {} };
+    expect(withoutSuggestedAsks(items, suggested).map((e) => e.id)).toEqual(["todo-reply", "card"]);
+    expect(withoutSuggestedAsks(items, { ...suggested, error: "down" })).toHaveLength(3);
+    expect(withoutSuggestedAsks(items, undefined)).toHaveLength(3);
   });
 });

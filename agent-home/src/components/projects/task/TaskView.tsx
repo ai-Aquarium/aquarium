@@ -21,6 +21,7 @@ import { useProjectAction } from "@/components/projects/useProjectAction";
 import { useProjectEvents } from "@/components/projects/useProjectEvents";
 import { useRunLive } from "@/components/projects/useRunLive";
 import { useTimeLabel } from "@/components/projects/useTimeLabel";
+import { TaskSource } from "@/components/suggested-tasks/TaskSource";
 import { useRefresh, useServerState } from "@/components/ui/useRefresh";
 import type {
   ProjectBoardTask,
@@ -359,7 +360,10 @@ export function TaskView({
         ) : null}
       </div>
 
-      <TaskDetails project={project} onOpenProject={onOpenProject} />
+      <div className="flex min-w-0 flex-col gap-3">
+        <TaskSource project={project} />
+        <TaskDetails project={project} onOpenProject={onOpenProject} />
+      </div>
 
       {changeOpen ? (
         <ChangeRequestSheet

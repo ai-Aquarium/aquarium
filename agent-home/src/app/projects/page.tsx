@@ -6,6 +6,7 @@ import { InfoTip } from "@/components/ui/InfoTip";
 import { getT } from "@/i18n/server";
 import { ProjectsList } from "@/components/projects/ProjectsList";
 import { ProjectsModeView } from "@/components/projects/task/ProjectsModeView";
+import { SuggestedTasksStrip } from "@/components/suggested-tasks/SuggestedTasksStrip";
 import {
   projectViewContext,
   type ViewContext,
@@ -105,15 +106,18 @@ export default async function Page({
       {error ? (
         <ProjectsLoadError component="ProjectsPageError" details={`Couldn't load your projects (${error}).`} />
       ) : (
-        <ProjectsModeView mode="project" device={view.device}>
-          <ProjectsList
-            initial={projects}
-            categories={categories}
-            initialFilters={phoneDefaultsToList(state, params, view.device)}
-            rememberLayout={view.device === "phone"}
-            layoutInUrl={params.has("layout")}
-          />
-        </ProjectsModeView>
+        <div className="flex flex-col gap-3">
+          <SuggestedTasksStrip canStart={principal.role !== "viewer"} />
+          <ProjectsModeView mode="project" device={view.device}>
+            <ProjectsList
+              initial={projects}
+              categories={categories}
+              initialFilters={phoneDefaultsToList(state, params, view.device)}
+              rememberLayout={view.device === "phone"}
+              layoutInUrl={params.has("layout")}
+            />
+          </ProjectsModeView>
+        </div>
       )}
     </MobileShell>
   );
@@ -144,11 +148,14 @@ async function TaskModePage({ view, canStart }: { view: ViewContext; canStart: b
       {error ? (
         <ProjectsLoadError component="ProjectsPageError" details={`Couldn't load your tasks (${error}).`} />
       ) : (
-        <ProjectsModeView
-          mode="task"
-          device={view.device}
-          task={{ items, profiles, defaultProfile, canStart }}
-        />
+        <div className="flex flex-col gap-3">
+          <SuggestedTasksStrip canStart={canStart} />
+          <ProjectsModeView
+            mode="task"
+            device={view.device}
+            task={{ items, profiles, defaultProfile, canStart }}
+          />
+        </div>
       )}
     </MobileShell>
   );

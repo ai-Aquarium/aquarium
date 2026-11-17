@@ -154,6 +154,23 @@ export function TodoDetailView({ todo, profile }: { todo: TodoDetail; profile?: 
     >
       {toast}
       <div className="flex min-w-0 flex-col gap-4">
+      {current.project ? (
+        <InlineAlert
+          tone="info"
+          title="Started as a task"
+          action={
+            <Link
+              href={current.project.url || `/projects/${encodeURIComponent(current.project.slug)}`}
+              data-action="open-todo-task"
+              className="inline-flex min-h-10 items-center rounded-[var(--radius-md)] bg-[var(--color-accent)] px-3 text-sm font-medium text-[var(--color-accent-fg)]"
+            >
+              Open task{current.project.ref ? ` ${current.project.ref}` : ""}
+            </Link>
+          }
+        >
+          {current.project.name}. This to-do closes when the task is done.
+        </InlineAlert>
+      ) : null}
       <div className="min-w-0 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <p className="flex items-start gap-2 text-sm font-semibold">
           <span aria-hidden>{sourceGlyph(current.source_kind)}</span>

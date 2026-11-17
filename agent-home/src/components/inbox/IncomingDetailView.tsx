@@ -12,6 +12,7 @@ import { surfaceGlyph } from "@/components/inbox/IncomingRow";
 import { surfaceLabel } from "@/components/inbox/IncomingsFilters";
 import { formatSize, formatWhen } from "@/components/files/FilesView";
 import { AddToProjectSheet } from "@/components/projects/AddToProjectSheet";
+import { MessageSuggestion } from "@/components/suggested-tasks/MessageSuggestion";
 import { RefBadge } from "@/components/refs/RefBadge";
 import { attentionErrorKey, setIncomingAttention } from "@/lib/landing/incomings";
 import type { IncomingDetail } from "@/types";
@@ -27,10 +28,13 @@ import type { IncomingDetail } from "@/types";
 export function IncomingDetailView({
   item,
   canChangeAttention = true,
+  canStartTasks = true,
 }: {
   item: IncomingDetail;
   /** The viewer owns the arrival: only the owner may mark it Done / Reopen. */
   canChangeAttention?: boolean;
+  /** Viewers see the suggested task but cannot start it. */
+  canStartTasks?: boolean;
 }) {
   const [current, setCurrent] = useState(item);
   const [busy, setBusy] = useState(false);
@@ -100,6 +104,7 @@ export function IncomingDetailView({
       className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start"
     >
       <div className="flex min-w-0 flex-col gap-4">
+      <MessageSuggestion incomingId={current.id} canStart={canStartTasks} />
       <div className="min-w-0 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <p className="flex items-start gap-2 text-sm font-semibold">
           <span aria-hidden>{surfaceGlyph(current.surface)}</span>

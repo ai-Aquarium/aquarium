@@ -45,7 +45,7 @@ export default async function Page({
   const params = await searchParams;
   const requested = Array.isArray(params.tab) ? params.tab[0] : params.tab;
   const initialTab: Tab =
-    requested === "approvals" || requested === "changes"
+    requested === "approvals" || requested === "changes" || requested === "suggested"
       ? requested
       : "incomings";
 
@@ -120,6 +120,7 @@ export default async function Page({
           whose={whose}
           incomingsFacets={facets}
           initialTab={initialTab}
+          canStartTasks={principal.role !== "viewer"}
         />
       )}
     </MobileShell>
