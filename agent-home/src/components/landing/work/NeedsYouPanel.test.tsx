@@ -136,5 +136,7 @@ describe("NeedsYouPanelView with suggested tasks", () => {
     const items = [ask("same-message", "fyi", { arrival_key: KEY }), ask("card-wait", "approval")];
     expect(needsYouCount(2, items, feed([card, quiet]))).toBe(3);
     expect(needsYouCount(2, items, undefined)).toBe(2);
+    // Past the loaded page: the server-side total counts them all.
+    expect(needsYouCount(2, items, feed([card, quiet], { total: 120 }))).toBe(121);
   });
 });

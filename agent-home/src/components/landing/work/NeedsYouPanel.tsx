@@ -153,7 +153,8 @@ export function needsYouCount(
   suggested?: UseSuggestedTasks,
 ): number {
   const kept = withoutSuggestedAsks(items, suggested);
-  return Math.max(count - (items.length - kept.length), kept.length) + (suggested?.items.length ?? 0);
+  const suggestions = Math.max(suggested?.total ?? 0, suggested?.items.length ?? 0);
+  return Math.max(count - (items.length - kept.length), kept.length) + suggestions;
 }
 
 /**

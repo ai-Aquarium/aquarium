@@ -46,6 +46,7 @@ function signIn() {
 }
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
+const todoReads = () => seen.filter((s) => s.url.pathname === "/api/registry/todos");
 
 describe("suggested-tasks BFF", () => {
   beforeAll(() => {
@@ -76,6 +77,7 @@ describe("suggested-tasks BFF", () => {
           next_cursor: null,
         });
       }
+      if (u.pathname === "/api/registry/todos/suggested-count") return Response.json({ count: 57 });
       if (u.pathname === "/api/registry/incomings/m1") {
         return Response.json({ id: "m1", ref: "M512", surface: "email", account_id: "sales@x", sender_name: "Ada", sender_id: "ada@x", subject: "Tender", body: "Can we submit?", occurred_at: null });
       }
@@ -84,10 +86,11 @@ describe("suggested-tasks BFF", () => {
     const res = await GET(new Request("http://x/api/suggested-tasks"));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(seen[0].url.searchParams.get("stage")).toBe("open,staged");
+    expect(todoReads()[0].url.searchParams.get("stage")).toBe("open,staged");
     expect(body.items.map((t: { channel: string }) => t.channel)).toEqual(["email", "other", "other"]);
     expect(body.items[0].source).toMatchObject({ id: "m1", sender_name: "Ada", subject: "Tender" });
     expect(body.items[1].source).toBeNull();
+    expect(body.total).toBe(57);
     // The user's own to-do has no arrival to read.
     expect(seen.map((s) => s.url.pathname)).not.toContain("/api/registry/incomings/null");
   });
@@ -96,10 +99,12 @@ describe("suggested-tasks BFF", () => {
     signIn();
     route = () => Response.json({ items: [], next_cursor: null });
     await GET(new Request("http://x/api/suggested-tasks?stage=working,done"));
-    expect(seen[0].url.searchParams.get("stage")).toBe("open,staged");
+    expect(todoReads()[0].url.searchParams.get("stage")).toBe("open,staged");
     await GET(new Request("http://x/api/suggested-tasks?source_ref=m1&stage=open,working,done"));
-    expect(seen[1].url.searchParams.get("stage")).toBe("open,working");
-    expect(seen[1].url.searchParams.get("source_ref")).toBe("m1");
+    expect(todoReads()[1].url.searchParams.get("stage")).toBe("open,working");
+    expect(todoReads()[1].url.searchParams.get("source_ref")).toBe("m1");
+    // The badge total is only read for the plain first page.
+    expect(seen.filter((s) => s.url.pathname.endsWith("/suggested-count"))).toHaveLength(1);
   });
 
   it("snoozes until the time asked and refuses a missing one", async () => {

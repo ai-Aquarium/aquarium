@@ -1339,6 +1339,8 @@ export interface SuggestedTasksResponse {
   next_cursor: string | null;
   /** The profile these to-dos were read in (the session's). */
   profile?: string | null;
+  /** Every suggested task the caller has, counted server-side (first page only). */
+  total?: number | null;
 }
 
 /** What a finished work session left behind (the launcher's snapshot). */

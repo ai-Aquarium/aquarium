@@ -1299,6 +1299,39 @@ class TodoStore:
             if own:
                 await conn.close()
 
+    async def count_suggested(
+        self,
+        principal: Principal,
+        *,
+        now: Optional[datetime] = None,
+        connection: Optional["asyncpg.Connection"] = None,
+    ) -> int:
+        """How many visible to-dos are suggested tasks: staged/open and not
+        snoozed (the same rows ``list`` shows by default), counted in one read
+        so the Needs-you badge needs no paging."""
+        predicate = scope_filter(
+            principal,
+            start_index=3,
+            grant_item_kind=GRANT_ITEM_KIND,
+            id_column=GRANT_ID_COLUMN,
+        )
+        own = connection is None
+        conn = connection or await self._connect()
+        try:
+            value = await conn.fetchval(
+                f"""SELECT COUNT(*) FROM {TASKS_TABLE}
+                     WHERE stage = ANY($1::text[])
+                       AND (snoozed_until IS NULL OR snoozed_until <= $2::timestamptz)
+                       AND {predicate.sql}""",
+                list(SUGGESTED_STAGES),
+                now or datetime.now(timezone.utc),
+                *predicate.params,
+            )
+        finally:
+            if own:
+                await conn.close()
+        return int(value or 0)
+
     async def live_counts_by_source(
         self,
         principal: Principal,

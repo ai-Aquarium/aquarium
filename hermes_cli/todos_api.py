@@ -167,6 +167,16 @@ async def todos_facets(request: Request) -> dict[str, Any]:
     return await store.facets(principal)
 
 
+@router.get("/suggested-count")
+async def suggested_todos_count(request: Request) -> dict[str, int]:
+    """How many suggested tasks the caller has (staged/open, not snoozed)."""
+    principal = await _resolve_principal(request)
+    store = _store()
+    if not await _table_ready(store):
+        return {"count": 0}
+    return {"count": await store.count_suggested(principal)}
+
+
 @router.post("")
 async def create_todo(request: Request) -> dict[str, Any]:
     """A to-do the user wrote themselves.
