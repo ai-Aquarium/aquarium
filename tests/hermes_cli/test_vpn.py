@@ -858,3 +858,84 @@ def test_migrate_shares_registered_in_cli():
     vpn_cmd.register_vpn_subparser(parser.add_subparsers(dest="command"))
     args = parser.parse_args(["vpn", "migrate-shares", "--dry-run"])
     assert args.vpn_command == "migrate-shares" and args.dry_run is True
+
+
+# ---------------------------------------------------------------------------
+# Auto-reconnect
+
+
+def _drop(helper, slug):
+    helper.state[slug] = {"state": "error", "error": vpn.DROPPED_ERROR}
+
+
+def _stay_on(file_store, name="Office files", **extra):
+    payload = dict(PAYLOAD, idle_minutes=0, **extra)
+    cred = put(file_store, OWNER, name=name, payload=payload)
+    return cred, vpn.slug_for(cred)
+
+
+def test_reconnect_brings_back_a_dropped_stay_connected_vpn(file_store, helper):
+    _, slug = _stay_on(file_store)
+    _drop(helper, slug)
+    assert run(vpn.reconnect_tick(now=1_000_000.0)) == [slug]
+    assert helper.state[slug]["state"] == "connected"
+    assert vpn._entry(slug)["reconnect_failures"] == 0
+
+
+def test_reconnect_leaves_other_vpns_alone(file_store, helper):
+    timed = put(file_store, OWNER, name="Timed", payload=dict(PAYLOAD, idle_minutes=30))
+    manual = put(file_store, OWNER, name="Manual",
+                 payload=dict(PAYLOAD, idle_minutes=0, auto_connect=False))
+    _, off = _stay_on(file_store, name="Off")
+    _, bad = _stay_on(file_store, name="Bad login")
+    for cred in (timed, manual):
+        _drop(helper, vpn.slug_for(cred))
+    helper.state[off] = {"state": "disconnected"}
+    helper.state[bad] = {"state": "error", "error": "Wrong VPN username or password"}
+    assert run(vpn.reconnect_tick(now=1_000_000.0)) == []
+    assert "up" not in helper.commands()
+
+
+def test_reconnect_backs_off_when_the_tunnel_keeps_dropping(file_store, helper):
+    _, slug = _stay_on(file_store)
+    t = 1_000_000.0
+    _drop(helper, slug)
+    assert run(vpn.reconnect_tick(now=t)) == [slug]
+    # Dropped again a minute later (another box took the login): flapping.
+    _drop(helper, slug)
+    assert run(vpn.reconnect_tick(now=t + 60)) == [slug]
+    assert vpn._entry(slug)["reconnect_failures"] == 1
+    _drop(helper, slug)
+    assert run(vpn.reconnect_tick(now=t + 120)) == []  # waiting out 2 min
+    assert run(vpn.reconnect_tick(now=t + 60 + 120)) == [slug]
+    assert vpn._entry(slug)["reconnect_failures"] == 2
+    assert vpn.reconnect_backoff(30) == vpn.RECONNECT_MAX_BACKOFF
+
+
+def test_reconnect_resets_after_a_stable_session(file_store, helper):
+    _, slug = _stay_on(file_store)
+    vpn._record(slug, reconnect_at="1970-01-12T13:46:40Z", reconnect_failures=3)
+    _drop(helper, slug)
+    later = 1_000_000.0 + 8 * 3600
+    assert run(vpn.reconnect_tick(now=later)) == [slug]
+    assert vpn._entry(slug)["reconnect_failures"] == 0
+
+
+def test_failed_reconnect_counts_as_a_failure(file_store, helper):
+    _, slug = _stay_on(file_store)
+    helper.up_doc = {"state": "error", "error": "Can't reach the VPN server"}
+    _drop(helper, slug)
+    assert run(vpn.reconnect_tick(now=1_000_000.0)) == [slug]
+    assert vpn._entry(slug)["reconnect_failures"] == 1
+
+
+def test_failed_reconnect_keeps_retrying_with_backoff(file_store, helper):
+    _, slug = _stay_on(file_store)
+    helper.up_doc = {"state": "error", "error": "Can't reach the VPN server"}
+    _drop(helper, slug)
+    t = 1_000_000.0
+    run(vpn.reconnect_tick(now=t))
+    assert run(vpn.reconnect_tick(now=t + 60)) == []
+    helper.up_doc = {"state": "connected", "since": "x", "local_ip": "10.0.0.1"}
+    assert run(vpn.reconnect_tick(now=t + 120)) == [slug]
+    assert helper.state[slug]["state"] == "connected"

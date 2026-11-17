@@ -331,10 +331,22 @@ async def _lifespan_services(app: "FastAPI"):
     except Exception:  # noqa: BLE001 - never block the dashboard on it
         _log.debug("site scheduler not started", exc_info=True)
 
+    # VPNs set to stay connected reconnect after the gateway drops them.
+    vpn_task = None
+    try:
+        from hermes_cli import vpn as vpn_mod
+
+        if vpn_mod.reconnect_enabled():
+            vpn_task = asyncio.create_task(vpn_mod.reconnect_loop(sites_stop))
+    except Exception:  # noqa: BLE001 - never block the dashboard on it
+        _log.debug("vpn reconnect loop not started", exc_info=True)
+
     try:
         yield
     finally:
         sites_stop.set()
+        if vpn_task is not None:
+            vpn_task.cancel()
         if sites_task is not None:
             sites_task.cancel()
         if schema_task is not None:
