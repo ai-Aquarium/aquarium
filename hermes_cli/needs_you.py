@@ -40,7 +40,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, unquote, urlencode
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +208,14 @@ TRIAGE_ALERT = "triage-alert"
 #: P6) could not be triaged at all and was only stored
 #: (``triage-failed:<kind>:<batch id>``).
 TRIAGE_FAILED = "triage-failed"
+#: ... and the daily "too many asks, review your triage skills" warning
+#: (``triage-ask-review:<profile>:<date>``, ``hermes_cli.triage_ask_review``).
+TRIAGE_ASK_REVIEW = "triage-ask-review"
+
+
+def triage_skills_href(profile: str) -> str:
+    """Where a profile's triage skills are managed (Profile › My triage skills)."""
+    return "/profiles/" + quote(profile or "default", safe="") + "/triage"
 
 
 def arrival_key(surface: Any, account_id: Any, external_id: Any) -> str:
@@ -269,6 +277,9 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
             source, href, severity = "todo", "/todos", "approval"
         elif key.startswith("todo:"):
             source, href, severity = "todo", "/todos", None
+        elif key.startswith(TRIAGE_ASK_REVIEW + ":"):
+            profile = unquote(key.split(":")[1]) if key.count(":") >= 2 else ""
+            source, href, severity = "notification", triage_skills_href(profile), "review"
         elif key == TRIAGE_ALERT or key.startswith(TRIAGE_FAILED + ":"):
             source, href, severity = "notification", "/inbox", "review"
         else:

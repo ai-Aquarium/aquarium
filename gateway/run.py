@@ -19401,6 +19401,7 @@ def _start_gateway_housekeeping(stop_event: threading.Event, adapters=None, loop
     CHANNEL_DIR_EVERY = 5    # ticks — every 5 minutes
     PASTE_SWEEP_EVERY = 60   # ticks — once per hour
     CURATOR_EVERY = 60       # ticks — poll hourly (inner gate handles the real cadence)
+    ASK_REVIEW_EVERY = 60    # ticks — poll hourly (dedupe keeps it to one warning a day)
 
     logger.info("Gateway housekeeping started (interval=%ds)", interval)
     tick_count = 0
@@ -19464,6 +19465,15 @@ def _start_gateway_housekeeping(stop_event: threading.Event, adapters=None, loop
                 )
             except Exception as e:
                 logger.debug("Curator tick error: %s", e)
+
+        # Daily triage ask-volume review, per served profile: at most one
+        # "review your triage skills" ask per profile per day.
+        if tick_count % ASK_REVIEW_EVERY == 0:
+            try:
+                from hermes_cli.triage_ask_review import run_ask_review
+                run_ask_review()
+            except Exception as e:
+                logger.debug("Ask review tick error: %s", e)
 
         stop_event.wait(timeout=interval)
     logger.info("Gateway housekeeping stopped")

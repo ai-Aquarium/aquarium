@@ -1,8 +1,8 @@
 """Triage's judgement has to reach the To-dos page, and quietly.
 
 The `todos` handler is the one place where a chatty morning can turn into a
-list nobody reads, so these tests pin the volume controls (cap, ordering,
-staged-by-default), the provenance the page needs, and the rule every bridge
+list nobody reads, so these tests pin the volume controls (no per-batch cap,
+ordering, staged-by-default), the provenance the page needs, and the rule every bridge
 in this pipeline obeys: a registry outage costs a nudge, never the message.
 """
 
@@ -108,7 +108,8 @@ def test_a_todo_without_notify_stays_silent(handlers, recorded):
     assert recorded[0]["notify"] is False
 
 
-def test_a_batch_contributes_at_most_three_todos(handlers, recorded):
+def test_a_batch_records_every_todo_it_emits(handlers, recorded):
+    """No per-batch cap: volume is watched per day (triage_ask_review)."""
     handlers.process_result(
         {
             "todos": [
@@ -118,12 +119,11 @@ def test_a_batch_contributes_at_most_three_todos(handlers, recorded):
         _email_batch(None),
         _NullDb(),
     )
-    assert len(recorded) == 3
+    assert len(recorded) == 7
 
 
-def test_the_cap_keeps_the_urgent_ones(handlers, recorded):
-    """The batch that overflows is exactly the one that must not lose the
-    item that mattered."""
+def test_the_urgent_ones_are_recorded_first(handlers, recorded):
+    """Most urgent first, so the ask that matters is announced first."""
     handlers.process_result(
         {
             "todos": [
@@ -141,6 +141,8 @@ def test_the_cap_keeps_the_urgent_ones(handlers, recorded):
         "Critical thing",
         "High thing",
         "Medium thing",
+        "Low thing",
+        "Another low thing",
     ]
 
 
@@ -220,7 +222,7 @@ def test_selection_is_stable_within_a_priority(registration):
             {"title": "fourth", "priority": "medium"},
         ]
     )
-    assert [p["title"] for p in picked] == ["first", "second", "third"]
+    assert [p["title"] for p in picked] == ["first", "second", "third", "fourth"]
 
 
 def test_notify_breaks_a_priority_tie(registration):
@@ -229,9 +231,8 @@ def test_notify_breaks_a_priority_tie(registration):
             {"title": "quiet", "priority": "high"},
             {"title": "loud", "priority": "high", "notify": True},
         ],
-        limit=1,
     )
-    assert [p["title"] for p in picked] == ["loud"]
+    assert [p["title"] for p in picked] == ["loud", "quiet"]
 
 
 def test_a_todo_with_no_title_is_never_registered(registration):

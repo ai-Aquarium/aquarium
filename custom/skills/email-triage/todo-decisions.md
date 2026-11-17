@@ -55,10 +55,11 @@ then hiding the resulting to-do is incoherent.
 
 ## Volume
 
-At most **three** to-dos per batch reach the store; the highest-priority ones
-win. Do not pad the list to reach three. One good to-do beats three vague
-ones — "Reply to Ada about the tender deadline" is actionable, "Follow up on
-emails" is not.
+Every to-do you emit reaches the store, highest priority first; there is no
+per-batch cap. That makes the rules above the only filter, so never pad the
+list: one good to-do beats three vague ones — "Reply to Ada about the tender
+deadline" is actionable, "Follow up on emails" is not. A day that raises too
+many asks is flagged to the user once a day, as a prompt to tune these files.
 
 ## Writing the fields
 

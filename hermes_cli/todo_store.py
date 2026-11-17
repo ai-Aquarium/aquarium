@@ -1338,6 +1338,47 @@ class TodoStore:
                 await conn.close()
         return {str(r["source_ref"]): int(r["count"]) for r in rows}
 
+    async def created_by_actor_since(
+        self,
+        principal: Principal,
+        since: datetime,
+        *,
+        origin: str = "triage",
+        connection: Optional["asyncpg.Connection"] = None,
+    ) -> dict[str, int]:
+        """To-dos of ``origin`` created since ``since``, counted per creating actor.
+
+        The actor is the one on the to-do's ``stage:new`` transition (triage
+        writes ``skill:<channel>-triage``). A replayed batch that collapsed onto a
+        live to-do wrote no new row and is not counted again.
+        """
+        predicate = scope_filter(
+            principal,
+            column="t.visibility",
+            start_index=3,
+            grant_item_kind=GRANT_ITEM_KIND,
+            id_column="t.id",
+        )
+        own = connection is None
+        conn = connection or await self._connect()
+        try:
+            rows = await conn.fetch(
+                f"""SELECT x.actor, COUNT(*) AS count
+                      FROM {TASKS_TABLE} t
+                      JOIN {TRANSITIONS_TABLE} x
+                        ON x.task_id = t.id AND x.from_state = 'stage:new'
+                     WHERE t.origin = $1 AND t.created_at >= $2::timestamptz
+                       AND {predicate.sql}
+                  GROUP BY x.actor""",
+                origin,
+                since,
+                *predicate.params,
+            )
+        finally:
+            if own:
+                await conn.close()
+        return {str(r["actor"]): int(r["count"]) for r in rows}
+
     async def history(
         self,
         principal: Principal,

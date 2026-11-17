@@ -231,9 +231,7 @@ def _handle_work_request(request, batch, db):
     if not candidates:
         return
     try:
-        from shared.todo_registration import (
-            MAX_TODOS_PER_BATCH, register_todo, select_candidates,
-        )
+        from shared.todo_registration import register_todo, select_candidates
     except ImportError:
         return
 
@@ -249,10 +247,7 @@ def _handle_work_request(request, batch, db):
               'arrival_key': _arrival_key(arrivals[0] if arrivals else None),
               **_routing(batch)} if owner else {}
 
-    ranked = select_candidates(
-        [{**c, "notify": True} for c in candidates],
-        limit=MAX_TODOS_PER_BATCH,
-    )
+    ranked = select_candidates([{**c, "notify": True} for c in candidates])
     for candidate in ranked:
         title = (candidate.get('title') or '').strip()
         if not title:

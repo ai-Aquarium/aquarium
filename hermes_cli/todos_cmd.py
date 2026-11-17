@@ -777,7 +777,37 @@ async def _dispatch(args: argparse.Namespace) -> int:
     return 2
 
 
+async def _ask_review(json_mode: bool) -> int:
+    from hermes_cli.profiles import get_active_profile_name
+    from hermes_cli.triage_ask_review import review_active_profile
+
+    profile = get_active_profile_name() or "default"
+    review = await review_active_profile(profile)
+    if review is None:
+        print("Ask review is disabled or this profile has no owner.", file=sys.stderr)
+        return 1
+    if json_mode:
+        print(json.dumps({
+            "profile": review.profile,
+            "count": review.count,
+            "threshold": review.threshold,
+            "skills": dict(review.by_skill),
+            "warned": review.warned,
+            "notification_id": review.notification_id,
+        }))
+    else:
+        busiest = ", ".join(f"{n} {s}" for s, n in review.by_skill) or "none"
+        verdict = "warned" if review.warned else "no new warning"
+        print(
+            f"{review.count} triage ask(s) in the last day "
+            f"(threshold {review.threshold}; {busiest}): {verdict}."
+        )
+    return 0
+
+
 def todos_command(args: argparse.Namespace) -> int:
+    if args.todos_command == "ask-review":
+        return _run(_ask_review(args.json))
     return _run(_dispatch(args))
 
 
@@ -883,6 +913,17 @@ def register_todos_subparser(
     expire.add_argument("--days", type=int, default=DEFAULT_STAGED_EXPIRY_DAYS)
     expire.add_argument("--dry-run", action="store_true")
     expire.add_argument("--json", action="store_true")
+
+    review = sub.add_parser(
+        "ask-review",
+        help="Warn once today if triage raised too many asks (triage.ask_review)",
+        description=(
+            "Counts the to-dos triage filed in this profile over the last 24 "
+            "hours; above triage.ask_review.daily_threshold it raises one Needs "
+            "you ask to review the triage skills. The gateway runs this hourly."
+        ),
+    )
+    review.add_argument("--json", action="store_true")
 
     # -- send (Part 1.1b) --------------------------------------------------
 

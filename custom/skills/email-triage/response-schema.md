@@ -49,7 +49,7 @@ Use empty arrays or null values when there is nothing to extract for a field.
 - `tasks` — action items; each needs at minimum description and priority
 - `todos` — the subset worth showing the user on the To-dos page, with
   `notify` deciding whether it interrupts them. Most batches produce none.
-  See todo-decisions.md; at most three per batch are recorded.
+  See todo-decisions.md.
 - `work_request` — the *most important* items only: real work the agent should
   do, not just a reminder. `null` (or omitted) for most batches. Unlike a
   `todos` entry this is for output the agent produces — a quotation, a drafted

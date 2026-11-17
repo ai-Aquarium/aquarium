@@ -32,12 +32,6 @@ _owner_resolved: bool = False
 _owner_last_attempt: float = float("-inf")
 _OWNER_RETRY_INTERVAL_SEC: float = 60.0
 
-#: Most of what triage reads implies *something* that could be written down.
-#: Without a ceiling one chatty morning fills the list, the user mutes it, and
-#: the feature is dead — so a batch may contribute at most this many to-dos,
-#: highest priority first.
-MAX_TODOS_PER_BATCH = 3
-
 #: Triage speaks high/medium/low; the store speaks critical/high/normal/low.
 _PRIORITY_MAP = {
     "critical": "critical",
@@ -119,12 +113,13 @@ def parse_due(value: Any) -> Optional[datetime]:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
-def select_candidates(candidates: list, limit: int = MAX_TODOS_PER_BATCH) -> list:
-    """The at-most-``limit`` candidates worth recording, most urgent first.
+def select_candidates(candidates: list) -> list:
+    """Every candidate, most urgent first.
 
-    Sorting before truncating matters: the batch that produces five candidates
-    is exactly the batch where the one that mattered must not be the one cut.
-    Ties keep the order triage produced, which is the order it read them in.
+    There is no per-batch cap: volume is watched per day instead
+    (``hermes_cli.triage_ask_review``), which tells the user to tune the
+    triage skills when a day raises too many asks. Ties keep the order triage
+    produced, which is the order it read them in.
     """
     ranked = sorted(
         enumerate(candidates),
@@ -134,7 +129,7 @@ def select_candidates(candidates: list, limit: int = MAX_TODOS_PER_BATCH) -> lis
             pair[0],
         ),
     )
-    return [item for _, item in ranked[: max(0, limit)]]
+    return [item for _, item in ranked]
 
 
 def register_todo(

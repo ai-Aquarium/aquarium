@@ -44,7 +44,7 @@ You MUST respond in this exact JSON format for each event:
 - `prep_notes` — relevant preparation context (see extract-prep-context.md)
 - `todos` — preparation or follow-through the user must do personally,
   shown on the To-dos page; `notify` decides whether it interrupts them.
-  See todo-decisions.md; at most three per event are recorded.
+  See todo-decisions.md.
 - `memory_facts` — meeting patterns or contact relationships worth remembering
   (see remember-decisions.md)
 - `escalate` — true for hard conflicts or critical events starting soon
