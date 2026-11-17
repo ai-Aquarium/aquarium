@@ -90,7 +90,7 @@ export function TaskSource({ project }: { project: ProjectDetail }) {
       ) : null}
       {todoLink ? (
         <p data-component="TaskSourceTodo" className="text-xs text-[var(--color-muted)]">
-          Suggested task <RefBadge value={todo?.ref} />
+          To-do <RefBadge value={todo?.ref} />
           {todo ? ` · ${STAGE_TEXT[todo.stage] ?? todo.stage}` : ""}. It closes when this task is done.
         </p>
       ) : null}

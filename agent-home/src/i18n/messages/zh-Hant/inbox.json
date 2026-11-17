@@ -2,6 +2,7 @@
   "tabs": {
     "arrived": "已收到",
     "suggested": "建議任務",
+    "suggestedShort": "建議",
     "approvals": "待批准",
     "changes": "變更",
     "label": "收件匣分頁"

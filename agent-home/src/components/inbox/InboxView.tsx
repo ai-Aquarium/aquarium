@@ -218,16 +218,16 @@ export function InboxView({
         role="tablist"
         aria-label={t("tabs.label")}
         data-component="InboxTabs"
-        className="flex w-full gap-1 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 lg:w-auto lg:self-start"
+        className="flex w-full gap-1 overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 lg:w-auto lg:self-start"
       >
         {(
           [
-            ["incomings", t("tabs.arrived"), 0],
-            ["suggested", t("tabs.suggested"), suggested.items.length],
-            ["approvals", t("tabs.approvals"), pendingCount],
-            ["changes", t("tabs.changes"), reversibleCount],
+            ["incomings", t("tabs.arrived"), 0, null],
+            ["suggested", t("tabs.suggested"), suggested.items.length, t("tabs.suggestedShort")],
+            ["approvals", t("tabs.approvals"), pendingCount, null],
+            ["changes", t("tabs.changes"), reversibleCount, null],
           ] as const
-        ).map(([key, label, count]) => (
+        ).map(([key, label, count, short]) => (
           <button
             key={key}
             type="button"
@@ -242,13 +242,20 @@ export function InboxView({
               else if (url.searchParams.get("tab") === "suggested") url.searchParams.delete("tab");
               window.history.replaceState(window.history.state, "", url);
             }}
-            className={`flex h-10 min-w-0 flex-auto items-center justify-center gap-1.5 rounded-[var(--radius-md)] px-2 text-sm lg:flex-none lg:px-4 ${
+            className={`flex h-10 shrink-0 flex-auto items-center justify-center gap-1.5 rounded-[var(--radius-md)] px-1.5 text-sm sm:px-2 lg:flex-none lg:px-4 ${
               tab === key
                 ? "bg-[var(--color-surface-2)] font-semibold text-[var(--color-fg)]"
                 : "text-[var(--color-muted)]"
             }`}
           >
-            <span className="truncate">{label}</span>
+            {short ? (
+              <>
+                <span className="truncate sm:hidden">{short}</span>
+                <span className="hidden truncate sm:inline">{label}</span>
+              </>
+            ) : (
+              <span className="truncate">{label}</span>
+            )}
             {count > 0 ? (
               <span className="rounded-full bg-[var(--color-accent)] px-1.5 text-xs tabular-nums text-[var(--color-accent-fg)]">
                 {count}
