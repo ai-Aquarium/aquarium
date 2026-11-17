@@ -498,6 +498,9 @@ def _clarify_job(
 
 def clarify_state(project_id: str) -> dict:
     """``ClarifyState``: the summary plus every round, question and the job."""
+    # The job first: a job that reads "done" has already written its round,
+    # so the rows read after it include that round.
+    job = _job_snapshot(project_id)
     with projects_db.connect_closing() as conn:
         summary = projects_db.clarify_summary(conn, project_id)
         rounds = projects_db.list_clarify_rounds(conn, project_id)
@@ -506,7 +509,7 @@ def clarify_state(project_id: str) -> dict:
         **summary,
         "rounds": rounds,
         "questions": questions,
-        "job": _job_snapshot(project_id),
+        "job": job,
     }
 
 
