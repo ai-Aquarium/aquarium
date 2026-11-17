@@ -16,6 +16,7 @@ import re
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from hermes_cli import source_registry as registry
@@ -185,9 +186,12 @@ async def list_my_sources(request: Request, all: bool = False):
         )
         return [s.as_dict() for s in sources]
 
+    roles = await registry.active_profile_roles(user_id)
     return {
         "sources": await _with_box(run),
-        "profiles": await registry.active_profiles_for(user_id),
+        "profiles": list(roles),
+        #: The caller's own role in each of those profiles (never anyone else's).
+        "profile_roles": roles,
         "is_box_admin": box_admin,
     }
 
@@ -222,13 +226,20 @@ async def register(request: Request, body: RegisterBody):
                 credential_ref=ref,
             )
         except registry.SourceOwnedByAnotherUser as error:
-            if not derived:
-                raise
-            label = "WhatsApp number" if error.channel == "whatsapp" else "Telegram bot"
-            raise HTTPException(status_code=409, detail=_TAKEN.format(label=label)) from None
+            return error
         return {"source": source.as_dict()}
 
-    return await _with_box(run)
+    result = await _with_box(run)
+    if not isinstance(result, registry.SourceOwnedByAnotherUser):
+        return result
+    if derived:
+        label = "WhatsApp number" if result.channel == "whatsapp" else "Telegram bot"
+        detail = _TAKEN.format(label=label)
+    else:
+        detail = str(result)
+    # The claim screen names the current owner by display name only.
+    owner = await registry.display_name_for(result.owner_user_id)
+    return JSONResponse(status_code=409, content={"detail": detail, "owner_display": owner})
 
 
 @router.put("/{source_id}/routes/{profile}")

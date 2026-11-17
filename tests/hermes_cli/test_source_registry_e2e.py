@@ -446,6 +446,8 @@ def test_api_owner_only_writes(box, monkeypatch):
     body = john.get("/api/sources").json()
     assert [s["address"] for s in body["sources"]] == [MAILBOX]
     assert sorted(body["profiles"]) == ["cfo", "cmo", "default"]
+    # John's own role per profile; cmo's suspended "sus" and hr are not his.
+    assert body["profile_roles"] == {"default": "member", "cfo": "member", "cmo": "member"}
     assert body["is_box_admin"] is False
     assert john.get("/api/sources?all=1").status_code == 403
 
@@ -454,6 +456,9 @@ def test_api_owner_only_writes(box, monkeypatch):
     r = mary.post("/api/sources", json={"channel": "email", "address": MAILBOX})
     assert r.status_code == 409
     assert "already registered to another user" in r.json()["detail"]
+    # The claim screen names the owner by display name only — no id, no email.
+    assert r.json()["owner_display"] == "John"
+    assert set(r.json()) == {"detail", "owner_display"}
     assert mary.put(f"/api/sources/{source_id}/routes/cfo", json={"enabled": False}).status_code == 403
     assert mary.delete(f"/api/sources/{source_id}").status_code == 403
     assert mary.get("/api/sources").json()["sources"] == []

@@ -5,6 +5,7 @@
  */
 import { NextResponse } from "next/server";
 
+import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
 import type { SourceInput } from "@/types";
 
@@ -36,6 +37,14 @@ export async function POST(req: Request): Promise<NextResponse> {
     const client = await apiClientForRequest();
     return NextResponse.json(await client.registerSource(body));
   } catch (err) {
-    return hermesError(err);
+    return claimError(err) ?? hermesError(err);
   }
+}
+
+/** A refused claim (409) keeps the current owner's display name for the conflict screen. */
+function claimError(err: unknown): NextResponse | null {
+  if (!(err instanceof HermesApiError) || err.status !== 409) return null;
+  const owner = (err.body as { owner_display?: unknown } | undefined)?.owner_display;
+  if (typeof owner !== "string" || !owner.trim()) return null;
+  return NextResponse.json({ error: "api_error", detail: err.message, owner_display: owner }, { status: 409 });
 }

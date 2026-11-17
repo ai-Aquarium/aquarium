@@ -143,13 +143,17 @@ class SourceOwnedByAnotherUser(SourceRegistryError):
 
     status = 409
 
-    def __init__(self, channel: str, address: str) -> None:
+    def __init__(
+        self, channel: str, address: str, owner_user_id: Optional[str] = None
+    ) -> None:
         super().__init__(
             f"This {channel} source ({address}) is already registered to another "
             "user. Ask the box owner if you think it should be yours."
         )
         self.channel = channel
         self.address = address
+        #: Kept off the message; the API shows only the owner's display name.
+        self.owner_user_id = owner_user_id
 
 
 class SourceNotFound(SourceRegistryError):
@@ -382,18 +386,67 @@ async def initialize_box(connection: "asyncpg.Connection") -> None:
     """
     from hermes_cli import triage_agent, triage_router
 
-    await connection.execute(DDL)
-    await triage_router.ensure_schema(connection)
-    await triage_agent.ensure_schema(connection)
-    await _refuse_profile_claim(connection)
-    await connection.execute(
-        f"INSERT INTO {BOX_SCHEMA}.box_marker (singleton, kind) VALUES (TRUE, $1) "
-        "ON CONFLICT (singleton) DO NOTHING",
-        BOX_MARKER_KIND,
-    )
-    kind = await connection.fetchval(f"SELECT kind FROM {BOX_SCHEMA}.box_marker")
+    # One transaction under a box-wide lock: two requests running this DDL at
+    # once (``ALTER TABLE … ADD COLUMN IF NOT EXISTS`` takes ACCESS EXCLUSIVE
+    # locks table by table) deadlock otherwise.
+    async with connection.transaction():
+        await connection.execute("SELECT pg_advisory_xact_lock($1)", _INIT_LOCK_KEY)
+        await connection.execute(DDL)
+        await triage_router.ensure_schema(connection)
+        await triage_agent.ensure_schema(connection)
+        await _refuse_profile_claim(connection)
+        await connection.execute(
+            f"INSERT INTO {BOX_SCHEMA}.box_marker (singleton, kind) VALUES (TRUE, $1) "
+            "ON CONFLICT (singleton) DO NOTHING",
+            BOX_MARKER_KIND,
+        )
+        kind = await connection.fetchval(f"SELECT kind FROM {BOX_SCHEMA}.box_marker")
     if kind != BOX_MARKER_KIND:
         raise BoxSchemaError(f"Schema {BOX_SCHEMA!r} carries a foreign marker {kind!r}")
+
+
+#: ``pg_advisory_xact_lock`` key serialising :func:`initialize_box` ("BOXI").
+_INIT_LOCK_KEY = 0x424F5849
+#: What the box schema looked like (see :func:`_box_shape`) right after
+#: :func:`connect_box` last set it up, per database, in this process. A deploy
+#: restarts the process, so new DDL still runs; a schema dropped or altered
+#: underneath us changes its shape, so it is set up again.
+_initialized: dict[tuple[str, str, str], tuple[int, int, int]] = {}
+
+
+async def _box_shape(connection: "asyncpg.Connection") -> Optional[tuple[int, int, int]]:
+    """``(schema oid, relations, live columns)`` of the box schema; a catalog read only."""
+    row = await connection.fetchrow(
+        """
+        SELECT n.oid::bigint AS oid,
+               (SELECT count(*) FROM pg_class c WHERE c.relnamespace = n.oid) AS rels,
+               (SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
+                 WHERE c.relnamespace = n.oid AND a.attnum > 0 AND NOT a.attisdropped) AS cols
+        FROM pg_namespace n WHERE n.nspname = $1
+        """,
+        BOX_SCHEMA,
+    )
+    return None if row is None else (int(row["oid"]), int(row["rels"]), int(row["cols"]))
+
+
+async def _ensure_box(connection: "asyncpg.Connection") -> None:
+    """:func:`initialize_box` once per process and database, not on every request.
+
+    Running the DDL per connection made the Sources page's parallel requests
+    deadlock each other; the advisory lock in :func:`initialize_box` covers a
+    cold start, and this keeps warm requests off DDL entirely.
+    """
+    from hermes_cli import db_setup
+
+    key = db_setup.connection_key(connection)
+    cached = _initialized.get(key) if all(key) else None
+    if cached is not None and cached == await _box_shape(connection):
+        await _refuse_profile_claim(connection)
+        return
+    await initialize_box(connection)
+    shape = await _box_shape(connection)
+    if all(key) and shape is not None:
+        _initialized[key] = shape
 
 
 async def _refuse_profile_claim(connection: "asyncpg.Connection") -> None:
@@ -476,7 +529,7 @@ async def connect_box(
     try:
         allowed = await db_setup.bind(connection, BOX_SCHEMA)
         if allowed:
-            await initialize_box(connection)
+            await _ensure_box(connection)
         else:
             await _refuse_profile_claim(connection)
             marker = await connection.fetchval(
@@ -650,6 +703,30 @@ async def active_profiles_for(user_id: str) -> list[str]:
     )
 
 
+async def active_profile_roles(user_id: str) -> dict[str, str]:
+    """The caller's role in each profile where they are an active member."""
+    from hermes_cli.console_scope import enrolments, principal_store_factory
+
+    return {
+        e.profile.name: str(getattr(e.principal, "role", "member"))
+        for e in await enrolments(user_id, store_factory=principal_store_factory())
+        if getattr(e.principal, "active", True)
+    }
+
+
+async def display_name_for(user_id: Optional[str]) -> Optional[str]:
+    """``user_id``'s display name from their first profile that has one (no id, no email)."""
+    from hermes_cli.console_scope import enrolments, principal_store_factory
+
+    if not user_id:
+        return None
+    for e in await enrolments(user_id, store_factory=principal_store_factory()):
+        display = str(getattr(e.principal, "display", "") or "").strip()
+        if display:
+            return display[:MAX_DISPLAY_CHARS]
+    return None
+
+
 async def is_box_admin(user_id: str) -> bool:
     """The box owner/admin: an active ``owner``/``admin`` of the default profile.
 
@@ -753,7 +830,7 @@ async def register_source(
         existing_owner_user_id=existing,
         detail="register refused: already registered to another user",
     )
-    raise SourceOwnedByAnotherUser(channel, normalized)
+    raise SourceOwnedByAnotherUser(channel, normalized, existing)
 
 
 async def set_route(

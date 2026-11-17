@@ -103,6 +103,33 @@ describe("RegisterSourceWizard", () => {
     expect(calls.filter((c) => c.method === "PUT")).toEqual([]);
   });
 
+  it("names the current owner on the claim conflict when Hermes gives a display name", async () => {
+    mockFetch({
+      "POST /api/sources": () =>
+        new Response(JSON.stringify({ detail: "owned", owner_display: "Mary" }), { status: 409 }),
+    });
+    render(<RegisterSourceWizard list={LIST} onClose={vi.fn()} onRegistered={vi.fn()} />);
+    await pickEmailAndProfiles(["cfo"]);
+    next();
+    fireEvent.click(screen.getByRole("button", { name: "Register" }));
+    expect(await screen.findByText(/already a source of another person \(Mary\)/)).toBeTruthy();
+  });
+
+  it("shows my role in each profile on the Profiles step", async () => {
+    mockFetch();
+    render(
+      <RegisterSourceWizard
+        list={{ ...LIST, profile_roles: { cfo: "owner", cmo: "member" } }}
+        onClose={vi.fn()}
+        onRegistered={vi.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("radio", { name: /john@acme\.com/ }));
+    next();
+    expect(screen.getAllByTestId("profile-role").map((el) => el.textContent)).toEqual(["Owner", "Member"]);
+    expect(screen.getByRole("checkbox", { name: /cfo/ })).toBeTruthy();
+  });
+
   it("explains an unpaired WhatsApp bridge in plain words and links to its setup", async () => {
     const calls = mockFetch({
       "GET /api/wa-bridges": () =>

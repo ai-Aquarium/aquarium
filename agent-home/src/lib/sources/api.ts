@@ -5,6 +5,7 @@
 import { AdminFetchError, getJson, sendJson } from "@/lib/admin-fetch";
 import type {
   EmailMailbox,
+  Role,
   RoutingDecision,
   Source,
   SourceChannel,
@@ -22,6 +23,8 @@ import type {
 export interface SourcesList {
   sources: Source[];
   profiles: string[];
+  /** The caller's own role in each of `profiles`; absent on an older Hermes. */
+  profile_roles?: Record<string, Role>;
   is_box_admin: boolean;
   /** `triage.agent.telegram` when the API reports it; absent means off (the default). */
   telegram_triage?: "off" | "agent";
@@ -190,6 +193,13 @@ export function registerErrorHint(err: unknown, channel: SourceChannel): Registe
     default:
       return null;
   }
+}
+
+/** The current owner's display name a refused claim (409) carries, if Hermes sent one. */
+export function claimOwnerName(err: unknown): string | null {
+  if (!(err instanceof AdminFetchError) || err.status !== 409) return null;
+  const owner = (err.body as { owner_display?: unknown } | null | undefined)?.owner_display;
+  return typeof owner === "string" && owner.trim() ? owner.trim() : null;
 }
 
 /** Whether `account` is already registered as `source` (by credential for WhatsApp / Telegram). */

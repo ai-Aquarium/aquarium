@@ -3492,6 +3492,7 @@ export class HermesApiClient {
   async sources(all = false): Promise<{
     sources: Source[];
     profiles: string[];
+    profile_roles?: Record<string, Role>;
     is_box_admin: boolean;
   }> {
     return this.request(`/api/sources${all ? "?all=1" : ""}`);

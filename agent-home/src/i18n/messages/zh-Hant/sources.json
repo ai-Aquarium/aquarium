@@ -154,5 +154,12 @@
   "wizard.done": "已登記 {address}。",
   "wizard.partial": "{address} 已登記，但有些步驟未完成：{detail}。請在 我的來源 修正。",
   "readsLabel": "閱讀者：",
-  "registerShort": "登記"
+  "registerShort": "登記",
+  "wizard.conflictOwner": "{address} 已是其他人（{owner}）的來源。每個地址只能有一個擁有者，所以沒有加入。我們已把這記錄為申索；管理員可以把它轉給你。",
+  "wizard.role.owner": "擁有者",
+  "wizard.role.admin": "管理員",
+  "wizard.role.member": "成員",
+  "wizard.role.viewer": "檢視者",
+  "claimsLoadError": "未能載入你來源上的申索，這裏可能有遺漏。",
+  "retrying": "正在重試…"
 }
