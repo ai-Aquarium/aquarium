@@ -12,6 +12,7 @@ import { useT } from "@/i18n/client";
 import { errorText } from "@/lib/admin-fetch";
 import {
   CHANNELS,
+  claimOwnerName,
   CONNECT_HREF,
   connectedAccounts,
   putSourceRoute,
@@ -147,7 +148,12 @@ export function RegisterSourceWizard({
       } catch (err) {
         const hint = registerErrorHint(err, account.channel);
         if (hint?.kind === "claim") {
-          setConflict(t("wizard.conflict", { address: account.address }));
+          const owner = claimOwnerName(err);
+          setConflict(
+            owner
+              ? t("wizard.conflictOwner", { address: account.address, owner })
+              : t("wizard.conflict", { address: account.address }),
+          );
           return;
         }
         setError(hint ? t(hint.key) : errorText(err));
@@ -328,6 +334,7 @@ export function RegisterSourceWizard({
             <div className="space-y-2">
               {list.profiles.map((p) => {
                 const on = picked.includes(p);
+                const role = list.profile_roles?.[p];
                 return (
                   <label key={p} className={`${CARD} flex cursor-pointer items-center gap-3 p-3 ${on ? "border-[var(--color-accent)]" : ""}`}>
                     <input
@@ -337,7 +344,15 @@ export function RegisterSourceWizard({
                       onChange={() => setPicked((cur) => (on ? cur.filter((x) => x !== p) : [...cur, p]))}
                       className="h-4 w-4 accent-[var(--color-accent)]"
                     />
-                    <span className="text-sm font-semibold">{p}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{p}</span>
+                    {role ? (
+                      <span
+                        data-testid="profile-role"
+                        className="shrink-0 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-xs text-[var(--color-fg)]"
+                      >
+                        {t(`wizard.role.${role}`)}
+                      </span>
+                    ) : null}
                   </label>
                 );
               })}

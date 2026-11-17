@@ -4,10 +4,13 @@
  */
 export class AdminFetchError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) {
+  /** The parsed error body, for fields beyond `detail` (e.g. `owner_display`). */
+  readonly body: unknown;
+  constructor(status: number, message: string, body?: unknown) {
     super(message);
     this.name = "AdminFetchError";
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -22,6 +25,7 @@ async function parse<T>(res: Response): Promise<T> {
     throw new AdminFetchError(
       res.status,
       parsed?.detail ?? parsed?.error ?? "That didn't go through.",
+      parsed,
     );
   }
   return parsed as T;

@@ -34,6 +34,19 @@ interface Place {
   maxHeight: number;
 }
 
+/**
+ * Where the popover is portaled: the innermost open sheet's panel (or other
+ * modal) around the link, so it layers above that modal's backdrop and stays
+ * inside its focus trap; `<body>` when the link is on the page itself.
+ */
+function popoverHost(el: HTMLElement): HTMLElement {
+  return (
+    el.closest<HTMLElement>("[data-sheet-panel]") ??
+    el.closest<HTMLElement>('[aria-modal="true"]') ??
+    document.body
+  );
+}
+
 /** Room the decision needs before it flips above the link instead. */
 const MIN_ROOM = 320;
 
@@ -88,6 +101,7 @@ function WhyThisProfileLink({
 }: WhyThisProfileProps & { sourceId: string; batchId: string }) {
   const t = useT("routing");
   const [place, setPlace] = useState<Place | null>(null);
+  const [host, setHost] = useState<HTMLElement | null>(null);
   const popOpen = place !== null;
   const [sheetOpen, setSheetOpen] = useState(false);
   const [load, setLoad] = useState<Load>({ status: "idle" });
@@ -120,8 +134,10 @@ function WhyThisProfileLink({
       setSheetOpen(false);
       return;
     }
-    if (window.matchMedia(DESKTOP_QUERY).matches && trigger.current) setPlace(placeNear(trigger.current, align));
-    else setSheetOpen(true);
+    if (window.matchMedia(DESKTOP_QUERY).matches && trigger.current) {
+      setHost(popoverHost(trigger.current));
+      setPlace(placeNear(trigger.current, align));
+    } else setSheetOpen(true);
     if (load.status === "idle" || load.status === "error") void fetchDecision();
   };
 
@@ -137,7 +153,10 @@ function WhyThisProfileLink({
       if (trigger.current) setPlace(placeNear(trigger.current, align));
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closePopover();
+      if (e.key !== "Escape") return;
+      // Esc closes only the popover, not a sheet it sits in.
+      e.stopPropagation();
+      closePopover();
     };
     const onDown = (e: PointerEvent) => {
       const target = e.target as Node;
@@ -185,7 +204,7 @@ function WhyThisProfileLink({
       >
         {t("whyLink")}
       </button>
-      {place
+      {place && host
         ? createPortal(
         <div
           ref={panel}
@@ -210,7 +229,7 @@ function WhyThisProfileLink({
           {body}
         </div>
       ,
-          document.body,
+          host,
         )
         : null}
       {sheetOpen ? (

@@ -95,6 +95,18 @@ describe("forwarding", () => {
     expect((await POST(json("POST", [1]))).status).toBe(400);
   });
 
+  it("POST keeps a refused claim's owner display name; otherwise a plain 409", async () => {
+    registerSource.mockRejectedValueOnce(
+      new HermesApiError(409, "already registered to another user", { detail: "x", owner_display: "Mary" }),
+    );
+    const r = await POST(json("POST", { channel: "email", address: "a@b.c" }));
+    expect(r.status).toBe(409);
+    expect(await r.json()).toEqual({ error: "api_error", detail: "already registered to another user", owner_display: "Mary" });
+    registerSource.mockRejectedValueOnce(new HermesApiError(409, "taken", { detail: "taken", owner_display: null }));
+    const plain = await POST(json("POST", { channel: "email", address: "a@b.c" }));
+    expect(await plain.json()).toEqual({ error: "api_error", detail: "taken" });
+  });
+
   it("PUT forwards the route toggle; a non-boolean enabled is a 400", async () => {
     putSourceRoute.mockResolvedValue({ route: { profile_slug: "cfo", enabled: true } });
     expect((await PUT(json("PUT", { enabled: true }), routeCtx)).status).toBe(200);

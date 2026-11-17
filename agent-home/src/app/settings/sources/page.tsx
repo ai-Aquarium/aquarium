@@ -27,11 +27,12 @@ export default async function Page() {
     error = err instanceof Error ? err.message : "Failed to load";
   }
   let conflicts: SourceClaimConflict[] = [];
+  let conflictsFailed = false;
   if (list) {
     try {
       conflicts = (await client.sourceConflicts(list.is_box_admin)).conflicts;
     } catch {
-      conflicts = [];
+      conflictsFailed = true;
     }
   }
 
@@ -44,7 +45,7 @@ export default async function Page() {
       wide
     >
       {list ? (
-        <SourcesView initial={list} initialConflicts={conflicts} />
+        <SourcesView initial={list} initialConflicts={conflicts} initialConflictsFailed={conflictsFailed} />
       ) : (
         <div data-component="SourcesError">
           <ErrorState kind="error" details={error} />

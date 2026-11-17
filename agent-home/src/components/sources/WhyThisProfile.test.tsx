@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { decision } from "@/components/sources/fixtures";
 import { sourceRoutingHref, WhyThisProfile } from "@/components/sources/WhyThisProfile";
+import { Sheet } from "@/components/ui/Sheet";
 
 function reply(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -98,6 +99,35 @@ describe("WhyThisProfile", () => {
     expect(screen.getByRole("link", { name: "Edit what Sales & Ops cares about" }).getAttribute("href")).toBe(
       "/profiles/Sales%20%26%20Ops/triage?kind=whatsapp",
     );
+  });
+
+  it("inside a sheet, layers in the sheet's panel so its links stay clickable; Esc closes only the popover", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply({ decisions: [decision()] })));
+    const onClose = vi.fn();
+    render(
+      <Sheet title="Needs you" onClose={onClose}>
+        <WhyThisProfile sourceId="src-mail" batchId="b-1" profile="CFO" recentRoutingHref={sourceRoutingHref} />
+      </Sheet>,
+    );
+    await press(link());
+    const popover = screen.getByTestId("why-this-profile-popover");
+    const panel = popover.closest("[data-sheet-panel]");
+    expect(panel).not.toBeNull();
+    expect(panel?.closest('[role="dialog"][aria-modal="true"]')).not.toBeNull();
+    await press(screen.getByRole("link", { name: "Edit what CFO cares about" }));
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    expect(screen.queryByTestId("why-this-profile-popover")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("on the page itself, still portals to <body>", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply({ decisions: [decision()] })));
+    render(<WhyThisProfile sourceId="src-mail" batchId="b-1" profile="CFO" />);
+    await press(link());
+    expect(screen.getByTestId("why-this-profile-popover").parentElement).toBe(document.body);
   });
 
   it("Esc closes the popover", async () => {

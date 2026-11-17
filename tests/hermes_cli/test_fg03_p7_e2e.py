@@ -267,6 +267,87 @@ def test_initialize_box_adds_the_p7_columns_to_an_old_box(box):
     assert {"message_count", "first_sender", "resolution"} <= columns
 
 
+def test_concurrent_connects_on_a_cold_box_do_not_deadlock(box):
+    """The Sources page loads sources and claims in parallel; each request
+    connects, and on a cold box each one runs the box DDL. Unserialised, two
+    ``ALTER TABLE … ADD COLUMN IF NOT EXISTS`` runs deadlocked (a 500)."""
+    dsn = box["dsn"]
+
+    async def race():
+        c = await asyncpg.connect(dsn, ssl=False)
+        try:  # an old box, so every run has real ALTERs to make
+            await c.execute(f"ALTER TABLE {registry.BOX_SCHEMA}.routing_decisions "
+                            "DROP COLUMN message_count, DROP COLUMN first_sender")
+            await c.execute(f"ALTER TABLE {registry.BOX_SCHEMA}.source_claim_conflicts "
+                            "DROP COLUMN resolution")
+        finally:
+            await c.close()
+        registry._initialized.clear()  # a freshly started process
+
+        async def request():
+            conn = await registry.connect_box(dsn=dsn)
+            try:
+                await registry.list_sources(conn)
+                return await conn.fetchval(
+                    "SELECT count(*) FROM source_claim_conflicts WHERE resolution IS NULL")
+            finally:
+                await conn.close()
+
+        async def migrate():  # ``hermes db migrate`` racing the requests
+            conn = await asyncpg.connect(
+                dsn, ssl=False, server_settings={"search_path": registry.BOX_SCHEMA})
+            try:
+                await registry.initialize_box(conn)
+            finally:
+                await conn.close()
+
+        return await asyncio.gather(*(request() for _ in range(12)), *(migrate() for _ in range(4)))
+
+    _box(dsn, registry.list_sources)
+    for _ in range(3):
+        results = asyncio.run(race())
+        assert results[:12] == [0] * 12
+
+
+def test_connect_box_runs_the_box_ddl_once_per_process(box, monkeypatch):
+    dsn = box["dsn"]
+    real = registry.initialize_box
+    runs = []
+
+    async def counting(connection):
+        runs.append(1)
+        await real(connection)
+
+    monkeypatch.setattr(registry, "initialize_box", counting)
+    registry._initialized.clear()
+    _box(dsn, registry.list_sources)
+    assert len(runs) == 1
+
+    async def many():
+        async def one():
+            conn = await registry.connect_box(dsn=dsn)
+            await conn.close()
+        await asyncio.gather(*(one() for _ in range(8)))
+
+    asyncio.run(many())
+    assert len(runs) == 1  # warm: no DDL per request
+
+    async def drop_column():
+        c = await asyncpg.connect(dsn, ssl=False)
+        try:
+            await c.execute(f"ALTER TABLE {registry.BOX_SCHEMA}.source_claim_conflicts "
+                            "DROP COLUMN resolution")
+        finally:
+            await c.close()
+
+    asyncio.run(drop_column())
+    columns = _box(dsn, lambda c: c.fetch(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = $1 "
+        "AND table_name = 'source_claim_conflicts'", registry.BOX_SCHEMA))
+    assert len(runs) == 2  # the schema changed underneath: set it up again
+    assert "resolution" in {r["column_name"] for r in columns}
+
+
 # -- register WhatsApp / Telegram from the caller's own credential ---------------------
 
 JOHN_NUMBER = "85291234567"

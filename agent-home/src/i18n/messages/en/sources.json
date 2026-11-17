@@ -154,5 +154,12 @@
   "wizard.done": "{address} registered.",
   "wizard.partial": "{address} is registered, but some steps did not finish: {detail}. Fix them from My sources.",
   "readsLabel": "Reads it:",
-  "registerShort": "Register"
+  "registerShort": "Register",
+  "wizard.conflictOwner": "{address} is already a source of another person ({owner}). An address can have only one owner, so it wasn't added. We saved this as a claim; an admin can move it to you.",
+  "wizard.role.owner": "Owner",
+  "wizard.role.admin": "Admin",
+  "wizard.role.member": "Member",
+  "wizard.role.viewer": "Viewer",
+  "claimsLoadError": "Could not load claims on your sources, so some may be missing here.",
+  "retrying": "Trying again…"
 }

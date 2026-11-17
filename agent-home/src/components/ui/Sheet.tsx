@@ -118,6 +118,7 @@ export function Sheet({
     >
       <div
         ref={panelRef}
+        data-sheet-panel=""
         tabIndex={-1}
         className={`flex w-full flex-col border outline-none ${mobileFull ? "h-[100dvh] max-h-[100dvh]" : "max-h-[92vh] rounded-t-2xl"} border-[var(--color-border)] bg-[var(--color-bg)] sm:max-h-full ${panel}`}
         onClick={(e) => e.stopPropagation()}

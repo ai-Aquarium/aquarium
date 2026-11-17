@@ -38,15 +38,19 @@ import type { Source, SourceClaimConflict } from "@/types";
 export function SourcesView({
   initial,
   initialConflicts,
+  initialConflictsFailed = false,
 }: {
   initial: SourcesList;
   initialConflicts: SourceClaimConflict[];
+  /** The page could not load the claims: say so instead of showing none. */
+  initialConflictsFailed?: boolean;
 }) {
   const t = useT("sources");
   const [list, setList] = useState(initial);
   const [conflicts, setConflicts] = useState(initialConflicts);
   const [editing, setEditing] = useState<Source | null>(null);
   const [claimsOpen, setClaimsOpen] = useState(false);
+  const [claimsFailed, setClaimsFailed] = useState(initialConflictsFailed);
   const router = useRouter();
   const pathname = usePathname() ?? "/settings/sources";
   const registering = useSearchParams()?.get("register") === "1";
@@ -54,14 +58,21 @@ export function SourcesView({
   const [notice, setNotice] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
   const { ask, dialog } = useConfirm();
 
+  const loadClaims = useCallback(async (admin: boolean) => {
+    try {
+      const claims = await listConflicts(admin);
+      setConflicts(claims.conflicts ?? []);
+      setClaimsFailed(false);
+    } catch {
+      setClaimsFailed(true);
+    }
+  }, []);
+
   const reload = useCallback(async () => {
-    const [next, claims] = await Promise.all([
-      listSources(),
-      listConflicts(list.is_box_admin).catch(() => ({ conflicts })),
-    ]);
+    const [next] = await Promise.all([listSources(), loadClaims(list.is_box_admin)]);
     setList(next);
-    setConflicts(claims.conflicts ?? []);
-  }, [conflicts, list.is_box_admin]);
+  }, [list.is_box_admin, loadClaims]);
+  const retryClaims = useAction(() => loadClaims(list.is_box_admin));
 
   const replace = (source: Source) =>
     setList((cur) => ({
@@ -79,6 +90,26 @@ export function SourcesView({
           <button type="button" className={BTN_GHOST} onClick={() => setNotice(null)}>{t("close")}</button>
         }>
           {notice.text}
+        </InlineAlert>
+      ) : null}
+
+      {claimsFailed ? (
+        <InlineAlert
+          tone="warn"
+          action={
+            <button
+              type="button"
+              data-action="retry-claims"
+              className={BTN_GHOST}
+              disabled={retryClaims.pending}
+              aria-busy={retryClaims.pending}
+              onClick={() => void retryClaims.run()}
+            >
+              {retryClaims.pending ? t("retrying") : t("retry")}
+            </button>
+          }
+        >
+          <span data-testid="claims-load-error">{t("claimsLoadError")}</span>
         </InlineAlert>
       ) : null}
 
@@ -217,7 +248,7 @@ function SourceRow({
       data-component="SourceRow"
       data-source={source.source_id}
       data-enabled={source.enabled ? "true" : "false"}
-      className={`${CARD} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:rounded-none sm:border-0 sm:bg-transparent sm:px-4 sm:py-3`}
+      className={`${CARD} flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2 sm:rounded-none sm:border-0 sm:bg-transparent sm:px-4 sm:py-3 lg:flex-nowrap lg:gap-3`}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3 sm:w-64 sm:flex-none">
         <ChannelBadge channel={source.channel} />
@@ -246,7 +277,7 @@ function SourceRow({
           ))
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:shrink-0 sm:justify-end sm:gap-1">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:basis-full sm:justify-end sm:gap-1 lg:basis-auto lg:shrink-0">
         <span className="hidden items-center sm:order-first sm:inline-flex">
           <Switch
             on={source.enabled}

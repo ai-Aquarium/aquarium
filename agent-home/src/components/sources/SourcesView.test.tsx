@@ -145,6 +145,40 @@ describe("SourcesView", () => {
     expect(calls.filter(([m]) => m === "DELETE")).toEqual([["DELETE", "/api/sources/s1"]]);
   });
 
+  it("says when claims could not load, and Try again reloads them once", async () => {
+    let fail = true;
+    const calls = mockFetch({
+      "GET /api/sources/conflicts": () =>
+        fail ? new Response(JSON.stringify({ detail: "deadlock" }), { status: 500 }) : new Response(JSON.stringify({ conflicts: [CLAIM] })),
+    });
+    render(<SourcesView initial={LIST} initialConflicts={[]} initialConflictsFailed />);
+    expect(screen.getByTestId("claims-load-error").textContent).toMatch(/Could not load claims/);
+    const retry = screen.getByRole("button", { name: "Try again" });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    expect(await screen.findByTestId("claims-load-error")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Try again" }).hasAttribute("disabled")).toBe(false));
+    expect(calls.filter(([, u]) => u === "/api/sources/conflicts")).toHaveLength(1);
+
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("1 claim on your sources")).toBeTruthy();
+    expect(screen.queryByTestId("claims-load-error")).toBeNull();
+  });
+
+  it("a reload that fails to load claims shows the error instead of the old list", async () => {
+    mockFetch({
+      "POST /api/sources/conflicts/7/resolve": () =>
+        new Response(JSON.stringify({ conflict: { ...CLAIM, resolved_at: "2026-11-17T00:00:00Z", resolution: "keep" } })),
+      "GET /api/sources/conflicts?all=1": () => new Response(JSON.stringify({ detail: "deadlock" }), { status: 500 }),
+    });
+    render(<SourcesView initial={{ ...LIST, is_box_admin: true }} initialConflicts={[CLAIM]} />);
+    expect(screen.queryByTestId("claims-load-error")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "See claims" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+    expect(await screen.findByTestId("claims-load-error")).toBeTruthy();
+  });
+
   it("shows the claims banner; only admins get Keep / Give to this user", async () => {
     const calls = mockFetch({
       "POST /api/sources/conflicts/7/resolve": () =>
