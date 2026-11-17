@@ -419,3 +419,157 @@ def test_consume_keeps_the_runner_on_one_thread():
     asyncio.run(main())
     assert len(stored) == ss._BATCH * 3 + 7
     assert len(set(threads)) == 1 and threads[0] != threading.get_ident()
+
+
+# -- refresh lifecycle (fake connections) -------------------------------------
+
+
+class _Conn:
+    def __init__(self, name, log):
+        self.name, self.log, self.closed = name, log, False
+
+    async def fetchval(self, sql, *args):
+        return True if "pg_try_advisory_lock" in sql else None
+
+    async def fetch(self, sql, *args):
+        return []
+
+    async def execute(self, sql, *args):
+        self.log.append((self.name, sql, args))
+        return "UPDATE 0"
+
+    async def close(self):
+        self.closed = True
+
+    def transaction(self):
+        import contextlib
+
+        return contextlib.nullcontext()
+
+
+class _Db:
+    def __init__(self):
+        self.log: list = []
+        self.lock = _Conn("lock", self.log)
+        self.writer = _Conn("writer", self.log)
+
+    async def provisioner(self):
+        return self.lock
+
+    async def restricted(self, site, write=False):
+        return self.writer
+
+    def finished(self):
+        """The status/error the run was closed with, or None while it is open."""
+        for name, sql, args in self.log:
+            if name == "writer" and sql.startswith("UPDATE _runs SET finished_at"):
+                return args[1], args[7]
+        return None
+
+    def released(self):
+        unlocked = any(n == "lock" and "pg_advisory_unlock" in sql for n, sql, _ in self.log)
+        return unlocked and self.lock.closed and self.writer.closed
+
+
+def _refresh_world(monkeypatch, runner):
+    import threading
+
+    seen = {}
+
+    async def approved(_site, db=None):
+        return 1, DESIGN, {"entities": {"about": {"steps": []}, "orders": {"steps": []}}}
+
+    async def none(*_a, **_k):
+        return {}
+
+    async def login(_site):
+        from hermes_constants import get_hermes_home_override
+
+        seen["home"] = get_hermes_home_override()
+        seen["thread"] = threading.current_thread().name
+        return None
+
+    monkeypatch.setattr(ss, "approved_design", approved)
+    monkeypatch.setattr(ss, "_last_full_by_entity", none)
+    monkeypatch.setattr(ss, "_cursors", none)
+    monkeypatch.setattr(ss, "load_login", login)
+    monkeypatch.setattr(ss, "_recipe_runner", lambda: runner)
+    return seen
+
+
+def _wait_for(check, timeout=10.0):
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if check():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_refresh_outlives_the_short_lived_loop_that_started_it(monkeypatch, tmp_path):
+    """An agent tool's loop is closed (pending tasks cancelled) right after the call returns."""
+    import asyncio
+    import threading
+
+    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+    release = threading.Event()
+
+    def runner(recipe, credential, *, entities=None, mode, cursors):
+        release.wait(10)
+        return
+        yield
+
+    seen = _refresh_world(monkeypatch, runner)
+    db = _Db()
+
+    loop = asyncio.new_event_loop()
+    token = set_hermes_home_override(tmp_path / "profiles" / "ops")
+    try:
+        view = loop.run_until_complete(ss.start_refresh(site(), trigger="agent", db=db))
+    finally:
+        reset_hermes_home_override(token)
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        loop.close()
+    assert view["status"] == "running" and db.finished() is None
+
+    release.set()
+    assert _wait_for(lambda: db.finished() is not None and db.released())
+    assert db.finished() == ("ok", None)
+    # The caller's profile scoping travelled with the refresh onto its own loop.
+    assert seen["home"] == str(tmp_path / "profiles" / "ops")
+    assert seen["thread"] != threading.current_thread().name
+
+
+def test_cancelled_refresh_closes_the_run_and_releases_the_lock(monkeypatch):
+    import asyncio
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+
+    def runner(recipe, credential, *, entities=None, mode, cursors):
+        started.set()
+        release.wait(10)
+        return
+        yield
+
+    _refresh_world(monkeypatch, runner)
+    db = _Db()
+
+    async def main():
+        task = asyncio.create_task(ss.start_refresh(site(), trigger="manual", wait=True, db=db))
+        await asyncio.to_thread(started.wait, 10)
+        task.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(main())
+    assert db.finished() == ("error", ss.CANCELLED_RUN_ERROR)
+    assert db.released()
