@@ -560,7 +560,8 @@ def test_agent_todo_and_alert_carry_the_routing_link(setup, box, monkeypatch):  
     ).json()["decisions"]
     assert decision["selected"] == ["cfo", "cmo"]
     assert decision["message_count"] == 1
-    assert decision["first_sender"] in ("supplier@example.com", "Supplier <+85211112222>")
+    # WhatsApp numbers are masked in the Sources API (#989).
+    assert decision["first_sender"] in ("supplier@example.com", "Supplier <+85••••••22>")
     # Owner-only: Mary cannot read John's decision behind the to-do.
     _session_as(monkeypatch, "mary")
     assert _client("mary").get(
