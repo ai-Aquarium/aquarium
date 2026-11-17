@@ -49,13 +49,13 @@ function suggested(): UseSuggestedTasks {
   const task: SuggestedTask = {
     channel: "whatsapp",
     todo: { id: "d2", ref: "D2", title: "Reply to Ada about FP testing", description: "Ada asks which option.", stage: "open", priority: "high" } as Todo,
-    source: { surface: "whatsapp", account_id: null, external_id: null, sender_name: "Ada", sender_id: null, subject: null, body: "Which option should we pick for FP testing?", occurred_at: null },
+    source: { id: "m2", surface: "whatsapp", account_id: null, external_id: null, sender_name: "Ada", sender_id: null, subject: null, body: "Which option should we pick for FP testing?", occurred_at: null },
   };
   return { items: [task], loaded: true, error: null, refresh: vi.fn(async () => {}), remove: vi.fn() } as unknown as UseSuggestedTasks;
 }
 
 function mockFetch(answer: unknown = { action: { type: "send", event: "sent" } }) {
-  const fn = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(async (input, init) => {
+  const fn = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(async (_url, init) => {
     if (init?.method === "POST") return new Response(JSON.stringify(answer), { status: 200 });
     return new Response("{}", { status: 404 });
   });

@@ -118,6 +118,7 @@ function arrivalOf(detail: TodoDetail | null): { source: SuggestedTaskSource | n
   return {
     id: m.id,
     source: {
+      id: m.id,
       surface: m.surface,
       account_id: m.account_id ?? null,
       external_id: m.external_id ?? null,
@@ -126,7 +127,7 @@ function arrivalOf(detail: TodoDetail | null): { source: SuggestedTaskSource | n
       subject: m.subject,
       body: m.body,
       occurred_at: m.occurred_at,
-    } as SuggestedTaskSource,
+    },
   };
 }
 
