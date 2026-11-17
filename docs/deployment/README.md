@@ -1,20 +1,20 @@
 # The `hermes-systest` deployment — handover
 
-> **⚠️ SUPERSEDED 2026-08-20 — production no longer lives here.**
-> The live production environment is now the Hetzner box `hermes` (CX43, nbg1,
-> `<prod-host>`). The authoritative ops document for it is
-> [`PRODUCTION.md`](./PRODUCTION.md); the migration history is
-> [`hetzner-migration-runbook.md`](./hetzner-migration-runbook.md).
-> The `hermes-systest` (Alibaba cn-hongkong) box described below was stopped at
-> cutover and its subscription lapses 2026-08-26. Treat everything below as
-> historical unless it is restated in `PRODUCTION.md`.
+> **Production is the Hetzner box (CX43, nbg1, `<prod-host>`), reached by SSH.**
+> How to reach and deploy it lives in `production/PRODUCTION.md` in the private
+> `leolau/aquarium-ops` repo — read that first. The captured deployment is still
+> *named* `hermes-systest` (every `--deployment` argument below), but the
+> Alibaba cn-hongkong box of that name was decommissioned at the 2026-08-20
+> cutover. The box inventory, services, timers and checks below were
+> re-verified on the Hetzner box on 2026-11-17; the history paragraphs
+> describe how each piece came to be and are kept as history.
 
 Written for an agent or engineer picking this up cold, with no session history.
 It states what exists, what is verified, what is *not*, and where the detail
 lives. The per-topic documents are authoritative for procedure; this file is
 authoritative for **what is currently true of the live box**.
 
-Last verified: 2026-08-17, application at `fed034fa4` (what the box runs; the
+Last verified: 2026-11-17, application at `2c31ad70e` (what the box runs; the
 repo moves ahead of it — the box is deployed by whoever merges, not by this
 document).
 
@@ -50,15 +50,16 @@ prose is worse than an old date.
 | `runtime-drift.md` | interpreter/package pinning and the weekly timer |
 | `os-patching.md` | unattended upgrades and the `needrestart` exemption |
 | `mcp-approval-gating.md` | which MCP tools require human approval |
-| `../../.agents/skills/testing-hermes-systest-box/SKILL.md` | how to reach the box at all (no SSH) and ~30 traps |
+| `production/PRODUCTION.md` in `leolau/aquarium-ops` | how to reach the box (SSH) and deploy it |
+| `../../.agents/skills/testing-hermes-systest-box/SKILL.md` | historical: the decommissioned Alibaba box (no SSH) |
 | `../testing/uat-hermes-systest.md` | the acceptance suite to run against a deployed revision |
 
 ## The box
 
 ```
-instance      hermes-systest  (i-j6c81aisv2dd8mg17yle, cn-hongkong, ecs.e-c1m4.xlarge)
+instance      Hetzner CX43, nbg1 (<prod-host>); deployment name still `hermes-systest`
 service user  hermes          (unprivileged; nothing Hermes runs is root)
-interpreter   /opt/data/hermes-agent/.venv/bin/python  — Python 3.11.15
+interpreter   /opt/data/hermes-agent/.venv/bin/python  — Python 3.12.3
 age           1.1.1  (/usr/bin/age)
 ```
 
@@ -75,7 +76,12 @@ Paths, and which of them are reproducible:
   backup-recipient.env            the age public recipient   not secret; recreate from the key
 /opt/data/hermes-deploy-state     sanitized state, read-only clone
 /opt/data/hermes-deploy-backups   encrypted bundles, write clone
-/opt/data/backups                 old manual snapshots — NOT a backup system, see below
+/opt/data/backups                 per-deploy and manual snapshots — NOT a backup system, see below
+/usr/local/sbin/                  root-owned helpers, installed by hand (see "Root-owned copies")
+/etc/sudoers.d/                   hermes-vpn, hermes-tools, hermes-backup, hermes-security-check,
+                                  aquarium-apps, aquarium-upgrade — reviewed copies in deploy/sudoers.d
+/opt/data/vpn-files/              network-folder mounts (0755 root; each mount owned by hermes)
+/run/hermes-vpn/<slug>/           per-VPN / per-folder runtime state (state.json), tmpfs
 ```
 
 Three git remotes, three separate deploy keys, exactly one of which may write:
@@ -93,16 +99,21 @@ cannot be scoped to a subdirectory.
 
 ## What runs
 
-15 long-running services, all as `hermes` — which was untrue for a day, see
-below:
+16 enabled long-running services, all as `hermes` — which was untrue for a
+day, see below:
 
 ```
 hermes-gateway        hermes-dashboard      hermes-digest        hermes-escalation
 hermes-wa-bridge-personal    hermes-wa-bridge-connectar   hermes-wa-batcher    hermes-wa-triage
 hermes-email-poller   hermes-email-batcher  hermes-email-triage  hermes-embed
-hermes-calendar-poller       hermes-calendar-triage
+hermes-calendar-poller       hermes-calendar-triage       hermes-seminar-outreach
 agent-home            (the phone PWA — note the name, see below)
 ```
+
+Also on the box but outside the `hermes-*`/`agent-home*` globs: `app-mcp`, the
+web server `caddy`, and per-app `aquarium-app@<name>` units (FG-33). VPN
+tunnels run as transient `hermes-vpn-<slug>` units created by the VPN helper
+and exist only while connected.
 
 `hermes-calendar-triage` ran as **root** from 2026-08-11 to 2026-08-12: it was
 installed by hand, its unit was in no repository, and the 2026-07-31
@@ -162,14 +173,19 @@ the tell. It is an npm **workspace** of the root `package.json` — install and
 build from the repo root (`npm ci && npm run build --workspace agent-home`), never
 from inside `agent-home/`, which would create a second unhoisted dep tree.
 
-Four timers:
+Five `hermes-*` timers, plus two FG-33 app timers:
 
 ```
-hermes-drift-check.timer         Mondays 09:00   three checks, reports only on drift
+hermes-drift-check.timer         Mondays 09:00   four checks, reports only on drift
 hermes-secret-backup.timer       daily 04:30     encrypted credential backup, pushes
 hermes-memory-projection.timer   daily 03:00     refits the memory explorer's 2-D map
 hermes-review-pass.timer         Mondays 08:00   the learning loop's review moment
+hermes-rag-ingest.timer          daily           document ingest for retrieval
+aquarium-apps-watch.timer        every 5 min     per-app CPU/limits watch (FG-33)
+aquarium-apps-copies-prune.timer daily           drops app DB copies unused 90 days
 ```
+
+All times are box-local (UTC on the Hetzner box), with a randomized delay.
 
 The review pass is the clock for FG-29/FG-30/FG-31: it generates the monthly
 profile suggestion, alerts on sibling-goal conflicts and delivers the weekly
@@ -240,26 +256,34 @@ root-owned `state-secrets.env` (itself in the backup) and the private age key.
 ## What is verified, and what is not
 
 Verified on the live box, not in a fixture. The list below is cumulative; the
-lines re-checked at this verification (2026-08-16, `3900ed007`) are marked ✔:
+lines re-checked at this verification (2026-11-17, `2c31ad70e`, Hetzner box)
+are marked ✔:
 
-- ✔ 15 enabled long-running units — the 14 `hermes-*` above plus `agent-home` —
+- ✔ 16 enabled long-running units — the 15 `hermes-*` above plus `agent-home` —
   all `active`, and `systemctl show -p User` reads `hermes` for **every one of
-  them**, including `agent-home` and both calendar units.
-- ✔ Four enabled timers, matching the table above.
+  them**. `agent-home` runs from the main checkout with `ProtectSystem=strict`,
+  `ProtectHome=yes`.
+- ✔ The timers in the table above are enabled and have fired on schedule.
 - ✔ `hermes-drift-check.service` has exactly the four `ExecStart` lines listed,
-  in that order, with `User=hermes` and `SuccessExitStatus=0 1`.
-- ✔ The state key still cannot push, and the box's clone has **no unpushed
-  commits** — the two captures it made on 2026-08-15/16 were finished off-box
-  and are now in the state repo.
+  in that order, with `User=hermes` and `SuccessExitStatus=0 1`; its last run
+  ended `Result=success`.
 - ✔ The installed deploy script is byte-identical to `deploy/hermes-deploy.sh`.
-- ✔ A deploy removes what the new revision deleted or renamed away, and names
+- ✔ `deploy OK (2c31ad70e)`; every root-owned helper in `/usr/local/sbin`
+  matches its reviewed copy in `deploy/` (the VPN helper and `aquarium` were
+  installed by hand after that deploy, as it reported).
+- ✔ `backup_secrets.py verify`: "Offsite backup on hermes-systest is current".
+- ✔ Interpreter Python 3.12.3, `age` 1.1.1.
+- ✔ `datastore show` reports `app_prod` and `app_dev` claimed by
+  `/opt/data/hermes-home-staging`.
+- The state key cannot push. **Not true now:** the box's clone is 3 capture
+  commits ahead of `origin/main` (model/fallback/app-MCP changes) — see Known
+  gaps.
+- **Not true now:** the checkout is not clean — untracked files exist (see
+  Known gaps).
+- A deploy removes what the new revision deleted or renamed away, and names
   any file left untracked in the checkout (silent when there are none).
-- ✔ The checkout is clean: `git status --porcelain` is empty (the pre-fix
-  orphan `docs/design/projects-feature-design.md` was cleared 2026-08-17).
-- ✔ A deploy run from a stale installed copy says so.
-- ✔ Interpreter Python 3.11.15, `age` 1.1.1.
-- ✔ `datastore show` reports `app_prod` claimed by `/opt/data/hermes-home-staging`.
-- ✔ An uncaptured unit and an uncaptured drop-in are each reported as drift,
+- A deploy run from a stale installed copy says so.
+- An uncaptured unit and an uncaptured drop-in are each reported as drift,
   naming the account they would run as; capturing them clears it.
 - `render` reproduces the live `config.yaml` byte-for-byte.
 - The weekly unit completes as `hermes` with `Result=success`.
@@ -325,6 +349,24 @@ compares, "we have backups" is a belief. Do this periodically, not once.
 
 ## Known gaps, stated plainly
 
+Open at the 2026-11-17 verification:
+
+- **`deploy_state.py check` reports drift that nobody has captured:** a
+  `hermes-tools-umask.conf` drop-in on every `hermes-*` unit and `agent-home`,
+  `agent-home.service.d/fg33-apps.conf`, a changed `hermes-gateway.service`,
+  and a new `APP_MCP_HERMES_TOKEN` secret. All came from merged features
+  (terminal-as-`hermes-tools`, FG-33 apps, app MCP); the fix is a capture plus
+  an off-box commit, not removal.
+- **The state clone has 3 unpushed captures.** Finish them off-box as described
+  below.
+- **Untracked files in the checkout** (`agent-home/public/canva-tmp-*`,
+  `agent-home/public/icanlearn-p01.png`, `agent-home/src/app/api/screenshot/`,
+  `app-mcp/app-mcp.env`, `cuhk-t2026*`). The env file is expected; the rest are
+  agent leftovers to review and remove.
+- **Runtime baseline lags the box:** `check_runtime_drift.py` notes Python
+  3.12.3 against a 3.11.15 baseline, and flags the interpreter's bundled OpenSSL
+  as below baseline.
+
 - **Data is not backed up.** The bundle holds credentials only. `state.db`,
   the layer-4 memory rows, the interaction ledger, session history and WhatsApp
   message archives are excluded — large, constantly
@@ -340,8 +382,8 @@ compares, "we have backups" is a belief. Do this periodically, not once.
 - **The weekly `verify` runs unprivileged**, so it reports the root-only secrets
   file as *unverified* rather than covered. The daily backup runs as root and
   does cover it — check the index if you need proof.
-- **Alibaba OSS is unavailable** on this account (`ListBuckets` → `UserDisable`),
-  which is why the offsite destination is a private GitHub repo.
+- **The offsite destination is a private GitHub repo** (chosen on the old
+  Alibaba box, where OSS was unavailable).
 - **Which units are supposed to be *running* is not captured state.** The
   snapshot holds unit files and drop-ins — their content — and `check` compares
   those plus anything installed the snapshot has never seen. Nothing records
@@ -353,8 +395,9 @@ compares, "we have backups" is a belief. Do this periodically, not once.
   the enabled/active set is captured and compared, a box visit must ask
   `systemctl is-enabled`/`is-active` per unit and never infer liveness from a
   port. See `pickup-2026-08-21.md`.
-- **Only `hermes-systest` exists.** Everything is parameterized by
-  `--deployment`, but no second deployment has ever been captured.
+- **Only `hermes-systest` is captured.** Everything is parameterized by
+  `--deployment`, but other installations (for example ones set up with
+  `install-aquarium.sh`) have no captured state.
 - **The box cannot publish its own state.** `capture` commits locally and the
   push fails ("marked as read only") — deliberate, so a compromised box cannot
   rewrite the record used to detect its drift. It is also silent: a state commit
@@ -407,15 +450,13 @@ access to the state repo.
 
 ## Deploying a code change
 
-The box has no SSH. Code deploys are driven from a local machine (or an agent
-session) through the Alibaba Cloud CLI — `aliyun`, not the MCP OOS tool. The
-MCP `OOS_RunCommand` path works too, but the CLI is simpler for a long-running
-script and is what the deploy commands below use.
+Production is reached by SSH; the exact host and key are in
+`production/PRODUCTION.md` (private `leolau/aquarium-ops`), never in this
+public repo.
 
 ### Prerequisites
 
-- `aliyun` CLI installed and configured (`aliyun configure`) with credentials
-  that have ECS RunCommand permission on `cn-hongkong`.
+- The production SSH key (see `PRODUCTION.md`).
 - Git push access to `leolau/aquarium` (the `develop` branch requires
   pull requests — a direct `git push origin develop` is rejected by a repository
   rule).
@@ -423,43 +464,10 @@ script and is what the deploy commands below use.
 ### The full flow
 
 ```bash
-# 1. Commit on a feature branch
-git checkout -b feat/my-feature
-git add -p
-git commit -m "feat(scope): what changed"
-git push origin feat/my-feature
-
-# 2. Open and merge a PR (develop requires it)
-#    Via GitHub CLI: gh pr create --base develop ...
-#    Or via the GitHub MCP tool: create_pull_request + merge_pull_request
-
-# 3. Pull the merged develop locally
-git checkout develop && git pull origin develop
-
-# 4. Deploy — run the deploy script on the box via aliyun CLI
-aliyun ecs RunCommand \
-  --RegionId cn-hongkong \
-  --InstanceId.1 i-j6c81aisv2dd8mg17yle \
-  --Type RunShellScript \
-  --CommandContent "/opt/data/deploy-hermes.sh develop 2>&1" \
-  --Timeout 600
-#    Returns: { "InvokeId": "t-hk..." }
-
-# 5. Poll for results (the deploy takes 2-5 minutes)
-sleep 180
-aliyun ecs DescribeInvocationResults \
-  --RegionId cn-hongkong \
-  --InvokeId t-hk... 2>&1 | python3 -c '
-import sys, json, base64
-data = json.load(sys.stdin)
-results = data.get("Invocation", {}).get("InvocationResults", {}).get("InvocationResult", [])
-for r in results:
-    output = r.get("Output", "")
-    try: decoded = base64.b64decode(output).decode("utf-8", "replace")
-    except: decoded = output
-    print(f"ExitCode: {r.get("ExitCode", "?")}")
-    print(decoded)
-'
+# 1. Branch, commit, push, open a PR against develop, merge it.
+# 2. Deploy develop (takes 2-10 minutes; run it detached if your SSH may drop)
+ssh root@<prod-host> '/opt/data/deploy-hermes.sh develop'
+# 3. Read the tail: `deploy OK (<sha>)`, then any *STALE* lines (below).
 ```
 
 ### What the deploy script does
@@ -470,49 +478,51 @@ for r in results:
    must never be silently clobbered).
 2. Fetches `origin/develop` (three attempts, backing off) and fast-forwards; a
    fetch that never succeeds aborts with `nothing deployed, box unchanged`.
-3. Deletes the files the new revision removed (`git diff --diff-filter=D
-   --no-renames`), and lists any file left untracked in the checkout. Until
-   2026-08-17 it did neither: `git checkout -f <ref> -- .` writes what the ref
-   has and removes nothing it lacks, so every upstream delete or rename left its
-   old file on the box forever — found as a `docs/design/projects-feature-design.md`
-   that #283's rename should have taken away.
+3. Deletes the files the new revision removed, and lists any file left
+   untracked in the checkout.
 4. `pip install -e .` (reinstalls the package).
 5. Rebuilds the dashboard bundle (`web/`) only when `web/` changed.
 6. Rebuilds the agent-home bundle only when `agent-home/` or `package-lock.json`
-   changed — this is a `next build` with full TypeScript type checking, which
-   is stricter than vitest's esbuild and will catch type errors vitest misses.
-7. Fixes ownership (`hermes:hermes` for source, `root:root` for `.venv`).
-8. Restarts all enabled `hermes-*` services + `agent-home`.
-9. Sleeps 15s, then verifies every unit is `active`.
-10. Prints `deploy OK (<sha>)` or exits 1 on any inactive unit.
-11. Runs `deploy_state.py handover` (reports doc staleness, never blocks).
-12. Compares the running `/opt/data/deploy-hermes.sh` with the
-    `deploy/hermes-deploy.sh` it just pulled and prints `DEPLOY TOOL STALE`
-    with the `install` line to fix it. **The deploy tool does not deploy
-    itself** — the copy on the box is installed by hand, so a merged change to
-    this script does nothing until someone installs it, and the deploy reports
-    success meanwhile (it did, for #292). It is reported and not self-applied:
-    a script that overwrites itself while bash is still reading it is its own
-    class of bug. Silent when the two agree.
+   changed — a `next build` with full TypeScript type checking, which is
+   stricter than vitest's esbuild.
+7. Fixes ownership and restarts all enabled `hermes-*` services + `agent-home`.
+8. Verifies every unit is `active`, then prints
+   `deploy OK (<sha>)  backup: /opt/data/backups/deploy-<ts>` or exits 1.
+9. Runs `deploy_state.py handover` (reports this document's staleness, never
+   blocks).
+10. Compares each **root-owned copy** with the revision it just deployed and
+    prints a `... STALE` line with the exact `install` command for any that
+    differ (below).
+11. Prints `DEPLOY TOOL STALE` if the running deploy script differs from
+    `deploy/hermes-deploy.sh`. **The deploy tool does not deploy itself**, and
+    it is reported rather than self-applied: a script that overwrites itself
+    while bash is still reading it is its own class of bug.
 
-A successful deploy ends with `deploy OK (<sha>)` and all 15 services `active`
-(14 `hermes-*` plus `agent-home`).
+### Root-owned copies
+
+The deploy runs the code as `hermes` and never writes root-owned files, so a
+merged change to any of these does nothing until someone installs it by hand
+— and the deploy still says `deploy OK`. Install with the line the deploy
+prints (`install -m 755 -o root -g root deploy/<file> /usr/local/sbin/<name>`,
+or `-m 440` for sudoers rules), after copying the old file into
+`/opt/data/backups/`:
+
+```
+/usr/local/sbin/hermes-vpn-helper       deploy/hermes-vpn-helper       VPN tunnels, network folders, host routes
+/usr/local/sbin/aquarium                deploy/aquarium.py             admin command, upgrades
+/usr/local/sbin/hermes-tools-exec, hermes-tools-cli, hermes-security-check
+/usr/local/sbin/aquarium-app-helper, aquarium-app-egress, aquarium-app@ units
+/etc/sudoers.d/*                        deploy/sudoers.d/*
+/opt/data/deploy-hermes.sh              deploy/hermes-deploy.sh
+```
 
 ### Common pitfalls
 
-- **Region is `cn-hongkong`, not `cn-shenzhen`.** The instance is in Hong Kong;
-  using the wrong region gives `InvalidInstance.NotFound`.
-- **The Output field is base64-encoded.** `DescribeInvocationResults` returns
-  the script's stdout in `Output` as base64 — decode it before reading. A
-  manual copy/paste of the base64 string can corrupt bytes; pipe through
-  `python3 -c "import base64; ..."` in one step.
-- **`develop` requires pull requests.** A direct `git push origin develop` is
-  rejected by a GitHub repository rule. Always branch → PR → merge.
-- **vitest passes but `tsc` fails.** vitest uses esbuild (lenient), but the
-  deploy script runs `next build` which uses `tsc` (strict). A missing closing
-  brace on an interface, for example, passes vitest but fails the deploy build.
-  Run `npx tsc --noEmit` in `agent-home/` before pushing if you changed `.ts`/
-`.tsx` files.
-- **The deploy takes 2-5 minutes.** The `aliyun ecs RunCommand` call returns
-  immediately with an `InvokeId`; the script keeps running. Wait at least 120s
-  before polling `DescribeInvocationResults`.
+- **`develop` requires pull requests.** Always branch → PR → merge.
+- **vitest passes but `tsc` fails.** The deploy's `next build` runs `tsc`
+  (strict). Run `npx tsc --noEmit` in `agent-home/` before pushing if you
+  changed `.ts`/`.tsx` files.
+- **`deploy OK` is not the whole result.** Read the lines after it: a `STALE`
+  root-owned copy means the feature that depends on it is not live yet.
+- **HSD and other installations are separate boxes.** `PRODUCTION.md` lists
+  which box is which; never deploy one when asked for the other.
