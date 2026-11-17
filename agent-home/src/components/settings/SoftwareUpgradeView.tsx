@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useTimeLabel } from "@/components/projects/useTimeLabel";
 import { ActionButton } from "@/components/ui/ActionButton";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { Maximizable, MaximizeToggle } from "@/components/ui/Maximizable";
 import { useT } from "@/i18n";
 import { useAction } from "@/lib/use-action";
@@ -705,7 +706,7 @@ function ConfirmDialog({
   });
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
-      <form
+      <CredentialForm
         onSubmit={(e) => {
           e.preventDefault();
           if (!busy) void submit();
@@ -744,10 +745,10 @@ function ConfirmDialog({
             disabled={!password}
             data-testid="upgrade-confirm"
           >
-            {rollback ? t("startRollback") : t("startUpgrade")}
+            <SubmitLabel>{rollback ? t("startRollback") : t("startUpgrade")}</SubmitLabel>
           </ActionButton>
         </div>
-      </form>
+      </CredentialForm>
     </div>
   );
 }

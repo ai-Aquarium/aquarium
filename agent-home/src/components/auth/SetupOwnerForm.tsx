@@ -8,6 +8,7 @@ import { TwoFactorSetup } from "@/components/account/TwoFactorSetup";
 import { AquariumLoader } from "@/components/brand/AquariumLoader";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { CopyButton } from "@/components/skills/CopyButton";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { CheckIcon } from "@/components/ui/icons";
 import { Spinner } from "@/components/ui/Spinner";
@@ -410,7 +411,7 @@ export function SetupOwnerForm({
   const address = domainResult?.server_addresses[0];
 
   return (
-    <form
+    <CredentialForm
       data-component="SetupOwnerForm"
       onSubmit={(e) => void finishOnce(e)}
       aria-busy={finishing}
@@ -697,13 +698,13 @@ export function SetupOwnerForm({
                 <Spinner /> {t("saving")}
               </>
             ) : (
-              t("finish")
+              <SubmitLabel>{t("finish")}</SubmitLabel>
             )}
           </button>
           <p className="text-center text-xs text-[var(--color-muted)]">{t("finish_note")}</p>
         </div>
       </div>
-    </form>
+    </CredentialForm>
   );
 }
 
