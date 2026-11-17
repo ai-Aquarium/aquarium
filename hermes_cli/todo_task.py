@@ -263,6 +263,42 @@ async def start_todo_as_project(
     }
 
 
+async def start_from_request(principal, todo_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+    """The shared body of both Start-task routes (``POST /todos/{id}/start-task``
+    and ``POST /projects/quick-task`` with ``from_todo``); the caller has
+    already passed ``_require_human``. Body keys, all optional:
+    ``host_profile`` (default: the serving profile), ``autonomy`` (default
+    ``manual``) and ``check_plan_first``."""
+    from hermes_cli import profile_refs
+    from hermes_cli.projects_api import QUICK_TASK_AUTONOMY
+    from hermes_cli.todos_api import _source_item, _store, _table_ready
+
+    autonomy = str(body.get("autonomy") or DEFAULT_AUTONOMY).strip()
+    if autonomy not in QUICK_TASK_AUTONOMY:
+        raise TodoTaskError(
+            422, f"autonomy must be one of {', '.join(QUICK_TASK_AUTONOMY)}"
+        )
+    host_profile = (
+        str(body.get("host_profile") or "").strip() or profile_refs.current_profile()
+    )
+    store = _store()
+    if not await _table_ready(store):
+        raise TodoTaskError(404, "No such to-do")
+    todo = await store.get(principal, todo_id)
+    if todo is None:
+        raise TodoTaskError(404, "No such to-do")
+    arrival = await _source_item(principal, todo)
+    return await start_todo_as_project(
+        store,
+        principal,
+        todo,
+        arrival=arrival,
+        host_profile=host_profile,
+        autonomy=autonomy,
+        check_plan_first=bool(body.get("check_plan_first")),
+    )
+
+
 async def close_linked_todo(principal, project_id: str) -> Optional[dict[str, Any]]:
     """Close the to-do a done project was started from; best-effort.
 

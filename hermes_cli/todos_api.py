@@ -352,7 +352,7 @@ async def start_todo_as_task(request: Request, todo_id: str) -> dict[str, Any]:
     ``autonomy`` (default ``manual``), ``check_plan_first``.
     """
     from hermes_cli import todo_task
-    from hermes_cli.projects_api import QUICK_TASK_AUTONOMY, _require_human
+    from hermes_cli.projects_api import _require_human
     from hermes_cli.web_server import _comms_resolve_principal
 
     principal = await _comms_resolve_principal(request, allow_as=False)
@@ -363,33 +363,8 @@ async def start_todo_as_task(request: Request, todo_id: str) -> dict[str, Any]:
         body = None
     if not isinstance(body, dict):
         body = {}
-    autonomy = str(body.get("autonomy") or todo_task.DEFAULT_AUTONOMY).strip()
-    if autonomy not in QUICK_TASK_AUTONOMY:
-        raise HTTPException(
-            status_code=422,
-            detail=f"autonomy must be one of {', '.join(QUICK_TASK_AUTONOMY)}",
-        )
-    host_profile = (
-        str(body.get("host_profile") or "").strip() or profile_refs.current_profile()
-    )
-
-    store = _store()
-    if not await _table_ready(store):
-        raise HTTPException(status_code=404, detail="No such to-do")
-    todo = await store.get(principal, todo_id)
-    if todo is None:
-        raise HTTPException(status_code=404, detail="No such to-do")
-    arrival = await _source_item(principal, todo)
     try:
-        return await todo_task.start_todo_as_project(
-            store,
-            principal,
-            todo,
-            arrival=arrival,
-            host_profile=host_profile,
-            autonomy=autonomy,
-            check_plan_first=bool(body.get("check_plan_first")),
-        )
+        return await todo_task.start_from_request(principal, todo_id, body)
     except todo_task.TodoTaskError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
 

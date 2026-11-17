@@ -472,3 +472,37 @@ def test_a_message_to_someone_else_is_an_ordinary_card_send(env, reply_card, cap
     [msg] = _FakeSMTP.sent
     assert msg["To"] == "accounts@acme.example"
     assert state["store"].outbound == []
+
+
+def test_task_mode_quick_task_takes_from_todo_as_the_same_start(env):
+    client, state = env
+    resp = client.post("/api/registry/projects/quick-task", json={"from_todo": {"id": TODO_ID}})
+    assert resp.status_code == 200, resp.text
+    out = resp.json()
+    assert out["created"] is True
+    assert out["autonomy"] == "manual"
+    assert out["cadence"] == "one_off"
+    assert out["todo"]["stage"] == "working"
+    # The to-do route and Task mode name the same project.
+    again = _start(client).json()
+    assert again["created"] is False
+    assert again["project"]["id"] == out["id"]
+    assert len(_projects()) == 1
+
+
+def test_quick_task_from_a_todo_in_another_profile_is_refused(env):
+    client, _state = env
+    resp = client.post(
+        "/api/registry/projects/quick-task",
+        json={"from_todo": {"id": TODO_ID, "profile": "work"}},
+    )
+    assert resp.status_code == 422
+    assert _projects() == []
+
+
+def test_quick_task_from_todo_is_a_human_act(env):
+    client, state = env
+    state["subject"] = ""
+    resp = client.post("/api/registry/projects/quick-task", json={"from_todo": {"id": TODO_ID}})
+    assert resp.status_code == 403
+    assert _projects() == []

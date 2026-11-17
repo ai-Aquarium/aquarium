@@ -1456,6 +1456,31 @@ def create_task_project_sync(
         return projects_db.get_project(conn, pid)
 
 
+async def _quick_task_from_todo(request: Request, principal, body: dict, from_todo: dict) -> dict:
+    """Start task from a suggested to-do (``from_todo: {id}``): the to-do's
+    one-off project, Manual by default, seeded with its source message —
+    or the project it already became (``created: false``). The to-do is read
+    as the caller in the profile serving this request; naming another
+    profile is refused, as the card promotion seam refuses it."""
+    from hermes_cli import todo_task
+
+    todo_id = str(from_todo.get("id") or "").strip()
+    if not todo_id:
+        raise HTTPException(status_code=422, detail="from_todo needs an id")
+    serving = (request.query_params.get("profile") or "default").strip() or "default"
+    named = str(from_todo.get("profile") or "").strip()
+    if named and named != serving:
+        raise HTTPException(
+            status_code=422,
+            detail="a to-do can only be started from the profile serving this request",
+        )
+    try:
+        out = await todo_task.start_from_request(principal, todo_id, body)
+    except todo_task.TodoTaskError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+    return {**out["project"], "created": out["created"], "todo": out["todo"]}
+
+
 @router.post("/quick-task")
 async def create_quick_task_route(request: Request) -> dict[str, Any]:
     """Task mode's Start task: one request becomes an ordinary one-off
@@ -1472,6 +1497,9 @@ async def create_quick_task_route(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="invalid JSON body")
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="expected a JSON object")
+    from_todo = body.get("from_todo")
+    if isinstance(from_todo, dict) and from_todo:
+        return await _quick_task_from_todo(request, principal, body, from_todo)
     request_text = str(body.get("request") or "").strip()
     host_profile = str(body.get("host_profile") or "").strip()
     missing = [k for k, v in (("request", request_text), ("host_profile", host_profile)) if not v]
