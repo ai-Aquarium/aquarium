@@ -970,6 +970,14 @@ DEFAULT_CONFIG = {
             "model": "",
             "max_iterations": 2,
         },
+        # Daily ask-volume review (hermes_cli/triage_ask_review.py): when
+        # triage files more than `daily_threshold` to-dos in a profile within
+        # 24 hours, the profile owner gets one "review your triage skills"
+        # ask in Needs you, at most once per profile per day.
+        "ask_review": {
+            "enabled": True,
+            "daily_threshold": 20,
+        },
     },
     "source_registry": {
         # Where the email poller and WhatsApp batcher get the sources to read

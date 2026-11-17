@@ -55,9 +55,8 @@ class WorkRequestHandlerTest(unittest.TestCase):
             patch.dict(
                 sys.modules,
                 {'shared.todo_registration': SimpleNamespace(
-                    MAX_TODOS_PER_BATCH=3,
                     register_todo=fake_register,
-                    select_candidates=lambda c, limit=3: c[:limit],
+                    select_candidates=lambda c: list(c),
                 )},
             ),
             patch.object(triage_handlers, '_auto_work_enabled',

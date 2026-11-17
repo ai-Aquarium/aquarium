@@ -49,9 +49,11 @@ normally carry `notify: true` as well.
 
 ## Volume
 
-At most **three** to-dos per batch reach the store, highest priority first. A
-busy group chat must never become three to-dos on its own — one, or usually
-none.
+Every to-do you emit reaches the store, highest priority first; there is no
+per-batch cap, so the rules above are the only filter. A busy group chat must
+never become a pile of to-dos on its own — one, or usually none. A day that
+raises too many asks is flagged to the user once a day, as a prompt to tune
+these files.
 
 ## Writing the fields
 

@@ -48,8 +48,10 @@ To-dos page, and step 3's digest will pick it up as the date approaches.
 
 ## Volume
 
-At most **three** to-dos per event reach the store, highest priority first.
-Usually one is right: the single piece of preparation that actually matters.
+Every to-do you emit reaches the store, highest priority first; there is no
+per-event cap, so the rules above are the only filter. Usually one is right:
+the single piece of preparation that actually matters. A day that raises too
+many asks is flagged to the user once a day, as a prompt to tune these files.
 
 ## Writing the fields
 
