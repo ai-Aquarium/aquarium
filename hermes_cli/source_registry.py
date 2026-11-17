@@ -1416,9 +1416,10 @@ async def on_principal_removed(
 ) -> int:
     """Hook for :meth:`PrincipalStore.unenroll`: disable routes to that profile.
 
-    Also run on suspension and on a role change to ``viewer`` (see
-    :meth:`PrincipalStore.set_role`): a viewer's existing routes stop
-    delivering exactly as a suspended member's do.
+    Also run on suspension. A role change to ``viewer`` does not run it: the
+    route rows stay, the triage router skips them while the owner is a viewer
+    (``triage_skills.care_sections_for_source``), and delivery resumes on
+    promotion.
 
     Runs on the profile's own connection (same database, schema-qualified SQL),
     so it needs no second login; when ``dsn`` (the profile store's) is not the

@@ -560,5 +560,5 @@ def test_a_lost_datastore_secret_is_skipped_by_listings_but_refuses_account_leve
     actor = Principal(SUBJECT, "CTO", "owner")
     with pytest.raises(AccountLevelPermissionError, match="cannot be read"):
         asyncio.run(guard_account_level_op(actor, OTHER_SUBJECT, **kw))
-    with pytest.raises(ProfileScopeError, match="no multi-user datastore"):
+    with pytest.raises(ProfileScopeError, match="isn.t set up for shared use"):
         asyncio.run(resolve_console_principal(SUBJECT, "coder", **kw))

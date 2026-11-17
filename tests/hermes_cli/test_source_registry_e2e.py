@@ -595,20 +595,29 @@ def test_claim_cannot_give_a_source_to_a_viewer_only_claimant(box, viewers, monk
     assert _box(box["dsn"], lambda c: registry.get_source(c, source_id)).owner_user_id == "mary"
 
 
-def test_owner_made_viewer_stops_that_route(box):
-    """A route into a profile where its owner became a viewer no longer delivers.
+def test_owner_made_viewer_is_skipped_until_promoted_back(box):
+    """A route into a profile where its owner became a viewer doesn't deliver.
 
-    :meth:`PrincipalStore.set_role` disables it (as on suspension), and the
-    router itself skips any user-profile whose owner is not eligible now,
-    so a role changed outside member management is refused too.
+    Demotion keeps the route row (unlike suspension): the router skips the
+    user-profile while the owner is a viewer, so promoting them back restores
+    delivery without re-routing. A role changed outside member management
+    (straight in the table) is skipped the same way.
     """
     from hermes_cli.triage_skills import care_sections_for_source
 
+    def delivered(source_id):
+        return [s["profile"] for s in _box(box["dsn"], lambda c: care_sections_for_source(c, source_id))]
+
     john_src, mary_src = _john_routed(box)
+    assert delivered(john_src) == ["cfo", "cmo"]
+
     _in_profile(box, "cmo", lambda s: s.set_role("john", "viewer"))
-    assert _box(box["dsn"], lambda c: registry.routed_profiles(c, john_src)) == ["cfo"]
-    [src] = _box(box["dsn"], lambda c: registry.list_sources(c, owner_user_id="john"))
-    assert {r.profile_slug: r.enabled for r in src.routes} == {"cfo": True, "cmo": False}
+    # The route row is still enabled; the router alone skips it.
+    assert _box(box["dsn"], lambda c: registry.routed_profiles(c, john_src)) == ["cfo", "cmo"]
+    assert delivered(john_src) == ["cfo"]
+
+    _in_profile(box, "cmo", lambda s: s.set_role("john", "member"))
+    assert delivered(john_src) == ["cfo", "cmo"]
 
     async def demote_in_cfo_directly(store):
         connection = await store._store.connect()
@@ -618,13 +627,14 @@ def test_owner_made_viewer_stops_that_route(box):
             await connection.close()
 
     _in_profile(box, "cfo", demote_in_cfo_directly)
-    # The route row is still enabled, but the router skips it.
-    assert _box(box["dsn"], lambda c: registry.routed_profiles(c, john_src)) == ["cfo"]
-    assert _box(box["dsn"], lambda c: care_sections_for_source(c, john_src)) == []
+    # A write that bypasses PrincipalStore is seen once the principal cache
+    # (PRINCIPAL_CACHE_TTL) lapses; drop it rather than wait.
+    from hermes_cli.access import invalidate_principal_cache
+
+    invalidate_principal_cache()
+    assert delivered(john_src) == ["cmo"]
     # Mary (still a member in cfo) keeps delivering there.
-    assert [s["profile"] for s in _box(
-        box["dsn"], lambda c: care_sections_for_source(c, mary_src)
-    )] == ["cfo"]
+    assert delivered(mary_src) == ["cfo"]
 
 
 # -- CLI ---------------------------------------------------------------------------
