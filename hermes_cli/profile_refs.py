@@ -261,8 +261,39 @@ async def resolve(record: short_refs.RefRecord, principal, subject: str = "") ->
 
 
 def resolve_sync(parsed, record, principal, enrolled) -> Optional[dict]:
-    """``refs_api.RESOLVERS`` entry for D and M."""
-    return _run(resolve(record, principal, CALLER_SUBJECT.get()))
+    """``refs_api.RESOLVERS`` entry for D and M.
+
+    A to-do that became a project (Start task) resolves to that project —
+    when the caller may read the project; otherwise it stays the to-do."""
+    found = _run(resolve(record, principal, CALLER_SUBJECT.get()))
+    if found is None or record.kind != TODO:
+        return found
+    try:
+        from hermes_cli import todo_task
+
+        projects = todo_task.readable_projects_for_todos(
+            principal, [record.internal_id], profile=record.profile, enrolled=set(enrolled)
+        )
+    except Exception:
+        logger.warning("short refs: project lookup for %s failed", record.ref, exc_info=True)
+        return found
+    project = projects.get(record.internal_id)
+    if project is None:
+        return found
+    summary = todo_task.project_summary(project)
+    return {
+        "ref": record.ref,
+        "kind": "project",
+        "id": project.id,
+        "title": project.name,
+        "status": project.status,
+        "url": summary["url"],
+        "profile": found.get("profile"),
+        "todo": {"id": found["id"], "title": found["title"], "status": found["status"]},
+        "project_ref": summary["ref"],
+        "project_id": project.id,
+        "project_slug": project.slug,
+    }
 
 
 # ---------------------------------------------------------------------------

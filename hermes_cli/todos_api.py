@@ -147,8 +147,12 @@ async def list_todos(
     )
     if pinned is not None:
         items = [pinned, *(item for item in items if item.id != pinned.id)]
+    from hermes_cli import todo_task
+
     return {
-        "items": await _with_refs([item.as_dict() for item in items]),
+        "items": await todo_task.attach_projects(
+            principal, await _with_refs([item.as_dict() for item in items])
+        ),
         "next_cursor": next_cursor,
     }
 
@@ -211,7 +215,11 @@ async def get_todo(request: Request, todo_id: str) -> dict[str, Any]:
     if todo is None:
         raise HTTPException(status_code=404, detail="No such to-do")
 
+    from hermes_cli import todo_task
+
     payload = (await _with_refs([todo.as_dict()]))[0]
+    # Once started, the to-do is its project: the page follows ``project.url``.
+    await todo_task.attach_projects(principal, [payload])
     payload["history"] = await store.history(principal, todo_id)
     source = await _source_item(principal, todo)
     payload["source"] = source

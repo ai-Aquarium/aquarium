@@ -666,6 +666,52 @@ async def _backfill(
 
 
 # ---------------------------------------------------------------------------
+# migrate-to-projects — working / review to-dos become one-off projects
+# ---------------------------------------------------------------------------
+
+
+async def _migrate_to_projects(
+    store: TodoStore,
+    principal: Principal,
+    *,
+    dry_run: bool,
+    undo: bool,
+    json_mode: bool,
+) -> int:
+    """Run :mod:`hermes_cli.todo_migration` for this profile (or revert it)."""
+    from hermes_cli import todo_migration
+
+    if undo:
+        report = await asyncio.to_thread(todo_migration.revert, dry_run=dry_run)
+    else:
+        report = await todo_migration.migrate(store, principal, dry_run=dry_run)
+    if json_mode:
+        _print_json(report)
+        return 0 if not report.get("failed") else 1
+    suffix = " (dry run)" if dry_run else ""
+    if undo:
+        print(
+            f"Profile {report['profile']}: {len(report['removed'])} migrated project(s) "
+            f"removed, {len(report['kept'])} kept (in use){suffix}."
+        )
+        for entry in report["kept"]:
+            print(f"  kept {entry['project']} (to-do {entry['todo_id']})")
+        return 0
+    print(
+        f"Profile {report['profile']}: {len(report['moved'])} to-do(s) moved into "
+        f"projects, {len(report['already'])} already moved, "
+        f"{report['suggestions']} staged/open kept as suggestions, "
+        f"{report['closed']} done/dismissed kept{suffix}."
+    )
+    for entry in report["moved"]:
+        target = entry.get("project") or "(new project)"
+        print(f"  {entry['todo_id']} -> {target}: {entry.get('title', '')}")
+    for entry in report["failed"]:
+        print(f"  FAILED {entry['todo_id']}: {entry['error']}", file=sys.stderr)
+    return 0 if not report["failed"] else 1
+
+
+# ---------------------------------------------------------------------------
 # argparse wiring
 # ---------------------------------------------------------------------------
 
@@ -763,6 +809,10 @@ async def _dispatch(args: argparse.Namespace) -> int:
             thread=args.thread,
             subject=args.subject,
             json_mode=args.json,
+        )
+    if action == "migrate-to-projects":
+        return await _migrate_to_projects(
+            store, principal, dry_run=args.dry_run, undo=args.revert, json_mode=args.json
         )
     if action == "backfill":
         return await _backfill(
@@ -943,6 +993,25 @@ def register_todos_subparser(
     send.add_argument("--thread", default=None, help="Thread id")
     send.add_argument("--subject", default=None, help="Message subject (email)")
     send.add_argument("--json", action="store_true")
+
+    # -- migrate-to-projects ----------------------------------------------
+
+    migrate = sub.add_parser(
+        "migrate-to-projects",
+        help="Move working/review to-dos into one-off projects (idempotent)",
+        description=(
+            "Working and review to-dos become one-off Manual projects (draft and "
+            "reply carried into the brief); staged/open stay suggestions; "
+            "done/dismissed stay closed. Safe to re-run. --revert removes only "
+            "migration-made projects nobody has started."
+        ),
+    )
+    migrate.add_argument("--dry-run", action="store_true")
+    migrate.add_argument(
+        "--revert", action="store_true",
+        help="Remove untouched projects this migration made",
+    )
+    migrate.add_argument("--json", action="store_true")
 
     # -- backfill (Q4) -----------------------------------------------------
 

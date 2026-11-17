@@ -162,9 +162,13 @@ def _create_or_find_sync(
     autonomy: str,
     reply_route: Optional[dict],
     arrival: Optional[Mapping[str, Any]],
+    added_by: Optional[str] = None,
 ) -> tuple[Any, bool]:
-    """``(project, created)``: the to-do's project, created when it has none."""
+    """``(project, created)``: the to-do's project, created when it has none.
+    ``added_by`` marks who linked it (default: the starter)."""
     from hermes_cli import projects_api, projects_db
+
+    added_by = added_by or principal.user_id
 
     with _START_LOCK:
         with projects_db.connect_closing() as conn:
@@ -186,7 +190,7 @@ def _create_or_find_sync(
                 return found, False
             projects_db.add_project_link(
                 conn, project_id=project.id, kind="todo", profile=profile,
-                ref=todo.id, label=todo.title[:200], added_by=principal.user_id,
+                ref=todo.id, label=todo.title[:200], added_by=added_by,
             )
             if arrival and arrival.get("id"):
                 label = (
@@ -196,7 +200,7 @@ def _create_or_find_sync(
                 )
                 projects_db.add_project_link(
                     conn, project_id=project.id, kind="arrival", profile=profile,
-                    ref=str(arrival["id"]), label=label[:200], added_by=principal.user_id,
+                    ref=str(arrival["id"]), label=label[:200], added_by=added_by,
                 )
             return projects_db.get_project(conn, project.id), True
 
@@ -426,3 +430,76 @@ async def record_project_reply(principal, msg: Mapping[str, Any], event: str) ->
         await in_profile(principal, str(reply_to.get("profile") or ""), _record)
     except Exception as exc:  # noqa: BLE001 - the send already happened
         log.warning("todo_task: recording the reply on the to-do failed (%s)", exc)
+
+
+# ---------------------------------------------------------------------------
+# A started to-do resolves to its project (/todos/<id>, list rows, D refs)
+# ---------------------------------------------------------------------------
+
+
+def project_summary(project) -> dict[str, Any]:
+    """The ``project`` a started to-do's payload carries."""
+    from urllib.parse import quote
+
+    from hermes_cli import projects_api
+
+    return {
+        "id": project.id,
+        "slug": project.slug,
+        "ref": projects_api._project_refs([project]).get(project.id),  # noqa: SLF001
+        "name": project.name,
+        "status": project.status,
+        "url": f"/projects/{quote(project.slug, safe='')}",
+    }
+
+
+def readable_projects_for_todos(
+    principal, todo_ids: list[str], *, profile: str, enrolled: set[str]
+) -> dict[str, Any]:
+    """``{todo_id: project}`` for started to-dos whose project ``principal``
+    may read — the same gate as the project pages (``_can_read``)."""
+    from hermes_cli import projects_db, refs_api
+
+    with projects_db.connect_closing() as conn:
+        found = projects_db.projects_for_todos(conn, profile=profile, todo_ids=todo_ids)
+    out = {}
+    for todo_id, project in found.items():
+        readable = refs_api._readable_project(project.id, principal, enrolled)  # noqa: SLF001
+        if readable is not None:
+            out[todo_id] = readable
+    return out
+
+
+async def attach_projects(principal, payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Add ``project`` (:func:`project_summary`) to each to-do payload whose
+    to-do became a project the caller can read; ``None`` otherwise."""
+    from hermes_cli import profile_refs, projects_api
+
+    for p in payloads:
+        p.setdefault("project", None)
+    ids = [str(p["id"]) for p in payloads if p.get("id")]
+    if not ids:
+        return payloads
+    try:
+        from hermes_cli import projects_db
+
+        profile = profile_refs.current_profile()
+
+        def _any() -> bool:
+            with projects_db.connect_closing() as conn:
+                return bool(projects_db.projects_for_todos(conn, profile=profile, todo_ids=ids))
+
+        if not await asyncio.to_thread(_any):
+            return payloads
+        enrolled = set(await projects_api._enrolled_profiles(principal.user_id))  # noqa: SLF001
+        found = await asyncio.to_thread(
+            readable_projects_for_todos, principal, ids, profile=profile, enrolled=enrolled
+        )
+    except Exception as exc:  # noqa: BLE001 - the to-do payload stands without it
+        log.warning("todo_task: project lookup for to-dos failed (%s)", exc)
+        return payloads
+    for p in payloads:
+        project = found.get(str(p.get("id")))
+        if project is not None:
+            p["project"] = project_summary(project)
+    return payloads
