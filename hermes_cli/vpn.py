@@ -503,6 +503,98 @@ async def forget(cred: Credential) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Auto-reconnect: VPNs set to stay connected (idle_minutes 0) come back after
+# the gateway drops them (e.g. a FortiGate session lifetime).
+# ---------------------------------------------------------------------------
+
+DROPPED_ERROR = "The VPN connection dropped"  # deploy/hermes-vpn-helper status_doc
+RECONNECT_INTERVAL = 60.0
+# A tunnel that drops sooner than this after a reconnect is flapping (often
+# another box taking the same login), so retries back off.
+RECONNECT_STABLE_SECONDS = 15 * 60
+RECONNECT_MAX_BACKOFF = 60 * 60
+
+
+def _stays_connected(cred: Credential) -> bool:
+    idle = cred.payload.get("idle_minutes")
+    idle = DEFAULT_IDLE_MINUTES if idle is None else int(idle)
+    return idle == 0 and cred.payload.get("auto_connect") is not False
+
+
+def _parse_ts(value: Any) -> Optional[float]:
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        ).timestamp()
+    except ValueError:
+        return None
+
+
+def reconnect_backoff(failures: int) -> float:
+    return 0.0 if failures <= 0 else float(min(60 * 2 ** failures, RECONNECT_MAX_BACKOFF))
+
+
+async def reconnect_tick(*, store: Any = None, now: Optional[float] = None) -> List[str]:
+    """Reconnect every stay-connected VPN the gateway dropped.
+
+    Only a tunnel that was up and died (helper ``error`` + DROPPED_ERROR), or
+    whose reconnect then failed, is retried, with backoff; a VPN someone
+    disconnected, that never connected (wrong password), or whose certificate
+    needs trusting is left alone. Returns the slugs it tried.
+    """
+    store = store if store is not None else default_credential_store()
+    owner = await _store_owner(store)
+    if owner is None:
+        return []
+    now = datetime.now(timezone.utc).timestamp() if now is None else now
+    tried: List[str] = []
+    for cred in await store.list(owner):
+        if cred.kind != KIND or cred.provider != PROVIDER or not _stays_connected(cred):
+            continue
+        slug = slug_for(cred)
+        doc = await _helper("status", slug)
+        entry = _entry(slug)
+        failures = int(entry.get("reconnect_failures") or 0)
+        if doc.get("state") != "error":
+            continue
+        if doc.get("error") != DROPPED_ERROR and not failures:
+            continue
+        last = _parse_ts(entry.get("reconnect_at"))
+        if last is not None and now < last + reconnect_backoff(failures):
+            continue
+        view = await _connect(cred)
+        ok = view["status"]["state"] == "connected"
+        flapping = last is not None and now - last < RECONNECT_STABLE_SECONDS
+        failures = 0 if ok and not flapping else failures + 1
+        _record(
+            slug,
+            reconnect_at=datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            reconnect_failures=failures,
+        )
+        tried.append(slug)
+    return tried
+
+
+def reconnect_enabled() -> bool:
+    return os.path.exists(HELPER_PATH)
+
+
+async def reconnect_loop(stop: asyncio.Event, *, interval: float = RECONNECT_INTERVAL) -> None:
+    """Tick :func:`reconnect_tick` until ``stop`` is set (web-server lifespan)."""
+    import logging
+
+    log = logging.getLogger(__name__)
+    while not stop.is_set():
+        try:
+            for slug in await reconnect_tick():
+                log.info("vpn %s: reconnected after the connection dropped", slug)
+        except Exception:  # noqa: BLE001
+            log.exception("vpn reconnect tick failed")
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+
+
+# ---------------------------------------------------------------------------
 # Migration: a VPN's own share -> a network folder
 # ---------------------------------------------------------------------------
 

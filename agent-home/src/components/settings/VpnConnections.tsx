@@ -792,7 +792,7 @@ function VpnCard({
       <p className="text-[var(--color-muted)]">
         {vpn.idle_minutes > 0
           ? `Disconnects after ${vpn.idle_minutes} minutes with no traffic.`
-          : "Stays connected until you disconnect it."}
+          : "Stays connected until you disconnect it, and reconnects if the server drops it."}
       </p>
 
       <div className="mt-2 flex flex-wrap gap-2">
