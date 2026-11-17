@@ -155,6 +155,8 @@ async def enrolments(
     there is nothing here to keep in sync. Registry order (default first). No
     subject is no enrolment: there is no owner-fallback here.
     """
+    from hermes_cli.datastore import DatastoreNotConfigured
+
     if not subject:
         return []
     entries = registry if registry is not None else get_profile_registry()
@@ -164,7 +166,11 @@ async def enrolments(
             continue
         with _scoped_to(entry.hermes_home):
             store = store_factory(entry.hermes_home)
-            principal = await _principal_for_subject(store, subject)
+            try:
+                principal = await _principal_for_subject(store, subject)
+            except DatastoreNotConfigured:
+                # No app datastore means no principals table: nobody is enrolled.
+                continue
         if principal is not None:
             out.append(Enrolment(entry, principal))
     return out
