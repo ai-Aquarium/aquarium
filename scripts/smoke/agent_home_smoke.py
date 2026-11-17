@@ -319,6 +319,7 @@ APIS: Tuple[ApiSpec, ...] = (
     ApiSpec("/api/sites", OK),
     ApiSpec("/api/sites/settings", OK),
     ApiSpec("/api/sites/zz-smoke-missing", _same(404)),
+    ApiSpec("/api/suggested-tasks", OK, quick=True),
     ApiSpec("/api/skills", ADMIN_ONLY),
     ApiSpec("/api/skills/details?name=zz-smoke-missing", {VIEWER: 403, MEMBER: 403, ADMIN: 404}),
     ApiSpec("/api/settings/apps/github", ADMIN_ONLY),

@@ -270,7 +270,7 @@ export function LandingClient({
             />
           )
         }
-        aside={<LandingWorkPanel needsYou={feed} activity={activity} />}
+        aside={<LandingWorkPanel needsYou={feed} activity={activity} canStart={accountRole !== "viewer"} />}
         chats={{
           collapsed: panels.chatsCollapsed,
           onCollapsedChange: panels.setChatsCollapsed,
@@ -313,7 +313,7 @@ export function LandingClient({
       />
       {needsYouOpen ? (
         <Sheet title={tn("heading")} component="NeedsYouSheet" onClose={() => setNeedsYouOpen(false)}>
-          <LandingWorkPanel needsYou={feed} activity={activity} />
+          <LandingWorkPanel needsYou={feed} activity={activity} canStart={accountRole !== "viewer"} />
         </Sheet>
       ) : null}
       <ChatsDrawer

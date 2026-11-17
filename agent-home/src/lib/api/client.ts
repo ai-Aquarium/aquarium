@@ -54,6 +54,7 @@ import type {
   CoreManifestResponse,
   CreateProjectPayload,
   ProjectViewMode,
+  QuickTaskFromTodoPayload,
   QuickTaskPayload,
   QuickTaskResponse,
   QuickTaskStartResponse,
@@ -2404,7 +2405,9 @@ export class HermesApiClient {
   }
 
   /** Task mode's Start task: a one-off project that plans and starts itself. */
-  async createQuickTask(payload: QuickTaskPayload): Promise<QuickTaskResponse> {
+  async createQuickTask(
+    payload: QuickTaskPayload | QuickTaskFromTodoPayload,
+  ): Promise<QuickTaskResponse> {
     return this.request("/api/registry/projects/quick-task", {
       method: "POST",
       json: payload,

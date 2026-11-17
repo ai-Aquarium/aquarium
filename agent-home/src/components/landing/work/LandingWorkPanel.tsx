@@ -17,13 +17,16 @@ import type { NeedsYouFeed } from "./useNeedsYouFeed";
 export function LandingWorkPanel({
   needsYou,
   activity,
+  canStart = true,
 }: {
   needsYou?: NeedsYouFeed;
+  /** Viewers see suggested tasks but cannot start one. */
+  canStart?: boolean;
   activity?: Pick<ActivityRunningState, "items" | "loaded" | "stale">;
 }) {
   return (
     <div data-component="LandingWorkPanel" className="flex h-full min-h-0 flex-col gap-2">
-      <NeedsYouPanel feed={needsYou} />
+      <NeedsYouPanel feed={needsYou} canStart={canStart} />
       <div aria-hidden className="h-3 shrink-0" />
       <WorkPanel activity={activity} />
       <div className="mt-auto pt-4">

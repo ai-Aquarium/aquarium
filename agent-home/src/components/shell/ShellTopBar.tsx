@@ -71,7 +71,7 @@ export function ShellTopBar({
       />
       {open ? (
         <Sheet title={tn("heading")} component="NeedsYouSheet" onClose={() => setOpen(false)}>
-          <NeedsYouPanel feed={feed} />
+          <NeedsYouPanel feed={feed} canStart={accountRole !== "viewer"} />
         </Sheet>
       ) : null}
     </>

@@ -44,7 +44,11 @@ export default async function Page({
       }
       back={{ href: backHref, label: backHref === "/" ? "Home" : "Inbox" }}
     >
-      <IncomingDetailView item={item} canChangeAttention={item.owner_user_id === principal.user_id} />
+      <IncomingDetailView
+        item={item}
+        canChangeAttention={item.owner_user_id === principal.user_id}
+        canStartTasks={principal.role !== "viewer"}
+      />
     </MobileShell>
   );
 }

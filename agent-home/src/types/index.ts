@@ -1292,6 +1292,47 @@ export interface Todo {
    *  `sourceDecisions({ sourceId, batchId })` explains "Why this profile?". */
   routing_source_id: string | null;
   routing_batch_id: string | null;
+  /** The one-off project (task) this to-do was started as, once started. */
+  project?: TodoProject | null;
+}
+
+/** The task a to-do became through Start task (`project` on to-do reads). */
+export interface TodoProject {
+  id: string;
+  slug: string;
+  ref?: string | null;
+  name: string;
+  status: string;
+  url?: string | null;
+}
+
+/** The arrival behind a suggested task, as much as its card shows. */
+export interface SuggestedTaskSource {
+  id: string;
+  ref?: string | null;
+  surface: string;
+  account_id: string | null;
+  sender_name: string | null;
+  sender_id: string | null;
+  subject: string | null;
+  body: string;
+  occurred_at: string | null;
+}
+
+/**
+ * A suggested task: an open or staged system to-do (`hermes todos`) shown to
+ * the person, with the channel it came in on and its source message.
+ */
+export interface SuggestedTask {
+  todo: Todo;
+  /** `email`, `whatsapp`, `telegram`, `calendar`, … or `other`. */
+  channel: string;
+  source: SuggestedTaskSource | null;
+}
+
+export interface SuggestedTasksResponse {
+  items: SuggestedTask[];
+  next_cursor: string | null;
 }
 
 /** What a finished work session left behind (the launcher's snapshot). */
@@ -2967,9 +3008,25 @@ export interface QuickTaskPayload {
   check_plan_first?: boolean;
 }
 
+/**
+ * Start task from a suggested to-do: the to-do's one-off project, seeded with
+ * its source message. `request` replaces the brief's lead; the profile
+ * defaults to the one serving the request.
+ */
+export interface QuickTaskFromTodoPayload {
+  from_todo: { id: string };
+  request?: string;
+  host_profile?: string;
+  autonomy: ProjectAutonomy;
+  check_plan_first?: boolean;
+}
+
 export type QuickTaskResponse = Project & {
-  draft: ProjectPlaybookDraftState;
-  check_plan_first: boolean;
+  draft?: ProjectPlaybookDraftState;
+  check_plan_first?: boolean;
+  /** Start task from a to-do: false when the to-do had already become this project. */
+  created?: boolean;
+  todo?: Todo | null;
 };
 
 export type QuickTaskStartResponse =

@@ -7,6 +7,8 @@ import { useAction } from "@/lib/use-action";
 import { ApprovalsList } from "@/components/inbox/ApprovalsList";
 import { ChangesList } from "@/components/inbox/ChangesList";
 import { IncomingsList } from "@/components/inbox/IncomingsList";
+import { SuggestedTasksInbox } from "@/components/suggested-tasks/SuggestedTasksInbox";
+import { useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
 import { BusyRegion } from "@/components/ui/BusyRegion";
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { useUndoToast } from "@/components/ui/UndoToast";
@@ -32,9 +34,11 @@ export interface InboxViewProps {
   whose?: WhoseData;
   incomingsFacets: IncomingsFacets;
   initialTab?: Tab;
+  /** Viewers see suggested tasks but cannot start one. */
+  canStartTasks?: boolean;
 }
 
-export type Tab = "incomings" | "approvals" | "changes";
+export type Tab = "incomings" | "suggested" | "approvals" | "changes";
 
 /** An error carrying the upstream HTTP status so callers can branch on it. */
 class ForwardError extends Error {
@@ -82,6 +86,7 @@ export function InboxView({
   incomingsFacets,
   whose,
   initialTab = "incomings",
+  canStartTasks = true,
 }: InboxViewProps) {
   const [configured] = useState(initialConfigured);
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -100,6 +105,7 @@ export function InboxView({
   const { ask, dialog } = useConfirm();
   const { show: showUndo, toast } = useUndoToast();
   const [blocked, setBlocked] = useState<ReadonlySet<string>>(new Set());
+  const suggested = useSuggestedTasks();
 
   async function refreshNotifications() {
     try {
@@ -217,6 +223,7 @@ export function InboxView({
         {(
           [
             ["incomings", t("tabs.arrived"), 0],
+            ["suggested", t("tabs.suggested"), suggested.items.length],
             ["approvals", t("tabs.approvals"), pendingCount],
             ["changes", t("tabs.changes"), reversibleCount],
           ] as const
@@ -227,7 +234,14 @@ export function InboxView({
             role="tab"
             data-tab={key}
             aria-selected={tab === key}
-            onClick={() => setTab(key)}
+            onClick={() => {
+              setTab(key);
+              // `?tab=suggested` is the shareable address of this tab (old /todos links land here).
+              const url = new URL(window.location.href);
+              if (key === "suggested") url.searchParams.set("tab", "suggested");
+              else if (url.searchParams.get("tab") === "suggested") url.searchParams.delete("tab");
+              window.history.replaceState(window.history.state, "", url);
+            }}
             className={`flex h-10 min-w-0 flex-auto items-center justify-center gap-1.5 rounded-[var(--radius-md)] px-2 text-sm lg:flex-none lg:px-4 ${
               tab === key
                 ? "bg-[var(--color-surface-2)] font-semibold text-[var(--color-fg)]"
@@ -255,6 +269,8 @@ export function InboxView({
 
       {tab === "incomings" ? (
         <IncomingsList initial={initialIncomings} facets={incomingsFacets} whose={whose} />
+      ) : tab === "suggested" ? (
+        <SuggestedTasksInbox feed={suggested} canStart={canStartTasks} />
       ) : (
         // Answering an approval or replaying a change is a write followed by a
         // re-read of the authoritative list, so the whole list is covered: the
