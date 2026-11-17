@@ -57,6 +57,8 @@ export interface NeedsYouEntry {
     arrival_key?: string | null;
     /** The system to-do a `todo:` alert is about. */
     todo_id?: string | null;
+    /** The to-do is a suggested task right now: the task stands for this alert. */
+    suggested?: boolean | null;
     /** Every profile that raised this arrival's to-do/alert. */
     profiles?: string[] | null;
     /** FG-03: the routed batch a triage to-do/alert came from ("Why this profile?"). */

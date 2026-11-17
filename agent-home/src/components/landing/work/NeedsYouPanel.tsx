@@ -152,7 +152,8 @@ export function NeedsYouPanelView({
  * included. The top-bar badge and the panel header show the same number.
  *
  * With `tally` (the server-side count) it counts past the loaded page, and
- * drops an alert by its to-do id, so loading more cards never changes it.
+ * drops the alerts the server marked `suggested`, so loading more cards never
+ * changes it.
  * Without one it falls back to the loaded cards.
  */
 export function needsYouCount(
@@ -168,8 +169,7 @@ export function needsYouCount(
   const here = suggested?.profile ?? null;
   const dropped = items.filter((e) => {
     if (e.source !== "todo" || e.severity === "approval") return false;
-    const id = e.context?.todo_id;
-    if (!id || !tally.suggestedTodoIds.has(id)) return false;
+    if (!e.context?.suggested) return false;
     const raisedIn = (e.context.profiles ?? [e.context.profile]).filter((p): p is string => !!p);
     return !raisedIn.some((p) => p !== here);
   }).length;

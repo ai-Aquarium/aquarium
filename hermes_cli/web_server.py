@@ -13427,6 +13427,10 @@ async def needs_you(request: Request):
         )
     except Exception:
         _log.warning("needs-you: notifications source failed", exc_info=True)
+    try:
+        await ny.mark_suggested_todos(items, principal)
+    except Exception:
+        _log.warning("needs-you: suggested to-do marks failed", exc_info=True)
     covered = ny.notification_dedupe_keys(items)
 
     # Triage raises an arrival's to-dos/alerts in each of the caller's chosen

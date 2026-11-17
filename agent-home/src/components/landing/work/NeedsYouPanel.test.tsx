@@ -144,15 +144,24 @@ describe("NeedsYouPanelView with suggested tasks", () => {
     const page1 = Array.from({ length: 50 }, (_, i) =>
       ({ ...card, todo: { id: `q${i}`, stage: "staged" }, source: null }) as unknown as SuggestedTask,
     );
-    const older = ask("old-alert", "fyi", { todo_id: "t-old", arrival_key: KEY, profile: "default" });
-    const tally = { count: 51, suggestedTodoIds: new Set(["t-old"]) };
+    const older = ask("old-alert", "fyi", { todo_id: "t-old", suggested: true, arrival_key: KEY, profile: "default" });
+    const tally = { count: 51 };
     expect(needsYouCount(1, [older], feed(page1), tally)).toBe(51);
     expect(needsYouCount(1, [older], feed([...page1, card]), tally)).toBe(51);
     // Another profile's alert for the same to-do id is not this task.
-    const elsewhere = ask("other-profile", "fyi", { todo_id: "t-old", profiles: ["default", "cfo"] });
+    const elsewhere = ask("other-profile", "fyi", { todo_id: "t-old", suggested: true, profiles: ["default", "cfo"] });
     expect(needsYouCount(1, [elsewhere], feed(page1), tally)).toBe(52);
     // Approvals always count on their own.
     const approval = ask("reply", "approval", { todo_id: "t-old" });
     expect(needsYouCount(1, [approval], feed(page1), tally)).toBe(52);
+  });
+
+  it("counts a suggested task and its alert once however many alerts there are", () => {
+    const alerts = Array.from({ length: 250 }, (_, i) =>
+      ask(`a${i}`, "fyi", { todo_id: `s${i}`, suggested: true, profile: "default" }),
+    );
+    const started = ask("started", "fyi", { todo_id: "w1", profile: "default" });
+    const tally = { count: 250 };
+    expect(needsYouCount(251, [...alerts, started], feed([]), tally)).toBe(251);
   });
 });

@@ -565,3 +565,38 @@ def test_an_arrival_is_pushed_once_per_person_across_profiles(tmp_path, monkeypa
     assert ny.claim_arrival_push("mary", key) is True
     ny.release_arrival_push("john", key)
     assert ny.claim_arrival_push("john", key) is True
+
+
+@pytest.mark.asyncio
+async def test_mark_suggested_todos_marks_every_suggested_alert_however_many():
+    """A suggested task and its alert count once past any page or probe limit."""
+
+    class _Store:
+        def __init__(self):
+            self.asked = []
+
+        async def suggested_among(self, principal, ids):
+            self.asked = list(ids)
+            return [i for i in ids if i.startswith("s")]
+
+    notifs = [_notif(f"n{i}", dedupe_key=f"todo:s{i}", kind="fyi") for i in range(250)]
+    notifs.append(_notif("started", dedupe_key="todo:w1", kind="fyi"))
+    notifs.append(_notif("reply", dedupe_key="todo-action:s1", kind="approval"))
+    items = ny.notification_entries(notifs, "leo")
+    store = _Store()
+    await ny.mark_suggested_todos(items, object(), store=store)
+    marked = [i for i in items if i["context"].get("suggested")]
+    assert len(marked) == 250
+    assert len(store.asked) == 251
+    assert not any(i["context"].get("suggested") for i in items if i["severity"] == "approval")
+    assert not [i for i in items if i["context"].get("todo_id") == "w1"][0]["context"].get("suggested")
+
+
+@pytest.mark.asyncio
+async def test_mark_suggested_todos_skips_the_store_without_todo_alerts():
+    class _Store:
+        async def suggested_among(self, principal, ids):  # pragma: no cover
+            raise AssertionError("not asked")
+
+    items = ny.notification_entries([_notif("a", dedupe_key="triage:x", kind="fyi")], "leo")
+    assert await ny.mark_suggested_todos(items, object(), store=_Store()) == items

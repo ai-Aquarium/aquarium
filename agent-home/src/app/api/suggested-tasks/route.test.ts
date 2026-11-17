@@ -178,14 +178,13 @@ describe("POST /api/projects/quick-task with from_todo", () => {
     expect(seen).toHaveLength(0);
   });
 
-  it("counts every suggested task server-side and says which alerted to-dos are suggested", async () => {
+  it("counts every suggested task server-side", async () => {
     signIn();
     route = (u) =>
       u.pathname === "/api/registry/todos/suggested-count"
-        ? Response.json({ count: 51, suggested_ids: ["t-old"] })
+        ? Response.json({ count: 51 })
         : new Response("no", { status: 404 });
-    const res = await count(new Request("http://x/api/suggested-tasks/count?todo_ids=t-old,%20t2,,"));
-    expect(await res.json()).toEqual({ count: 51, suggested_todo_ids: ["t-old"] });
-    expect(seen[0].url.searchParams.get("todo_ids")).toBe("t-old,t2");
+    const res = await count();
+    expect(await res.json()).toEqual({ count: 51 });
   });
 });

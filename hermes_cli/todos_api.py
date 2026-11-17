@@ -167,30 +167,15 @@ async def todos_facets(request: Request) -> dict[str, Any]:
     return await store.facets(principal)
 
 
-#: How many ``todo_ids`` one suggested-count call checks (the alerts on one
-#: Needs-you page).
-MAX_SUGGESTED_PROBES = 200
-
-
 @router.get("/suggested-count")
-async def suggested_todos_count(
-    request: Request, todo_ids: Optional[str] = None
-) -> dict[str, Any]:
-    """How many suggested tasks the caller has (staged/open, not snoozed),
-    and which of ``todo_ids`` (comma-separated) are among them."""
+async def suggested_todos_count(request: Request) -> dict[str, Any]:
+    """How many suggested tasks the caller has (staged/open, not snoozed).
+    Needs you marks the to-do alerts they stand for (``context.suggested``)."""
     principal = await _resolve_principal(request)
     store = _store()
     if not await _table_ready(store):
-        return {"count": 0, "suggested_ids": []}
-    probes = [i.strip() for i in (todo_ids or "").split(",") if i.strip()]
-    if len(probes) > MAX_SUGGESTED_PROBES:
-        raise HTTPException(
-            status_code=400, detail=f"At most {MAX_SUGGESTED_PROBES} todo_ids"
-        )
-    return {
-        "count": await store.count_suggested(principal),
-        "suggested_ids": await store.suggested_among(principal, probes) if probes else [],
-    }
+        return {"count": 0}
+    return {"count": await store.count_suggested(principal)}
 
 
 @router.post("")
