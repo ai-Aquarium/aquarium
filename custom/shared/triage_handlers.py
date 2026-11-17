@@ -76,6 +76,17 @@ def _arrival_key(arrival):
 # Shared handler — memory_facts (all channels)
 # ---------------------------------------------------------------------------
 
+def _telegram_sender(batch):
+    """A Telegram batch names no batch-level sender: its first message's
+    ``@handle``, else display name, else user id; ``''`` for other channels."""
+    if batch.get('_channel') != 'telegram':
+        return ''
+    first = next(iter(batch.get('messages') or []), None) or {}
+    handle = str(first.get('sender_username') or '').lstrip('@')
+    return (f'@{handle}' if handle else '') or str(first.get('sender_name') or '') \
+        or str(first.get('sender_id') or '')
+
+
 @register('memory_facts')
 def _handle_memory_facts(facts, batch, db):
     """Push facts to Hermes long-term memory via memory_bridge."""
@@ -85,7 +96,7 @@ def _handle_memory_facts(facts, batch, db):
         from shared.memory_bridge import remember_facts
         channel = batch.get('_channel', 'unknown')
         sender = (batch.get('sender_phone') or batch.get('sender')
-                  or batch.get('organizer_email', ''))
+                  or batch.get('organizer_email') or _telegram_sender(batch))
         owner = _scope_owner(batch)
         memory_dir = None
         if owner:
