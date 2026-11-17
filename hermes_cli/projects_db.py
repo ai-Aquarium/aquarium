@@ -2445,6 +2445,22 @@ def project_for_todo(
     return get_project(conn, row["id"]) if row else None
 
 
+def projects_for_todos(
+    conn: sqlite3.Connection, *, profile: str, todo_ids: Iterable[str]
+) -> dict[str, "Project"]:
+    """``{todo_id: project}`` for the to-dos in ``todo_ids`` that became a
+    project (one query for a page of to-dos)."""
+    ids = [str(t) for t in todo_ids if t]
+    if not ids:
+        return {}
+    marks = ",".join("?" for _ in ids)
+    rows = conn.execute(
+        f"SELECT * FROM projects WHERE todo_profile = ? AND todo_id IN ({marks})",
+        (profile, *ids),
+    ).fetchall()
+    return {row["todo_id"]: _attach_folders(conn, _project_from_row(row)) for row in rows}
+
+
 def project_todo(conn: sqlite3.Connection, project_id: str) -> Optional[dict]:
     """``{"profile", "todo_id", "reply_route"}`` for a project started from a
     to-do, or None for every other project."""
