@@ -46,7 +46,7 @@ To-dos tile, its pages and its components go away.
 |---|---|
 | Triage creates a to-do | Triage still creates a system to-do. The person sees it as a **Suggested task**: in the **Inbox** (tagged Email, WhatsApp, Telegram or Calendar), in a strip on **Projects**, and in **Needs you** |
 | Work on this / Snooze / Dismiss on the To-dos page | The same three choices on every Suggested task |
-| "Work on this" opens a draft session | **Work on this = Start task**: a one-off project with check-in **Manual** ("Every step") and the source message attached |
+| "Work on this" opens a draft session | **Work on this = Start task**: a one-off project with the source message attached. Check-in defaults to **Manual** ("Every step"); the person may pick Supervised or Autonomous (Leo, 2026-11-17). A reply still needs approval before it is sent |
 | Draft and reply on the to-do | Drafted and approved **in the task**, then sent from the mailbox the message came in on |
 | To-do stays open after the work is done | The task's system to-do **closes when the task is done** |
 | D88 short refs, /todos links | D88 and old /todos links open the right place: the suggestion, or the task once started |
@@ -72,10 +72,13 @@ To-dos tile, its pages and its components go away.
    system to-do, so it shows up as a Suggested task tagged "Daily review".
 4. **Suggested tasks.** These are the open and staged system to-dos, shown in three places:
    - the **Inbox**, tagged by channel;
-   - a strip on **Projects**;
+   - a strip on **Projects**, hidden when there is nothing suggested (Leo, 2026-11-17);
    - **Needs you**.
 
-   Each one offers **Work on this**, **Snooze** or **Dismiss**.
+   Each one offers **Work on this**, **Snooze** or **Dismiss**. Snooze hides it for 2 hours;
+   Dismiss removes it (Leo, 2026-11-17). The Needs-you badge counts every suggested task,
+   quiet (staged) ones included, and Inbox message rows are tagged "Suggested task" only while
+   one of their to-dos is still suggested (Leo, 2026-11-17).
 5. **Work on this = Start task.** It goes through the existing Task mode path
    (`POST /api/projects/quick-task`, shown in `TaskView`) with `autonomy: manual`, and
    attaches the source message (`project_links kind='arrival'`). The system to-do links to

@@ -10,7 +10,8 @@ const SHOWN = 3;
 /** Projects › the Suggested tasks strip: the first three, then "See all in Inbox". */
 export function SuggestedTasksStrip({ canStart = true }: { canStart?: boolean }) {
   const feed = useSuggestedTasks();
-  if (!feed.loaded || (feed.error && feed.items.length === 0)) return null;
+  // Nothing suggested: no row at all, to save space.
+  if (!feed.loaded || feed.items.length === 0) return null;
   return (
     <section
       data-component="SuggestedTasksStrip"
@@ -28,17 +29,13 @@ export function SuggestedTasksStrip({ canStart = true }: { canStart?: boolean })
           See all in Inbox
         </Link>
       </div>
-      {feed.items.length === 0 ? (
-        <p className="text-sm text-[var(--color-muted)]">Nothing suggested.</p>
-      ) : (
-        <SuggestedTaskList
-          tasks={feed.items.slice(0, SHOWN)}
-          compact
-          canStart={canStart}
-          layout="grid"
-          onRemoved={feed.remove}
-        />
-      )}
+      <SuggestedTaskList
+        tasks={feed.items.slice(0, SHOWN)}
+        compact
+        canStart={canStart}
+        layout="grid"
+        onRemoved={feed.remove}
+      />
     </section>
   );
 }

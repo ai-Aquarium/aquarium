@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { useAction } from "@/lib/use-action";
-import { tomorrowMorning } from "@/lib/suggested-tasks/channels";
+import { SNOOZE_HOURS, snoozeUntil } from "@/lib/suggested-tasks/channels";
 import type { SuggestedTask } from "@/types";
 
 import { StartTaskSheet } from "./StartTaskSheet";
@@ -53,7 +53,7 @@ export function SuggestedTaskList({
     const label = task.todo.ref ?? task.todo.title;
     const error =
       verb === "snooze"
-        ? await post(`/api/suggested-tasks/${id}/snooze`, { until: tomorrowMorning().toISOString() })
+        ? await post(`/api/suggested-tasks/${id}/snooze`, { until: snoozeUntil().toISOString() })
         : await post(`/api/suggested-tasks/${id}/dismiss`);
     if (error) {
       setNotice({ tone: "danger", text: error });
@@ -61,7 +61,7 @@ export function SuggestedTaskList({
     }
     setNotice({
       tone: "success",
-      text: verb === "snooze" ? `Snoozed ${label} until tomorrow 09:00.` : `Dismissed ${label}.`,
+      text: verb === "snooze" ? `Snoozed ${label} for ${SNOOZE_HOURS} hours.` : `Dismissed ${label}.`,
     });
     onRemoved?.(task.todo.id);
     announceSuggestedTasksChanged();
