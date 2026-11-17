@@ -330,7 +330,6 @@
   "GET /api/sources/comparisons": "signed-in",
   "GET /api/suggested-tasks": "signed-in",
   "GET /api/suggested-tasks/[id]": "signed-in",
-  "GET /api/suggested-tasks/count": "signed-in",
   "POST /api/suggested-tasks/[id]/dismiss": "signed-in",
   "POST /api/suggested-tasks/[id]/snooze": "signed-in",
   "GET /api/db/connections": "signed-in",

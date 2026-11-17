@@ -2,7 +2,6 @@
 
 import { SuggestedTasksNeedsYou } from "@/components/suggested-tasks/SuggestedTasksNeedsYou";
 import { type UseSuggestedTasks, useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
-import type { SuggestedTally } from "@/components/suggested-tasks/useSuggestedTally";
 import { useNeedsYouText } from "@/lib/landing/needsYouText";
 import { arrivalKeyOf } from "@/lib/suggested-tasks/channels";
 import type { NeedsYouEntry } from "@/types/landing";
@@ -144,6 +143,17 @@ export function NeedsYouPanelView({
       )}
     </section>
   );
+}
+
+/** The server-side suggested-task count for the Needs-you badge. */
+export interface SuggestedTally {
+  /** Every suggested task the caller has (staged/open, not snoozed). */
+  count: number;
+}
+
+/** The tally from a Needs-you read, or null when it had none. */
+export function tallyOf(needsYou: { suggestedCount: number | null }): SuggestedTally | null {
+  return needsYou.suggestedCount === null ? null : { count: needsYou.suggestedCount };
 }
 
 /**

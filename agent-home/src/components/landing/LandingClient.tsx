@@ -32,9 +32,8 @@ import { LandingLayout } from "./LandingLayout";
 import { TopBarView } from "./topbar";
 import { useLandingPanels } from "./useLandingPanels";
 import { LandingWorkPanel, type NeedsYouFeed } from "./work";
-import { needsYouCount } from "./work/NeedsYouPanel";
+import { needsYouCount, tallyOf } from "./work/NeedsYouPanel";
 import { useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
-import { useSuggestedTally } from "@/components/suggested-tasks/useSuggestedTally";
 
 /** What the row or hit that opened a chat already knew about it. */
 interface OpenedChat {
@@ -76,7 +75,7 @@ export function LandingClient({
   const activity = useActivityRunning();
   const needsYou = useNeedsYou();
   const suggested = useSuggestedTasks();
-  const tally = useSuggestedTally();
+  const tally = tallyOf(needsYou);
   const needsYouTotal = needsYouCount(needsYou.count, needsYou.items, suggested, tally);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [needsYouOpen, setNeedsYouOpen] = useState(false);

@@ -19,7 +19,6 @@ import { SESSION_COOKIE, serializeSession } from "@/lib/auth/session";
 import { POST as quickTask } from "../projects/quick-task/route";
 import { POST as dismiss } from "./[id]/dismiss/route";
 import { POST as snooze } from "./[id]/snooze/route";
-import { GET as count } from "./count/route";
 import { GET } from "./route";
 
 const seen: { url: URL; init: RequestInit | undefined }[] = [];
@@ -176,15 +175,5 @@ describe("POST /api/projects/quick-task with from_todo", () => {
     const res = await quickTask(new Request("http://x", { method: "POST", body: JSON.stringify({ from_todo: {} }) }));
     expect(res.status).toBe(400);
     expect(seen).toHaveLength(0);
-  });
-
-  it("counts every suggested task server-side", async () => {
-    signIn();
-    route = (u) =>
-      u.pathname === "/api/registry/todos/suggested-count"
-        ? Response.json({ count: 51 })
-        : new Response("no", { status: 404 });
-    const res = await count();
-    expect(await res.json()).toEqual({ count: 51 });
   });
 });

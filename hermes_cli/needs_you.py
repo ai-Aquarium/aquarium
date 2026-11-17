@@ -318,27 +318,31 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
     return out
 
 
-async def mark_suggested_todos(items: list[dict], principal, *, store=None) -> list[dict]:
-    """Mark the to-do alerts whose to-do is a suggested task right now
-    (``context.suggested``), however many there are, so the badge counts the
-    task and its alert once. Approvals are never marked: they count apart."""
+async def suggested_tasks(items: list[dict], principal, *, store=None) -> int:
+    """How many suggested tasks the caller has (staged/open, not snoozed), and
+    mark the to-do alerts they stand for (``context.suggested``), however many,
+    so the badge counts a task and its alert once. Approvals are never marked:
+    they count apart. One read, so the count and the marks always agree."""
+    if store is None:
+        from hermes_cli.todo_store import default_store
+
+        store = default_store()
     ids = [
         i["context"]["todo_id"] for i in items
         if i["source"] == "todo" and i["severity"] != "approval"
         and (i.get("context") or {}).get("todo_id")
     ]
-    if not ids:
-        return items
-    if store is None:
-        from hermes_cli.todo_store import default_store
-
-        store = default_store()
-    suggested = set(await store.suggested_among(principal, ids))
+    conn = await store._connect()
+    try:
+        count = await store.count_suggested(principal, connection=conn)
+        suggested = set(await store.suggested_among(principal, ids, connection=conn)) if ids else set()
+    finally:
+        await conn.close()
     for item in items:
-        if item["source"] == "todo" and item["context"].get("todo_id") in suggested \
-                and item["severity"] != "approval":
+        if item["source"] == "todo" and item["severity"] != "approval" \
+                and item["context"].get("todo_id") in suggested:
             item["context"]["suggested"] = True
-    return items
+    return count
 
 
 def notification_dedupe_keys(items: Iterable[dict]) -> set[tuple]:
@@ -940,9 +944,12 @@ def by_severity(items: Iterable[dict]) -> dict[str, int]:
     return counts
 
 
-def response(items: list[dict], *, count_only: bool = False) -> dict:
+def response(
+    items: list[dict], *, count_only: bool = False, suggested_count: Optional[int] = None,
+) -> dict:
     payload: dict = {
         "count": len(items),
+        "suggested_count": suggested_count,
         "by_severity": by_severity(items),
         "collected_at": time.time(),
     }

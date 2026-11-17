@@ -91,6 +91,9 @@ export interface NeedsYouResponse {
   items: NeedsYouEntry[];
   count: number;
   by_severity: Record<NeedsYouSeverity, number>;
+  /** Every suggested task the caller has (staged/open, not snoozed), read with
+   *  the same response's `context.suggested` marks; null when unavailable. */
+  suggested_count?: number | null;
   collected_at: number;
 }
 

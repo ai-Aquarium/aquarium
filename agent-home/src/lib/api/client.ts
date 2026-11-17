@@ -2147,11 +2147,6 @@ export class HermesApiClient {
     return this.request(`/api/registry/todos?${p.toString()}`);
   }
 
-  /** How many suggested tasks (staged/open, not snoozed) the caller has. */
-  async suggestedTodosCount(): Promise<{ count: number }> {
-    return this.request("/api/registry/todos/suggested-count");
-  }
-
   /** Stages, priorities and sources the caller actually has. */
   async todosFacets(): Promise<TodosFacets> {
     return this.request("/api/registry/todos/facets");

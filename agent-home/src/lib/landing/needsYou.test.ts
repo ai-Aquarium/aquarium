@@ -8,6 +8,8 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { needsYouCount, tallyOf } from "@/components/landing/work/NeedsYouPanel";
+import { announceSuggestedTasksChanged } from "@/components/suggested-tasks/useSuggestedTasks";
 import type { NeedsYouEntry, NeedsYouResponse } from "@/types/landing";
 
 import {
@@ -110,6 +112,42 @@ describe("useNeedsYou", () => {
       await vi.advanceTimersByTimeAsync(NEEDS_YOU_POLL_MS * 2);
     });
     expect(needsYou).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the suggested-task count with the alerts it marks, so a poll keeps the badge right", async () => {
+    needsYou.mockResolvedValueOnce({ ...resp(), suggested_count: 0 });
+    const alert: NeedsYouEntry = {
+      ...item("t-alert"),
+      source: "todo",
+      severity: "fyi",
+      context: { todo_id: "t1", suggested: true },
+    };
+    needsYou.mockResolvedValue({ ...resp(), items: [alert], count: 1, suggested_count: 1 });
+    const { result } = renderHook(() => useNeedsYou());
+    await waitFor(() => expect(result.current.suggestedCount).toBe(0));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(NEEDS_YOU_POLL_MS);
+    });
+    const n = result.current;
+    expect(n.suggestedCount).toBe(1);
+    expect(needsYouCount(n.count, n.items, undefined, tallyOf(n))).toBe(1);
+  });
+
+  it("has no suggested-task count when the response carries none", async () => {
+    needsYou.mockResolvedValue(resp("a"));
+    const { result } = renderHook(() => useNeedsYou());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(tallyOf(result.current)).toBeNull();
+  });
+
+  it("refetches when a suggested task changes", async () => {
+    needsYou.mockResolvedValue(resp("a"));
+    renderHook(() => useNeedsYou());
+    await waitFor(() => expect(needsYou).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      announceSuggestedTasksChanged();
+    });
+    await waitFor(() => expect(needsYou).toHaveBeenCalledTimes(2));
   });
 
   it("refetches on focus and on becoming visible", async () => {
