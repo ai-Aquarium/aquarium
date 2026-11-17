@@ -927,7 +927,13 @@ def close_run(
         pconn, run["id"], status=status, outcome=outcome,
         summary=merged, error=error,
     )
-    return projects_db.get_project_run_by_id(pconn, run["id"])
+    closed = projects_db.get_project_run_by_id(pconn, run["id"])
+    if status == "failed" and closed is not None:
+        # A failed task closes the to-do it was started from (Start task).
+        from hermes_cli import todo_task
+
+        todo_task.on_run_closed(closed)
+    return closed
 
 
 # ---------------------------------------------------------------------------
