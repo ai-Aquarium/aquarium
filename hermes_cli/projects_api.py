@@ -1424,6 +1424,38 @@ def _start_quick_task_job(
     return started
 
 
+def create_task_project_sync(
+    principal, request_text: str, host_profile: str, autonomy: str,
+    *, title: Optional[str] = None,
+):
+    """The project Start task creates: an ordinary one-off project with the
+    request as its brief, ``host_profile`` as host, the starter as lead and
+    one required output. Shared by Task mode and a to-do's Start task."""
+    with projects_db.connect_closing() as conn:
+        pid = projects_db.create_full_project(
+            conn,
+            goal=_clip(request_text, 160),
+            description=request_text,
+            name=_clip(title, 60) if title else _task_title(request_text),
+            owner_user_id=principal.user_id,
+            cadence="one_off",
+            autonomy=autonomy,
+        )
+        projects_db.add_project_profile(
+            conn, project_id=pid, profile=host_profile, role="host",
+            added_by=principal.user_id,
+        )
+        projects_db.add_project_member(
+            conn, project_id=pid, user_id=principal.user_id, role="lead",
+            added_by=principal.user_id,
+        )
+        projects_db.add_project_output(
+            conn, project_id=pid, title="The result", kind="artifact",
+            required=True, recurring=False,
+        )
+        return projects_db.get_project(conn, pid)
+
+
 @router.post("/quick-task")
 async def create_quick_task_route(request: Request) -> dict[str, Any]:
     """Task mode's Start task: one request becomes an ordinary one-off
@@ -1457,33 +1489,10 @@ async def create_quick_task_route(request: Request) -> dict[str, Any]:
         )
     check_plan_first = bool(body.get("check_plan_first"))
 
-    def _create_sync():
-        with projects_db.connect_closing() as conn:
-            pid = projects_db.create_full_project(
-                conn,
-                goal=_clip(request_text, 160),
-                description=request_text,
-                name=_task_title(request_text),
-                owner_user_id=principal.user_id,
-                cadence="one_off",
-                autonomy=autonomy,
-            )
-            projects_db.add_project_profile(
-                conn, project_id=pid, profile=host_profile, role="host",
-                added_by=principal.user_id,
-            )
-            projects_db.add_project_member(
-                conn, project_id=pid, user_id=principal.user_id, role="lead",
-                added_by=principal.user_id,
-            )
-            projects_db.add_project_output(
-                conn, project_id=pid, title="The result", kind="artifact",
-                required=True, recurring=False,
-            )
-            return projects_db.get_project(conn, pid)
-
     try:
-        project = await asyncio.to_thread(_create_sync)
+        project = await asyncio.to_thread(
+            create_task_project_sync, principal, request_text, host_profile, autonomy
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     accessible = await _accessible_profiles(principal, project)
@@ -1809,9 +1818,17 @@ async def patch_project(request: Request) -> dict[str, Any]:
             return _project_payload(fresh)
 
     try:
-        return await asyncio.to_thread(_patch_sync)
+        payload = await asyncio.to_thread(_patch_sync)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    if payload.get("status") == "done" and project.status != "done":
+        # A project started from a to-do is that to-do: done closes it.
+        from hermes_cli import todo_task
+
+        closed = await todo_task.close_linked_todo(principal, project.id)
+        if closed is not None:
+            payload["todo"] = closed
+    return payload
 
 
 # ---------------------------------------------------------------------------

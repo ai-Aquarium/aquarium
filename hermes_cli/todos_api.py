@@ -338,6 +338,62 @@ async def start_todo(request: Request, todo_id: str) -> dict[str, Any]:
     return payload
 
 
+@router.post("/{todo_id}/start-task")
+async def start_todo_as_task(request: Request, todo_id: str) -> dict[str, Any]:
+    """Start task: the suggested to-do becomes the user's one-off project.
+
+    Same path as Projects Task mode (``POST /api/registry/projects/quick-task``)
+    in Manual mode by default, with the source message as the brief and an
+    ``arrival`` link; the project records the to-do, so starting it again
+    returns the same project (``created: false``) and starts nothing. The
+    to-do moves to ``working`` and closes when the project is done.
+    Starting runs the agent, so it is a human act (``_require_human``).
+    Body (all optional): ``host_profile`` (default: the serving profile),
+    ``autonomy`` (default ``manual``), ``check_plan_first``.
+    """
+    from hermes_cli import todo_task
+    from hermes_cli.projects_api import QUICK_TASK_AUTONOMY, _require_human
+    from hermes_cli.web_server import _comms_resolve_principal
+
+    principal = await _comms_resolve_principal(request, allow_as=False)
+    await _require_human(request, "starting a task")
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        body = {}
+    autonomy = str(body.get("autonomy") or todo_task.DEFAULT_AUTONOMY).strip()
+    if autonomy not in QUICK_TASK_AUTONOMY:
+        raise HTTPException(
+            status_code=422,
+            detail=f"autonomy must be one of {', '.join(QUICK_TASK_AUTONOMY)}",
+        )
+    host_profile = (
+        str(body.get("host_profile") or "").strip() or profile_refs.current_profile()
+    )
+
+    store = _store()
+    if not await _table_ready(store):
+        raise HTTPException(status_code=404, detail="No such to-do")
+    todo = await store.get(principal, todo_id)
+    if todo is None:
+        raise HTTPException(status_code=404, detail="No such to-do")
+    arrival = await _source_item(principal, todo)
+    try:
+        return await todo_task.start_todo_as_project(
+            store,
+            principal,
+            todo,
+            arrival=arrival,
+            host_profile=host_profile,
+            autonomy=autonomy,
+            check_plan_first=bool(body.get("check_plan_first")),
+        )
+    except todo_task.TodoTaskError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+
+
 @router.patch("/{todo_id}")
 async def update_todo(request: Request, todo_id: str) -> dict[str, Any]:
     """Edit the parts of a to-do that are description, not lifecycle."""

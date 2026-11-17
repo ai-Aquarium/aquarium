@@ -316,8 +316,28 @@ async def decide_card_approval(request: Request, task_id: str) -> dict[str, Any]
         if len(note) > _REASON_MAX_LEN:
             raise HTTPException(status_code=422, detail="note is too long")
     approve = decision == "approve"
+    reply_msg: Optional[dict] = None
     if is_send and approve:
         await _require_human(request, "sending a message")
+
+        def _detail_sync() -> Optional[dict]:
+            with _board_conn(project) as bconn:
+                return card_outbound.proposal_detail(bconn, task_id, key)
+
+        reply_msg = await asyncio.to_thread(_detail_sync)
+        if reply_msg is not None and reply_msg.get("reply_to"):
+            # A reply to the message a to-do came from leaves by that
+            # message's own account, checked now (FG-03 P6), as To-dos do.
+            from hermes_cli import todo_task
+            from hermes_cli.reply_accounts import ReplyRefused
+
+            try:
+                await todo_task.check_project_reply(principal, reply_msg)
+            except ReplyRefused as refused:
+                raise HTTPException(
+                    status_code=403,
+                    detail={"error": refused.code, "message": refused.detail},
+                )
     actor = f"user:{principal.user_id}"
 
     def _comment_for(label: str, outbound: Optional[dict]) -> str:
@@ -395,8 +415,14 @@ async def decide_card_approval(request: Request, task_id: str) -> dict[str, Any]
             return out
 
     try:
-        return await asyncio.to_thread(_sync)
+        out = await asyncio.to_thread(_sync)
     except KeyError:
         raise HTTPException(status_code=404, detail="card not found")
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    event = (out.get("outbound") or {}).get("event")
+    if reply_msg is not None and event in ("sent", "partial"):
+        from hermes_cli import todo_task
+
+        await todo_task.record_project_reply(principal, reply_msg, event)
+    return out
