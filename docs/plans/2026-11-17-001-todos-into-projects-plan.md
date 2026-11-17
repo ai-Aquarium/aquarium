@@ -1,6 +1,6 @@
 ---
 title: "plan: keep the system to-do, make the user's to-do a task"
-status: draft — Leo approved the direction on 2026-11-17, apart from the triage cap (now replaced by a daily review); open questions below
+status: draft — Leo approved the direction on 2026-11-17 (the triage cap is replaced by a daily review) and answered the open questions the same day
 date: 2026-11-17
 type: plan
 origin: >
@@ -64,11 +64,12 @@ To-dos tile, its pages and its components go away.
    `custom/shared/todo_registration.py`, used through `select_candidates` in
    `custom/shared/triage_handlers.py`. Removing the rule only from the skill files would
    leave the cap in place, so remove both.
-3. **Daily review.** Once a day the agent counts the asks raised that day. Above a
-   threshold it raises an ask: "Triage raised N asks today. Please review the triage
-   skills". The threshold is a `config.yaml` setting. Its default, and whether to count per
-   profile or per channel, are open questions. *(suggestion)* The ask is an ordinary system
-   to-do, so it shows up as a Suggested task tagged "Daily review".
+3. **Daily review.** Once a day the agent counts, **per profile**, the asks raised that day
+   and the incoming messages they came from. If the average is **more than 0.5 asks per
+   incoming message**, it raises an ask: "Triage raised 23 asks from 38 incoming messages
+   today (0.61 per message). Please review the triage skills". The threshold is a
+   `config.yaml` setting, default 0.5 (Leo, 2026-11-17). *(suggestion)* The ask is an ordinary
+   system to-do, so it shows up as a Suggested task tagged "Daily review".
 4. **Suggested tasks.** These are the open and staged system to-dos, shown in three places:
    - the **Inbox**, tagged by channel;
    - a strip on **Projects**;
@@ -79,7 +80,9 @@ To-dos tile, its pages and its components go away.
    (`POST /api/projects/quick-task`, shown in `TaskView`) with `autonomy: manual`, and
    attaches the source message (`project_links kind='arrival'`). The system to-do links to
    the project (`project_links kind='todo'`), moves to working, and **closes when the
-   project is done**. This replaces the "no reverse sync" rule of the 2026-08-13 design
+   project is done**. If the project is archived or fails instead, the to-do also closes.
+   If the project is brought back from archived to active, the to-do and its Needs you
+   items come back (Leo, 2026-11-17). This replaces the "no reverse sync" rule of the 2026-08-13 design
    revision and FG-32 §10.
 6. **Replies.** They are drafted and approved inside the task, then sent from the mailbox
    the message came in on. Sending reuses `todo_outbound` / `card_outbound`. Nothing is sent
@@ -87,14 +90,16 @@ To-dos tile, its pages and its components go away.
 7. **D-refs and old links.** System to-dos keep their D refs. D88 opens the suggestion, or
    the task once it has been started. Old `/todos` and `/todos/<id>` links redirect the same
    way. *(suggestion)* `/todos` opens Inbox › Suggested tasks.
+   *(suggestion)* A D ref for a done or dismissed to-do shows a short "closed" note, because
+   closed to-dos have no UI page.
 8. **Migration: all existing to-dos move.**
    - Open and staged ones become Suggested tasks. They are already system to-dos, so nothing
      is copied.
    - Working and review ones become one-off projects, linked back to their to-do.
    - *(suggestion)* Their drafts in `$HERMES_HOME/drafts/todo_<id>/` are attached to the new
      project.
-   - *(suggestion)* Done and dismissed to-dos stay as closed system to-dos, visible through
-     `hermes todos`.
+   - Done and dismissed to-dos stay as closed system to-dos, visible **only** through
+     `hermes todos`, not in the UI (Leo, 2026-11-17).
 
    Leo's box had 27 to-dos when this was written: 2 open and 3 in review.
 9. **Removed:** only the To-dos tile and the agent-home `/todos` pages and components.
@@ -119,17 +124,20 @@ system to-dos the whole time.
 
 1. **More asks.** With no cap, a busy chat can raise many asks. The daily review is the
    guard, and a bad threshold makes it either noisy or silent.
-2. **Two-way link.** A to-do now closes when its project is done. *(suggestion)* We need a
-   rule for a project that is archived or fails rather than finishing (see Q3).
+2. **Two-way link.** A to-do now closes when its project is done, archived or failed, and
+   reopens when the project is unarchived. Each of these moves must be applied exactly once,
+   or a to-do could be left open or closed by mistake.
 3. **Sending.** Replies still need a person's approval. A regression could block a send,
    but must never send something unapproved.
 4. **Old links.** D refs, old pushes and bookmarks must all resolve. Stage 3 tests them.
 
-## Open questions for Leo
+## Leo's answers (2026-11-17)
 
-1. **Daily review threshold:** what should the default number of asks per day be?
-2. **Counting:** per profile, or per channel?
-3. *(suggestion)* If a task is archived or fails instead of finishing, does its system to-do
-   go back to Suggested tasks, or close?
-4. *(suggestion)* Done and dismissed to-dos: keep them only in `hermes todos` history, or
-   also show them somewhere in the UI?
+1. **Daily review threshold:** more than 0.5 asks per incoming message.
+2. **Counting:** an average per profile.
+3. **Archived or failed task:** its system to-do closes. If the task is unarchived, the to-do
+   and its Needs you items come back. (Leo wrote "from archived to archived"; this is read
+   as archived → active.)
+4. **Done and dismissed to-dos:** only in `hermes todos`.
+
+No open questions remain.
