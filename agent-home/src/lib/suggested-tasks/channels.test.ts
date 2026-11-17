@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SuggestedTaskSource, Todo } from "@/types";
 
-import { channelLabel, channelOf, isSuggested, startRequestText, tomorrowMorning } from "./channels";
+import { arrivalKeyOf, channelLabel, channelOf, isSuggested, startRequestText, tomorrowMorning } from "./channels";
 
 const todo = (extra: Partial<Todo> = {}) =>
   ({ id: "t1", title: "Reply to Ada", description: "", stage: "open", ...extra }) as Todo;
@@ -24,6 +24,13 @@ describe("suggested-task helpers", () => {
     expect(channelOf(null)).toBe("other");
     expect(channelLabel("whatsapp")).toBe("WhatsApp");
     expect(channelLabel("line_works")).toBe("Line works");
+  });
+
+  it("builds the same arrival key as needs_you.arrival_key", () => {
+    expect(arrivalKeyOf(source({ account_id: "sales@acme.hk", external_id: "<a:b>!" }))).toBe(
+      "arrival:email:sales%40acme.hk:%3Ca%3Ab%3E%21",
+    );
+    expect(arrivalKeyOf(source())).toBeNull();
   });
 
   it("only open and staged to-dos are suggestions", () => {

@@ -6,6 +6,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
 }));
 
+import type { UseSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
+import type { SuggestedTask } from "@/types";
 import type { NeedsYouEntry } from "@/types/landing";
 
 import { NeedsYouPanel, NeedsYouPanelView, sortBySeverity, withoutSuggestedAsks } from "./NeedsYouPanel";
@@ -93,14 +95,39 @@ describe("useNeedsYouFeed", () => {
 });
 
 describe("NeedsYouPanelView with suggested tasks", () => {
-  const ask = (id: string, source: NeedsYouEntry["source"], severity: NeedsYouEntry["severity"]) =>
-    ({ id, source, severity, title: id, context: {}, created_at: 0, href: "/", actions: [] }) as NeedsYouEntry;
+  const KEY = "arrival:email:sales%40acme.hk:msg-1";
+  const ask = (id: string, severity: NeedsYouEntry["severity"], context: NeedsYouEntry["context"] = {}) =>
+    ({ id, source: "todo", severity, title: id, context, created_at: 0, href: "/", actions: [] }) as NeedsYouEntry;
+  const card = {
+    channel: "email",
+    todo: { id: "t1" },
+    source: { id: "m1", surface: "email", account_id: "sales@acme.hk", external_id: "msg-1" },
+  } as unknown as SuggestedTask;
+  const feed = (items: SuggestedTask[], extra: Partial<UseSuggestedTasks> = {}): UseSuggestedTasks => ({
+    items, loaded: true, error: null, profile: "default", refresh: async () => {}, remove: () => {}, ...extra,
+  });
 
-  it("drops a to-do's ask once its suggested task shows, keeping reply approvals", () => {
-    const items = [ask("todo-alert", "todo", "fyi"), ask("todo-reply", "todo", "approval"), ask("card", "card_wait", "approval")];
-    const suggested = { items: [], loaded: true, error: null, refresh: async () => {}, remove: () => {} };
-    expect(withoutSuggestedAsks(items, suggested).map((e) => e.id)).toEqual(["todo-reply", "card"]);
-    expect(withoutSuggestedAsks(items, { ...suggested, error: "down" })).toHaveLength(3);
-    expect(withoutSuggestedAsks(items, undefined)).toHaveLength(3);
+  it("drops only the alert a card on screen stands for", () => {
+    const items = [
+      ask("same-message", "fyi", { arrival_key: KEY }),
+      ask("same-message-reply", "approval", { arrival_key: KEY }),
+      ask("other-message", "fyi", { arrival_key: "arrival:email:sales%40acme.hk:msg-2" }),
+      ask("no-arrival", "fyi"),
+    ];
+    expect(withoutSuggestedAsks(items, feed([card])).map((e) => e.id)).toEqual([
+      "same-message-reply",
+      "other-message",
+      "no-arrival",
+    ]);
+  });
+
+  it("keeps alerts raised in another profile, and everything when no card shows", () => {
+    const cfo = ask("cfo", "fyi", { arrival_key: KEY, profiles: ["cfo"] });
+    const both = ask("both", "fyi", { arrival_key: KEY, profiles: ["cfo", "default"] });
+    const here = ask("here", "fyi", { arrival_key: KEY, profiles: ["default"] });
+    expect(withoutSuggestedAsks([cfo, both, here], feed([card])).map((e) => e.id)).toEqual(["cfo", "both"]);
+    expect(withoutSuggestedAsks([cfo, here], feed([]))).toHaveLength(2);
+    expect(withoutSuggestedAsks([here], feed([card], { error: "down" }))).toHaveLength(1);
+    expect(withoutSuggestedAsks([here], undefined)).toHaveLength(1);
   });
 });

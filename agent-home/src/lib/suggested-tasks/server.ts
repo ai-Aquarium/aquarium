@@ -14,6 +14,7 @@ function sourceOf(item: IncomingItem): SuggestedTaskSource {
     ref: item.ref ?? null,
     surface: item.surface,
     account_id: item.account_id,
+    external_id: item.external_id,
     sender_name: item.sender_name,
     sender_id: item.sender_id,
     subject: item.subject,
@@ -58,7 +59,7 @@ async function readSources(
 /** A page of suggested tasks: the caller's to-dos in `stages`, with sources. */
 export async function loadSuggestedTasks(
   client: HermesApiClient,
-  opts: { stages: string[]; source_ref?: string; limit?: number; cursor?: string },
+  opts: { stages: string[]; source_ref?: string; limit?: number; cursor?: string; profile?: string | null },
 ): Promise<SuggestedTasksResponse> {
   const page = await client.todos({
     stage: opts.stages.join(","),
@@ -72,5 +73,6 @@ export async function loadSuggestedTasks(
       toSuggestedTask(todo, todo.source_ref ? (sources.get(todo.source_ref) ?? null) : null),
     ),
     next_cursor: page.next_cursor,
+    profile: opts.profile ?? null,
   };
 }

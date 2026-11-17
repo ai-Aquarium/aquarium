@@ -12,6 +12,7 @@
  */
 import type { NextResponse } from "next/server";
 
+import { readSession } from "@/lib/auth/session";
 import { loadSuggestedTasks } from "@/lib/suggested-tasks/server";
 import { SUGGESTED_STAGES } from "@/lib/suggested-tasks/channels";
 
@@ -30,8 +31,10 @@ export async function GET(req: Request): Promise<NextResponse> {
     .filter((s) => s && (sourceRef ? MESSAGE_STAGES.has(s) : (SUGGESTED_STAGES as readonly string[]).includes(s)));
   const stages = asked.length > 0 ? asked : [...SUGGESTED_STAGES];
   const limit = Math.max(1, Math.min(Number(params.get("limit")) || DEFAULT_LIMIT, MAX_LIMIT));
+  const profile = (await readSession())?.profile ?? null;
   return withPrincipal((client) =>
     loadSuggestedTasks(client, {
+      profile,
       stages,
       source_ref: sourceRef,
       limit,

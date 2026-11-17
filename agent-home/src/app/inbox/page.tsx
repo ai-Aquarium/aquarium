@@ -113,6 +113,9 @@ export default async function Page({
         </div>
       ) : (
         <InboxView
+          // A link to another tab of an already-open Inbox (e.g. Needs you ›
+          // See all in Inbox) is a new server render: start on that tab.
+          key={initialTab}
           initialConfigured={configured}
           initialNotifications={notifications}
           initialChanges={changes}

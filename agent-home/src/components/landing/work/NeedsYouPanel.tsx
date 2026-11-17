@@ -3,6 +3,7 @@
 import { SuggestedTasksNeedsYou } from "@/components/suggested-tasks/SuggestedTasksNeedsYou";
 import { type UseSuggestedTasks, useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
 import { useNeedsYouText } from "@/lib/landing/needsYouText";
+import { arrivalKeyOf } from "@/lib/suggested-tasks/channels";
 import type { NeedsYouEntry } from "@/types/landing";
 
 import { NeedsYouItem } from "./NeedsYouItem";
@@ -37,13 +38,25 @@ export type NeedsYouPanelViewProps = Pick<
 };
 
 /**
- * A to-do's "something needs you" notification is the same ask its suggested
- * task card already shows, so it is dropped once the suggestions loaded.
- * Reply approvals (`todo-action`, severity approval) stay.
+ * A to-do's "something needs you" alert is the same ask as a suggested-task
+ * card, so an alert is dropped only when a card on screen stands for it: the
+ * same arrival, raised only in the profile the cards were read in. Alerts
+ * from other profiles, for messages past the loaded page, without an arrival,
+ * and reply approvals (severity approval) all stay.
  */
 export function withoutSuggestedAsks(items: NeedsYouEntry[], suggested?: UseSuggestedTasks): NeedsYouEntry[] {
-  if (!suggested?.loaded || suggested.error) return items;
-  return items.filter((e) => !(e.source === "todo" && e.severity !== "approval"));
+  if (!suggested?.loaded || suggested.error || suggested.items.length === 0) return items;
+  const shown = new Set(
+    suggested.items.map((t) => arrivalKeyOf(t.source)).filter((k): k is string => k !== null),
+  );
+  const here = suggested.profile ?? null;
+  return items.filter((e) => {
+    if (e.source !== "todo" || e.severity === "approval") return true;
+    const key = e.context?.arrival_key;
+    if (!key || !shown.has(key)) return true;
+    const raisedIn = (e.context.profiles ?? [e.context.profile]).filter((p): p is string => !!p);
+    return raisedIn.some((p) => p !== here);
+  });
 }
 
 /**

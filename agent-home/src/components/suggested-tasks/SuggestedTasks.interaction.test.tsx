@@ -122,6 +122,15 @@ describe("Suggested tasks", () => {
     expect(f.remove).not.toHaveBeenCalled();
   });
 
+  it("offers the next page while there is one", async () => {
+    const loadMore = vi.fn(async () => {});
+    render(<SuggestedTasksInbox feed={{ ...feed(), nextCursor: "c2", loadMore }} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Calendar/ }));
+    expect(screen.getByText("None from this channel in the ones loaded so far.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Load more suggestions" }));
+    await waitFor(() => expect(loadMore).toHaveBeenCalledTimes(1));
+  });
+
   it("viewers see suggestions but cannot start one", () => {
     render(<SuggestedTasksInbox feed={feed()} canStart={false} />);
     expect(screen.queryByRole("button", { name: "Work on this" })).toBeNull();
