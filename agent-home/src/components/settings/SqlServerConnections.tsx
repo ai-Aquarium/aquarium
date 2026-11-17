@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ActionButton } from "@/components/ui/ActionButton";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { useT } from "@/i18n/client";
 import { useAction } from "@/lib/use-action";
 import type {
@@ -261,7 +262,7 @@ export function SqlServerConnections({ isOwner = false }: { isOwner?: boolean })
         </button>
       )}
       {v && (
-        <form
+        <CredentialForm
           data-mssql-form
           className="space-y-3 rounded border border-[var(--color-surface-2)] p-3"
           onSubmit={(e) => {
@@ -388,13 +389,13 @@ export function SqlServerConnections({ isOwner = false }: { isOwner?: boolean })
           </div>
           <div className="flex gap-2">
             <button type="submit" className={primaryBtnCls} disabled={!!busy} aria-busy={!!busy}>
-              {busy ? t("testing") : t("saveTest")}
+              {busy ? t("testing") : <SubmitLabel>{t("saveTest")}</SubmitLabel>}
             </button>
             <button type="button" className={btnCls} disabled={!!busy} onClick={() => setForm(null)}>
               {t("cancel")}
             </button>
           </div>
-        </form>
+        </CredentialForm>
       )}
       {removing && (
         <ConfirmDialog

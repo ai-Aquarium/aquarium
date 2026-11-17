@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { ActionButton } from "@/components/ui/ActionButton";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { inputClass, secondaryButtonClass } from "@/components/ui/Sheet";
 import { useT } from "@/i18n";
@@ -93,7 +94,7 @@ export function AddSiteForm({ people, me }: { people: DirectoryEntry[]; me: stri
   }
 
   return (
-    <form data-component="AddSiteForm" onSubmit={onSubmit} className="space-y-4">
+    <CredentialForm data-component="AddSiteForm" onSubmit={onSubmit} className="space-y-4">
       {error ? <InlineAlert tone="danger">{error}</InlineAlert> : null}
       <fieldset className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <legend className="px-1 text-sm font-semibold">{t("add.whereLegend")}</legend>
@@ -213,13 +214,13 @@ export function AddSiteForm({ people, me }: { people: DirectoryEntry[]; me: stri
           disabled={!draft.base_url.trim() || loginHalf}
           className="rounded-full bg-[var(--color-accent)] px-4 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-60"
         >
-          {t("add.create")}
+          <SubmitLabel>{t("add.create")}</SubmitLabel>
         </ActionButton>
         <button type="button" className={secondaryButtonClass} onClick={() => router.push("/sites")}>
           {t("common.cancel")}
         </button>
       </div>
       <p className="text-xs text-[var(--color-muted)]">{t("add.next")}</p>
-    </form>
+    </CredentialForm>
   );
 }

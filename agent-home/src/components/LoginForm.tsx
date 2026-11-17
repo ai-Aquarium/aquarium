@@ -1,12 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { authField, authLabel, authPrimary, authSecondary } from "@/components/auth/styles";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { InlineAlert, type AlertTone } from "@/components/ui/InlineAlert";
 import { Spinner } from "@/components/ui/Spinner";
 import { useT } from "@/i18n";
+import { stripLoginCredentials } from "@/lib/auth/login-query";
 import { useAction } from "@/lib/use-action";
 
 export interface ProviderOption {
@@ -52,6 +54,13 @@ export function LoginForm({
   const [code, setCode] = useState("");
   const ta = useT("account");
   const locked = busy || leaving;
+
+  // Credentials in the address bar (an old native GET submit, or a pasted
+  // link) are dropped from history; the fields never read them.
+  useEffect(() => {
+    const clean = stripLoginCredentials(new URL(window.location.href));
+    if (clean) window.history.replaceState(window.history.state, "", clean.href);
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -126,7 +135,7 @@ export function LoginForm({
 
   if (needsCode) {
     return (
-      <form data-component="LoginCodeForm" onSubmit={(e) => void submitOnce(e)} aria-busy={locked} className="flex flex-col gap-4">
+      <CredentialForm data-component="LoginCodeForm" onSubmit={(e) => void submitOnce(e)} aria-busy={locked} className="flex flex-col gap-4">
         {alert}
         <div>
           <h2 className="text-base font-semibold">{ta("loginCodeTitle")}</h2>
@@ -167,16 +176,16 @@ export function LoginForm({
                 {ta("verifying")}
               </>
             ) : (
-              ta("verify")
+              <SubmitLabel>{ta("verify")}</SubmitLabel>
             )}
           </button>
         </div>
-      </form>
+      </CredentialForm>
     );
   }
 
   return (
-    <form
+    <CredentialForm
       data-component="LoginForm"
       onSubmit={(e) => void submitOnce(e)}
       aria-busy={locked}
@@ -220,12 +229,12 @@ export function LoginForm({
             {t("signingIn")}
           </>
         ) : (
-          t("signIn")
+          <SubmitLabel>{t("signIn")}</SubmitLabel>
         )}
       </button>
       {passwordProviders.length === 0 ? (
         <InlineAlert tone="warn">{t("noProvider")}</InlineAlert>
       ) : null}
-    </form>
+    </CredentialForm>
   );
 }

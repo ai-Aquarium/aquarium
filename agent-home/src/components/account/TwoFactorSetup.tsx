@@ -3,6 +3,7 @@
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { errorMessage } from "@/components/users/api";
 import { Spinner } from "@/components/ui/Spinner";
 
@@ -113,7 +114,7 @@ export function TwoFactorSetup({
       );
     }
     return (
-      <form
+      <CredentialForm
         data-component="TwoFactorStart"
         aria-busy={busy}
         onSubmit={(e) => {
@@ -136,11 +137,11 @@ export function TwoFactorSetup({
         {error ? <p role="alert" className={errorText}>{error}</p> : null}
         <div className="flex gap-2">
           <button type="submit" disabled={busy || !password} className={primary}>
-            {busy ? <><Spinner /> {t("starting")}</> : t("start")}
+            {busy ? <><Spinner /> {t("starting")}</> : <SubmitLabel>{t("start")}</SubmitLabel>}
           </button>
           {cancel}
         </div>
-      </form>
+      </CredentialForm>
     );
   }
 
@@ -161,7 +162,7 @@ export function TwoFactorSetup({
       <div className="flex flex-col gap-2">
         <p className="font-semibold">{t("typeCode")}</p>
         {step === "scan" ? (
-          <form onSubmit={(e) => void confirmOnce(e)} aria-busy={busy} className="flex flex-wrap gap-2">
+          <CredentialForm onSubmit={(e) => void confirmOnce(e)} aria-busy={busy} className="flex flex-wrap gap-2">
             <input
               inputMode="numeric"
               autoComplete="one-time-code"
@@ -172,9 +173,9 @@ export function TwoFactorSetup({
               className={`${field} max-w-[150px] font-mono tracking-[0.2em]`}
             />
             <button type="submit" disabled={busy || code.replace(/\D/g, "").length !== 6} className={secondary}>
-              {busy ? <><Spinner /> {t("checking")}</> : t("checkCode")}
+              {busy ? <><Spinner /> {t("checking")}</> : <SubmitLabel>{t("checkCode")}</SubmitLabel>}
             </button>
-          </form>
+          </CredentialForm>
         ) : (
           <>
             <p className={okBox}>{t("codeOk")}</p>

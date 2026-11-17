@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { authField, authLabel, authLink, authSecondary } from "@/components/auth/styles";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { Spinner } from "@/components/ui/Spinner";
 import { useT } from "@/i18n";
@@ -63,7 +64,7 @@ export function ResetRequestForm({ profile }: { profile?: string } = {}) {
   }
 
   return (
-    <form
+    <CredentialForm
       data-component="ResetRequestForm"
       onSubmit={(e) => void submitOnce(e)}
       aria-busy={busy}
@@ -90,7 +91,7 @@ export function ResetRequestForm({ profile }: { profile?: string } = {}) {
             <Spinner /> {t("sending")}
           </>
         ) : (
-          t("requestLink")
+          <SubmitLabel>{t("requestLink")}</SubmitLabel>
         )}
       </button>
       {sent ? <InlineAlert tone="info">{t("resetSent")}</InlineAlert> : null}
@@ -105,6 +106,6 @@ export function ResetRequestForm({ profile }: { profile?: string } = {}) {
       >
         {t("backToSignIn")}
       </button>
-    </form>
+    </CredentialForm>
   );
 }

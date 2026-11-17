@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import en from "@/i18n/messages/en/email.json";
 import zhHant from "@/i18n/messages/zh-Hant/email.json";
 import type {
@@ -345,7 +346,7 @@ export function EmailMailboxes() {
         </button>
       )}
       {v && (
-        <form
+        <CredentialForm
           data-email-form
           className="space-y-3 rounded border border-[var(--color-surface-2)] p-3"
           onSubmit={(e) => {
@@ -411,7 +412,7 @@ export function EmailMailboxes() {
           </div>
           <div className="flex gap-2">
             <button type="submit" className={primaryBtnCls} disabled={!!busy} aria-busy={!!busy}>
-              {busy ? t("testing") : t("saveTest")}
+              {busy ? t("testing") : <SubmitLabel>{t("saveTest")}</SubmitLabel>}
             </button>
             {(mailboxes?.length ?? 0) > 0 && (
               <button type="button" className={btnCls} disabled={!!busy} onClick={() => setForm(null)}>
@@ -419,7 +420,7 @@ export function EmailMailboxes() {
               </button>
             )}
           </div>
-        </form>
+        </CredentialForm>
       )}
       {removing && (
         <ConfirmDialog

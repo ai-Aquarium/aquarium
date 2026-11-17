@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { EyeIcon, EyeOffIcon, LockIcon } from "@/components/ui/icons";
 import { useT } from "@/i18n";
 import {
@@ -241,7 +242,7 @@ export function SecretRequestModal({
           <LockIcon className="text-[var(--color-accent)]" />
           {isRequest ? t("request.title") : t("save.title")}
         </h2>
-        <form
+        <CredentialForm
           className="mt-2 min-h-0 flex-1 overflow-y-auto"
           autoComplete="off"
           noValidate
@@ -335,7 +336,7 @@ export function SecretRequestModal({
                 aria-busy={busy}
                 className="w-full rounded-xl bg-[var(--color-accent)] px-4 py-3 text-sm font-semibold text-[var(--color-accent-fg)] disabled:opacity-50"
               >
-                {isRequest ? t("request.submit") : t("save.submit")}
+                <SubmitLabel>{isRequest ? t("request.submit") : t("save.submit")}</SubmitLabel>
               </button>
             )}
             <div className="flex gap-2">
@@ -359,7 +360,7 @@ export function SecretRequestModal({
               </button>
             </div>
           </div>
-        </form>
+        </CredentialForm>
       </div>
     </div>
   );

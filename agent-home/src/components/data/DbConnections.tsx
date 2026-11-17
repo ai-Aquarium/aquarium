@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { useT } from "@/i18n";
 import { useAction } from "@/lib/use-action";
 import type { DbConnection, DbConnectionInput, DbConnectionTest, DbEngine, DbTls, VpnView } from "@/types";
@@ -248,7 +249,7 @@ export function DbConnections({ engine }: { engine: DbEngine }) {
         </button>
       )}
       {v && (
-        <form
+        <CredentialForm
           data-db-form={engine}
           className="space-y-3 rounded border border-[var(--color-surface-2)] p-3"
           onSubmit={(e) => {
@@ -326,13 +327,13 @@ export function DbConnections({ engine }: { engine: DbEngine }) {
           <p className="text-xs text-[var(--color-muted)]">{t("db.readOnlyNote")}</p>
           <div className="flex gap-2">
             <button type="submit" className={primaryBtnCls} disabled={!!busy} aria-busy={!!busy}>
-              {busy ? t("db.testing") : t("db.saveTest")}
+              {busy ? t("db.testing") : <SubmitLabel>{t("db.saveTest")}</SubmitLabel>}
             </button>
             <button type="button" className={btnCls} disabled={!!busy} onClick={() => setForm(null)}>
               {t("edit.cancel")}
             </button>
           </div>
-        </form>
+        </CredentialForm>
       )}
       {removing && (
         <ConfirmDialog

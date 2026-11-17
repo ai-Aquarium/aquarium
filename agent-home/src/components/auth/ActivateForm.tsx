@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { AuthIllustration } from "@/components/auth/AuthLayout";
 import { authField, authFieldError, authHint, authLabel, authLink, authPrimary } from "@/components/auth/styles";
+import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { Spinner } from "@/components/ui/Spinner";
 import { ForwardError, sendJson } from "@/components/users/api";
@@ -103,7 +104,7 @@ export function ActivateForm({ token, profile }: { token: string; profile?: stri
   const showMismatch = submitted && !tooShort && mismatch;
 
   return (
-    <form
+    <CredentialForm
       data-component="ActivateForm"
       onSubmit={(e) => void submitOnce(e)}
       aria-busy={busy}
@@ -162,7 +163,7 @@ export function ActivateForm({ token, profile }: { token: string; profile?: stri
             <Spinner /> {t("setting")}
           </>
         ) : (
-          t("setPassword")
+          <SubmitLabel>{t("setPassword")}</SubmitLabel>
         )}
       </button>
       <p className="text-xs text-[var(--color-muted)]">
@@ -171,6 +172,6 @@ export function ActivateForm({ token, profile }: { token: string; profile?: stri
           {t("signInInstead")}
         </a>
       </p>
-    </form>
+    </CredentialForm>
   );
 }

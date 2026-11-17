@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, List, NamedTuple, Optional, Protocol
 
-from hermes_cli.datastore import DatastoreNotConfigured
+from hermes_cli.datastore import DatastoreNotConfigured, DatastoreSecretMissing
 from hermes_cli.profile_registry import ProfileRegistryEntry, get_profile_registry
 
 logger = logging.getLogger(__name__)
@@ -137,37 +137,58 @@ async def _principal_for_subject(
     return await store.get(user_id)
 
 
-_unconfigured_noted: set[str] = set()
+_unconfigured_noted: set[tuple[str, bool]] = set()
 
 
-def _note_unconfigured(entry: ProfileRegistryEntry) -> None:
+def _note_unconfigured(entry: ProfileRegistryEntry, exc: DatastoreNotConfigured) -> None:
     """Log, once per profile, that it is read as having no enrolments."""
-    if entry.name in _unconfigured_noted:
+    lost = isinstance(exc, DatastoreSecretMissing)
+    if (entry.name, lost) in _unconfigured_noted:
         return
-    _unconfigured_noted.add(entry.name)
-    logger.warning(
-        "profile %r has no app datastore (datastore.supabase_app.dsn); "
-        "it has no enrolments and is skipped by cross-profile reads",
-        entry.name,
-    )
+    _unconfigured_noted.add((entry.name, lost))
+    if lost:
+        logger.warning(
+            "profile %r has datastore.supabase_app.dsn set but its secret is "
+            "unset; listings skip it and account-level checks refuse",
+            entry.name,
+        )
+    else:
+        logger.warning(
+            "profile %r has no app datastore (datastore.supabase_app.dsn); "
+            "it has no enrolments and is skipped by cross-profile reads",
+            entry.name,
+        )
 
 
 async def principal_in_profile(
-    entry: ProfileRegistryEntry, subject: str, *, store_factory: StoreFactory
+    entry: ProfileRegistryEntry,
+    subject: str,
+    *,
+    store_factory: StoreFactory,
+    strict: bool = False,
 ) -> Optional[Any]:
     """``subject``'s principal row in ``entry``, read inside that profile's scope.
 
-    A profile with no app datastore holds no ``principals`` rows, so it is
-    ``None`` (no enrolment) rather than an error; every cross-profile read
+    A profile never given an app datastore holds no ``principals`` rows, so it
+    is ``None`` (no enrolment) rather than an error; every cross-profile read
     goes through here so one unconfigured sibling cannot fail the others. A
     configured datastore that fails to connect still raises.
+
+    A DSN whose ``${VAR}`` secret is unset may hide real rows. A listing reads
+    it as ``None`` too, but ``strict`` (an authorization decision that would
+    grant from "not enrolled there") raises :class:`DatastoreSecretMissing`.
     """
     with _scoped_to(entry.hermes_home):
         store = store_factory(entry.hermes_home)
         try:
             return await _principal_for_subject(store, subject)
-        except DatastoreNotConfigured:
-            _note_unconfigured(entry)
+        except DatastoreNotConfigured as exc:
+            _note_unconfigured(entry, exc)
+            if strict and isinstance(exc, DatastoreSecretMissing):
+                raise DatastoreSecretMissing(
+                    f"profile {entry.name!r}: enrolment cannot be verified, "
+                    "its datastore secret is unset"
+                ) from exc
             return None
 
 
@@ -183,6 +204,7 @@ async def enrolments(
     *,
     store_factory: StoreFactory,
     registry: Optional[List[ProfileRegistryEntry]] = None,
+    strict: bool = False,
 ) -> List[Enrolment]:
     """Every profile where ``subject`` holds a principal row, suspended included.
 
@@ -193,6 +215,7 @@ async def enrolments(
     there is nothing here to keep in sync. Registry order (default first). No
     subject is no enrolment: there is no owner-fallback here, and a profile
     with no app datastore is no enrolment (:func:`principal_in_profile`).
+    Pass ``strict=True`` where an omitted profile would *grant* something.
     """
     if not subject:
         return []
@@ -202,7 +225,7 @@ async def enrolments(
         if not entry.hermes_home.is_dir():
             continue
         principal = await principal_in_profile(
-            entry, subject, store_factory=store_factory
+            entry, subject, store_factory=store_factory, strict=strict
         )
         if principal is not None:
             out.append(Enrolment(entry, principal))
@@ -286,8 +309,8 @@ async def person_enrolments(
                 ):
                     continue
                 target = await store.get(target_user_id)
-            except DatastoreNotConfigured:
-                _note_unconfigured(entry)
+            except DatastoreNotConfigured as exc:
+                _note_unconfigured(entry, exc)
                 continue
         out.append(PersonEnrolment(entry, actor.role, target))
     return out
@@ -340,7 +363,7 @@ async def resolve_console_principal(
         try:
             principal = await _principal_for_subject(store, subject)
         except DatastoreNotConfigured as exc:
-            _note_unconfigured(entry)
+            _note_unconfigured(entry, exc)
             raise ProfileScopeError(
                 f"You're not a member of {target_profile}: it isn't set up for "
                 "shared use yet."
@@ -365,6 +388,7 @@ async def enrolled_profiles(
     store_factory: StoreFactory,
     registry: Optional[List[ProfileRegistryEntry]] = None,
     active_only: bool = False,
+    strict: bool = False,
 ) -> List[str]:
     """Profiles where ``user_id`` holds a principal row, **suspended included**.
 
@@ -383,7 +407,9 @@ async def enrolled_profiles(
     """
     return [
         e.profile.name
-        for e in await enrolments(user_id, store_factory=store_factory, registry=registry)
+        for e in await enrolments(
+            user_id, store_factory=store_factory, registry=registry, strict=strict
+        )
         if not active_only or getattr(e.principal, "active", True)
     ]
 
@@ -421,11 +447,22 @@ async def guard_account_level_op(
             actor_subject, store_factory=store_factory, registry=registry
         )
     )
-    target_in = set(
-        await enrolled_profiles(
-            target_user_id, store_factory=store_factory, registry=registry
+    # Strict: a profile whose datastore secret is lost may still enrol the
+    # target, and omitting it would shrink the blast radius into a grant.
+    try:
+        target_in = set(
+            await enrolled_profiles(
+                target_user_id,
+                store_factory=store_factory,
+                registry=registry,
+                strict=True,
+            )
         )
-    )
+    except DatastoreSecretMissing as exc:
+        raise AccountLevelPermissionError(
+            f"account-level op refused: target {target_user_id!r} may be "
+            f"enrolled in a profile that cannot be read ({exc})"
+        ) from exc
     # Vacuous allow: a target enrolled nowhere has no blast radius, so the
     # guard cannot be the thing that blocks a legitimate rollback/redemption.
     unadministered = target_in - administered
