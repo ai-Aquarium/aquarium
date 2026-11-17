@@ -22,11 +22,15 @@ tests inject with a synthetic :class:`PrincipalStore`.
 
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, List, NamedTuple, Optional, Protocol
 
+from hermes_cli.datastore import DatastoreNotConfigured
 from hermes_cli.profile_registry import ProfileRegistryEntry, get_profile_registry
+
+logger = logging.getLogger(__name__)
 
 
 class _PrincipalLike(Protocol):
@@ -133,6 +137,40 @@ async def _principal_for_subject(
     return await store.get(user_id)
 
 
+_unconfigured_noted: set[str] = set()
+
+
+def _note_unconfigured(entry: ProfileRegistryEntry) -> None:
+    """Log, once per profile, that it is read as having no enrolments."""
+    if entry.name in _unconfigured_noted:
+        return
+    _unconfigured_noted.add(entry.name)
+    logger.warning(
+        "profile %r has no app datastore (datastore.supabase_app.dsn); "
+        "it has no enrolments and is skipped by cross-profile reads",
+        entry.name,
+    )
+
+
+async def principal_in_profile(
+    entry: ProfileRegistryEntry, subject: str, *, store_factory: StoreFactory
+) -> Optional[Any]:
+    """``subject``'s principal row in ``entry``, read inside that profile's scope.
+
+    A profile with no app datastore holds no ``principals`` rows, so it is
+    ``None`` (no enrolment) rather than an error; every cross-profile read
+    goes through here so one unconfigured sibling cannot fail the others. A
+    configured datastore that fails to connect still raises.
+    """
+    with _scoped_to(entry.hermes_home):
+        store = store_factory(entry.hermes_home)
+        try:
+            return await _principal_for_subject(store, subject)
+        except DatastoreNotConfigured:
+            _note_unconfigured(entry)
+            return None
+
+
 class Enrolment(NamedTuple):
     """One profile's principal row for a subject (see :func:`enrolments`)."""
 
@@ -153,10 +191,9 @@ async def enrolments(
     (:func:`get_profile_registry`), enters each profile's scope, and asks that
     profile's own ``principals`` table — never a shared authority store, so
     there is nothing here to keep in sync. Registry order (default first). No
-    subject is no enrolment: there is no owner-fallback here.
+    subject is no enrolment: there is no owner-fallback here, and a profile
+    with no app datastore is no enrolment (:func:`principal_in_profile`).
     """
-    from hermes_cli.datastore import DatastoreNotConfigured
-
     if not subject:
         return []
     entries = registry if registry is not None else get_profile_registry()
@@ -164,13 +201,9 @@ async def enrolments(
     for entry in entries:
         if not entry.hermes_home.is_dir():
             continue
-        with _scoped_to(entry.hermes_home):
-            store = store_factory(entry.hermes_home)
-            try:
-                principal = await _principal_for_subject(store, subject)
-            except DatastoreNotConfigured:
-                # No app datastore means no principals table: nobody is enrolled.
-                continue
+        principal = await principal_in_profile(
+            entry, subject, store_factory=store_factory
+        )
         if principal is not None:
             out.append(Enrolment(entry, principal))
     return out
@@ -244,14 +277,18 @@ async def person_enrolments(
             continue
         with _scoped_to(entry.hermes_home):
             store = store_factory(entry.hermes_home)
-            actor = await _principal_for_subject(store, actor_subject)
-            if (
-                actor is None
-                or not getattr(actor, "active", True)
-                or getattr(actor, "role", "") not in ("owner", "admin")
-            ):
+            try:
+                actor = await _principal_for_subject(store, actor_subject)
+                if (
+                    actor is None
+                    or not getattr(actor, "active", True)
+                    or getattr(actor, "role", "") not in ("owner", "admin")
+                ):
+                    continue
+                target = await store.get(target_user_id)
+            except DatastoreNotConfigured:
+                _note_unconfigured(entry)
                 continue
-            target = await store.get(target_user_id)
         out.append(PersonEnrolment(entry, actor.role, target))
     return out
 
@@ -278,7 +315,9 @@ async def resolve_console_principal(
       (409), matching :func:`_comms_resolve_principal`'s authenticated-but-
       unenrolled refusal;
     - suspended enrolment → :class:`ProfileScopeError` (403), matching
-      FG-26 §3.5's profile-local suspension.
+      FG-26 §3.5's profile-local suspension;
+    - a target with no app datastore has no enrolments, so it is the
+      not-enrolled :class:`ProfileScopeError` too.
 
     The ``admin``/``owner`` *role* gate is intentionally NOT enforced here — it
     stays with the route's ``require_member_admin`` so this core composes with
@@ -298,7 +337,14 @@ async def resolve_console_principal(
                 "console-routed request carried no verified subject; "
                 "owner-fallback is refused on these routes"
             )
-        principal = await _principal_for_subject(store, subject)
+        try:
+            principal = await _principal_for_subject(store, subject)
+        except DatastoreNotConfigured as exc:
+            _note_unconfigured(entry)
+            raise ProfileScopeError(
+                f"subject {subject!r} is not enrolled in profile "
+                f"{target_profile!r}: it has no multi-user datastore"
+            ) from exc
         if principal is None:
             raise ProfileScopeError(
                 f"subject {subject!r} is not enrolled in profile "

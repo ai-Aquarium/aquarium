@@ -477,3 +477,68 @@ def test_person_enrolments_for_a_member_everywhere_is_empty(people_box) -> None:
     )
     # pat is an active admin only in hr — and is listed there alone.
     assert [r.profile.name for r in rows] == ["hr"]
+
+
+# -- a profile with no app datastore -------------------------------------------
+
+
+class _UnconfiguredStore(_FakeStore):
+    """A profile whose ``datastore.supabase_app.dsn`` is unset."""
+
+    def __init__(self) -> None:
+        super().__init__({})
+
+    async def get(self, user_id: str):
+        from hermes_cli.datastore import DatastoreNotConfigured
+
+        raise DatastoreNotConfigured("no dsn")
+
+    resolve_alias = get
+
+
+class _UnreachableStore(_FakeStore):
+    """A configured profile whose database cannot be reached."""
+
+    def __init__(self) -> None:
+        super().__init__({})
+
+    async def get(self, user_id: str):
+        raise OSError("connection refused")
+
+    resolve_alias = get
+
+
+def _with_sibling(two_profiles, tmp_path: Path, store: _FakeStore):
+    entries, per_home = two_profiles
+    home = tmp_path / "hermes-root" / "profiles" / "coder"
+    home.mkdir(parents=True)
+    return [*entries, _entry("coder", home)], {**per_home, home: store}
+
+
+def test_a_profile_with_no_datastore_is_no_enrolment_for_every_cross_profile_read(
+    two_profiles, tmp_path
+) -> None:
+    entries, per_home = _with_sibling(two_profiles, tmp_path, _UnconfiguredStore())
+    kw = {"store_factory": _store_factory(per_home), "registry": entries}
+
+    assert asyncio.run(enrolled_profiles(SUBJECT, **kw)) == ["default", "engineers"]
+    assert asyncio.run(administered_profiles(SUBJECT, **kw)) == ["default", "engineers"]
+    assert [r.profile.name for r in asyncio.run(
+        person_enrolments(SUBJECT, OTHER_SUBJECT, **kw))] == ["default", "engineers"]
+    actor = Principal(SUBJECT, "CTO", "owner")
+    asyncio.run(guard_account_level_op(actor, SUBJECT, **kw))
+    with pytest.raises(ProfileScopeError, match="no multi-user datastore"):
+        asyncio.run(resolve_console_principal(SUBJECT, "coder", **kw))
+
+
+def test_a_configured_profile_that_cannot_connect_still_fails_the_read(
+    two_profiles, tmp_path
+) -> None:
+    entries, per_home = _with_sibling(two_profiles, tmp_path, _UnreachableStore())
+    kw = {"store_factory": _store_factory(per_home), "registry": entries}
+
+    for read in (enrolled_profiles(SUBJECT, **kw),
+                 person_enrolments(SUBJECT, OTHER_SUBJECT, **kw),
+                 resolve_console_principal(SUBJECT, "coder", **kw)):
+        with pytest.raises(OSError):
+            asyncio.run(read)
