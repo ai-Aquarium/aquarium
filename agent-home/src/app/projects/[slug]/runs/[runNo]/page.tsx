@@ -25,7 +25,7 @@ export default async function Page({
 
   if (!Number.isInteger(runNoInt) || runNoInt < 1) {
     return (
-      <MobileShell title="Run">
+      <MobileShell followProfileLink title="Run">
         <div
           data-component="RunPageError"
           className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-muted)]"
@@ -59,14 +59,14 @@ export default async function Page({
 
   if (!run) {
     return (
-      <MobileShell title="Run" labels={projectLabel(slug, project.name)}>
+      <MobileShell followProfileLink title="Run" labels={projectLabel(slug, project.name)}>
         <ProjectsLoadError component="RunPageError" details={`Couldn't load run ${runNoInt} right now.`} />
       </MobileShell>
     );
   }
 
   return (
-    <MobileShell title={`Run ${runNoInt}`} labels={projectLabel(slug, project.name)}>
+    <MobileShell followProfileLink title={`Run ${runNoInt}`} labels={projectLabel(slug, project.name)}>
       <RunView slug={slug} run={run} archived={project.archived} />
     </MobileShell>
   );

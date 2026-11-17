@@ -59,7 +59,7 @@ export default async function Page({
   }
 
   return (
-    <MobileShell title="To-dos">
+    <MobileShell followProfileLink title="To-dos">
       {error ? (
         <div
           data-component="TodosPageError"

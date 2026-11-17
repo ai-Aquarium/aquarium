@@ -82,6 +82,7 @@ export async function MobileShell({
   labels,
   hideHeader = false,
   chatChrome = false,
+  followProfileLink = false,
 }: {
   title: ReactNode;
   children: ReactNode;
@@ -110,6 +111,11 @@ export async function MobileShell({
    * title bar, and no floating launchers over the composer.
    */
   chatChrome?: boolean;
+  /**
+   * The page is a Needs you / notification target: a `?profile=<other>` link
+   * switches the session there before the page shows (see `ProfileScope`).
+   */
+  followProfileLink?: boolean;
 }) {
   // The badge count: one cached facets call per 30s.  The session is
   // resolved outside the cache so cookies() isn't called inside it, and
@@ -154,7 +160,7 @@ export async function MobileShell({
   if (bare) {
     return (
       <div data-component="MobileShell" data-variant="bare" className="min-h-dvh bg-[var(--color-bg)]">
-        {showCoral ? <ProfileScope current={sessionProfile}>{children}</ProfileScope> : children}
+        {showCoral ? <ProfileScope current={sessionProfile} followLink={followProfileLink}>{children}</ProfileScope> : children}
         {showCoral ? <CoralHost badgeCounts={badgeCounts} hiddenApps={hiddenApps} /> : null}
         {showCoral ? <LeadChatHost storageEnabled={storageConfigured()} /> : null}
         {showCoral ? <AppMcpBridge /> : null}
@@ -217,7 +223,7 @@ export async function MobileShell({
         </>
       }
     >
-      <ProfileScope current={sessionProfile}>{children}</ProfileScope>
+      <ProfileScope current={sessionProfile} followLink={followProfileLink}>{children}</ProfileScope>
     </ShellFrame>
   );
 }

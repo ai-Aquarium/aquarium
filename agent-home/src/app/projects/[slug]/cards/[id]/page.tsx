@@ -41,14 +41,14 @@ export default async function Page({
 
   if (!card) {
     return (
-      <MobileShell title="Card">
+      <MobileShell followProfileLink title="Card">
         <ProjectsLoadError component="CardPageError" details={"Couldn't load this card right now."} />
       </MobileShell>
     );
   }
 
   return (
-    <MobileShell title={card.title} labels={projectLabel(slug, project?.name)}>
+    <MobileShell followProfileLink title={card.title} labels={projectLabel(slug, project?.name)}>
       <CardDetailView
         slug={slug}
         card={card}

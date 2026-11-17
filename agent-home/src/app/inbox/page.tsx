@@ -104,6 +104,7 @@ export default async function Page({
   const t = await getT("inbox");
   return (
     <MobileShell
+      followProfileLink
       title="Inbox"
       info={<InfoTip label={t("infoLabel")}>{t("info")}</InfoTip>}
     >

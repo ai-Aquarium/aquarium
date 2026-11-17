@@ -55,7 +55,7 @@ export default async function Page({
 
   if (!project) {
     return (
-      <MobileShell title="Project">
+      <MobileShell followProfileLink title="Project">
         <ProjectsLoadError component="ProjectPageError" details={"Couldn't load this project right now."} />
       </MobileShell>
     );
@@ -81,6 +81,7 @@ export default async function Page({
 
   return (
     <MobileShell
+      followProfileLink
       title={
         project.ref ? (
           <span className="inline-flex min-w-0 items-center gap-2">

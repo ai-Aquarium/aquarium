@@ -41,7 +41,7 @@ describe("ProfileScope", () => {
     setUrl("/todos?profile=finance&stage=open");
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}"));
     render(
-      <ProfileScope current="default">
+      <ProfileScope current="default" followLink>
         <Rows initial={["default's to-do"]} />
       </ProfileScope>,
     );
@@ -61,7 +61,7 @@ describe("ProfileScope", () => {
       new Response(JSON.stringify({ detail: "You aren't enrolled in outreach." }), { status: 403 }),
     );
     render(
-      <ProfileScope current="default">
+      <ProfileScope current="default" followLink>
         <Rows initial={["default's item"]} />
       </ProfileScope>,
     );
@@ -75,11 +75,23 @@ describe("ProfileScope", () => {
     setUrl("/todos?profile=finance");
     const fetchMock = vi.spyOn(globalThis, "fetch");
     render(
-      <ProfileScope current="finance">
+      <ProfileScope current="finance" followLink>
         <Rows initial={["finance's to-do"]} />
       </ProfileScope>,
     );
     expect(screen.getByText("finance's to-do")).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves ?profile= alone on pages that read it as their own selector (Users, Skills)", () => {
+    setUrl("/users?profile=finance");
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    render(
+      <ProfileScope current="default">
+        <Rows initial={["finance members"]} />
+      </ProfileScope>,
+    );
+    expect(screen.getByText("finance members")).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
