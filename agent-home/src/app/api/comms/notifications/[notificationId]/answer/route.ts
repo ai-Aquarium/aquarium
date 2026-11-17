@@ -4,6 +4,8 @@
  * "acknowledged"). Forwards to the Python API under the bridged C1 principal
  * (write path, no `?as=`); settlement is idempotent + de-duplicated across
  * surfaces. This route never decides the answer — it forwards the user's.
+ * `{ answer, feedback: true }` marks free text as revision feedback ("Ask for
+ * changes" on a reply to send); the API refuses one that reads as a verdict.
  */
 import { NextResponse } from "next/server";
 
@@ -12,6 +14,7 @@ import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
 
 interface AnswerBody {
   answer?: unknown;
+  feedback?: unknown;
 }
 
 export async function POST(
@@ -38,7 +41,9 @@ export async function POST(
   }
   try {
     const client = await apiClientForRequest();
-    const resp = await client.answerNotification(notificationId, answer);
+    const resp = await client.answerNotification(notificationId, answer, {
+      feedback: body.feedback === true,
+    });
     return NextResponse.json(resp);
   } catch (err) {
     if (err instanceof HermesApiError) {

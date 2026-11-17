@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
+
 import { SuggestedTasksNeedsYou } from "@/components/suggested-tasks/SuggestedTasksNeedsYou";
 import { type UseSuggestedTasks, useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
 import { useNeedsYouText } from "@/lib/landing/needsYouText";
 import { arrivalKeyOf } from "@/lib/suggested-tasks/channels";
 import type { NeedsYouEntry } from "@/types/landing";
 
+import { type DraftRevision, type NeedsYouDetailItem, NeedsYouDetails } from "./NeedsYouDetails";
 import { NeedsYouItem } from "./NeedsYouItem";
 import { SectionHeader } from "./SectionHeader";
 import { SEVERITY_RANK } from "./tone";
@@ -82,6 +85,7 @@ export function NeedsYouPanelView({
   const sorted = sortBySeverity(kept);
   const suggestions = suggested?.items.length ?? 0;
   const shownCount = loaded ? needsYouCount(count, items, suggested, tally) : null;
+  const details = useDetails(sorted, suggested, onActed);
 
   return (
     <section
@@ -96,7 +100,7 @@ export function NeedsYouPanelView({
         count={shownCount}
         attention={sorted.length + suggestions > 0}
       />
-      {suggested ? <SuggestedTasksNeedsYou feed={suggested} canStart={canStart} /> : null}
+      {suggested ? <SuggestedTasksNeedsYou feed={suggested} canStart={canStart} onDetails={details.openTask} /> : null}
       {!loaded ? (
         stale ? (
           <p className="px-3 text-[12px] leading-[16px] text-[var(--color-muted)]">
@@ -137,12 +141,100 @@ export function NeedsYouPanelView({
               now={now}
               isNew={newIds.has(entry.id)}
               onActed={onActed}
+              onOpen={details.openEntry}
             />
           ))}
         </ul>
       )}
+      {details.current ? (
+        <NeedsYouDetails
+          item={details.current}
+          index={details.index}
+          total={details.items.length}
+          onStep={details.step}
+          onClose={details.close}
+          now={now}
+          canStart={canStart}
+          revision={details.revisionOf(details.current)}
+          onActed={details.acted}
+          onRevise={details.revise}
+          onSuggestedRemoved={details.removed}
+        />
+      ) : null}
     </section>
   );
+}
+
+/**
+ * Which item the Details view shows. Suggested tasks come first, as on the
+ * panel. An item that leaves the list stays on screen until the person moves
+ * on; a reply sent back for changes is followed to its rewritten draft.
+ */
+function useDetails(
+  entries: NeedsYouEntry[],
+  suggested: UseSuggestedTasks | undefined,
+  onActed?: (entry: NeedsYouEntry) => void,
+) {
+  const [open, setOpen] = useState<NeedsYouDetailItem | null>(null);
+  const [revisions, setRevisions] = useState<Record<string, DraftRevision>>({});
+  const items: NeedsYouDetailItem[] = [
+    ...(suggested?.items ?? []).map((task) => ({ key: `suggested:${task.todo.id}`, kind: "suggested" as const, task })),
+    ...entries.map((entry) => ({ key: entry.id, kind: "entry" as const, entry })),
+  ];
+  const todoOf = (item: NeedsYouDetailItem | null) =>
+    item?.kind === "entry" ? item.entry.context.todo_id ?? null : null;
+  const revisionOf = (item: NeedsYouDetailItem) => {
+    const id = todoOf(item);
+    return id ? revisions[id] ?? null : null;
+  };
+
+  let current: NeedsYouDetailItem | null = null;
+  if (open) {
+    current = items.find((i) => i.key === open.key) ?? null;
+    const todoId = todoOf(open);
+    if (!current && todoId && revisions[todoId]) {
+      current =
+        items.find((i) => i.kind === "entry" && i.entry.severity === "approval" && todoOf(i) === todoId) ?? null;
+    }
+    current = current ?? open;
+  }
+  const index = current ? items.findIndex((i) => i.key === current.key) : -1;
+
+  const step = (delta: -1 | 1) => {
+    if (items.length === 0) return;
+    const next = index < 0 ? 0 : (index + delta + items.length) % items.length;
+    setOpen(items[next]);
+  };
+  const moveOn = () => {
+    const rest = items.filter((i) => i.key !== current?.key);
+    setOpen(rest.length ? rest[Math.min(Math.max(index, 0), rest.length - 1)] : null);
+  };
+
+  return {
+    items,
+    current,
+    index,
+    step,
+    revisionOf,
+    close: () => setOpen(null),
+    openEntry: (entry: NeedsYouEntry) => setOpen({ key: entry.id, kind: "entry", entry }),
+    openTask: (task: NonNullable<UseSuggestedTasks["items"]>[number]) =>
+      setOpen({ key: `suggested:${task.todo.id}`, kind: "suggested", task }),
+    acted: (entry: NeedsYouEntry) => {
+      onActed?.(entry);
+      moveOn();
+    },
+    revise: (entry: NeedsYouEntry, note: string) => {
+      const todoId = entry.context.todo_id;
+      if (todoId) setRevisions((r) => ({ ...r, [todoId]: { note, answeredKey: entry.id } }));
+      if (current) setOpen(current);
+      onActed?.(entry);
+    },
+    removed: (id: string) => {
+      suggested?.remove(id);
+      moveOn();
+    },
+  };
 }
 
 /** The server-side suggested-task count for the Needs-you badge. */

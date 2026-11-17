@@ -92,5 +92,78 @@
       "schema_check": "from a schema check",
       "edit": "from an edit"
     }
+  },
+  "detailsView": {
+    "open": "Details",
+    "of": "{i} of {n}",
+    "prev": "Previous item",
+    "next": "Next item",
+    "loading": "Loading details…",
+    "sections": {
+      "source": "Where it came from",
+      "why": "Why it’s here",
+      "does": "What each button does",
+      "linked": "Linked",
+      "draft": "Draft reply"
+    },
+    "fields": {
+      "to": "To",
+      "from": "From",
+      "channel": "Channel",
+      "subject": "Subject",
+      "sender": "Sender",
+      "received": "Received",
+      "priority": "Priority",
+      "due": "Due",
+      "raisedBy": "Raised by",
+      "reason": "Reason"
+    },
+    "links": {
+      "inbox": "Open the message in Inbox",
+      "todo": "Open to-do {ref}",
+      "project": "Open project {project}",
+      "run": "Open run {run}",
+      "card": "Open card {card}",
+      "page": "Open full page"
+    },
+    "confirmSend": "Send this {channel} to {to} from {from}?",
+    "confirmSendTo": "Send this {channel} to {to}?",
+    "cantUnsend": "It can’t be unsent.",
+    "yesSend": "Yes, send",
+    "confirmAct": "{action}? This can’t be undone.",
+    "yes": "Yes",
+    "cancel": "Cancel",
+    "feedbackLabel": "What should change?",
+    "feedbackPlaceholder": "e.g. warmer tone, ask how many staff will join",
+    "feedbackHint": "The agent rewrites the draft. Nothing is sent until you press Send.",
+    "noteRequired": "Say what should change.",
+    "rewrite": "Rewrite draft",
+    "rewriting": "The agent is rewriting the draft…",
+    "rewritten": "Rewritten after your note: “{note}”",
+    "failed": "That didn’t go through: {error}",
+    "why": {
+      "blocking": "Work is stopped until you answer.",
+      "approval": "Nothing happens until you approve it.",
+      "review": "Something is ready for you to look at.",
+      "fyi": "For your information; nothing is stopped.",
+      "reply": "It sends a message from your account, so it always asks first.",
+      "suggested": "Triage read this message and thinks you may want to act on it."
+    },
+    "does": {
+      "send": "Asks you to confirm, then sends the reply as shown.",
+      "revise": "You say what should change; the agent rewrites the draft and it comes back here.",
+      "reject": "Drops this draft. Nothing is sent.",
+      "approve": "Approves it so the work can go on.",
+      "deny": "Refuses it. The work stops or takes another path.",
+      "once": "Allows this one command, once.",
+      "grant": "Allows what the webview asked for.",
+      "keep": "Keeps the current owner.",
+      "transfer": "Moves the source to the person who claimed it.",
+      "open": "Opens its full page.",
+      "review": "Opens it for review.",
+      "work": "Starts a task from this message.",
+      "snooze": "Hides it for 2 hours.",
+      "dismiss": "Removes it from Needs you."
+    }
   }
 }

@@ -50,6 +50,18 @@ describe("HermesApiClient Wave C3 comms (BFF forwarding)", () => {
     expect(JSON.parse(String(init?.body))).toEqual({ answer: "approved" });
   });
 
+  it("answerNotification marks a free-text change request as feedback", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(ok({ ok: true, newly_answered: true, notification: {} }));
+
+    const client = new HermesApiClient({ baseUrl: "http://api.test" });
+    await client.answerNotification("n1", "Warmer tone", { feedback: true });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toEqual({ answer: "Warmer tone", feedback: true });
+  });
+
   it("undoChange POSTs to the encoded undo path", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")

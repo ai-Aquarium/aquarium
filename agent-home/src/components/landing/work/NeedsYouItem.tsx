@@ -41,7 +41,7 @@ export function primaryAction(entry: NeedsYouEntry): PrimaryAction {
   return { kind: "link", label: withEllipsis(action.label), href: entry.href };
 }
 
-const BUTTON =
+export const BUTTON =
   "inline-flex min-h-[34px] items-center justify-center gap-2 rounded-[var(--radius-lg)] px-3 py-2 text-[13px] font-medium leading-[18px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)] disabled:cursor-default disabled:opacity-80";
 
 /**
@@ -53,10 +53,13 @@ export function NeedsYouItem({
   now,
   isNew = false,
   onActed,
+  onOpen,
 }: {
   entry: NeedsYouEntry;
   now: number;
   isNew?: boolean;
+  /** Opens the item's Details view (the pill, the title and a "…" action). */
+  onOpen?: (entry: NeedsYouEntry) => void;
   /** Called after a one-tap action succeeds, e.g. to re-read the list. */
   onActed?: (entry: NeedsYouEntry) => void;
 }) {
@@ -65,6 +68,9 @@ export function NeedsYouItem({
     entry.severity === "fyi" ? BellIcon : entry.severity === "review" ? CheckIcon : AlertIcon;
   const text = useNeedsYouText();
   const primary = primaryAction(entry);
+  // A "…" action posts somewhere that needs a closer look first: open Details.
+  const primaryOpens =
+    !!onOpen && primary.kind === "link" && (entry.actions ?? []).some((a) => !a.href && isBffPath(a.endpoint));
   const severityLabel = text.severity(entry.severity);
   const source = [text.detail(entry)?.trim() || null, text.age(entry.created_at, now)]
     .filter(Boolean)
@@ -85,18 +91,30 @@ export function NeedsYouItem({
       </span>
       <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
         <div className="flex w-full min-w-0 items-start gap-2">
-          <Link
-            href={entry.href}
-            data-testid="needs-you-title"
-            className="min-w-0 flex-1 text-[13px] font-medium leading-[18px] text-[var(--color-fg)] [overflow-wrap:anywhere] hover:underline"
-          >
-            {text.title(entry)}
-          </Link>
+          {onOpen ? (
+            <button
+              type="button"
+              data-testid="needs-you-title"
+              onClick={() => onOpen(entry)}
+              className="min-w-0 flex-1 text-left text-[13px] font-medium leading-[18px] text-[var(--color-fg)] [overflow-wrap:anywhere] hover:underline"
+            >
+              {text.title(entry)}
+            </button>
+          ) : (
+            <Link
+              href={entry.href}
+              data-testid="needs-you-title"
+              className="min-w-0 flex-1 text-[13px] font-medium leading-[18px] text-[var(--color-fg)] [overflow-wrap:anywhere] hover:underline"
+            >
+              {text.title(entry)}
+            </Link>
+          )}
           {isNew ? (
             <span className="shrink-0 rounded-full bg-[var(--color-accent)] px-1.5 text-[11px] font-semibold leading-[16px] text-[var(--color-accent-fg)]">
               {text.t("new")}
             </span>
           ) : null}
+          {onOpen ? <DetailsPill label={text.t("detailsView.open")} onClick={() => onOpen(entry)} /> : null}
         </div>
         <p
           data-testid="needs-you-source"
@@ -112,7 +130,16 @@ export function NeedsYouItem({
           recentRoutingHref={sourceRoutingHref}
         />
         <div className="pt-1">
-          {primary.kind === "one-tap" ? (
+          {primaryOpens ? (
+            <button
+              type="button"
+              data-action="needs-you-open-details"
+              onClick={() => onOpen?.(entry)}
+              className={`${BUTTON} ${tone.button}`}
+            >
+              {text.action(primary.label)}
+            </button>
+          ) : primary.kind === "one-tap" ? (
             <OneTapButton
               entry={entry}
               action={primary.action}
@@ -134,7 +161,21 @@ export function NeedsYouItem({
   );
 }
 
-function OneTapButton({
+/** The small "Details" pill at the top right of a Needs-you card. */
+export function DetailsPill({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      data-action="needs-you-details"
+      onClick={onClick}
+      className="inline-flex min-h-[26px] shrink-0 items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[11px] font-medium leading-[16px] text-[var(--color-fg)] hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+    >
+      {label}
+    </button>
+  );
+}
+
+export function OneTapButton({
   entry,
   action,
   className,

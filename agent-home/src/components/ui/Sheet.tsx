@@ -17,6 +17,7 @@ export function Sheet({
   onClose,
   children,
   footer,
+  actions,
   side = false,
   wide = false,
   full = false,
@@ -27,6 +28,8 @@ export function Sheet({
   onClose(): void;
   children: ReactNode;
   footer?: ReactNode;
+  /** Header controls shown before the close button (e.g. prev / next). */
+  actions?: ReactNode;
   side?: boolean;
   wide?: boolean;
   /** Near full-screen on desktop (e.g. a maximized panel). */
@@ -67,6 +70,9 @@ export function Sheet({
       // A maximized panel inside this sheet is the top layer: it takes Esc
       // (minimize first) and keeps Tab inside itself.
       if (panelRef.current?.querySelector('[data-maximized="true"]')) return;
+      // A sheet opened from inside another one is the top layer: only it reacts.
+      const panels = document.querySelectorAll("[data-sheet-panel]");
+      if (panels.length > 1 && panels[panels.length - 1] !== panelRef.current) return;
       if (e.key === "Escape") {
         onCloseRef.current();
         return;
@@ -125,6 +131,7 @@ export function Sheet({
       >
         <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-3">
           <h2 className="min-w-0 flex-1 truncate text-base font-semibold">{title}</h2>
+          {actions}
           <button
             type="button"
             aria-label={t("close")}

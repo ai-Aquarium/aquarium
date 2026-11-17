@@ -69,6 +69,11 @@ export interface NeedsYouEntry {
     channel?: string | null;
     address?: string | null;
     claimant_user_id?: string | null;
+    /** A reply to send (`todo-action:`): where the approved reply goes. */
+    reply_channel?: string | null;
+    reply_to?: string | null;
+    reply_account?: string | null;
+    reply_subject?: string | null;
     existing_owner_user_id?: string | null;
   };
   created_at: number;

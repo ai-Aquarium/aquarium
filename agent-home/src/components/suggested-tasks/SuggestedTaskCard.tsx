@@ -1,5 +1,6 @@
 "use client";
 
+import { DetailsPill } from "@/components/landing/work/NeedsYouItem";
 import { RefBadge } from "@/components/refs/RefBadge";
 import { ActionButton } from "@/components/ui/ActionButton";
 import { senderOf } from "@/lib/suggested-tasks/channels";
@@ -24,6 +25,7 @@ export function SuggestedTaskCard({
   onWork,
   onSnooze,
   onDismiss,
+  onDetails,
 }: {
   task: SuggestedTask;
   compact?: boolean;
@@ -32,6 +34,8 @@ export function SuggestedTaskCard({
   onWork: (task: SuggestedTask) => void;
   onSnooze: (task: SuggestedTask) => Promise<unknown>;
   onDismiss: (task: SuggestedTask) => Promise<unknown>;
+  /** Shows a Details pill (top right) and makes the title open it. */
+  onDetails?: (task: SuggestedTask) => void;
 }) {
   const { todo, source, channel } = task;
   const urgent = todo.priority === "critical" || todo.priority === "high";
@@ -61,8 +65,24 @@ export function SuggestedTaskCard({
           </span>
         ) : null}
         <RefBadge value={todo.ref} />
+        {onDetails ? (
+          <span className="ml-auto">
+            <DetailsPill label="Details" onClick={() => onDetails(task)} />
+          </span>
+        ) : null}
       </div>
-      <p className="text-sm font-semibold leading-5 [overflow-wrap:anywhere]">{todo.title}</p>
+      {onDetails ? (
+        <button
+          type="button"
+          data-testid="suggested-title"
+          onClick={() => onDetails(task)}
+          className="text-left text-sm font-semibold leading-5 [overflow-wrap:anywhere] hover:underline"
+        >
+          {todo.title}
+        </button>
+      ) : (
+        <p className="text-sm font-semibold leading-5 [overflow-wrap:anywhere]">{todo.title}</p>
+      )}
       {why || (!compact && (who || source?.subject)) ? (
         <p className="line-clamp-2 text-xs text-[var(--color-muted)] [overflow-wrap:anywhere]">
           {why}

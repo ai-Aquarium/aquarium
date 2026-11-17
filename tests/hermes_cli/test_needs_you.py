@@ -29,11 +29,11 @@ from tests.hermes_cli.test_projects_api import (  # noqa: F401 — fixture
 
 
 def _notif(id, *, target="leo", dedupe_key=None, kind="approval", reversible=False,
-           title="t", body="b", created=1000.0):
+           title="t", body="b", created=1000.0, command=""):
     return SimpleNamespace(
         id=id, kind=kind, owner_user_id=target, visibility="shared", title=title,
         body=body, reversible=reversible, status="pending", dedupe_key=dedupe_key,
-        created_at=datetime.fromtimestamp(created, tz=timezone.utc),
+        created_at=datetime.fromtimestamp(created, tz=timezone.utc), command=command,
     )
 
 
@@ -64,12 +64,13 @@ def test_notifications_map_to_sources_with_deep_links():
     }
     assert by_id["notif:n4"]["source"] == "todo"
     assert by_id["notif:n4"]["severity"] == "approval"
+    assert by_id["notif:n4"]["context"] == {"todo_id": "td1"}
     assert by_id["notif:n5"]["source"] == "notification"
     assert by_id["notif:n5"]["severity"] == "fyi"
     assert all(r["notification_id"] == r["id"][len("notif:"):] for r in rows)
-    # Irreversible → only an "open" action.
+    # Irreversible → only an "open" action, except a reply to send.
     assert all(r["reversible"] is False for r in rows)
-    assert all([a["id"] for a in r["actions"]] == ["open"] for r in rows)
+    assert all([a["id"] for a in r["actions"]] == ["open"] for r in rows if r["id"] != "notif:n4")
     assert by_id["notif:n1"]["created_at"] == 1000.0
 
 
@@ -79,6 +80,40 @@ def test_reversible_notification_offers_one_tap_answers():
     approve = next(a for a in row["actions"] if a["id"] == "approve")
     assert approve["endpoint"] == "/api/comms/notifications/n1/answer"
     assert approve["body"] == {"answer": "approved"}
+
+
+def test_a_reply_to_send_carries_its_route_and_answers_but_is_never_one_tap():
+    command = ("hermes todos send td1 --channel email --to 'mrs.chan@slc.example' "
+               "--account leo@lauconsulting.hk --subject 'Re: MOU review'")
+    [row] = ny.notification_entries(
+        [_notif("n 1", dedupe_key="todo-action:td1", command=command, body="Dear Mrs Chan")],
+        "leo",
+    )
+    assert row["reversible"] is False
+    assert row["detail"] == "Dear Mrs Chan"
+    assert row["context"] == {
+        "todo_id": "td1",
+        "reply_channel": "email",
+        "reply_to": "mrs.chan@slc.example",
+        "reply_account": "leo@lauconsulting.hk",
+        "reply_subject": "Re: MOU review",
+    }
+    actions = {a["id"]: a for a in row["actions"]}
+    assert list(actions) == ["send", "revise", "reject", "open"]
+    endpoint = "/api/comms/notifications/n%201/answer"
+    assert actions["send"]["endpoint"] == endpoint
+    assert actions["send"]["body"] == {"answer": "approved"}
+    assert actions["reject"]["body"] == {"answer": "denied"}
+    # The revision note is the person's own words: no canned body.
+    assert actions["revise"]["endpoint"] == endpoint and "body" not in actions["revise"]
+    assert actions["open"]["href"] == "/todos"
+
+
+def test_a_reply_with_an_unreadable_command_still_lists_its_todo():
+    [row] = ny.notification_entries(
+        [_notif("n1", dedupe_key="todo-action:td1", command="hermes todos send 'unclosed")], "leo",
+    )
+    assert row["context"] == {"todo_id": "td1"}
 
 
 def test_parse_project_key_rejects_foreign_keys():
