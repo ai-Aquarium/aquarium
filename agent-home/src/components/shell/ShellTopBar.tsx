@@ -4,6 +4,7 @@ import { TopBarView } from "@/components/landing/topbar";
 import { NeedsYouPanel, type NeedsYouFeed } from "@/components/landing/work";
 import { needsYouCount } from "@/components/landing/work/NeedsYouPanel";
 import { useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
+import { alertTodoIds, useSuggestedTally } from "@/components/suggested-tasks/useSuggestedTally";
 import { Sheet } from "@/components/ui/Sheet";
 import { useActivityRunning } from "@/components/ui/useActivityRunning";
 import { useStatusSummary } from "@/components/ui/useStatusSummary";
@@ -36,6 +37,7 @@ export function ShellTopBar({
   const activity = useActivityRunning();
   const needsYou = useNeedsYou();
   const suggested = useSuggestedTasks();
+  const tally = useSuggestedTally(alertTodoIds(needsYou.items));
   const [open, setOpen] = useState(false);
   const tn = useT("needsYou");
 
@@ -58,7 +60,7 @@ export function ShellTopBar({
         status={status}
         activity={activity}
         needsYou={{
-          count: needsYou.loading ? null : needsYouCount(needsYou.count, needsYou.items, suggested),
+          count: needsYou.loading ? null : needsYouCount(needsYou.count, needsYou.items, suggested, tally),
           blocking: needsYou.bySeverity.blocking,
           items: needsYou.items,
           stale: needsYou.stale,
@@ -74,7 +76,7 @@ export function ShellTopBar({
       />
       {open ? (
         <Sheet title={tn("heading")} component="NeedsYouSheet" onClose={() => setOpen(false)}>
-          <NeedsYouPanel feed={feed} canStart={accountRole !== "viewer"} suggested={suggested} />
+          <NeedsYouPanel feed={feed} canStart={accountRole !== "viewer"} suggested={suggested} tally={tally} />
         </Sheet>
       ) : null}
     </>

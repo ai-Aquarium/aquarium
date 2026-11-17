@@ -136,7 +136,23 @@ describe("NeedsYouPanelView with suggested tasks", () => {
     const items = [ask("same-message", "fyi", { arrival_key: KEY }), ask("card-wait", "approval")];
     expect(needsYouCount(2, items, feed([card, quiet]))).toBe(3);
     expect(needsYouCount(2, items, undefined)).toBe(2);
-    // Past the loaded page: the server-side total counts them all.
-    expect(needsYouCount(2, items, feed([card, quiet], { total: 120 }))).toBe(121);
+  });
+
+  it("counts past the loaded page without counting an unloaded task and its alert twice", () => {
+    // 50 quiet suggestions loaded; one older open suggestion (t-old) is on page 2
+    // and has its own alert. 51 tasks need you, however many pages are loaded.
+    const page1 = Array.from({ length: 50 }, (_, i) =>
+      ({ ...card, todo: { id: `q${i}`, stage: "staged" }, source: null }) as unknown as SuggestedTask,
+    );
+    const older = ask("old-alert", "fyi", { todo_id: "t-old", arrival_key: KEY, profile: "default" });
+    const tally = { count: 51, suggestedTodoIds: new Set(["t-old"]) };
+    expect(needsYouCount(1, [older], feed(page1), tally)).toBe(51);
+    expect(needsYouCount(1, [older], feed([...page1, card]), tally)).toBe(51);
+    // Another profile's alert for the same to-do id is not this task.
+    const elsewhere = ask("other-profile", "fyi", { todo_id: "t-old", profiles: ["default", "cfo"] });
+    expect(needsYouCount(1, [elsewhere], feed(page1), tally)).toBe(52);
+    // Approvals always count on their own.
+    const approval = ask("reply", "approval", { todo_id: "t-old" });
+    expect(needsYouCount(1, [approval], feed(page1), tally)).toBe(52);
   });
 });

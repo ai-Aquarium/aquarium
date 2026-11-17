@@ -1368,6 +1368,9 @@ async def test_todo_counts_are_batched_and_scoped(postgres_dsn: str) -> None:
     # Badge total: staged/open and not snoozed, scoped to the caller.
     assert await todos.count_suggested(leo) == 2
     assert await todos.count_suggested(ada) == 0
+    first = (await todos.list(leo, source_ref=one.id))[0][0]
+    assert await todos.suggested_among(leo, [first.id, working.id, "nope"]) == [first.id]
+    assert await todos.suggested_among(ada, [first.id]) == []
 
 
 @pytest.mark.asyncio

@@ -533,6 +533,7 @@ def test_rows_for_one_arrival_merge_into_one_entry_listing_profiles():
                dedupe_key=ny.with_arrival("todo:t9", key)),
     ], "john"), "cmo", link=True)
     other = ny.notification_entries([_notif("n4", target="john", dedupe_key="todo:t5")], "john")
+    assert other[0]["context"]["todo_id"] == "t5"
     assert cmo[0]["href"] == "/todos?profile=cmo"
 
     items = ny.finalize(cfo + cmo + other)
