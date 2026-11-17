@@ -98,29 +98,20 @@ export interface ConnectedAccount {
   credential_ref: SourceCredentialRef;
 }
 
-async function safe<T>(fn: () => Promise<T>): Promise<T | null> {
-  try {
-    return await fn();
-  } catch {
-    return null;
-  }
-}
-
-/** Accounts from the existing mailbox / WhatsApp bridge / Telegram bot endpoints. */
-export async function connectedAccounts(): Promise<Record<SourceChannel, ConnectedAccount[]>> {
-  const [mail, wa, tg] = await Promise.all([
-    safe(() => getJson<{ mailboxes: EmailMailbox[] }>("/api/email/mailboxes")),
-    safe(() => getJson<WaBridgesResponse>("/api/wa-bridges")),
-    safe(() => getJson<TelegramBotView>("/api/telegram-bot")),
-  ]);
-  const email: ConnectedAccount[] = (mail?.mailboxes ?? []).map((m) => ({
+const emailAccounts = async (): Promise<ConnectedAccount[]> => {
+  const mail = await getJson<{ mailboxes: EmailMailbox[] }>("/api/email/mailboxes");
+  return (mail?.mailboxes ?? []).map((m) => ({
     channel: "email",
     address: m.address,
     display: null,
     detail: m.state === "working" ? "working" : m.state === "needs_attention" ? "attention" : "untested",
     credential_ref: { kind: "email-imap", name: m.address },
   }));
-  const whatsapp: ConnectedAccount[] = (wa?.bridges ?? [])
+};
+
+const whatsappAccounts = async (): Promise<ConnectedAccount[]> => {
+  const wa = await getJson<WaBridgesResponse>("/api/wa-bridges");
+  return (wa?.bridges ?? [])
     .filter((b) => b.paired && b.number)
     .map((b) => ({
       channel: "whatsapp",
@@ -129,20 +120,60 @@ export async function connectedAccounts(): Promise<Record<SourceChannel, Connect
       detail: b.status === "connected" ? "working" : "attention",
       credential_ref: { kind: "wa-bridge", bridge: b.name },
     }));
-  const telegram: ConnectedAccount[] =
-    tg?.configured && tg.bot_username
-      ? [
-          {
-            channel: "telegram",
-            address: `@${tg.bot_username.replace(/^@/, "")}`,
-            display: tg.bot_name ?? null,
-            detail: tg.last_test_ok === false ? "attention" : tg.last_test_ok ? "working" : "untested",
-            credential_ref: { kind: "telegram-bot" },
-          },
-        ]
-      : [];
+};
+
+const telegramAccounts = async (): Promise<ConnectedAccount[]> => {
+  const tg = await getJson<TelegramBotView>("/api/telegram-bot");
+  return tg?.configured && tg.bot_username
+    ? [
+        {
+          channel: "telegram",
+          address: `@${tg.bot_username.replace(/^@/, "")}`,
+          display: tg.bot_name ?? null,
+          detail: tg.last_test_ok === false ? "attention" : tg.last_test_ok ? "working" : "untested",
+          credential_ref: { kind: "telegram-bot" },
+        },
+      ]
+    : [];
+};
+
+const ACCOUNT_LOADERS: Record<SourceChannel, () => Promise<ConnectedAccount[]>> = {
+  email: emailAccounts,
+  whatsapp: whatsappAccounts,
+  telegram: telegramAccounts,
+};
+
+/**
+ * One channel's connected accounts, or why they couldn't be read. A failed
+ * endpoint (e.g. a 503) is `failed`, never an empty list: "no accounts yet"
+ * and "couldn't check" need different next steps.
+ */
+export type ChannelAccounts =
+  | { state: "ok"; accounts: ConnectedAccount[] }
+  | { state: "failed"; status: number | null; detail: string };
+
+/** Read one channel's accounts from its existing endpoint (mailboxes / WhatsApp bridges / Telegram bot). */
+export async function channelAccounts(channel: SourceChannel): Promise<ChannelAccounts> {
+  try {
+    return { state: "ok", accounts: await ACCOUNT_LOADERS[channel]() };
+  } catch (err) {
+    return {
+      state: "failed",
+      status: err instanceof AdminFetchError ? err.status : null,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/** Every channel's accounts, each loaded (and failing) on its own. */
+export async function connectedAccounts(): Promise<Record<SourceChannel, ChannelAccounts>> {
+  const [email, whatsapp, telegram] = await Promise.all(CHANNELS.map((c) => channelAccounts(c)));
   return { email, whatsapp, telegram };
 }
+
+/** The accounts of a loaded channel (none while it failed). */
+export const accountsOf = (load: ChannelAccounts | undefined): ConnectedAccount[] =>
+  load?.state === "ok" ? load.accounts : [];
 
 export type DecisionOutcome = "routed" | "stored" | "fallback";
 

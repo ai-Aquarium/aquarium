@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { NoProfilesCard } from "@/components/sources/NoProfilesCard";
 import { BTN_GHOST, BTN_PRIMARY, CARD, ChannelBadge, ProfileChip } from "@/components/sources/ui";
 import { ActionButton } from "@/components/ui/ActionButton";
 import { InlineAlert } from "@/components/ui/InlineAlert";
@@ -11,6 +12,8 @@ import { Sheet } from "@/components/ui/Sheet";
 import { useT } from "@/i18n/client";
 import { errorText } from "@/lib/admin-fetch";
 import {
+  accountsOf,
+  channelAccounts,
   CHANNELS,
   claimOwnerName,
   CONNECT_HREF,
@@ -23,6 +26,7 @@ import {
   saveCare,
   telegramTriageOn,
   triageLayers,
+  type ChannelAccounts,
   type ConnectedAccount,
   type SourcesList,
 } from "@/lib/sources/api";
@@ -58,9 +62,13 @@ export function RegisterSourceWizard({
 }) {
   const t = useT("sources");
   const telegramOn = telegramTriageOn(list);
-  const [step, setStep] = useState(0);
+  // Nobody to route to (no active enrolment anywhere): the Profiles step's
+  // explanation is the whole story, so open there instead of on a channel
+  // picker whose account reads would be refused anyway.
+  const noProfiles = list.profiles.length === 0;
+  const [step, setStep] = useState(noProfiles ? 1 : 0);
   const [channel, setChannel] = useState<SourceChannel>("email");
-  const [accounts, setAccounts] = useState<Record<SourceChannel, ConnectedAccount[]> | null>(null);
+  const [accounts, setAccounts] = useState<Record<SourceChannel, ChannelAccounts> | null>(null);
   const [account, setAccount] = useState<ConnectedAccount | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [choice, setChoice] = useState<Record<string, Choice>>({});
@@ -75,6 +83,7 @@ export function RegisterSourceWizard({
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (noProfiles) return;
     let live = true;
     void connectedAccounts().then((a) => {
       if (live) setAccounts(a);
@@ -82,7 +91,13 @@ export function RegisterSourceWizard({
     return () => {
       live = false;
     };
-  }, []);
+  }, [noProfiles]);
+
+  /** Re-read one failed channel; its button stays busy (one request) until the answer lands. */
+  const retryAccounts = async (c: SourceChannel) => {
+    const load = await channelAccounts(c);
+    setAccounts((cur) => (cur ? { ...cur, [c]: load } : cur));
+  };
 
   const triage = channelHasTriage(channel, telegramOn);
   const isTaken = (a: ConnectedAccount) =>
@@ -189,7 +204,7 @@ export function RegisterSourceWizard({
   const back = () => {
     setConflict(null);
     setError(null);
-    if (step === 0) onClose();
+    if (step === 0 || (noProfiles && step === 1)) onClose();
     else setStep(step - 1);
   };
 
@@ -269,7 +284,32 @@ export function RegisterSourceWizard({
             <p className="text-sm text-[var(--color-muted)]" role="status">{t("wizard.loadingAccounts")}</p>
           ) : (
             <div role="radiogroup" aria-label={t("wizard.accounts")} className="space-y-2">
-              {accounts[channel].map((a) => {
+              {accounts[channel].state === "failed" ? (
+                <div data-testid="accounts-failed" data-channel={channel}>
+                  <InlineAlert
+                    tone="danger"
+                    action={
+                      <ActionButton
+                        key={channel}
+                        data-action="retry-accounts"
+                        className={BTN_GHOST}
+                        busyLabel={t("wizard.accountsRetrying")}
+                        onAction={() => retryAccounts(channel)}
+                      >
+                        {t("wizard.accountsRetry")}
+                      </ActionButton>
+                    }
+                  >
+                    <span className="block font-semibold">{t(`wizard.accountsFailed.${channel}`)}</span>
+                    <span className="block text-xs">{t("wizard.accountsFailedHint")}</span>
+                  </InlineAlert>
+                </div>
+              ) : accountsOf(accounts[channel]).length === 0 ? (
+                <p className="text-sm text-[var(--color-muted)]" data-testid="accounts-empty">
+                  {t(`wizard.noAccounts.${channel}`)}
+                </p>
+              ) : null}
+              {accountsOf(accounts[channel]).map((a) => {
                 const taken = isTaken(a);
                 const on = account?.address === a.address && account.channel === a.channel;
                 return (
@@ -316,7 +356,7 @@ export function RegisterSourceWizard({
           <p className="text-xs text-[var(--color-muted)]">{t("wizard.onlyYours")}</p>
           {channel === "telegram" && !telegramOn ? (
             <InlineAlert tone="warn">
-              {t("wizard.telegramOff", { address: account?.address ?? accounts?.telegram[0]?.address ?? "@bot" })}
+              {t("wizard.telegramOff", { address: account?.address ?? accountsOf(accounts?.telegram)[0]?.address ?? "@bot" })}
             </InlineAlert>
           ) : null}
         </section>
@@ -325,11 +365,8 @@ export function RegisterSourceWizard({
       {step === 1 ? (
         <section aria-labelledby="wiz-profiles" className="space-y-3">
           <StepHeading id="wiz-profiles" title={t("wizard.profilesTitle")} hint={t("wizard.profilesHint")} />
-          {list.profiles.length === 0 ? (
-            <div className={`${CARD} px-4 py-8 text-center`} data-testid="no-profiles">
-              <p className="font-semibold">{t("wizard.noProfilesTitle")}</p>
-              <p className="mx-auto mt-1 max-w-md text-sm text-[var(--color-muted)]">{t("wizard.noProfilesBody")}</p>
-            </div>
+          {noProfiles ? (
+            <NoProfilesCard />
           ) : (
             <div className="space-y-2">
               {list.profiles.map((p) => {

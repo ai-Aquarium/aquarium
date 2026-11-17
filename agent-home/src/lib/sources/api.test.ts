@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AdminFetchError } from "@/lib/admin-fetch";
 import {
+  accountsOf,
+  channelAccounts,
   connectedAccounts,
   decisionOutcome,
   registerBody,
@@ -69,7 +71,7 @@ describe("sources api helpers", () => {
     expect(calls[2][0]).toBe("/api/triage/layers/care?profile=default");
   });
 
-  it("lists connected accounts from the existing setup endpoints and survives one failing", async () => {
+  it("lists connected accounts per channel and reports a failing endpoint as failed, not empty", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url === "/api/email/mailboxes")
@@ -86,11 +88,24 @@ describe("sources api helpers", () => {
       return new Response(JSON.stringify({ detail: "down" }), { status: 502 });
     });
     const accounts = await connectedAccounts();
-    expect(accounts.email).toEqual([
+    expect(accountsOf(accounts.email)).toEqual([
       expect.objectContaining({ address: "john@acme.com", detail: "working", credential_ref: { kind: "email-imap", name: "john@acme.com" } }),
     ]);
-    expect(accounts.whatsapp.map((a) => a.address)).toEqual(["+852 6178 2290"]);
-    expect(accounts.telegram).toEqual([]);
+    expect(accountsOf(accounts.whatsapp).map((a) => a.address)).toEqual(["+852 6178 2290"]);
+    expect(accounts.telegram).toEqual({ state: "failed", status: 502, detail: "down" });
+    expect(accountsOf(accounts.telegram)).toEqual([]);
+  });
+
+  it("keeps a genuine empty answer distinct from a failure, per channel", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/email/mailboxes") return new Response(JSON.stringify({ mailboxes: [] }));
+      if (url === "/api/wa-bridges") return new Response(JSON.stringify({ detail: "unavailable" }), { status: 503 });
+      return new Response(JSON.stringify({ configured: false }));
+    });
+    expect(await channelAccounts("email")).toEqual({ state: "ok", accounts: [] });
+    expect(await channelAccounts("whatsapp")).toMatchObject({ state: "failed", status: 503 });
+    expect(await channelAccounts("telegram")).toEqual({ state: "ok", accounts: [] });
   });
 
   it("lets Hermes derive WhatsApp / Telegram addresses from the credential ref", () => {
