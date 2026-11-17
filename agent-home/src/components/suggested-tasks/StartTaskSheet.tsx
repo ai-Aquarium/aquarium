@@ -12,7 +12,7 @@ import type { ProjectAutonomy, QuickTaskResponse, SuggestedTask } from "@/types"
 import { ChannelTag } from "./ChannelTag";
 import { announceSuggestedTasksChanged } from "./useSuggestedTasks";
 
-/** A suggested task checks in at every step: nothing runs without the person. */
+/** A suggested task checks in at every step unless the person picks another level. */
 export const SUGGESTED_TASK_AUTONOMY: ProjectAutonomy = "manual";
 
 /**
@@ -32,6 +32,7 @@ export function StartTaskSheet({
   const router = useRouter();
   const prefill = startRequestText(task);
   const [text, setText] = useState(prefill);
+  const [autonomy, setAutonomy] = useState<ProjectAutonomy>(SUGGESTED_TASK_AUTONOMY);
   const start = useProjectAction<QuickTaskResponse>();
   const request = text.trim();
   const edited = request !== prefill.trim();
@@ -45,7 +46,7 @@ export function StartTaskSheet({
         // Only the person's own wording: the server writes the brief from
         // the to-do and appends the source message either way.
         ...(edited ? { request } : {}),
-        autonomy: SUGGESTED_TASK_AUTONOMY,
+        autonomy,
       },
       skipRefresh: true,
       onSuccess: (project) => {
@@ -117,29 +118,37 @@ export function StartTaskSheet({
         ) : null}
         <fieldset className="flex flex-col gap-1 text-sm">
           <legend className="mb-1 font-medium">Check in</legend>
-          <div className="flex flex-wrap gap-1.5">
+          <div role="radiogroup" aria-label="Check in" className="flex flex-wrap gap-1.5">
             {[...CHECK_IN_CHOICES]
               .sort((a) => (a.autonomy === SUGGESTED_TASK_AUTONOMY ? -1 : 0))
               .map((choice) => {
-                const on = choice.autonomy === SUGGESTED_TASK_AUTONOMY;
+                const on = choice.autonomy === autonomy;
                 return (
-                  <span
+                  <button
                     key={choice.autonomy}
-                    aria-current={on ? "true" : undefined}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
                     data-autonomy={choice.autonomy}
-                    className={`rounded-full border px-3 py-1 text-xs ${
+                    onClick={() => setAutonomy(choice.autonomy)}
+                    className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs ${
                       on
                         ? "border-[var(--color-accent)] bg-[var(--color-accent)]/15 font-medium text-[var(--color-fg)]"
-                        : "border-[var(--color-border)] text-[var(--color-muted)] opacity-60"
+                        : "border-[var(--color-border)] text-[var(--color-muted)]"
                     }`}
                   >
-                    {on ? `${choice.label} (Manual)` : choice.label}
-                  </span>
+                    {choice.autonomy === SUGGESTED_TASK_AUTONOMY ? `${choice.label} (Manual)` : choice.label}
+                  </button>
                 );
               })}
           </div>
           <span className="text-xs text-[var(--color-muted)]">
-            The agent asks you before every step. Nothing is sent without your approval.
+            {autonomy === SUGGESTED_TASK_AUTONOMY
+              ? "The agent asks you before every step."
+              : autonomy === "supervised"
+                ? "The agent asks you before risky steps."
+                : "The agent checks in at the end."}{" "}
+            A reply is never sent without your approval.
           </span>
         </fieldset>
         {start.error ? (

@@ -32,6 +32,8 @@ import { LandingLayout } from "./LandingLayout";
 import { TopBarView } from "./topbar";
 import { useLandingPanels } from "./useLandingPanels";
 import { LandingWorkPanel, type NeedsYouFeed } from "./work";
+import { needsYouCount } from "./work/NeedsYouPanel";
+import { useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
 
 /** What the row or hit that opened a chat already knew about it. */
 interface OpenedChat {
@@ -72,6 +74,8 @@ export function LandingClient({
   const status = useStatusSummary();
   const activity = useActivityRunning();
   const needsYou = useNeedsYou();
+  const suggested = useSuggestedTasks();
+  const needsYouTotal = needsYouCount(needsYou.count, needsYou.items, suggested);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [needsYouOpen, setNeedsYouOpen] = useState(false);
   const panels = useLandingPanels();
@@ -226,7 +230,7 @@ export function LandingClient({
             status={status}
             activity={activity}
             needsYou={{
-              count: needsYou.loading ? null : needsYou.count,
+              count: needsYou.loading ? null : needsYouTotal,
               blocking: needsYou.bySeverity.blocking,
               items: needsYou.items,
               stale: needsYou.stale,
@@ -264,13 +268,13 @@ export function LandingClient({
             <LandingComposer
               profiles={profiles}
               currentProfile={currentProfile}
-              needsYouCount={needsYou.count}
+              needsYouCount={needsYouTotal}
               name={accountName}
               onOpenChat={openSession}
             />
           )
         }
-        aside={<LandingWorkPanel needsYou={feed} activity={activity} canStart={accountRole !== "viewer"} />}
+        aside={<LandingWorkPanel needsYou={feed} activity={activity} canStart={accountRole !== "viewer"} suggested={suggested} />}
         chats={{
           collapsed: panels.chatsCollapsed,
           onCollapsedChange: panels.setChatsCollapsed,
@@ -313,7 +317,7 @@ export function LandingClient({
       />
       {needsYouOpen ? (
         <Sheet title={tn("heading")} component="NeedsYouSheet" onClose={() => setNeedsYouOpen(false)}>
-          <LandingWorkPanel needsYou={feed} activity={activity} canStart={accountRole !== "viewer"} />
+          <LandingWorkPanel needsYou={feed} activity={activity} canStart={accountRole !== "viewer"} suggested={suggested} />
         </Sheet>
       ) : null}
       <ChatsDrawer

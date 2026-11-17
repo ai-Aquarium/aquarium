@@ -66,12 +66,12 @@ export function senderOf(source: SuggestedTaskSource | null): string {
   return (source.sender_name || source.sender_id || "").trim();
 }
 
-/** Snooze = "come back tomorrow morning": 09:00 local on the next day. */
-export function tomorrowMorning(now: Date = new Date()): Date {
-  const next = new Date(now);
-  next.setDate(next.getDate() + 1);
-  next.setHours(9, 0, 0, 0);
-  return next;
+/** How long Snooze hides a suggested task. */
+export const SNOOZE_HOURS = 2;
+
+/** Snooze = "not now": the task comes back after {@link SNOOZE_HOURS}. */
+export function snoozeUntil(now: Date = new Date()): Date {
+  return new Date(now.getTime() + SNOOZE_HOURS * 3_600_000);
 }
 
 /**

@@ -103,6 +103,8 @@ TODO_STAGES: tuple[TodoStage, ...] = (
 #: ``review`` is live: a draft awaiting verdict must not be re-created by a
 #: replayed batch, and it still counts as something the user owes attention.
 LIVE_STAGES: tuple[TodoStage, ...] = ("staged", "open", "working", "review")
+#: Live but not started: agent-home's Suggested tasks.
+SUGGESTED_STAGES: tuple[TodoStage, ...] = ("staged", "open")
 
 #: FG-06 ``status`` for each stage. Written in the same statement as ``stage``.
 STAGE_STATUS: dict[str, str] = {
@@ -1305,7 +1307,23 @@ class TodoStore:
         *,
         connection: Optional["asyncpg.Connection"] = None,
     ) -> dict[str, int]:
-        """Live to-dos per ``source_ref``, for one page of sources at once.
+        """Live to-dos per ``source_ref``; refs with none are absent."""
+        counts = await self.todo_counts_by_source(
+            principal, source_kind, source_refs, connection=connection
+        )
+        return {ref: c["live"] for ref, c in counts.items()}
+
+    async def todo_counts_by_source(
+        self,
+        principal: Principal,
+        source_kind: str,
+        source_refs: Sequence[str],
+        *,
+        connection: Optional["asyncpg.Connection"] = None,
+    ) -> dict[str, dict[str, int]]:
+        """``{"live", "suggested"}`` to-do counts per ``source_ref``, for one
+        page of sources at once. ``suggested`` counts the ones not started yet
+        (``staged``/``open``): what agent-home shows as Suggested tasks.
 
         One grouped read on ``tasks_source_idx`` instead of a count per row;
         refs with no live to-do are absent from the result.
@@ -1315,7 +1333,7 @@ class TodoStore:
             return {}
         predicate = scope_filter(
             principal,
-            start_index=4,
+            start_index=5,
             grant_item_kind=GRANT_ITEM_KIND,
             id_column=GRANT_ID_COLUMN,
         )
@@ -1323,7 +1341,8 @@ class TodoStore:
         conn = connection or await self._connect()
         try:
             rows = await conn.fetch(
-                f"""SELECT source_ref, COUNT(*) AS count
+                f"""SELECT source_ref, COUNT(*) AS count,
+                           COUNT(*) FILTER (WHERE stage = ANY($4::text[])) AS suggested
                       FROM {TASKS_TABLE}
                      WHERE source_kind = $1 AND source_ref = ANY($2::uuid[])
                        AND stage = ANY($3::text[]) AND {predicate.sql}
@@ -1331,12 +1350,16 @@ class TodoStore:
                 source_kind,
                 refs,
                 list(LIVE_STAGES),
+                list(SUGGESTED_STAGES),
                 *predicate.params,
             )
         finally:
             if own:
                 await conn.close()
-        return {str(r["source_ref"]): int(r["count"]) for r in rows}
+        return {
+            str(r["source_ref"]): {"live": int(r["count"]), "suggested": int(r["suggested"])}
+            for r in rows
+        }
 
     async def created_by_actor_since(
         self,

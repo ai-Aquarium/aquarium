@@ -79,6 +79,18 @@ describe("Suggested tasks", () => {
     expect(JSON.parse(String(init?.body))).toEqual({ from_todo: { id: "88" }, autonomy: "manual" });
   });
 
+  it("lets the person pick another check-in level, Manual by default", async () => {
+    const fetchFn = mockFetch();
+    render(<SuggestedTasksInbox feed={feed()} />);
+    fireEvent.click(within(screen.getAllByRole("article")[0]).getByRole("button", { name: "Work on this" }));
+    const sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByRole("radio", { name: "Every step (Manual)" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Before risky steps" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Start task" }));
+    await waitFor(() => expect(fetchFn).toHaveBeenCalled());
+    expect(JSON.parse(String(fetchFn.mock.calls[0][1]?.body)).autonomy).toBe("supervised");
+  });
+
   it("sends the person's own wording when they reword the ask", async () => {
     const fetchFn = mockFetch();
     render(<SuggestedTasksInbox feed={feed()} />);
@@ -104,7 +116,7 @@ describe("Suggested tasks", () => {
     await waitFor(() => expect(f.remove).toHaveBeenCalledWith("88"));
     expect(fetchFn.mock.calls[0][0]).toBe("/api/suggested-tasks/88/snooze");
     expect(Date.parse(JSON.parse(String(fetchFn.mock.calls[0][1]?.body)).until)).toBeGreaterThan(Date.now());
-    expect(screen.getByText("Snoozed D88 until tomorrow 09:00.")).toBeTruthy();
+    expect(screen.getByText("Snoozed D88 for 2 hours.")).toBeTruthy();
     fireEvent.click(within(screen.getAllByRole("article")[2]).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(f.remove).toHaveBeenCalledWith("92"));
     expect(fetchFn.mock.calls[1][0]).toBe("/api/suggested-tasks/92/dismiss");

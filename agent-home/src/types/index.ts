@@ -1193,6 +1193,8 @@ export interface IncomingItem {
   attention_outcome?: string | null;
   /** Open to-dos triage (or the user) made from it. */
   todo_count?: number | null;
+  /** Of those, the ones not started yet (staged/open): Suggested tasks. */
+  suggested_todo_count?: number | null;
 }
 
 /** Why triage put an arrival in the landing Incomings tab. */

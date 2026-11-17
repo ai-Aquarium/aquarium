@@ -1359,6 +1359,12 @@ async def test_todo_counts_are_batched_and_scoped(postgres_dsn: str) -> None:
         leo, "inbound", [one.id, two.id, "not-a-uuid"]
     ) == {one.id: 2}
     assert await todos.live_counts_by_source(ada, "inbound", [one.id]) == {}
+    working = await todos.create(leo, title="Started", source_kind="inbound", source_ref=two.id)
+    await todos.set_stage(leo, working.id, "working")
+    assert await todos.todo_counts_by_source(leo, "inbound", [one.id, two.id]) == {
+        one.id: {"live": 2, "suggested": 2},
+        two.id: {"live": 1, "suggested": 0},
+    }
 
 
 @pytest.mark.asyncio

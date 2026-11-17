@@ -10,7 +10,7 @@ import type { UseSuggestedTasks } from "@/components/suggested-tasks/useSuggeste
 import type { SuggestedTask } from "@/types";
 import type { NeedsYouEntry } from "@/types/landing";
 
-import { NeedsYouPanel, NeedsYouPanelView, sortBySeverity, withoutSuggestedAsks } from "./NeedsYouPanel";
+import { NeedsYouPanel, NeedsYouPanelView, needsYouCount, sortBySeverity, withoutSuggestedAsks } from "./NeedsYouPanel";
 import { needsYouEntry, needsYouResponse } from "./fixtures";
 import { resetNeedsYouFeedCache, useNeedsYouFeed } from "./useNeedsYouFeed";
 
@@ -129,5 +129,12 @@ describe("NeedsYouPanelView with suggested tasks", () => {
     expect(withoutSuggestedAsks([cfo, here], feed([]))).toHaveLength(2);
     expect(withoutSuggestedAsks([here], feed([card], { error: "down" }))).toHaveLength(1);
     expect(withoutSuggestedAsks([here], undefined)).toHaveLength(1);
+  });
+
+  it("counts every suggested task, quiet ones included, without the alerts they replace", () => {
+    const quiet = { ...card, todo: { id: "t2", stage: "staged" }, source: null } as unknown as SuggestedTask;
+    const items = [ask("same-message", "fyi", { arrival_key: KEY }), ask("card-wait", "approval")];
+    expect(needsYouCount(2, items, feed([card, quiet]))).toBe(3);
+    expect(needsYouCount(2, items, undefined)).toBe(2);
   });
 });

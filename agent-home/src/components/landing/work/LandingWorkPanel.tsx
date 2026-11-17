@@ -7,6 +7,7 @@ import { WorkPanel } from "./WorkPanel";
 import { FolderIcon } from "@/components/ui/icons";
 import type { ActivityRunningState } from "@/components/ui/useActivityRunning";
 import type { NeedsYouFeed } from "./useNeedsYouFeed";
+import type { UseSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
 
 /**
  * The landing page's right panel (Figma `work-panel`, desktop `5:2`):
@@ -18,7 +19,10 @@ export function LandingWorkPanel({
   needsYou,
   activity,
   canStart = true,
+  suggested,
 }: {
+  /** The page's suggested-task read, shared with the top-bar badge. */
+  suggested?: UseSuggestedTasks;
   needsYou?: NeedsYouFeed;
   /** Viewers see suggested tasks but cannot start one. */
   canStart?: boolean;
@@ -26,7 +30,7 @@ export function LandingWorkPanel({
 }) {
   return (
     <div data-component="LandingWorkPanel" className="flex h-full min-h-0 flex-col gap-2">
-      <NeedsYouPanel feed={needsYou} canStart={canStart} />
+      <NeedsYouPanel feed={needsYou} canStart={canStart} suggested={suggested} />
       <div aria-hidden className="h-3 shrink-0" />
       <WorkPanel activity={activity} />
       <div className="mt-auto pt-4">
