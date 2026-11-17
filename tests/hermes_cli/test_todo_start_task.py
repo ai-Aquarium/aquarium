@@ -472,3 +472,54 @@ def test_a_message_to_someone_else_is_an_ordinary_card_send(env, reply_card, cap
     [msg] = _FakeSMTP.sent
     assert msg["To"] == "accounts@acme.example"
     assert state["store"].outbound == []
+
+
+def test_task_mode_quick_task_takes_from_todo_as_the_same_start(env):
+    client, state = env
+    resp = client.post("/api/registry/projects/quick-task", json={"from_todo": {"id": TODO_ID}})
+    assert resp.status_code == 200, resp.text
+    out = resp.json()
+    assert out["created"] is True
+    assert out["autonomy"] == "manual"
+    assert out["cadence"] == "one_off"
+    assert out["todo"]["stage"] == "working"
+    # The to-do route and Task mode name the same project.
+    again = _start(client).json()
+    assert again["created"] is False
+    assert again["project"]["id"] == out["id"]
+    assert len(_projects()) == 1
+
+
+def test_quick_task_from_a_todo_in_another_profile_is_refused(env):
+    client, _state = env
+    resp = client.post(
+        "/api/registry/projects/quick-task",
+        json={"from_todo": {"id": TODO_ID, "profile": "work"}},
+    )
+    assert resp.status_code == 422
+    assert _projects() == []
+
+
+def test_quick_task_from_todo_is_a_human_act(env):
+    client, state = env
+    state["subject"] = ""
+    resp = client.post("/api/registry/projects/quick-task", json={"from_todo": {"id": TODO_ID}})
+    assert resp.status_code == 403
+    assert _projects() == []
+
+
+def test_the_persons_own_wording_leads_the_brief_and_the_message_stays(env):
+    client, _state = env
+    resp = _start(client, request="Quote Ada 40 oak chairs at the trade price")
+    assert resp.status_code == 200, resp.text
+    slug = resp.json()["project"]["slug"]
+    description = client.get(f"/api/registry/projects/{slug}").json()["description"]
+    assert description.startswith("Quote Ada 40 oak chairs at the trade price")
+    assert "Oak, by Friday." not in description
+    assert "could you send me a quote for 40 oak chairs" in description
+    assert "hermes projects propose-send" in description
+    bad = client.post(
+        "/api/registry/projects/quick-task",
+        json={"from_todo": {"id": TODO_ID}, "request": 42},
+    )
+    assert bad.status_code == 422

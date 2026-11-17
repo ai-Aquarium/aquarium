@@ -39,6 +39,7 @@ DEFAULT_AUTONOMY = "manual"
 
 MAX_SOURCE_CHARS = 4_000
 MAX_CARRIED_DRAFT_CHARS = 8_000
+MAX_REQUEST_CHARS = 8_000
 
 _START_LOCK = threading.Lock()
 
@@ -85,15 +86,26 @@ def _source_block(arrival: Mapping[str, Any]) -> str:
 
 
 def task_request_text(
-    todo, arrival: Optional[Mapping[str, Any]], *, reply_route: Optional[dict] = None
+    todo,
+    arrival: Optional[Mapping[str, Any]],
+    *,
+    reply_route: Optional[dict] = None,
+    request: Optional[str] = None,
 ) -> str:
     """The project brief a started to-do carries: what it asks, the message
-    behind it, any draft an earlier "Work on this" left, and how to reply."""
-    parts = [todo.title]
-    if todo.description:
-        parts.append(todo.description)
-    if todo.source_note:
-        parts.append(f"(From {todo.source_note})")
+    behind it, any draft an earlier "Work on this" left, and how to reply.
+
+    ``request`` is the person's own wording of what to do (the Start task
+    sheet's editable text); it replaces the to-do's title / description
+    lead, and the rest is still appended."""
+    if request and request.strip():
+        parts = [request.strip()]
+    else:
+        parts = [todo.title]
+        if todo.description:
+            parts.append(todo.description)
+        if todo.source_note:
+            parts.append(f"(From {todo.source_note})")
     if arrival and arrival.get("body"):
         parts.append("---\n" + _source_block(arrival))
     work = todo.work_result or {}
@@ -198,6 +210,7 @@ async def start_todo_as_project(
     host_profile: str,
     autonomy: str = DEFAULT_AUTONOMY,
     check_plan_first: bool = False,
+    request: Optional[str] = None,
 ) -> dict[str, Any]:
     """Start ``todo`` as a one-off project, or return the one it already is.
 
@@ -210,7 +223,9 @@ async def start_todo_as_project(
     profile = profile_refs.current_profile()
     actor = f"user:{principal.user_id}"
     reply_route = reply_route_from(arrival)
-    request_text = task_request_text(todo, arrival, reply_route=reply_route)
+    request_text = task_request_text(
+        todo, arrival, reply_route=reply_route, request=request
+    )
 
     from hermes_cli import projects_db
 
@@ -261,6 +276,49 @@ async def start_todo_as_project(
         ),
         "todo": todo_payload,
     }
+
+
+async def start_from_request(principal, todo_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+    """The shared body of both Start-task routes (``POST /todos/{id}/start-task``
+    and ``POST /projects/quick-task`` with ``from_todo``); the caller has
+    already passed ``_require_human``. Body keys, all optional:
+    ``host_profile`` (default: the serving profile), ``autonomy`` (default
+    ``manual``), ``check_plan_first`` and ``request`` (the person's own
+    wording, replacing the to-do's title/description in the brief)."""
+    from hermes_cli import profile_refs
+    from hermes_cli.projects_api import QUICK_TASK_AUTONOMY
+    from hermes_cli.todos_api import _source_item, _store, _table_ready
+
+    autonomy = str(body.get("autonomy") or DEFAULT_AUTONOMY).strip()
+    if autonomy not in QUICK_TASK_AUTONOMY:
+        raise TodoTaskError(
+            422, f"autonomy must be one of {', '.join(QUICK_TASK_AUTONOMY)}"
+        )
+    host_profile = (
+        str(body.get("host_profile") or "").strip() or profile_refs.current_profile()
+    )
+    request = body.get("request")
+    if request is not None and not isinstance(request, str):
+        raise TodoTaskError(422, "request must be a string")
+    if request and len(request) > MAX_REQUEST_CHARS:
+        raise TodoTaskError(422, f"request must be at most {MAX_REQUEST_CHARS} characters")
+    store = _store()
+    if not await _table_ready(store):
+        raise TodoTaskError(404, "No such to-do")
+    todo = await store.get(principal, todo_id)
+    if todo is None:
+        raise TodoTaskError(404, "No such to-do")
+    arrival = await _source_item(principal, todo)
+    return await start_todo_as_project(
+        store,
+        principal,
+        todo,
+        arrival=arrival,
+        host_profile=host_profile,
+        autonomy=autonomy,
+        check_plan_first=bool(body.get("check_plan_first")),
+        request=request or None,
+    )
 
 
 async def close_linked_todo(principal, project_id: str) -> Optional[dict[str, Any]]:
