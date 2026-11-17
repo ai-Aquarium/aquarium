@@ -771,7 +771,7 @@ async def is_box_admin(user_id: str) -> bool:
     if not user_id or entry is None:
         return False
     principal = await principal_in_profile(
-        entry, user_id, store_factory=principal_store_factory()
+        entry, user_id, store_factory=principal_store_factory(), strict=True
     )
     return (
         principal is not None
@@ -1397,4 +1397,8 @@ async def active_or_suspended_anywhere(user_id: str) -> bool:
     """Whether ``user_id`` still has any principals row (suspended included) on the box."""
     from hermes_cli.console_scope import enrolled_profiles, principal_store_factory
 
-    return bool(await enrolled_profiles(user_id, store_factory=principal_store_factory()))
+    return bool(
+        await enrolled_profiles(
+            user_id, store_factory=principal_store_factory(), strict=True
+        )
+    )
