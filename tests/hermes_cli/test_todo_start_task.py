@@ -506,3 +506,20 @@ def test_quick_task_from_todo_is_a_human_act(env):
     resp = client.post("/api/registry/projects/quick-task", json={"from_todo": {"id": TODO_ID}})
     assert resp.status_code == 403
     assert _projects() == []
+
+
+def test_the_persons_own_wording_leads_the_brief_and_the_message_stays(env):
+    client, _state = env
+    resp = _start(client, request="Quote Ada 40 oak chairs at the trade price")
+    assert resp.status_code == 200, resp.text
+    slug = resp.json()["project"]["slug"]
+    description = client.get(f"/api/registry/projects/{slug}").json()["description"]
+    assert description.startswith("Quote Ada 40 oak chairs at the trade price")
+    assert "Oak, by Friday." not in description
+    assert "could you send me a quote for 40 oak chairs" in description
+    assert "hermes projects propose-send" in description
+    bad = client.post(
+        "/api/registry/projects/quick-task",
+        json={"from_todo": {"id": TODO_ID}, "request": 42},
+    )
+    assert bad.status_code == 422
