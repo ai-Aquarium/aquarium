@@ -226,6 +226,36 @@ def target_in_two_profiles(
     return entries, per_home
 
 
+class _UnconfiguredStore(_FakeStore):
+    """A profile with no app datastore DSN: every read raises, like SupabaseAppStore.connect."""
+
+    def __init__(self) -> None:
+        super().__init__({})
+
+    async def get(self, user_id: str) -> Principal | None:
+        from hermes_cli.datastore import DatastoreNotConfigured
+
+        raise DatastoreNotConfigured("Supabase app datastore is not configured")
+
+    async def resolve_alias(self, subject: str) -> str | None:
+        return await self.get(subject)
+
+
+def test_enrolments_skip_a_profile_without_an_app_datastore(two_profiles, tmp_path) -> None:
+    entries, per_home = two_profiles
+    coder_home = tmp_path / "hermes-root" / "profiles" / "coder"
+    coder_home.mkdir(parents=True)
+    per_home = {**per_home, coder_home: _UnconfiguredStore()}
+    found = asyncio.run(
+        enrolled_profiles(
+            SUBJECT,
+            store_factory=_store_factory(per_home),
+            registry=[*entries, _entry("coder", coder_home)],
+        )
+    )
+    assert found == ["default", "engineers"]
+
+
 def test_enrolled_profiles_lists_every_profile_the_target_is_in(
     target_in_two_profiles,
 ) -> None:
