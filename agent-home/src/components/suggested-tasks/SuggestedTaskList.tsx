@@ -11,7 +11,7 @@ import { StartTaskSheet } from "./StartTaskSheet";
 import { SuggestedTaskCard } from "./SuggestedTaskCard";
 import { announceSuggestedTasksChanged } from "./useSuggestedTasks";
 
-async function post(path: string, body?: unknown): Promise<string | null> {
+export async function post(path: string, body?: unknown): Promise<string | null> {
   try {
     const res = await fetch(path, {
       method: "POST",
@@ -38,6 +38,7 @@ export function SuggestedTaskList({
   canStart = true,
   onRemoved,
   layout = "list",
+  onDetails,
 }: {
   tasks: SuggestedTask[];
   compact?: boolean;
@@ -45,6 +46,7 @@ export function SuggestedTaskList({
   onRemoved?: (todoId: string) => void;
   /** `grid`: up to three across on wide screens (Projects strip). */
   layout?: "list" | "grid";
+  onDetails?: (task: SuggestedTask) => void;
 }) {
   const [starting, setStarting] = useState<SuggestedTask | null>(null);
   const [notice, setNotice] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
@@ -86,6 +88,7 @@ export function SuggestedTaskList({
             onWork={setStarting}
             onSnooze={(t) => run(t, "snooze")}
             onDismiss={(t) => run(t, "dismiss")}
+            onDetails={onDetails}
           />
         ))}
       </div>

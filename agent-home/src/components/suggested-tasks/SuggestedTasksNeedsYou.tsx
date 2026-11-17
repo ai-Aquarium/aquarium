@@ -3,15 +3,19 @@
 import Link from "next/link";
 
 import { SuggestedTaskList } from "./SuggestedTaskList";
+import type { SuggestedTask } from "@/types";
+
 import type { UseSuggestedTasks } from "./useSuggestedTasks";
 
 /** Needs you › Suggested tasks: each one asks the person to start, snooze or dismiss it. */
 export function SuggestedTasksNeedsYou({
   feed,
   canStart = true,
+  onDetails,
 }: {
   feed: UseSuggestedTasks;
   canStart?: boolean;
+  onDetails?: (task: SuggestedTask) => void;
 }) {
   if (feed.items.length === 0) return null;
   return (
@@ -24,7 +28,7 @@ export function SuggestedTasksNeedsYou({
           See all in Inbox
         </Link>
       </div>
-      <SuggestedTaskList tasks={feed.items} compact canStart={canStart} onRemoved={feed.remove} />
+      <SuggestedTaskList tasks={feed.items} compact canStart={canStart} onRemoved={feed.remove} onDetails={onDetails} />
     </section>
   );
 }

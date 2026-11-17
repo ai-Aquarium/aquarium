@@ -92,5 +92,78 @@
       "removed": "{table} 已移除",
       "columns": "{table}：欄位有變"
     }
+  },
+  "detailsView": {
+    "open": "詳情",
+    "of": "第 {i} 項，共 {n} 項",
+    "prev": "上一項",
+    "next": "下一項",
+    "loading": "正在載入詳情…",
+    "sections": {
+      "source": "來源",
+      "why": "為何出現在這裡",
+      "does": "各按鈕的作用",
+      "linked": "相關連結",
+      "draft": "回覆草稿"
+    },
+    "fields": {
+      "to": "收件人",
+      "from": "寄件帳戶",
+      "channel": "渠道",
+      "subject": "主旨",
+      "sender": "寄件人",
+      "received": "收到時間",
+      "priority": "優先次序",
+      "due": "期限",
+      "raisedBy": "提出者",
+      "reason": "原因"
+    },
+    "links": {
+      "inbox": "在收件匣開啟訊息",
+      "todo": "開啟待辦 {ref}",
+      "project": "開啟專案 {project}",
+      "run": "開啟第 {run} 次執行",
+      "card": "開啟卡片 {card}",
+      "page": "開啟完整頁面"
+    },
+    "confirmSend": "要從 {from} 把這封{channel}寄給 {to} 嗎？",
+    "confirmSendTo": "要把這封{channel}寄給 {to} 嗎？",
+    "cantUnsend": "寄出後無法收回。",
+    "yesSend": "是，寄出",
+    "confirmAct": "{action}？此操作無法復原。",
+    "yes": "是",
+    "cancel": "取消",
+    "feedbackLabel": "要改甚麼？",
+    "feedbackPlaceholder": "例如：語氣親切一點，問問會有多少同事出席",
+    "feedbackHint": "助理會重寫草稿。按「寄出」之前不會寄出任何內容。",
+    "noteRequired": "請說明要改甚麼。",
+    "rewrite": "重寫草稿",
+    "rewriting": "助理正在重寫草稿…",
+    "rewritten": "已按你的意見重寫：「{note}」",
+    "failed": "未能完成：{error}",
+    "why": {
+      "blocking": "工作已暫停，等你回覆。",
+      "approval": "你批准之前不會有任何動作。",
+      "review": "有內容已準備好讓你查看。",
+      "fyi": "僅供參考，沒有工作被暫停。",
+      "reply": "這會從你的帳戶寄出訊息，所以一定先問你。",
+      "suggested": "分流讀過這則訊息，認為你可能需要處理。"
+    },
+    "does": {
+      "send": "先請你確認，然後按所示內容寄出回覆。",
+      "revise": "你說明要改甚麼，助理重寫草稿後會再送回這裡。",
+      "reject": "放棄這份草稿，不會寄出任何內容。",
+      "approve": "批准，讓工作繼續。",
+      "deny": "拒絕，工作會停止或改走其他路徑。",
+      "once": "只允許這一個指令一次。",
+      "grant": "允許網頁檢視器的請求。",
+      "keep": "保留目前的擁有者。",
+      "transfer": "把來源轉給提出申請的人。",
+      "open": "開啟完整頁面。",
+      "review": "開啟以供審閱。",
+      "work": "根據這則訊息開始一項任務。",
+      "snooze": "隱藏 2 小時。",
+      "dismiss": "從「需要你」移除。"
+    }
   }
 }

@@ -1530,10 +1530,11 @@ export class HermesApiClient {
   async answerNotification(
     notificationId: string,
     answer: string,
+    opts: { feedback?: boolean } = {},
   ): Promise<NotificationAnswerResponse> {
     return this.request(
       `/api/comms/notifications/${encodeURIComponent(notificationId)}/answer`,
-      { method: "POST", json: { answer } },
+      { method: "POST", json: opts.feedback ? { answer, feedback: true } : { answer } },
     );
   }
 

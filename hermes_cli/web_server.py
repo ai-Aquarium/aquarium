@@ -5126,6 +5126,13 @@ async def comms_answer_notification(notification_id: str, request: Request):
     answer = str((body or {}).get("answer", "")).strip()
     if not answer:
         raise HTTPException(status_code=400, detail="answer is required")
+    # "Ask for changes": free text that must never read as consent or refusal,
+    # or typing "approved" as a note would send the reply.
+    if (body or {}).get("feedback") is True and answer.lower() in _PROPOSAL_VERDICTS:
+        raise HTTPException(
+            status_code=400,
+            detail="Feedback can't be just 'approved', 'denied' or 'rejected'. Say what should change.",
+        )
 
     principal = await _comms_resolve_principal(request)
     ntf = NotificationStore(_comms_app_store(), config=load_config() or {})
@@ -5152,6 +5159,10 @@ async def comms_answer_notification(notification_id: str, request: Request):
                 principal, todo_id, answer
             )
     return payload
+
+
+#: Answers ``_settle_todo_proposal`` treats as a verdict rather than feedback.
+_PROPOSAL_VERDICTS = frozenset({"approved", "denied", "rejected"})
 
 
 async def _settle_todo_proposal(principal, todo_id: str, answer: str) -> dict:

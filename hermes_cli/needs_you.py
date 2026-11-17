@@ -246,6 +246,26 @@ def routing_context(source_id: Any, batch_id: Any) -> Optional[dict]:
     return {"routing_source_id": str(source_id), "routing_batch_id": str(batch_id)}
 
 
+def _reply_context(n: Any) -> dict:
+    """Where a proposed reply would go, read from the command its approval authorises."""
+    import shlex
+
+    from hermes_cli.todo_outbound import parse_command_routing
+
+    try:
+        routing = parse_command_routing(shlex.split(getattr(n, "command", "") or ""))
+    except ValueError:
+        routing = None
+    if not routing:
+        return {}
+    return {
+        "reply_channel": routing["channel"],
+        "reply_to": routing["target"],
+        "reply_account": routing["account"],
+        "reply_subject": routing["subject"],
+    }
+
+
 def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dict]:
     """Pending notifications addressed to ``user_id``.
 
@@ -275,6 +295,7 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
             severity = None
         elif key.startswith("todo-action:"):
             source, href, severity = "todo", "/todos", "approval"
+            context = {"todo_id": key[len("todo-action:"):], **_reply_context(n)}
         elif key.startswith("todo:"):
             source, href, severity = "todo", "/todos", None
             context = {"todo_id": key[len("todo:"):]}
@@ -296,6 +317,17 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
                 _open_action(href, "Open"),
             ]
             actions[-1]["style"] = "secondary"
+        elif key.startswith("todo-action:") and n.kind == "approval":
+            # A reply to send is irreversible: the landing card only opens it;
+            # its Details view sends after a confirm step, rejects, or answers
+            # with free text, which the answer route treats as revision feedback.
+            endpoint = f"/api/comms/notifications/{quote(n.id, safe='')}/answer"
+            actions = [
+                _post_action("send", "Send", "primary", endpoint, {"answer": "approved"}),
+                _post_action("revise", "Ask for changes", "secondary", endpoint),
+                _post_action("reject", "Reject", "danger", endpoint, {"answer": "denied"}),
+                {**_open_action(href, "Open"), "style": "secondary"},
+            ]
         if arrival:
             context["arrival_key"] = arrival
         extra = getattr(n, "context", None) or {}
