@@ -61,11 +61,6 @@ export async function loadSuggestedTasks(
   client: HermesApiClient,
   opts: { stages: string[]; source_ref?: string; limit?: number; cursor?: string; profile?: string | null },
 ): Promise<SuggestedTasksResponse> {
-  const firstSuggestedPage =
-    !opts.cursor && !opts.source_ref && opts.stages.every((s) => s === "open" || s === "staged");
-  const totalRead = firstSuggestedPage
-    ? client.suggestedTodosCount().then((r) => r.count).catch(() => null)
-    : Promise.resolve(null);
   const page = await client.todos({
     stage: opts.stages.join(","),
     source_ref: opts.source_ref,
@@ -79,6 +74,5 @@ export async function loadSuggestedTasks(
     ),
     next_cursor: page.next_cursor,
     profile: opts.profile ?? null,
-    total: await totalRead,
   };
 }

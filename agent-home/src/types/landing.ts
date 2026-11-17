@@ -55,6 +55,8 @@ export interface NeedsYouEntry {
     /** Triage arrival this entry is about (`arrival:<surface>:<account>:<id>`);
      *  rows from several profiles for one arrival are merged into one entry. */
     arrival_key?: string | null;
+    /** The system to-do a `todo:` alert is about. */
+    todo_id?: string | null;
     /** Every profile that raised this arrival's to-do/alert. */
     profiles?: string[] | null;
     /** FG-03: the routed batch a triage to-do/alert came from ("Why this profile?"). */

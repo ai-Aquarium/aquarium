@@ -277,6 +277,7 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
             source, href, severity = "todo", "/todos", "approval"
         elif key.startswith("todo:"):
             source, href, severity = "todo", "/todos", None
+            context = {"todo_id": key[len("todo:"):]}
         elif key.startswith(TRIAGE_ASK_REVIEW + ":"):
             profile = unquote(key.split(":")[1]) if key.count(":") >= 2 else ""
             source, href, severity = "notification", triage_skills_href(profile), "review"

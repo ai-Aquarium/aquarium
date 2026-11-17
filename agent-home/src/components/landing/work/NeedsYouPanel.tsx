@@ -2,6 +2,7 @@
 
 import { SuggestedTasksNeedsYou } from "@/components/suggested-tasks/SuggestedTasksNeedsYou";
 import { type UseSuggestedTasks, useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
+import type { SuggestedTally } from "@/components/suggested-tasks/useSuggestedTally";
 import { useNeedsYouText } from "@/lib/landing/needsYouText";
 import { arrivalKeyOf } from "@/lib/suggested-tasks/channels";
 import type { NeedsYouEntry } from "@/types/landing";
@@ -35,6 +36,8 @@ export type NeedsYouPanelViewProps = Pick<
   suggested?: UseSuggestedTasks;
   /** Viewers see suggested tasks but cannot start one. */
   canStart?: boolean;
+  /** Server-side suggested-task count, so the header counts past one page. */
+  tally?: SuggestedTally | null;
 };
 
 /**
@@ -72,13 +75,14 @@ export function NeedsYouPanelView({
   onActed,
   suggested,
   canStart = true,
+  tally,
 }: NeedsYouPanelViewProps) {
   const now = useNow(true, AGE_TICK_MS);
   const { t } = useNeedsYouText();
   const kept = withoutSuggestedAsks(items, suggested);
   const sorted = sortBySeverity(kept);
   const suggestions = suggested?.items.length ?? 0;
-  const shownCount = loaded ? needsYouCount(count, items, suggested) : null;
+  const shownCount = loaded ? needsYouCount(count, items, suggested, tally) : null;
 
   return (
     <section
@@ -144,17 +148,32 @@ export function NeedsYouPanelView({
 
 /**
  * What Needs you counts: the backend's count, minus the to-do alerts a
- * suggested-task card stands for, plus every suggested task, quiet (staged)
- * ones included. The top-bar badge and the panel header show the same number.
+ * suggested task stands for, plus every suggested task, quiet (staged) ones
+ * included. The top-bar badge and the panel header show the same number.
+ *
+ * With `tally` (the server-side count) it counts past the loaded page, and
+ * drops an alert by its to-do id, so loading more cards never changes it.
+ * Without one it falls back to the loaded cards.
  */
 export function needsYouCount(
   count: number,
   items: NeedsYouEntry[],
   suggested?: UseSuggestedTasks,
+  tally?: SuggestedTally | null,
 ): number {
-  const kept = withoutSuggestedAsks(items, suggested);
-  const suggestions = Math.max(suggested?.total ?? 0, suggested?.items.length ?? 0);
-  return Math.max(count - (items.length - kept.length), kept.length) + suggestions;
+  if (!tally) {
+    const kept = withoutSuggestedAsks(items, suggested);
+    return Math.max(count - (items.length - kept.length), kept.length) + (suggested?.items.length ?? 0);
+  }
+  const here = suggested?.profile ?? null;
+  const dropped = items.filter((e) => {
+    if (e.source !== "todo" || e.severity === "approval") return false;
+    const id = e.context?.todo_id;
+    if (!id || !tally.suggestedTodoIds.has(id)) return false;
+    const raisedIn = (e.context.profiles ?? [e.context.profile]).filter((p): p is string => !!p);
+    return !raisedIn.some((p) => p !== here);
+  }).length;
+  return Math.max(count - dropped, items.length - dropped) + tally.count;
 }
 
 /**
@@ -165,13 +184,16 @@ export function NeedsYouPanel({
   feed,
   canStart = true,
   suggested,
+  tally,
 }: {
   feed?: NeedsYouFeed;
   canStart?: boolean;
   suggested?: UseSuggestedTasks;
+  /** The page's server-side suggested-task count, shared with the badge. */
+  tally?: SuggestedTally | null;
 }) {
   return suggested ? (
-    <PanelWith feed={feed} canStart={canStart} suggested={suggested} />
+    <PanelWith feed={feed} canStart={canStart} suggested={suggested} tally={tally} />
   ) : (
     <PanelReadingSuggestions feed={feed} canStart={canStart} />
   );
@@ -185,13 +207,21 @@ function PanelWith({
   feed,
   canStart,
   suggested,
+  tally,
 }: {
   feed?: NeedsYouFeed;
   canStart: boolean;
   suggested: UseSuggestedTasks;
+  tally?: SuggestedTally | null;
 }) {
   return feed ? (
-    <NeedsYouPanelView {...feed} suggested={suggested} canStart={canStart} onActed={() => void feed.refresh()} />
+    <NeedsYouPanelView
+      {...feed}
+      suggested={suggested}
+      tally={tally}
+      canStart={canStart}
+      onActed={() => void feed.refresh()}
+    />
   ) : (
     <OwnFeed suggested={suggested} canStart={canStart} />
   );
