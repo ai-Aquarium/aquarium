@@ -18,6 +18,8 @@ export interface UseSuggestedTasks {
   error: string | null;
   /** Set when more suggestions exist past the loaded pages. */
   nextCursor?: string | null;
+  /** Every suggested task, counted server-side (past the loaded pages). */
+  total?: number | null;
   /** The profile the suggestions were read in. */
   profile?: string | null;
   refresh: () => Promise<void>;
@@ -40,6 +42,7 @@ export function useSuggestedTasks(query = ""): UseSuggestedTasks {
   const [error, setError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [profile, setProfile] = useState<string | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
   const mounted = useRef(true);
 
   const read = useCallback(
@@ -72,7 +75,10 @@ export function useSuggestedTasks(query = ""): UseSuggestedTasks {
       (async () => {
         const page = await read(null);
         if (!mounted.current) return;
-        if (page) setItems(page.items);
+        if (page) {
+          setItems(page.items);
+          setTotal(typeof page.total === "number" ? page.total : null);
+        }
         setLoaded(true);
       })(),
     [read],
@@ -107,7 +113,8 @@ export function useSuggestedTasks(query = ""): UseSuggestedTasks {
 
   const remove = useCallback((todoId: string) => {
     setItems((prev) => prev.filter((t) => t.todo.id !== todoId));
+    setTotal((n) => (n === null ? n : Math.max(0, n - 1)));
   }, []);
 
-  return { items, loaded, error, nextCursor, profile, refresh, loadMore, remove };
+  return { items, loaded, error, nextCursor, total, profile, refresh, loadMore, remove };
 }
