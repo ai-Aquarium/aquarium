@@ -1332,6 +1332,44 @@ class TodoStore:
                 await conn.close()
         return int(value or 0)
 
+    async def suggested_among(
+        self,
+        principal: Principal,
+        todo_ids: Sequence[str],
+        *,
+        now: Optional[datetime] = None,
+        connection: Optional["asyncpg.Connection"] = None,
+    ) -> list[str]:
+        """Which of ``todo_ids`` are suggested tasks right now (the rows
+        :meth:`count_suggested` counts), so Needs you can tell which to-do
+        alerts a suggested task already stands for."""
+        ids = [i for i in dict.fromkeys(todo_ids) if is_uuid(i)]
+        if not ids:
+            return []
+        predicate = scope_filter(
+            principal,
+            start_index=4,
+            grant_item_kind=GRANT_ITEM_KIND,
+            id_column=GRANT_ID_COLUMN,
+        )
+        own = connection is None
+        conn = connection or await self._connect()
+        try:
+            rows = await conn.fetch(
+                f"""SELECT id FROM {TASKS_TABLE}
+                     WHERE id = ANY($1::uuid[]) AND stage = ANY($2::text[])
+                       AND (snoozed_until IS NULL OR snoozed_until <= $3::timestamptz)
+                       AND {predicate.sql}""",
+                ids,
+                list(SUGGESTED_STAGES),
+                now or datetime.now(timezone.utc),
+                *predicate.params,
+            )
+        finally:
+            if own:
+                await conn.close()
+        return [str(r["id"]) for r in rows]
+
     async def live_counts_by_source(
         self,
         principal: Principal,

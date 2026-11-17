@@ -34,6 +34,7 @@ import { useLandingPanels } from "./useLandingPanels";
 import { LandingWorkPanel, type NeedsYouFeed } from "./work";
 import { needsYouCount } from "./work/NeedsYouPanel";
 import { useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
+import { alertTodoIds, useSuggestedTally } from "@/components/suggested-tasks/useSuggestedTally";
 
 /** What the row or hit that opened a chat already knew about it. */
 interface OpenedChat {
@@ -75,7 +76,8 @@ export function LandingClient({
   const activity = useActivityRunning();
   const needsYou = useNeedsYou();
   const suggested = useSuggestedTasks();
-  const needsYouTotal = needsYouCount(needsYou.count, needsYou.items, suggested);
+  const tally = useSuggestedTally(alertTodoIds(needsYou.items));
+  const needsYouTotal = needsYouCount(needsYou.count, needsYou.items, suggested, tally);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [needsYouOpen, setNeedsYouOpen] = useState(false);
   const panels = useLandingPanels();
@@ -274,7 +276,7 @@ export function LandingClient({
             />
           )
         }
-        aside={<LandingWorkPanel needsYou={feed} activity={activity} canStart={accountRole !== "viewer"} suggested={suggested} />}
+        aside={<LandingWorkPanel needsYou={feed} activity={activity} canStart={accountRole !== "viewer"} suggested={suggested} tally={tally} />}
         chats={{
           collapsed: panels.chatsCollapsed,
           onCollapsedChange: panels.setChatsCollapsed,
@@ -317,7 +319,7 @@ export function LandingClient({
       />
       {needsYouOpen ? (
         <Sheet title={tn("heading")} component="NeedsYouSheet" onClose={() => setNeedsYouOpen(false)}>
-          <LandingWorkPanel needsYou={feed} activity={activity} canStart={accountRole !== "viewer"} suggested={suggested} />
+          <LandingWorkPanel needsYou={feed} activity={activity} canStart={accountRole !== "viewer"} suggested={suggested} tally={tally} />
         </Sheet>
       ) : null}
       <ChatsDrawer

@@ -8,6 +8,7 @@ import { FolderIcon } from "@/components/ui/icons";
 import type { ActivityRunningState } from "@/components/ui/useActivityRunning";
 import type { NeedsYouFeed } from "./useNeedsYouFeed";
 import type { UseSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
+import type { SuggestedTally } from "@/components/suggested-tasks/useSuggestedTally";
 
 /**
  * The landing page's right panel (Figma `work-panel`, desktop `5:2`):
@@ -20,7 +21,10 @@ export function LandingWorkPanel({
   activity,
   canStart = true,
   suggested,
+  tally,
 }: {
+  /** The page's server-side suggested-task count, shared with the badge. */
+  tally?: SuggestedTally | null;
   /** The page's suggested-task read, shared with the top-bar badge. */
   suggested?: UseSuggestedTasks;
   needsYou?: NeedsYouFeed;
@@ -30,7 +34,7 @@ export function LandingWorkPanel({
 }) {
   return (
     <div data-component="LandingWorkPanel" className="flex h-full min-h-0 flex-col gap-2">
-      <NeedsYouPanel feed={needsYou} canStart={canStart} suggested={suggested} />
+      <NeedsYouPanel feed={needsYou} canStart={canStart} suggested={suggested} tally={tally} />
       <div aria-hidden className="h-3 shrink-0" />
       <WorkPanel activity={activity} />
       <div className="mt-auto pt-4">
