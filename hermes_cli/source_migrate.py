@@ -498,7 +498,7 @@ async def apply_plans(
     membership: Optional[Membership] = None,
 ) -> Dict[str, Any]:
     """Write ``plans`` into the registry; the report's ``sources`` and ``conflicts``."""
-    check = membership or registry.is_active_in_profile
+    check = membership or registry.may_route_to
     checked: Dict[Tuple[str, str], bool] = {}
 
     async def active(user_id: str, profile: str) -> bool:

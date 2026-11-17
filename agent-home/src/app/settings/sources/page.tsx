@@ -9,7 +9,7 @@ import { HermesApiError } from "@/lib/api/client";
 import { activeEnrolments } from "@/lib/api/my-profiles";
 import { apiClientForRequest, requirePrincipal } from "@/lib/auth/principal";
 import { readSession } from "@/lib/auth/session";
-import type { SourcesList } from "@/lib/sources/api";
+import { viewerOnly, type SourcesList } from "@/lib/sources/api";
 import type { SourceClaimConflict } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +58,9 @@ export default async function Page() {
       title={t("title")}
       subtitle={t("subtitle")}
       info={<InfoTip label={t("infoLabel")}>{t("info")}</InfoTip>}
-      actions={list || noAccess?.kind === "none" ? <RegisterSourceLink /> : undefined}
+      actions={
+        (list && !viewerOnly(list)) || noAccess?.kind === "none" ? <RegisterSourceLink /> : undefined
+      }
       wide
     >
       {list ? (

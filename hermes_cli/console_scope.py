@@ -365,18 +365,19 @@ async def resolve_console_principal(
         except DatastoreNotConfigured as exc:
             _note_unconfigured(entry, exc)
             raise ProfileScopeError(
-                f"subject {subject!r} is not enrolled in profile "
-                f"{target_profile!r}: it has no multi-user datastore"
+                f"You're not a member of {target_profile}: it isn't set up for "
+                "shared use yet."
             ) from exc
+        # The subject (an internal user id) stays out of these messages: they
+        # are shown to the person as-is.
         if principal is None:
             raise ProfileScopeError(
-                f"subject {subject!r} is not enrolled in profile "
-                f"{target_profile!r}"
+                f"You're not a member of {target_profile}. Ask its owner to add you."
             )
         if not getattr(principal, "active", True):
             raise ProfileScopeError(
-                f"subject {subject!r} is suspended in profile "
-                f"{target_profile!r}"
+                f"Your access to {target_profile} is suspended. Ask its owner "
+                "to restore it."
             )
         return principal
 

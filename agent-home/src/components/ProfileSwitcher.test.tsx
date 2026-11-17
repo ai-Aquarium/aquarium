@@ -33,6 +33,21 @@ describe("ProfileSwitcher", () => {
     vi.unstubAllGlobals();
   });
 
+  it("never passes an internal user id through to the refusal it shows", async () => {
+    const id = "3f2c1a9e-8b7d-4c6e-9f10-2a3b4c5d6e7f";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ detail: `subject '${id}' is not enrolled in profile 'maintenance'` }, { status: 403 }),
+      ),
+    );
+    const result = await switchSessionProfile("maintenance");
+    expect(result.ok).toBe(false);
+    expect(JSON.stringify(result)).not.toContain(id);
+    expect(JSON.stringify(result)).toContain("maintenance");
+    vi.unstubAllGlobals();
+  });
+
   it("drops what named the old profile's data from the URL", () => {
     expect(urlAfterSwitch("http://x/chat?profile=hr&session=s1&draft=hi")).toBe("/chat?draft=hi");
     expect(urlAfterSwitch("http://x/users")).toBe("/users");

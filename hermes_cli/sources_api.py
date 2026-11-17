@@ -220,6 +220,9 @@ async def register(request: Request, body: RegisterBody):
     no address: it is read from the caller's own credential.
     """
     principal = await _caller(request)
+    roles = await registry.active_profile_roles(principal.user_id)
+    if roles and not registry.may_route_with(roles):
+        raise HTTPException(status_code=403, detail=registry.VIEWER_REGISTER_REFUSED)
     address, ref, display, derived = body.address, body.credential_ref, body.display, False
     if not (address or "").strip():
         try:

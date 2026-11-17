@@ -655,7 +655,8 @@ async def care_sections_for_source(
     about" in that profile (``layer`` says which layer it came from). Only the
     owner's own user layer is read. ``kind`` defaults to the source channel's
     triage kind; an unknown source gives ``[]``. A routed profile whose home
-    is gone is skipped.
+    is gone is skipped, and so is one where the owner is no longer eligible to
+    route (suspended, or now a ``viewer``): a stale route never delivers.
     """
     from hermes_cli import source_registry as registry
     from hermes_cli.profiles import get_profile_dir
@@ -673,6 +674,14 @@ async def care_sections_for_source(
         home = get_profile_dir(profile)
         if not home.is_dir():
             logger.warning("triage routing: profile %r has no home at %s; skipped", profile, home)
+            continue
+        try:
+            eligible = await registry.may_route_to(source.owner_user_id, profile)
+        except Exception as exc:  # noqa: BLE001 - unverifiable means not eligible
+            logger.warning("triage routing: could not check %r for this source: %s", profile, exc)
+            eligible = False
+        if not eligible:
+            logger.info("triage routing: owner not eligible in profile %r; skipped", profile)
             continue
         care = care_section(channel_kind, home, source.owner_user_id)
         out.append({

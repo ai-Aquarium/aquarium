@@ -527,8 +527,10 @@ def test_a_profile_with_no_datastore_is_no_enrolment_for_every_cross_profile_rea
         person_enrolments(SUBJECT, OTHER_SUBJECT, **kw))] == ["default", "engineers"]
     actor = Principal(SUBJECT, "CTO", "owner")
     asyncio.run(guard_account_level_op(actor, SUBJECT, **kw))
-    with pytest.raises(ProfileScopeError, match="no multi-user datastore"):
+    with pytest.raises(ProfileScopeError, match="isn't set up for shared use") as refused:
         asyncio.run(resolve_console_principal(SUBJECT, "coder", **kw))
+    # Shown to the person as-is: names the profile, never their internal id.
+    assert SUBJECT not in str(refused.value) and "coder" in str(refused.value)
 
 
 def test_a_configured_profile_that_cannot_connect_still_fails_the_read(
@@ -558,5 +560,5 @@ def test_a_lost_datastore_secret_is_skipped_by_listings_but_refuses_account_leve
     actor = Principal(SUBJECT, "CTO", "owner")
     with pytest.raises(AccountLevelPermissionError, match="cannot be read"):
         asyncio.run(guard_account_level_op(actor, OTHER_SUBJECT, **kw))
-    with pytest.raises(ProfileScopeError, match="no multi-user datastore"):
+    with pytest.raises(ProfileScopeError, match="isn.t set up for shared use"):
         asyncio.run(resolve_console_principal(SUBJECT, "coder", **kw))

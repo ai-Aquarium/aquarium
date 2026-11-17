@@ -12,6 +12,7 @@ import { NextResponse } from "next/server";
 
 import { HermesApiClient, HermesApiError } from "@/lib/api/client";
 import { getPrincipal } from "@/lib/auth/principal";
+import { withoutInternalIds } from "@/lib/refusal";
 import { readSession, writeLastProfileHint, writeSession } from "@/lib/auth/session";
 
 /** Longest profile name accepted before asking Python (names are short slugs). */
@@ -33,7 +34,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     answer = await new HermesApiClient({ hermesToken: session.hermesToken, profile }).whoami();
   } catch (err) {
     if (err instanceof HermesApiError && (err.status === 403 || err.status === 409)) {
-      return NextResponse.json({ error: "not_enrolled", detail: err.message }, { status: 403 });
+      return NextResponse.json({ error: "not_enrolled", detail: withoutInternalIds(err.message) }, { status: 403 });
     }
     if (err instanceof HermesApiError && err.status === 401) {
       return NextResponse.json({ error: "unauthenticated" }, { status: 401 });

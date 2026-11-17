@@ -186,6 +186,12 @@ class ProfileNotEnrolled(SourceRegistryError):
     status = 403
 
 
+class ViewerCannotRoute(SourceRegistryError):
+    """The person is a ``viewer`` there: read-only, so no source may route in."""
+
+    status = 403
+
+
 class BoxSchemaError(SourceRegistryError):
     """The box schema is missing, or is claimed by something else."""
 
@@ -296,6 +302,20 @@ class ClaimConflict:
 #: ``(user_id, profile) -> active member?``; injectable for tests and callers
 #: that already know. The default reads that profile's own ``principals``.
 MembershipCheck = Callable[[str, str], Awaitable[bool]]
+#: Roles that may route a source into a profile. ``viewer`` is read-only
+#: everywhere else, so a viewer's sources never feed that profile.
+ROUTING_ROLES = ("owner", "admin", "member")
+VIEWER_ROUTE_REFUSED = (
+    "Viewers can't connect sources to {profile}. Ask an admin to change your role."
+)
+VIEWER_REGISTER_REFUSED = (
+    "Viewers can't connect sources. You're a viewer in every profile you belong "
+    "to, so no profile could read it. Ask an admin to change your role."
+)
+VIEWER_TRANSFER_REFUSED = (
+    "This person is a viewer in every profile they belong to, so no profile "
+    "could read this source for them. Change their role first."
+)
 #: ``user_id -> box owner/admin?``
 BoxAdminCheck = Callable[[str], Awaitable[bool]]
 
@@ -746,6 +766,49 @@ async def active_profile_roles(user_id: str) -> dict[str, str]:
     }
 
 
+def may_route_with(roles: Mapping[str, str]) -> bool:
+    """Whether active ``{profile: role}`` enrolments allow any route at all."""
+    return any(role in ROUTING_ROLES for role in roles.values())
+
+
+async def routing_role(user_id: str, profile_slug: str) -> Optional[str]:
+    """``user_id``'s role in that profile if active there, else ``None``."""
+    from hermes_cli.console_scope import principal_in_profile, principal_store_factory
+
+    entry = _registry_entry(profile_slug)
+    if entry is None or not entry.hermes_home.is_dir():
+        return None
+    principal = await principal_in_profile(
+        entry, user_id, store_factory=principal_store_factory()
+    )
+    if principal is None or not bool(getattr(principal, "active", True)):
+        return None
+    return str(getattr(principal, "role", "member"))
+
+
+async def may_route_to(user_id: str, profile_slug: str) -> bool:
+    """Whether ``user_id``'s sources may route into that profile now.
+
+    Active there with an owner/admin/member role; a viewer (read-only) or a
+    suspended or missing enrolment is not eligible.
+    """
+    return await routing_role(user_id, profile_slug) in ROUTING_ROLES
+
+
+async def _may_receive_source(user_id: str) -> bool:
+    """Default ``known_user`` for transfers: enrolled on the box, not viewer-only.
+
+    Someone whose every active enrolment is ``viewer`` could route the source
+    nowhere, so handing it to them is refused like registering it would be.
+    """
+    if not await active_or_suspended_anywhere(user_id):
+        return False
+    roles = await active_profile_roles(user_id)
+    if roles and not may_route_with(roles):
+        raise ViewerCannotRoute(VIEWER_TRANSFER_REFUSED)
+    return True
+
+
 async def display_name_for(user_id: Optional[str]) -> Optional[str]:
     """``user_id``'s display name from their first profile that has one (no id, no email)."""
     from hermes_cli.console_scope import enrolments, principal_store_factory
@@ -874,9 +937,11 @@ async def set_route(
 
     Only the source owner may change its routes (not even the box admin: the
     owner decides where their mail is read). Enabling a route to a profile the
-    owner is not an active member of raises :class:`ProfileNotEnrolled`;
+    owner is not an active member of raises :class:`ProfileNotEnrolled`, and
+    to one where they are only a ``viewer`` raises :class:`ViewerCannotRoute`;
     turning a route *off* is always allowed, so a stale route can be cleared
-    after the owner left that profile.
+    after the owner left that profile or became a viewer there. ``membership``
+    (tests, migrations) replaces the whole eligibility check.
     """
     profile = _check_profile(profile_slug)
     actor = _check_user(actor_user_id, "actor")
@@ -885,12 +950,18 @@ async def set_route(
         if source.owner_user_id != actor:
             raise SourcePermissionError("Only the source's owner can change where it routes.")
         if enabled:
-            check = membership or is_active_in_profile
-            if not await check(source.owner_user_id, profile):
+            if membership is not None:
+                eligible = await membership(source.owner_user_id, profile)
+                role = "member" if eligible else None
+            else:
+                role = await routing_role(source.owner_user_id, profile)
+            if role is None:
                 raise ProfileNotEnrolled(
                     f"You are not an active member of profile {profile!r}, so this "
                     "source cannot route there."
                 )
+            if role not in ROUTING_ROLES:
+                raise ViewerCannotRoute(VIEWER_ROUTE_REFUSED.format(profile=profile))
         row = await connection.fetchrow(
             f"""
             INSERT INTO {BOX_SCHEMA}.source_routes (source_id, profile_slug, enabled)
@@ -1051,7 +1122,7 @@ async def transfer_source(
     new_owner = _check_user(new_owner_user_id, "new owner user id")
     if not await (box_admin or is_box_admin)(actor):
         raise SourcePermissionError("Only the box owner or an admin can transfer a source.")
-    if not await (known_user or active_or_suspended_anywhere)(new_owner):
+    if not await (known_user or _may_receive_source)(new_owner):
         raise UnknownUser("No one with that user id is enrolled on this box.")
     async with connection.transaction():
         source = await _lock_source(connection, source_id)
@@ -1233,7 +1304,7 @@ async def settle_conflict(
             claimant = conflict.claimant_user_id
             source = await get_source_by_address(connection, conflict.channel, conflict.address)
             if source is None:
-                if not await (known_user or active_or_suspended_anywhere)(claimant):
+                if not await (known_user or _may_receive_source)(claimant):
                     raise UnknownUser("The claimant is no longer enrolled on this box.")
                 await register_source(
                     connection, channel=conflict.channel, address=conflict.address,
@@ -1344,6 +1415,11 @@ async def on_principal_removed(
     dsn: Optional[str] = None,
 ) -> int:
     """Hook for :meth:`PrincipalStore.unenroll`: disable routes to that profile.
+
+    Also run on suspension. A role change to ``viewer`` does not run it: the
+    route rows stay, the triage router skips them while the owner is a viewer
+    (``triage_skills.care_sections_for_source``), and delivery resumes on
+    promotion.
 
     Runs on the profile's own connection (same database, schema-qualified SQL),
     so it needs no second login; when ``dsn`` (the profile store's) is not the

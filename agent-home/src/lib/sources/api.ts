@@ -31,6 +31,20 @@ export interface SourcesList {
   telegram_triage?: "off" | "agent";
 }
 
+/** Roles that may route a source into a profile; `viewer` is read-only. */
+export const ROUTING_ROLES: readonly Role[] = ["owner", "admin", "member"];
+
+/** Whether the caller may route a source into `profile` (unknown role: an older Hermes decides). */
+export function canRouteTo(list: Pick<SourcesList, "profile_roles">, profile: string): boolean {
+  const role = list.profile_roles?.[profile];
+  return role === undefined || ROUTING_ROLES.includes(role);
+}
+
+/** Active somewhere, but a viewer in every profile: nothing could read a source they add. */
+export function viewerOnly(list: Pick<SourcesList, "profiles" | "profile_roles">): boolean {
+  return list.profiles.length > 0 && list.profiles.every((p) => !canRouteTo(list, p));
+}
+
 /** Telegram triage stays off until an admin sets `triage.agent.telegram: agent`. */
 export function telegramTriageOn(list: Pick<SourcesList, "telegram_triage">): boolean {
   return list.telegram_triage === "agent";

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { switchSessionProfile, urlAfterSwitch } from "@/components/ProfileSwitcher";
 import { Spinner } from "@/components/ui/Spinner";
+import { withoutInternalIds } from "@/lib/refusal";
 
 /**
  * A link named a profile other than the session's (`/chat?profile=hr`): switch
@@ -40,7 +41,7 @@ export function SwitchOnArrival({ profile, current }: { profile: string; current
         className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center"
       >
         <p role="alert" className="text-base font-medium">
-          Couldn&apos;t open {profile}: {error}
+          Couldn&apos;t open {profile}: {withoutInternalIds(error)}
         </p>
         <Link
           href={urlAfterSwitch(typeof window === "undefined" ? "/chat" : window.location.href)}
