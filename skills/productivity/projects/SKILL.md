@@ -73,6 +73,8 @@ hermes projects doctor    [--slug s] [--json]
 hermes projects propose-send --channel email|whatsapp --to <recipient> --account <account>
                                  [--subject "…"] --body "…"|--body-file <file|-> [--attach <file>]
                                  [--task <card>] [--json]   # on a card; a person sends it
+                                 # in a project started from a to-do, --channel/--to/--account
+                                 # (and the Re: subject) default to the source message
 ```
 
 ## Short refs

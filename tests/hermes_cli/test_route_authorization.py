@@ -198,6 +198,7 @@ SIGNED_IN = {
     "GET /api/registry/todos/{todo_id}/draft",
     "PATCH /api/registry/todos/{todo_id}/draft",
     "POST /api/registry/todos/{todo_id}/start",
+    "POST /api/registry/todos/{todo_id}/start-task",
     "PATCH /api/registry/todos/{todo_id}",
     "POST /api/registry/todos/{todo_id}/stage",
     "POST /api/registry/todos/{todo_id}/complete",

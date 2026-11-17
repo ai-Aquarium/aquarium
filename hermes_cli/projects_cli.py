@@ -1404,11 +1404,21 @@ def register_projects_subparser(
         help="Propose an outgoing email/WhatsApp from this card; a person "
         "approves before it is sent",
     )
-    propose.add_argument("--channel", required=True, choices=["email", "whatsapp"])
-    propose.add_argument("--to", required=True, help="Recipient address or number")
     propose.add_argument(
-        "--account", required=True,
-        help="Account it leaves from (email account id/address, WhatsApp bridge)",
+        "--channel", default="", choices=["", "email", "whatsapp"],
+        help="Required, except in a project started from a to-do (defaults "
+        "to the source message's channel)",
+    )
+    propose.add_argument(
+        "--to", default="",
+        help="Recipient address or number (default in a project started "
+        "from a to-do: the source message's sender)",
+    )
+    propose.add_argument(
+        "--account", default="",
+        help="Account it leaves from (email account id/address, WhatsApp "
+        "bridge); default in a project started from a to-do: the account "
+        "the message came in on",
     )
     propose.add_argument("--subject", default=None, help="Email subject")
     body_src = propose.add_mutually_exclusive_group(required=True)

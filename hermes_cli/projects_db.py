@@ -536,6 +536,11 @@ _PROJECT_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("imported_from_profile", "imported_from_profile TEXT"),
     ("category_id", "category_id TEXT"),
     ("completed_at", "completed_at INTEGER"),
+    # Start task from a to-do: the system to-do this one-off project is
+    # (profile + ``tasks.id``), and the C4 reply route of its source message.
+    ("todo_profile", "todo_profile TEXT"),
+    ("todo_id", "todo_id TEXT"),
+    ("reply_route", "reply_route TEXT"),
 )
 
 
@@ -590,6 +595,12 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
     # the ADD COLUMN above has run.
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_projects_category ON projects(category_id)"
+    )
+    # One project per to-do: re-starting a to-do finds this row instead of
+    # creating a second project, even when two starts race.
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_todo "
+        "ON projects(todo_profile, todo_id) WHERE todo_id IS NOT NULL"
     )
 
 
@@ -2392,6 +2403,66 @@ def remove_project_link(
             (project_id, kind, profile, ref),
         )
     return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# The to-do a one-off project was started from (Start task)
+# ---------------------------------------------------------------------------
+
+
+def set_project_todo(
+    conn: sqlite3.Connection,
+    project_id: str,
+    *,
+    profile: str,
+    todo_id: str,
+    reply_route: Optional[dict] = None,
+) -> bool:
+    """Mark ``project_id`` as the project the to-do ``(profile, todo_id)``
+    became. Returns False when another project already holds that to-do
+    (the unique index), so a racing second start can roll itself back."""
+    route = json.dumps(reply_route, ensure_ascii=False) if reply_route else None
+    try:
+        with write_txn(conn):
+            cur = conn.execute(
+                "UPDATE projects SET todo_profile = ?, todo_id = ?, reply_route = ? "
+                "WHERE id = ?",
+                (profile, todo_id, route, project_id),
+            )
+    except sqlite3.IntegrityError:
+        return False
+    return cur.rowcount > 0
+
+
+def project_for_todo(
+    conn: sqlite3.Connection, *, profile: str, todo_id: str
+) -> Optional["Project"]:
+    """The project a to-do was started as, or None."""
+    row = conn.execute(
+        "SELECT id FROM projects WHERE todo_profile = ? AND todo_id = ?",
+        (profile, todo_id),
+    ).fetchone()
+    return get_project(conn, row["id"]) if row else None
+
+
+def project_todo(conn: sqlite3.Connection, project_id: str) -> Optional[dict]:
+    """``{"profile", "todo_id", "reply_route"}`` for a project started from a
+    to-do, or None for every other project."""
+    row = conn.execute(
+        "SELECT todo_profile, todo_id, reply_route FROM projects WHERE id = ?",
+        (project_id,),
+    ).fetchone()
+    if row is None or not row["todo_id"]:
+        return None
+    try:
+        route = json.loads(row["reply_route"]) if row["reply_route"] else None
+    except ValueError:
+        route = None
+    return {
+        "profile": row["todo_profile"],
+        "todo_id": row["todo_id"],
+        "reply_route": route if isinstance(route, dict) else None,
+    }
 
 
 # ---------------------------------------------------------------------------

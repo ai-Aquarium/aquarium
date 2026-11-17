@@ -152,6 +152,17 @@ def propose(
         raise ValueError(f"unknown card {task_id}")
     if not task.project_id:
         raise ValueError(f"card {task_id} is not on a project")
+    # A project started from a to-do replies to its source message by
+    # default: whatever the worker leaves out comes from that message's route.
+    from hermes_cli import todo_task
+
+    started_from = todo_task.reply_defaults(task.project_id)
+    route = (started_from or {}).get("reply_route") or {}
+    channel = channel or str(route.get("channel") or "")
+    target = target or str(route.get("target") or "")
+    account = account or str(route.get("account_id") or "")
+    if not (subject or "").strip() and channel == route.get("channel"):
+        subject = str(route.get("subject") or "")
     channel = (channel or "").strip().lower()
     if channel not in CHANNELS:
         raise ValueError(f"channel must be one of: {', '.join(CHANNELS)}")
@@ -190,7 +201,7 @@ def propose(
 
     key = f"{KEY_PREFIX}{uuid.uuid4().hex[:12]}"
     attachment = _snapshot(task, key, attach) if attach else None
-    detail = {
+    detail: dict[str, Any] = {
         "kind": DETAIL_KIND,
         "channel": action.channel,
         "target": action.target,
@@ -199,6 +210,18 @@ def propose(
         "body": action.body,
         "attachment": attachment,
     }
+    if started_from and route.get("channel") == action.channel and (
+        route.get("target") == action.target
+    ):
+        # A reply to the source message: it threads under it, and the
+        # send-time check holds it to the account the message came in on.
+        if route.get("thread_id"):
+            detail["thread"] = route["thread_id"]
+        detail["reply_to"] = {
+            "profile": started_from["profile"],
+            "todo_id": started_from["todo_id"],
+            "arrival_id": route.get("arrival_id"),
+        }
     label = (
         f"Send {_CHANNEL_LABEL[channel]} to {action.target} from {action.account_id}"
     )[:200]
@@ -223,6 +246,17 @@ def propose(
         },
     )
     return {"key": key, "label": label, "status": "pending", **detail}
+
+
+def proposal_detail(
+    conn: sqlite3.Connection, task_id: str, key: str
+) -> Optional[dict[str, Any]]:
+    """The proposed message stored under ``key`` on the card, or None."""
+    row = conn.execute(
+        "SELECT detail FROM task_approvals WHERE task_id = ? AND approval_key = ?",
+        (task_id, key),
+    ).fetchone()
+    return parse_detail(row["detail"]) if row is not None else None
 
 
 def _already_sent(conn: sqlite3.Connection, task_id: str, key: str) -> bool:
@@ -279,6 +313,7 @@ def deliver(
             body=str(msg.get("body") or ""),
             account=msg.get("account") or None,
             subject=msg.get("subject") or None,
+            thread=msg.get("thread") or None,
             attachments=attachments,
         )
         error = result.get("error") if isinstance(result, dict) else "no result"
