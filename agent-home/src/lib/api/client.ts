@@ -20,6 +20,7 @@ import { hermesApiBaseUrl } from "@/lib/env";
 import type { SecurityBasicsResult } from "@/lib/api/security-basics";
 import type { AquariumSettings, AquariumSnapshot, CreatureId } from "@/lib/aquarium/creatures";
 import type { ModelTimeoutChange, ModelTimeoutsState } from "@/lib/model-timeouts";
+import { maskConflict, maskDecision, maskSource } from "@/lib/sources/mask";
 import type { MySkillPermissions, SkillPermissionsChange, SkillsAccessResponse } from "@/lib/skills/permissions";
 import type { SkillUsageEvent, SkillUsageList } from "@/lib/skills/usage";
 import type { PinResponse, PinSuggestionsResponse } from "@/types/landing";
@@ -3498,11 +3499,18 @@ export class HermesApiClient {
     profile_roles?: Record<string, Role>;
     is_box_admin: boolean;
   }> {
-    return this.request(`/api/sources${all ? "?all=1" : ""}`);
+    const list = await this.request<{
+      sources: Source[];
+      profiles: string[];
+      profile_roles?: Record<string, Role>;
+      is_box_admin: boolean;
+    }>(`/api/sources${all ? "?all=1" : ""}`);
+    return { ...list, sources: (list.sources ?? []).map(maskSource) };
   }
 
   async registerSource(body: SourceInput): Promise<{ source: Source }> {
-    return this.request("/api/sources", { method: "POST", json: body });
+    const out = await this.request<{ source: Source }>("/api/sources", { method: "POST", json: body });
+    return { ...out, source: maskSource(out.source) };
   }
 
   async putSourceRoute(
@@ -3518,10 +3526,11 @@ export class HermesApiClient {
 
   /** FG-03 P7: pause/resume or relabel a source (its owner, or box owner/admin). */
   async updateSource(sourceId: string, body: SourceUpdate): Promise<{ source: Source }> {
-    return this.request(`/api/sources/${encodeURIComponent(sourceId)}`, {
+    const out = await this.request<{ source: Source }>(`/api/sources/${encodeURIComponent(sourceId)}`, {
       method: "PATCH",
       json: body,
     });
+    return { ...out, source: maskSource(out.source) };
   }
 
   async deleteSource(sourceId: string): Promise<{ deleted: boolean }> {
@@ -3531,7 +3540,10 @@ export class HermesApiClient {
   }
 
   async sourceConflicts(all = false): Promise<{ conflicts: SourceClaimConflict[] }> {
-    return this.request(`/api/sources/conflicts${all ? "?all=1" : ""}`);
+    const out = await this.request<{ conflicts: SourceClaimConflict[] }>(
+      `/api/sources/conflicts${all ? "?all=1" : ""}`,
+    );
+    return { ...out, conflicts: (out.conflicts ?? []).map(maskConflict) };
   }
 
   /** FG-03 P7: settle a claim conflict (box owner/admin). */
@@ -3539,10 +3551,11 @@ export class HermesApiClient {
     conflictId: number,
     action: SourceConflictAction,
   ): Promise<{ conflict: SourceClaimConflict }> {
-    return this.request(
+    const out = await this.request<{ conflict: SourceClaimConflict }>(
       `/api/sources/conflicts/${encodeURIComponent(String(conflictId))}/resolve`,
       { method: "POST", json: { action } },
     );
+    return { ...out, conflict: maskConflict(out.conflict) };
   }
 
   /** FG-03 P4: the caller's routing decisions, newest first (`all`: box owner/admin). */
@@ -3555,7 +3568,10 @@ export class HermesApiClient {
     if (query.limit !== undefined) params.set("limit", String(query.limit));
     if (query.all) params.set("all", "1");
     const qs = params.toString();
-    return this.request(`/api/sources/decisions${qs ? `?${qs}` : ""}`);
+    const out = await this.request<{ decisions: RoutingDecision[] }>(
+      `/api/sources/decisions${qs ? `?${qs}` : ""}`,
+    );
+    return { ...out, decisions: (out.decisions ?? []).map(maskDecision) };
   }
 
   /** FG-03 P5: legacy vs profile-agent triage of the caller's batches. */

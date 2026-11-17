@@ -11,6 +11,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { useT, type Translator } from "@/i18n";
 import type { RoutingDecision, SourceChannel } from "@/types";
+import { displaySender } from "@/lib/sources/mask";
 
 /** Settings › Sources › one source's recent routing (`/settings/sources/[sourceId]/routing`). */
 export function sourceRoutingHref(sourceId: string): string {
@@ -294,7 +295,7 @@ function ReadyBody({
   recentHref: string | null;
   sourceId: string;
 }) {
-  const sender = decision.first_sender?.trim();
+  const sender = decision.first_sender?.trim() ? displaySender(decision.channel, decision.first_sender.trim()) : undefined;
   return (
     <div className="flex flex-col gap-3">
       <RoutingDecisionCard decision={decision} />

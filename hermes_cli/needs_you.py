@@ -770,6 +770,8 @@ def source_claim_entries(conflicts: Iterable[Any]) -> list[dict]:
     One entry per conflict (``source_claim:<id>``), with one-tap ``keep`` /
     ``transfer`` actions; resolving it clears the entry.
     """
+    from hermes_cli.source_registry import public_address
+
     out: list[dict] = []
     for c in conflicts:
         if getattr(c, "resolved_at", None) is not None:
@@ -777,16 +779,17 @@ def source_claim_entries(conflicts: Iterable[Any]) -> list[dict]:
         endpoint = f"/api/sources/conflicts/{int(c.conflict_id)}/resolve"
         label = _CHANNEL_LABELS.get(c.channel, c.channel)
         owner = c.existing_owner_user_id or "nobody"
+        address = public_address(c.channel, c.address)
         out.append(entry(
             id=f"source_claim:{int(c.conflict_id)}",
             source="source_claim",
-            title=f"{c.claimant_user_id} claims the {label} {c.address}",
+            title=f"{c.claimant_user_id} claims the {label} {address}",
             detail=f"It is registered to {owner}. Keep it with them, or transfer it "
                    f"to {c.claimant_user_id}.",
             context={
                 "conflict_id": int(c.conflict_id),
                 "channel": c.channel,
-                "address": c.address,
+                "address": address,
                 "claimant_user_id": c.claimant_user_id,
                 "existing_owner_user_id": c.existing_owner_user_id,
             },

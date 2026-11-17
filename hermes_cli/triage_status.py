@@ -296,7 +296,7 @@ def _wa_number(session: Optional[Path], configured: Any) -> Optional[str]:
     if masked:
         return masked
     text = str(configured or "")
-    if "*" in text:
+    if "*" in text or wa_bridge_owners.NUMBER_MASK[0] in text:
         return text
     digits = "".join(ch for ch in text if ch.isdigit())
     return wa_bridge_owners.mask_number(digits) if digits else None

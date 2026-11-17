@@ -31,6 +31,7 @@ import {
   type SourcesList,
 } from "@/lib/sources/api";
 import type { SourceChannel } from "@/types";
+import { displayAddress } from "@/lib/sources/mask";
 
 const STEPS = ["channel", "profiles", "triage", "review"] as const;
 const CARE_MAX = 2000;
@@ -159,15 +160,15 @@ export function RegisterSourceWizard({
       try {
         const { source } = await registerSource(registerBody(account));
         sourceId = source.source_id;
-        address = source.address || account.address;
+        address = displayAddress(account.channel, source.address || account.address);
       } catch (err) {
         const hint = registerErrorHint(err, account.channel);
         if (hint?.kind === "claim") {
           const owner = claimOwnerName(err);
           setConflict(
             owner
-              ? t("wizard.conflictOwner", { address: account.address, owner })
-              : t("wizard.conflict", { address: account.address }),
+              ? t("wizard.conflictOwner", { address: displayAddress(account.channel, account.address), owner })
+              : t("wizard.conflict", { address: displayAddress(account.channel, account.address) }),
           );
           return;
         }
@@ -327,7 +328,7 @@ export function RegisterSourceWizard({
                   >
                     <Radio on={on} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold">{a.address}</span>
+                      <span className="block truncate text-sm font-semibold">{displayAddress(a.channel, a.address)}</span>
                       <span className="block truncate text-xs text-[var(--color-muted)]">
                         {t(`wizard.accountMeta.${a.channel}`, { name: a.display ?? "" })}
                       </span>
@@ -464,7 +465,7 @@ export function RegisterSourceWizard({
           <dl className={`${CARD} grid grid-cols-[7rem_1fr] gap-x-3 gap-y-3 p-3 text-sm`}>
             <dt className="text-[var(--color-muted)]">{t("wizard.review.channel")}</dt>
             <dd>
-              {t(`channel.${account.channel}`)} · {account.address}
+              {t(`channel.${account.channel}`)} · {displayAddress(account.channel, account.address)}
             </dd>
             <dt className="text-[var(--color-muted)]">{t("wizard.review.profiles")}</dt>
             <dd className="flex flex-wrap gap-1.5">

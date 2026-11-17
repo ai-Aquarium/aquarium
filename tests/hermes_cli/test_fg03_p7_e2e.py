@@ -124,7 +124,7 @@ def test_claim_conflict_is_a_box_admin_needs_you_entry_settled_by_keep_or_transf
     assert entry["id"] == f"source_claim:{conflict_id}"
     assert entry["severity"] == "approval"
     assert entry["context"] == {
-        "conflict_id": conflict_id, "channel": "whatsapp", "address": "85291234567",
+        "conflict_id": conflict_id, "channel": "whatsapp", "address": "+85••••••67",
         "claimant_user_id": "mary", "existing_owner_user_id": "john",
     }
     endpoint = f"/api/sources/conflicts/{conflict_id}/resolve"
@@ -232,7 +232,8 @@ def test_routing_step_stores_message_count_and_first_sender(
     [decision] = _client("john").get(
         "/api/sources/decisions", params={"source_id": source_id, "batch_id": batch["batch_id"]},
     ).json()["decisions"]
-    assert (decision["message_count"], decision["first_sender"]) == expected
+    shown = (3, "Ann <+85••••••22>") if kind == "whatsapp" else expected
+    assert (decision["message_count"], decision["first_sender"]) == shown
 
     async def stored(c):
         return [dict(r) for r in await c.fetch(
@@ -397,7 +398,8 @@ def test_register_whatsapp_and_telegram_from_the_callers_own_credential(
     assert r.status_code == 200, r.text
     wa = r.json()["source"]
     assert (wa["channel"], wa["address"], wa["owner_user_id"], wa["display"]) == (
-        "whatsapp", JOHN_NUMBER, "john", "johnwa")
+        "whatsapp", "+85••••••67", "john", "johnwa")
+    assert JOHN_NUMBER not in r.text
     assert wa["credential_ref"] == {"profile": "default", "kind": "wa-bridge", "bridge": "johnwa",
                                     "owner_user_id": "john", "port": 3101}
 

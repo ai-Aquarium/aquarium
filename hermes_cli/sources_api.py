@@ -7,7 +7,8 @@ source on the box (``?all=1``) is box owner/admin only. The store is
 (``credential_ref`` is a pointer). Routing decisions (FG-03 P4) are the
 owner's own; ``?all=1`` (box owner/admin) is for support. Pausing a source
 (``PATCH``) is its owner's or the box admin's; settling a claim conflict is
-the box admin's.
+the box admin's. A WhatsApp number never leaves here unmasked (the registry
+keeps the full number): see :meth:`~hermes_cli.source_registry.Source.public_dict`.
 """
 
 from __future__ import annotations
@@ -155,7 +156,20 @@ async def _caller(request: Request):
 
 
 def _http(error: registry.SourceRegistryError) -> HTTPException:
-    return HTTPException(status_code=error.status, detail=str(error))
+    return HTTPException(status_code=error.status, detail=_public_error(error))
+
+
+def _public_error(error: registry.SourceRegistryError) -> str:
+    """The error's text with any WhatsApp number in it masked."""
+    channel = getattr(error, "channel", None) or "whatsapp"
+    return registry.public_text(channel, str(error), getattr(error, "address", None)) or ""
+
+
+def _public_decision(decision) -> dict[str, Any]:
+    """A routing decision for a browser: a WhatsApp first sender's number is masked."""
+    out = decision.as_dict()
+    out["first_sender"] = registry.public_text(decision.channel, decision.first_sender)
+    return out
 
 
 async def _with_box(fn):
@@ -184,7 +198,7 @@ async def list_my_sources(request: Request, all: bool = False):
         sources = await registry.list_sources(
             connection, owner_user_id=None if all else user_id
         )
-        return [s.as_dict() for s in sources]
+        return [s.public_dict() for s in sources]
 
     roles = await registry.active_profile_roles(user_id)
     return {
@@ -227,7 +241,7 @@ async def register(request: Request, body: RegisterBody):
             )
         except registry.SourceOwnedByAnotherUser as error:
             return error
-        return {"source": source.as_dict()}
+        return {"source": source.public_dict()}
 
     result = await _with_box(run)
     if not isinstance(result, registry.SourceOwnedByAnotherUser):
@@ -236,7 +250,7 @@ async def register(request: Request, body: RegisterBody):
         label = "WhatsApp number" if result.channel == "whatsapp" else "Telegram bot"
         detail = _TAKEN.format(label=label)
     else:
-        detail = str(result)
+        detail = _public_error(result)
     # The claim screen names the current owner by display name only.
     owner = await registry.display_name_for(result.owner_user_id)
     return JSONResponse(status_code=409, content={"detail": detail, "owner_display": owner})
@@ -295,7 +309,7 @@ async def patch_source(request: Request, source_id: str, body: PatchBody):
             enabled=body.enabled if "enabled" in given else None,
             display=body.display if "display" in given else registry.UNSET,
         )
-        return {"source": source.as_dict()}
+        return {"source": source.public_dict()}
 
     return await _with_box(run)
 
@@ -312,7 +326,7 @@ async def transfer(request: Request, source_id: str, body: TransferBody):
             new_owner_user_id=body.new_owner_user_id,
             actor_user_id=principal.user_id,
         )
-        return {"source": source.as_dict()}
+        return {"source": source.public_dict()}
 
     return await _with_box(run)
 
@@ -329,7 +343,7 @@ async def conflicts(request: Request, all: bool = False):
         rows = await registry.list_conflicts(
             connection, user_id=None if all else user_id
         )
-        return [c.as_dict() for c in rows]
+        return [c.public_dict() for c in rows]
 
     return {"conflicts": await _with_box(run)}
 
@@ -346,7 +360,7 @@ async def resolve_conflict(request: Request, conflict_id: int, body: ResolveBody
             action=body.action,
             actor_user_id=principal.user_id,
         )
-        return {"conflict": conflict.as_dict()}
+        return {"conflict": conflict.public_dict()}
 
     return await _with_box(run)
 
@@ -377,7 +391,7 @@ async def decisions(
             batch_id=batch_id or None,
             limit=limit,
         )
-        return [d.as_dict() for d in rows]
+        return [_public_decision(d) for d in rows]
 
     return {"decisions": await _with_box(run)}
 
