@@ -72,6 +72,21 @@ class DatastoreNotConfigured(RuntimeError):
     """The profile has no Supabase app datastore DSN (so no app tables at all)."""
 
 
+class DatastoreSecretMissing(DatastoreNotConfigured):
+    """The DSN is a ``${VAR}`` reference whose variable is unset.
+
+    The profile *was* given a datastore, so it may hold ``principals`` rows
+    that just cannot be read now: unlike a never-configured profile (empty
+    DSN, the default), it is not known to have no rows.
+    """
+
+
+def _not_configured(dsn: str, message: str) -> DatastoreNotConfigured:
+    """The error for a :func:`_dsn_missing` DSN: lost secret vs never configured."""
+    cls = DatastoreSecretMissing if dsn.strip() else DatastoreNotConfigured
+    return cls(message)
+
+
 def _dsn_missing(dsn: str) -> bool:
     """Empty, or a ``${VAR}`` reference whose variable is not set."""
     return not dsn or dsn.lstrip().startswith("${")
@@ -112,10 +127,11 @@ class SupabaseAppStore:
         pooled connection; ``close()`` returns it to the pool.
         """
         if _dsn_missing(self.dsn):
-            raise DatastoreNotConfigured(
+            raise _not_configured(
+                self.dsn,
                 "Supabase app datastore is not configured; set "
                 "datastore.supabase_app.dsn in config.yaml, preferably as "
-                "${DATABASE_URL}." + _terminal_hint()
+                "${DATABASE_URL}." + _terminal_hint(),
             )
         if not _VALID_SCHEMA.fullmatch(self.schema):
             raise ValueError(f"Invalid Supabase schema name: {self.schema!r}")
@@ -482,9 +498,10 @@ async def connect_for_publish(
     if not _VALID_SCHEMA.fullmatch(target):
         raise ValueError(f"Invalid Supabase schema name: {target!r}")
     if _dsn_missing(store.dsn):
-        raise DatastoreNotConfigured(
+        raise _not_configured(
+            store.dsn,
             "Supabase app datastore is not configured; set "
-            "datastore.supabase_app.dsn in config.yaml." + _terminal_hint()
+            "datastore.supabase_app.dsn in config.yaml." + _terminal_hint(),
         )
 
     from tools.lazy_deps import ensure

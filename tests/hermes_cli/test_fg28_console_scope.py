@@ -482,16 +482,16 @@ def test_person_enrolments_for_a_member_everywhere_is_empty(people_box) -> None:
 # -- a profile with no app datastore -------------------------------------------
 
 
-class _UnconfiguredStore(_FakeStore):
-    """A profile whose ``datastore.supabase_app.dsn`` is unset."""
+class _SecretMissingStore(_FakeStore):
+    """A profile whose DSN is ``${VAR}`` with ``VAR`` unset: its rows are unreadable."""
 
     def __init__(self) -> None:
         super().__init__({})
 
     async def get(self, user_id: str):
-        from hermes_cli.datastore import DatastoreNotConfigured
+        from hermes_cli.datastore import DatastoreSecretMissing
 
-        raise DatastoreNotConfigured("no dsn")
+        raise DatastoreSecretMissing("${ENGINEERS_DATABASE_URL} is unset")
 
     resolve_alias = get
 
@@ -542,3 +542,21 @@ def test_a_configured_profile_that_cannot_connect_still_fails_the_read(
                  resolve_console_principal(SUBJECT, "coder", **kw)):
         with pytest.raises(OSError):
             asyncio.run(read)
+
+
+def test_a_lost_datastore_secret_is_skipped_by_listings_but_refuses_account_level_ops(
+    two_profiles, tmp_path
+) -> None:
+    """Devin Review on #990: a profile whose secret is lost may still enrol the
+    target, so another profile's admin must not get a box-wide verb from it."""
+    entries, per_home = _with_sibling(two_profiles, tmp_path, _SecretMissingStore())
+    kw = {"store_factory": _store_factory(per_home), "registry": entries}
+
+    assert asyncio.run(enrolled_profiles(SUBJECT, **kw)) == ["default", "engineers"]
+    assert [r.profile.name for r in asyncio.run(
+        person_enrolments(SUBJECT, OTHER_SUBJECT, **kw))] == ["default", "engineers"]
+    actor = Principal(SUBJECT, "CTO", "owner")
+    with pytest.raises(AccountLevelPermissionError, match="cannot be read"):
+        asyncio.run(guard_account_level_op(actor, OTHER_SUBJECT, **kw))
+    with pytest.raises(ProfileScopeError, match="no multi-user datastore"):
+        asyncio.run(resolve_console_principal(SUBJECT, "coder", **kw))
