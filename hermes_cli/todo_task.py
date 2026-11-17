@@ -325,13 +325,16 @@ async def start_from_request(principal, todo_id: str, body: Mapping[str, Any]) -
     )
 
 
-async def close_linked_todo(principal, project_id: str) -> Optional[dict[str, Any]]:
-    """Close the to-do a done project was started from; best-effort.
+#: How the end of a project closes its to-do: done is done; an archived or
+#: failed task dismisses it (Leo, 2026-11-17).
+CLOSE_STAGES = {"done": "done", "archived": "dismissed", "failed": "dismissed"}
 
-    Read and written as the caller (their enrolment in the to-do's profile),
-    so a to-do they cannot see stays as it is. Returns the closed to-do's
-    payload, or None when there was nothing to close.
-    """
+
+def _closed_by(slug: str, reason: str) -> str:
+    return f"Project {slug} {reason}"
+
+
+async def _linked(project_id: str):
     from hermes_cli import projects_db
 
     def _link():
@@ -339,7 +342,22 @@ async def close_linked_todo(principal, project_id: str) -> Optional[dict[str, An
             project = projects_db.get_project(conn, project_id)
             return project, projects_db.project_todo(conn, project_id)
 
-    project, link = await asyncio.to_thread(_link)
+    return await asyncio.to_thread(_link)
+
+
+async def close_linked_todo(
+    principal, project_id: str, *, reason: str = "done"
+) -> Optional[dict[str, Any]]:
+    """Close the to-do a project was started from, when the project is done,
+    archived or failed (``reason``); best-effort and applied once (a closed
+    to-do is left as it is).
+
+    Read and written as ``principal`` (their enrolment in the to-do's
+    profile), so a to-do they cannot see stays as it is. Returns the closed
+    to-do's payload, or None when there was nothing to close.
+    """
+    stage = CLOSE_STAGES[reason]
+    project, link = await _linked(project_id)
     if project is None or link is None:
         return None
 
@@ -349,17 +367,81 @@ async def close_linked_todo(principal, project_id: str) -> Optional[dict[str, An
         if todo is None or not todo.is_live:
             return None
         closed = await store.set_stage(
-            who, todo.id, "done",
-            outcome=f"Project {project.slug} done",
+            who, todo.id, stage,
+            outcome=_closed_by(project.slug, reason),
             actor=f"user:{principal.user_id}",
         )
         return closed.as_dict()
 
     try:
         return await in_profile(principal, link["profile"], _close)
-    except Exception as exc:  # noqa: BLE001 - the project is done regardless
+    except Exception as exc:  # noqa: BLE001 - the project moved regardless
         log.warning("todo_task: closing the to-do of %s failed (%s)", project_id, exc)
         return None
+
+
+async def reopen_linked_todo(
+    principal, project_id: str, *, reason: str
+) -> Optional[dict[str, Any]]:
+    """Bring the to-do back to ``working`` when its project comes back
+    (unarchived, or a failed task started again) — only if this project's
+    ``reason`` closed it, so a to-do the person closed themselves stays
+    closed. Its Needs you items follow the live stage."""
+    project, link = await _linked(project_id)
+    if project is None or link is None:
+        return None
+
+    async def _reopen(who):
+        store = _todo_store()
+        todo = await store.get(who, link["todo_id"])
+        if todo is None or todo.is_live:
+            return None
+        if (todo.outcome or "") != _closed_by(project.slug, reason):
+            return None
+        reopened = await store.set_stage(
+            who, todo.id, "working",
+            outcome=f"Project {project.slug} back",
+            actor=f"user:{principal.user_id}",
+        )
+        return reopened.as_dict()
+
+    try:
+        return await in_profile(principal, link["profile"], _reopen)
+    except Exception as exc:  # noqa: BLE001 - the project moved regardless
+        log.warning("todo_task: reopening the to-do of %s failed (%s)", project_id, exc)
+        return None
+
+
+def on_run_closed(run: Mapping[str, Any]) -> None:
+    """A failed run of a project started from a to-do closes that to-do
+    (sync; called by ``projects_run.close_run``). The run's starter acts,
+    resolved in the to-do's profile; nothing happens without one."""
+    if run.get("status") != "failed" or not run.get("project_id"):
+        return
+    from hermes_cli import profile_refs, projects_db
+
+    with projects_db.connect_closing() as conn:
+        link = projects_db.project_todo(conn, str(run["project_id"]))
+    starter = str(run.get("triggered_by") or "")
+    if link is None or not starter or starter.startswith("cron:"):
+        return
+
+    async def _close():
+        from hermes_cli.console_scope import _scoped_to
+
+        home = profile_refs._profile_home(link["profile"])  # noqa: SLF001
+        if home is None:
+            return None
+        with _scoped_to(home):
+            who = await profile_refs._principal_here(starter)  # noqa: SLF001
+        if who is None:
+            return None
+        return await close_linked_todo(who, str(run["project_id"]), reason="failed")
+
+    try:
+        profile_refs._run(_close())  # noqa: SLF001
+    except Exception as exc:  # noqa: BLE001 - the run is closed regardless
+        log.warning("todo_task: closing the to-do of a failed run failed (%s)", exc)
 
 
 def reply_defaults(project_id: Optional[str]) -> Optional[dict[str, Any]]:

@@ -1574,6 +1574,10 @@ async def start_quick_task_route(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    from hermes_cli import todo_task
+
+    # Retry after a failed run: the to-do the failure closed comes back.
+    await todo_task.reopen_linked_todo(principal, project.id, reason="failed")
     return {"status": "started", "run": started.get("run")}
 
 @router.get("/running-cards")
@@ -1931,9 +1935,15 @@ async def archive_project_route(request: Request) -> dict[str, Any]:
             return _project_payload(updated)
 
     try:
-        return await asyncio.to_thread(_archive_sync)
+        payload = await asyncio.to_thread(_archive_sync)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    from hermes_cli import todo_task
+
+    closed = await todo_task.close_linked_todo(principal, project.id, reason="archived")
+    if closed is not None:
+        payload["todo"] = closed
+    return payload
 
 
 @router.post("/{slug}/restore")
@@ -1943,7 +1953,7 @@ async def restore_project_route(request: Request) -> dict[str, Any]:
     ``active``. The schedule is **not** re-created; ``PUT /schedule`` does
     that. Returns the updated row.
     """
-    project, _role, _profiles, _principal = await _require_write(request)
+    project, _role, _profiles, principal = await _require_write(request)
 
     def _restore_sync() -> dict:
         with projects_db.connect_closing() as conn:
@@ -1957,9 +1967,15 @@ async def restore_project_route(request: Request) -> dict[str, Any]:
             return _project_payload(updated)
 
     try:
-        return await asyncio.to_thread(_restore_sync)
+        payload = await asyncio.to_thread(_restore_sync)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    from hermes_cli import todo_task
+
+    reopened = await todo_task.reopen_linked_todo(principal, project.id, reason="archived")
+    if reopened is not None:
+        payload["todo"] = reopened
+    return payload
 
 
 @router.delete("/{slug}")
