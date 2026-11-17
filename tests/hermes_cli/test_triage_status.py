@@ -191,7 +191,7 @@ def test_configured(env, monkeypatch):
     assert [(a["address"], a["auth"], a["credential"]) for a in k["email"]["accounts"]] == [
         ("leo@gmail.com", "xoauth2", True), ("leo@corp.example", "password", True)]
     phone = k["whatsapp"]["accounts"][0]
-    assert phone["number"] == "+852****4567" and phone["credential"] is True
+    assert phone["number"] == "+85••••••67" and phone["credential"] is True
     assert k["calendar"]["accounts"][0]["address"] == "leo@gmail.com"
     assert k["email"]["services"][0] == {"unit": "hermes-email-poller.service", "state": "active"}
 
@@ -262,7 +262,7 @@ def test_legacy_whatsapp_session_dir_outside_hermes_home(env, monkeypatch, tmp_p
     k = kinds(status(monkeypatch, LEO))["whatsapp"]
     assert k["status"] == ts.SET_UP
     phone = k["accounts"][0]
-    assert phone["credential"] is True and phone["number"] == "+852****5432"
+    assert phone["credential"] is True and phone["number"] == "+85••••••32"
     assert not (env.home / "whatsapp" / "session-phone1").exists()
 
 
@@ -388,7 +388,7 @@ def test_whatsapp_reads_the_target_profiles_bridges(box, client, monkeypatch, tm
 
     resp, k = wa("?profile=hr")
     assert [(a["id"], a["number"], a["credential"]) for a in k["accounts"]] == [
-        ("hr1", "+852****0000", True)]
+        ("hr1", "+85••••••00", True)]
     assert k["status"] == ts.SET_UP
     assert "root1" not in resp.text and "1111" not in resp.text
 
@@ -396,7 +396,7 @@ def test_whatsapp_reads_the_target_profiles_bridges(box, client, monkeypatch, tm
     # unowned legacy phone.
     resp, k = wa("")
     assert [(a["id"], a["number"], a["credential"]) for a in k["accounts"]] == [
-        ("root1", "+852****0000", True)]
+        ("root1", "+85••••••00", True)]
     assert "hr1" not in resp.text and "2222" not in resp.text
 
     # Dan is hr's admin but owns no bridge there: nothing of Leo's leaks.

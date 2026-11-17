@@ -91,7 +91,7 @@ describe("sources api helpers", () => {
     expect(accountsOf(accounts.email)).toEqual([
       expect.objectContaining({ address: "john@acme.com", detail: "working", credential_ref: { kind: "email-imap", name: "john@acme.com" } }),
     ]);
-    expect(accountsOf(accounts.whatsapp).map((a) => a.address)).toEqual(["+852 6178 2290"]);
+    expect(accountsOf(accounts.whatsapp).map((a) => a.address)).toEqual(["+85••••••90"]);
     expect(accounts.telegram).toEqual({ state: "failed", status: 502, detail: "down" });
     expect(accountsOf(accounts.telegram)).toEqual([]);
   });
@@ -109,7 +109,7 @@ describe("sources api helpers", () => {
   });
 
   it("lets Hermes derive WhatsApp / Telegram addresses from the credential ref", () => {
-    const wa = { channel: "whatsapp" as const, address: "+852****4567", display: "john-wa", detail: "working" as const, credential_ref: { kind: "wa-bridge", bridge: "john-wa" } };
+    const wa = { channel: "whatsapp" as const, address: "+85••••••67", display: "john-wa", detail: "working" as const, credential_ref: { kind: "wa-bridge", bridge: "john-wa" } };
     const tg = { channel: "telegram" as const, address: "@JohnBot", display: null, detail: "working" as const, credential_ref: { kind: "telegram-bot" } };
     const mail = { channel: "email" as const, address: "john@acme.com", display: null, detail: "working" as const, credential_ref: { kind: "email-imap", name: "john@acme.com" } };
     expect(registerBody(wa)).toEqual({ channel: "whatsapp", display: "john-wa", credential_ref: { kind: "wa-bridge", bridge: "john-wa" } });

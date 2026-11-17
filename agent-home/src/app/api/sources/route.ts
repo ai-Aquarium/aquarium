@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
+import { maskPhoneNumbers } from "@/lib/sources/mask";
 import type { SourceInput } from "@/types";
 
 import { hermesError, unauthenticated } from "./_shared";
@@ -37,7 +38,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     const client = await apiClientForRequest();
     return NextResponse.json(await client.registerSource(body));
   } catch (err) {
-    return claimError(err) ?? hermesError(err);
+    // A refusal about a typed WhatsApp number must not echo it back unmasked.
+    const safe =
+      body.channel === "whatsapp" && err instanceof HermesApiError
+        ? new HermesApiError(err.status, maskPhoneNumbers(err.message), maskedBody(err.body))
+        : err;
+    return claimError(safe) ?? hermesError(safe);
   }
 }
 
@@ -47,4 +53,10 @@ function claimError(err: unknown): NextResponse | null {
   const owner = (err.body as { owner_display?: unknown } | undefined)?.owner_display;
   if (typeof owner !== "string" || !owner.trim()) return null;
   return NextResponse.json({ error: "api_error", detail: err.message, owner_display: owner }, { status: 409 });
+}
+
+function maskedBody(body: unknown): unknown {
+  if (!body || typeof body !== "object") return body;
+  const detail = (body as { detail?: unknown }).detail;
+  return typeof detail === "string" ? { ...body, detail: maskPhoneNumbers(detail) } : body;
 }

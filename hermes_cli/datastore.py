@@ -68,18 +68,13 @@ class SessionOrigin(Protocol):
         ...
 
 
+class DatastoreNotConfigured(RuntimeError):
+    """The profile has no Supabase app datastore DSN (so no app tables at all)."""
+
+
 def _dsn_missing(dsn: str) -> bool:
     """Empty, or a ``${VAR}`` reference whose variable is not set."""
     return not dsn or dsn.lstrip().startswith("${")
-
-
-class AppStoreNotConfigured(RuntimeError):
-    """The profile has no app datastore DSN (see :func:`_dsn_missing`).
-
-    A configuration state, not a failure: such a profile is single-user and
-    holds no ``principals`` rows. Distinct from a configured DSN that fails to
-    connect, which raises the driver's own error.
-    """
 
 
 def _terminal_hint() -> str:
@@ -117,7 +112,7 @@ class SupabaseAppStore:
         pooled connection; ``close()`` returns it to the pool.
         """
         if _dsn_missing(self.dsn):
-            raise AppStoreNotConfigured(
+            raise DatastoreNotConfigured(
                 "Supabase app datastore is not configured; set "
                 "datastore.supabase_app.dsn in config.yaml, preferably as "
                 "${DATABASE_URL}." + _terminal_hint()
@@ -487,7 +482,7 @@ async def connect_for_publish(
     if not _VALID_SCHEMA.fullmatch(target):
         raise ValueError(f"Invalid Supabase schema name: {target!r}")
     if _dsn_missing(store.dsn):
-        raise AppStoreNotConfigured(
+        raise DatastoreNotConfigured(
             "Supabase app datastore is not configured; set "
             "datastore.supabase_app.dsn in config.yaml." + _terminal_hint()
         )

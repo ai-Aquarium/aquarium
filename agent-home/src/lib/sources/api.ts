@@ -3,6 +3,7 @@
  * helpers the Sources page, the register wizard and Recent routing share.
  */
 import { AdminFetchError, getJson, sendJson } from "@/lib/admin-fetch";
+import { maskWhatsAppNumber } from "@/lib/sources/mask";
 import type {
   EmailMailbox,
   Role,
@@ -115,7 +116,7 @@ const whatsappAccounts = async (): Promise<ConnectedAccount[]> => {
     .filter((b) => b.paired && b.number)
     .map((b) => ({
       channel: "whatsapp",
-      address: b.number as string,
+      address: maskWhatsAppNumber(b.number as string),
       display: b.name,
       detail: b.status === "connected" ? "working" : "attention",
       credential_ref: { kind: "wa-bridge", bridge: b.name },
@@ -244,7 +245,9 @@ export function sameAccount(account: ConnectedAccount, source: Source): boolean 
 }
 
 export function sameAddress(channel: SourceChannel, a: string, b: string): boolean {
+  // Two masked WhatsApp numbers can share their first / last digits: compare by credential instead.
+  if (channel === "whatsapp" && /[•*]/.test(a + b)) return false;
   const norm = (s: string) =>
-    channel === "email" ? s.trim().toLowerCase() : channel === "whatsapp" ? s.replace(/[^\d*]/g, "") : s.trim().replace(/^@/, "").toLowerCase();
+    channel === "email" ? s.trim().toLowerCase() : channel === "whatsapp" ? s.replace(/\D/g, "") : s.trim().replace(/^@/, "").toLowerCase();
   return norm(a) === norm(b);
 }

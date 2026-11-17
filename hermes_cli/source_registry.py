@@ -250,6 +250,10 @@ class Source:
             "routes": [r.as_dict() for r in self.routes],
         }
 
+    def public_dict(self) -> dict[str, Any]:
+        """:meth:`as_dict` for a browser: a WhatsApp number is masked."""
+        return {**self.as_dict(), "address": public_address(self.channel, self.address)}
+
 
 @dataclass(frozen=True)
 class ClaimConflict:
@@ -278,6 +282,14 @@ class ClaimConflict:
             "created_at": _iso(self.created_at),
             "resolved_at": _iso(self.resolved_at),
             "resolution": self.resolution,
+        }
+
+    def public_dict(self) -> dict[str, Any]:
+        """:meth:`as_dict` for a browser: a WhatsApp number is masked, in the detail too."""
+        return {
+            **self.as_dict(),
+            "address": public_address(self.channel, self.address),
+            "detail": public_text(self.channel, self.detail, self.address),
         }
 
 
@@ -339,6 +351,30 @@ def normalize_address(channel: str, raw: str) -> str:
     if not bot_id.isdigit():
         raise SourceRegistryError(f"Not a numeric Telegram bot id: {raw!r}")
     return str(int(bot_id))
+
+
+def public_address(channel: str, address: str) -> str:
+    """The address as a browser may see it: a WhatsApp number is masked
+    (``+15••••••01``, see :func:`hermes_cli.wa_bridge_owners.mask_number`);
+    email addresses and Telegram bot ids are shown as they are."""
+    if channel != "whatsapp":
+        return address
+    from hermes_cli.wa_bridge_owners import mask_number
+
+    return mask_number(address) or address
+
+
+_PHONE_RUN = re.compile(r"\+?\d{7,15}")
+
+
+def public_text(channel: str, text: Optional[str], address: Optional[str] = None) -> Optional[str]:
+    """``text`` with every WhatsApp number in it masked (``address`` in any
+    form it was written), for messages about a ``channel`` source."""
+    if channel != "whatsapp" or not text:
+        return text
+    if address:
+        text = text.replace(address, public_address(channel, address))
+    return _PHONE_RUN.sub(lambda m: public_address(channel, m.group(0)), text)
 
 
 def _check_credential_ref(ref: Optional[Mapping[str, Any]]) -> Optional[dict[str, Any]]:

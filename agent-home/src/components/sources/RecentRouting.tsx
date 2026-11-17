@@ -10,6 +10,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { useT } from "@/i18n/client";
 import { decisionOutcome, type DecisionOutcome } from "@/lib/sources/api";
 import type { RoutingDecision, Source } from "@/types";
+import { displayAddress, displaySender } from "@/lib/sources/mask";
 
 const OUTCOME_TONE: Record<DecisionOutcome, Tone> = { routed: "success", stored: "muted", fallback: "warning" };
 
@@ -66,7 +67,7 @@ export function RecentRouting({
   const meta = (d: RoutingDecision): string =>
     [
       d.message_count == null ? null : d.message_count === 1 ? t("routing.message") : t("routing.messages", { count: d.message_count }),
-      d.first_sender ? t("routing.from", { sender: d.first_sender }) : null,
+      d.first_sender ? t("routing.from", { sender: displaySender(d.channel, d.first_sender) }) : null,
     ]
       .filter(Boolean)
       .join(" · ");
@@ -98,7 +99,7 @@ export function RecentRouting({
                   : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-fg)]"
               }`}
             >
-              {s.address}
+              {displayAddress(s.channel, s.address)}
             </Link>
           ))}
         </nav>

@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, List, NamedTuple, Optional, Protocol
 
-from hermes_cli.datastore import AppStoreNotConfigured
+from hermes_cli.datastore import DatastoreNotConfigured
 from hermes_cli.profile_registry import ProfileRegistryEntry, get_profile_registry
 
 logger = logging.getLogger(__name__)
@@ -166,7 +166,7 @@ async def principal_in_profile(
         store = store_factory(entry.hermes_home)
         try:
             return await _principal_for_subject(store, subject)
-        except AppStoreNotConfigured:
+        except DatastoreNotConfigured:
             _note_unconfigured(entry)
             return None
 
@@ -286,7 +286,7 @@ async def person_enrolments(
                 ):
                     continue
                 target = await store.get(target_user_id)
-            except AppStoreNotConfigured:
+            except DatastoreNotConfigured:
                 _note_unconfigured(entry)
                 continue
         out.append(PersonEnrolment(entry, actor.role, target))
@@ -339,7 +339,7 @@ async def resolve_console_principal(
             )
         try:
             principal = await _principal_for_subject(store, subject)
-        except AppStoreNotConfigured as exc:
+        except DatastoreNotConfigured as exc:
             _note_unconfigured(entry)
             raise ProfileScopeError(
                 f"subject {subject!r} is not enrolled in profile "

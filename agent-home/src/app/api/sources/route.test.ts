@@ -146,6 +146,20 @@ describe("forwarding", () => {
     expect((await RESOLVE(json("POST", { action: "keep" }), conflictCtx("7"))).status).toBe(403);
   });
 
+  it("POST masks a WhatsApp number Hermes' refusal echoes back", async () => {
+    registerSource.mockRejectedValueOnce(
+      new HermesApiError(409, "85291234567 is already registered to another user", {
+        detail: "85291234567 is already registered to another user",
+        owner_display: "Mary",
+      }),
+    );
+    const r = await POST(json("POST", { channel: "whatsapp", address: "+852 9123 4567" }));
+    expect(r.status).toBe(409);
+    const text = await r.text();
+    expect(text).not.toContain("85291234567");
+    expect(JSON.parse(text)).toMatchObject({ detail: "+85••••••67 is already registered to another user", owner_display: "Mary" });
+  });
+
   it("passes Hermes refusals (409 claimed, 403 not the owner) through", async () => {
     registerSource.mockRejectedValue(new HermesApiError(409, "already registered to another user"));
     expect((await POST(json("POST", { channel: "email", address: "a@b.com" }))).status).toBe(409);
