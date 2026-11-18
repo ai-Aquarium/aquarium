@@ -162,7 +162,7 @@ export async function MobileShell({
       <div data-component="MobileShell" data-variant="bare" className="min-h-dvh bg-[var(--color-bg)]">
         {showCoral ? <ProfileScope current={sessionProfile} followLink={followProfileLink}>{children}</ProfileScope> : children}
         {showCoral ? <CoralHost badgeCounts={badgeCounts} hiddenApps={hiddenApps} /> : null}
-        {showCoral ? <LeadChatHost storageEnabled={storageConfigured()} /> : null}
+        {showCoral ? <LeadChatHost storageEnabled={storageConfigured()} profile={sessionProfile} /> : null}
         {showCoral ? <AppMcpBridge /> : null}
       </div>
     );
@@ -218,7 +218,11 @@ export async function MobileShell({
       overlays={
         <>
           <CoralHost badgeCounts={badgeCounts} hiddenApps={hiddenApps} hideFabOnPhone={chatChrome} />
-          <LeadChatHost storageEnabled={storageConfigured()} hideFabOnPhone={chatChrome} />
+          <LeadChatHost
+            storageEnabled={storageConfigured()}
+            hideFabOnPhone={chatChrome}
+            profile={sessionProfile}
+          />
           <AppMcpBridge />
         </>
       }

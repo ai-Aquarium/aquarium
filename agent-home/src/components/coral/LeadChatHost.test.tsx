@@ -270,6 +270,35 @@ describe("LeadChatHost panel", () => {
     expect(screen.getByRole("button", { name: /stop the agent/i })).toBeTruthy();
   });
 
+  it("names the session's profile in the thinking label, and follows a switch", async () => {
+    leadFetch();
+    let handlers: ChatStreamHandlers | null = null;
+    vi.mocked(streamChatTurn).mockImplementation(
+      (_params, h) =>
+        new Promise(() => {
+          handlers = h;
+        }),
+    );
+
+    const { rerender } = render(<LeadChatHost profile="finance" />);
+    openLeadChat();
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/message your agent/i)).toBeTruthy();
+    });
+    await sendMessage("Long task");
+    await waitFor(() => {
+      expect(handlers).not.toBeNull();
+    });
+    handlers!.onAccepted?.("run-1", "lead-abc");
+
+    const status = () => screen.getByRole("status");
+    await waitFor(() => {
+      expect(status().textContent).toContain("Agent finance is thinking…");
+    });
+    rerender(<LeadChatHost profile="hr" />);
+    expect(status().textContent).toContain("Agent hr is thinking…");
+  });
+
   it("Stop asks the server to cancel the run instead of only closing the stream", async () => {
     leadFetch();
     let handlers: ChatStreamHandlers | null = null;

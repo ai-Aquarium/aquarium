@@ -87,11 +87,14 @@ const EDGE = 8;
 export function LeadChatHost({
   storageEnabled = false,
   hideFabOnPhone = false,
+  profile,
 }: {
   /** Whether Supabase Storage is configured on the box — gates the attach button. */
   storageEnabled?: boolean;
   /** Phones: no floating button (the chat page is already a chat). */
   hideFabOnPhone?: boolean;
+  /** The session's profile: the lead chat's turns run there (no `?profile=`). */
+  profile?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [composerMenuOpen, setComposerMenuOpen] = useState(false);
@@ -722,6 +725,7 @@ export function LeadChatHost({
               elapsedMs={turn ? now - turn.startedAt : undefined}
               quietMs={turn ? now - turn.lastEventAt : undefined}
               hasOutput={streamText !== ""}
+              profileName={profile}
             />
             {note ? (
               <p

@@ -77,4 +77,19 @@ describe("ActivityLine", () => {
     expect(sel(container, "StatusIndicator")).not.toBeNull();
     expect(sel(container, "LiveActivity")).toBeNull();
   });
+
+  it("names the answering profile in the status line", () => {
+    const { container } = render(
+      <ActivityLine
+        activity="thinking"
+        tools={[]}
+        reasoning=""
+        hasOutput={false}
+        profileName="finance"
+      />,
+    );
+    expect(sel(container, "StatusIndicator")!.textContent).toContain(
+      "Agent finance is thinking…",
+    );
+  });
 });
