@@ -35,6 +35,8 @@ export interface ChatThreadProps {
   className?: string;
   /** compact = lead panel. */
   density?: "comfortable" | "compact";
+  /** The profile answering this thread, named in the live status line. */
+  profileName?: string;
 }
 
 /** Older pages start loading this far before the top edge comes into view. */
@@ -78,10 +80,12 @@ const LiveTurn = memo(function LiveTurn({
   controller,
   turnKey,
   compact,
+  profileName,
 }: {
   controller: ChatController;
   turnKey: string;
   compact: boolean;
+  profileName?: string;
 }) {
   const live = useLiveTurn(controller, turnKey);
   const resolve = useCallback(
@@ -110,6 +114,7 @@ const LiveTurn = memo(function LiveTurn({
         startedAt={live.activity.startedAt}
         lastEventAt={live.activity.lastEventAt}
         hasOutput={text !== ""}
+        profileName={profileName}
       />
       {live.approval ? (
         <ApprovalCard
@@ -154,6 +159,7 @@ export function ChatThread({
   empty,
   className = "",
   density = "comfortable",
+  profileName,
 }: ChatThreadProps) {
   const thread = useThread(controller, sessionId);
   const busyKeys = useBusyKeys(controller);
@@ -266,7 +272,12 @@ export function ChatThread({
         {showEmpty ? empty ?? null : null}
 
         <History messages={messages} highlightTerm={highlightTerm} />
-        <LiveTurn controller={controller} turnKey={key} compact={compact} />
+        <LiveTurn
+          controller={controller}
+          turnKey={key}
+          compact={compact}
+          profileName={profileName}
+        />
 
         {note ? (
           <div data-component="DecisionNotice" className="flex justify-start">

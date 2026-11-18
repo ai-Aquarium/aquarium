@@ -17,6 +17,7 @@ export const ActivityLine = memo(function ActivityLine({
   startedAt,
   lastEventAt,
   hasOutput,
+  profileName,
 }: {
   activity: ChatActivity;
   tools: ToolChip[];
@@ -24,6 +25,8 @@ export const ActivityLine = memo(function ActivityLine({
   startedAt?: number;
   lastEventAt?: number;
   hasOutput: boolean;
+  /** The profile answering this turn (StatusIndicator's label). */
+  profileName?: string;
 }) {
   const hasSteps = tools.length > 0 || reasoning !== "";
   if (activity === "idle" && !hasSteps) return null;
@@ -41,6 +44,7 @@ export const ActivityLine = memo(function ActivityLine({
         startedAt={startedAt}
         lastEventAt={lastEventAt}
         hasOutput={hasOutput}
+        profileName={profileName}
       />
       {hasSteps ? (
         <details

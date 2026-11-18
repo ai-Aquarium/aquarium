@@ -130,6 +130,7 @@ export function ChatConversationView({
           elapsedMs={selTurn ? now - selTurn.startedAt : undefined}
           quietMs={selTurn ? now - selTurn.lastEventAt : undefined}
           hasOutput={!assistantIsEmpty(messages)}
+          profileName={conv.profile}
         />
         {selApproval ? (
           <ApprovalCard

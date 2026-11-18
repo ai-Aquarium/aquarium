@@ -1,0 +1,15 @@
+{
+  "sending": "Received · connecting…",
+  "thinking": "Agent {name} is thinking…",
+  "thinkingUnnamed": "Agent is thinking…",
+  "writing": "Agent {name} is writing…",
+  "writingUnnamed": "Agent is writing…",
+  "waitingApproval": "Waiting for your approval…",
+  "waitingSecret": "Waiting for you to enter a secret…",
+  "stopping": "Stopping…",
+  "runningTool": "Running {tool}…",
+  "runningAnyTool": "Running a tool…",
+  "stalled": "No activity for {elapsed}. The agent may be waiting on a slow step — you can Stop and try again if it looks stuck.",
+  "stoppingHint": "The agent stops at the next safe point — if it is mid-step (a tool call or context compaction) this can take a minute or two.",
+  "longTask": "This is taking a while. You can leave this page — the task keeps running on the server and the reply will be here when you come back."
+}

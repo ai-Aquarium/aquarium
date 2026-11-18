@@ -1,12 +1,13 @@
 "use client";
 
 import { Spinner } from "@/components/ui/Spinner";
+import { useT } from "@/i18n";
 import { useNow } from "@/lib/use-now";
 
 /**
  * Animated agent-activity indicator for the chat pane.
  *
- * Gives the user a live signal that the a4all agent is actually working, since
+ * Gives the user a live signal that the agent is actually working, since
  * a streamed turn can otherwise look frozen between tokens. Phases:
  *   - `sending`   — the message left the browser, no server ack yet;
  *   - `thinking`  — turn accepted, no text yet (the model is composing);
@@ -15,6 +16,7 @@ import { useNow } from "@/lib/use-now";
  *   - `waiting_approval` — a gated tool is blocked on the user's decision;
  *   - `waiting_secret` — the agent asked for a secret (FG-37 popup);
  *   - `stopping`  — the user hit Stop; the server is winding the turn down.
+ * Thinking/writing name the answering profile (`Agent finance is thinking…`).
  * Every active phase shows the elapsed time so a long turn visibly advances.
  * Rendered as an aria-live region so the state is also announced to AT.
  */
@@ -33,13 +35,17 @@ export const LONG_TASK_HINT_MS = 20_000;
 /** No stream event of any kind for this long reads as a possible stall. */
 export const STALL_WARNING_MS = 90_000;
 
-const LABELS: Record<Exclude<ChatActivity, "idle" | "tool">, string> = {
-  sending: "Received · connecting…",
-  thinking: "a4all agent is thinking…",
-  streaming: "a4all agent is writing…",
-  waiting_approval: "Waiting for your approval…",
-  waiting_secret: "Waiting for you to enter a secret…",
-  stopping: "Stopping…",
+/** Message keys (`chatStatus` namespace); `*Unnamed` when no profile is known. */
+const LABEL_KEYS: Record<
+  Exclude<ChatActivity, "idle" | "tool">,
+  { named: string; unnamed: string }
+> = {
+  sending: { named: "sending", unnamed: "sending" },
+  thinking: { named: "thinking", unnamed: "thinkingUnnamed" },
+  streaming: { named: "writing", unnamed: "writingUnnamed" },
+  waiting_approval: { named: "waitingApproval", unnamed: "waitingApproval" },
+  waiting_secret: { named: "waitingSecret", unnamed: "waitingSecret" },
+  stopping: { named: "stopping", unnamed: "stopping" },
 };
 
 export function formatElapsed(ms: number): string {
@@ -72,6 +78,7 @@ export function StatusIndicator({
   startedAt,
   lastEventAt,
   compact = false,
+  profileName,
 }: {
   activity: ChatActivity;
   /** Time since the user sent the message; omitted → no clock. */
@@ -88,7 +95,10 @@ export function StatusIndicator({
   lastEventAt?: number;
   /** Small inline line (no pill box) for use inside a reply bubble. */
   compact?: boolean;
+  /** The profile answering this turn, named in the thinking/writing label. */
+  profileName?: string;
 }) {
+  const t = useT("chatStatus");
   // Self-ticking only when the parent hands timestamps instead of durations,
   // so the 1-second re-render stays inside this component.
   const selfTimed =
@@ -103,8 +113,15 @@ export function StatusIndicator({
     (lastEventAt !== undefined ? Math.max(0, now - lastEventAt) : undefined);
   if (activity === "idle") return null;
   const waiting = activity === "waiting_approval" || activity === "waiting_secret";
+  const name = profileName?.trim();
   const label =
-    activity === "tool" ? `Running ${detail || "a tool"}…` : LABELS[activity];
+    activity === "tool"
+      ? detail
+        ? t("runningTool", { tool: detail })
+        : t("runningAnyTool")
+      : name
+        ? t(LABEL_KEYS[activity].named, { name })
+        : t(LABEL_KEYS[activity].unnamed);
   const clock =
     elapsedMs !== undefined && elapsedMs >= 1000 ? formatElapsed(elapsedMs) : null;
   const stopping = activity === "stopping";
@@ -152,24 +169,21 @@ export function StatusIndicator({
           data-component="StatusStallWarning"
           className="max-w-prose px-1 text-xs text-[var(--color-warn-text)]"
         >
-          No activity for {formatElapsed(quietMs ?? 0)}. The agent may be waiting
-          on a slow step — you can Stop and try again if it looks stuck.
+          {t("stalled", { elapsed: formatElapsed(quietMs ?? 0) })}
         </p>
       ) : stopping ? (
         <p
           data-component="StatusStoppingHint"
           className="max-w-prose px-1 text-xs text-[var(--color-muted)]"
         >
-          The agent stops at the next safe point — if it is mid-step (a tool
-          call or context compaction) this can take a minute or two.
+          {t("stoppingHint")}
         </p>
       ) : longTask ? (
         <p
           data-component="StatusLongTaskHint"
           className="max-w-prose px-1 text-xs text-[var(--color-muted)]"
         >
-          This is taking a while. You can leave this page — the task keeps
-          running on the server and the reply will be here when you come back.
+          {t("longTask")}
         </p>
       ) : null}
     </div>

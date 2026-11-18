@@ -1,0 +1,15 @@
+{
+  "sending": "已收到 · 連線中…",
+  "thinking": "代理 {name} 正在思考…",
+  "thinkingUnnamed": "代理正在思考…",
+  "writing": "代理 {name} 正在撰寫…",
+  "writingUnnamed": "代理正在撰寫…",
+  "waitingApproval": "正在等待你批准…",
+  "waitingSecret": "正在等待你輸入機密資料…",
+  "stopping": "正在停止…",
+  "runningTool": "正在執行 {tool}…",
+  "runningAnyTool": "正在執行工具…",
+  "stalled": "已有 {elapsed} 沒有活動。代理可能在等待較慢的步驟 — 如看似卡住，你可以停止再試。",
+  "stoppingHint": "代理會在下一個安全點停止 — 如正處於某個步驟中（工具呼叫或壓縮上下文），可能需要一至兩分鐘。",
+  "longTask": "這需要一些時間。你可以離開此頁面 — 任務會繼續在伺服器上執行，你回來時回覆就會在這裏。"
+}
