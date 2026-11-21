@@ -333,15 +333,17 @@ function ReleasePicker({
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold">{t("choose")}</h2>
           <span className="flex-1" />
-          <label className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-            <input
-              type="checkbox"
-              checked={showOlder}
-              onChange={(e) => onShowOlder(e.target.checked)}
-              data-testid="upgrade-show-older"
-            />
-            {t("showOlder")}
-          </label>
+          {older.length ? (
+            <label className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+              <input
+                type="checkbox"
+                checked={showOlder}
+                onChange={(e) => onShowOlder(e.target.checked)}
+                data-testid="upgrade-show-older"
+              />
+              {t("showOlder")}
+            </label>
+          ) : null}
         </div>
         <p className="mb-3 mt-1 text-xs text-[var(--color-muted)]">{t("chooseHint")}</p>
         {newer.map((rel) => (
@@ -354,7 +356,7 @@ function ReleasePicker({
             onSelect={() => onSelect(rel.tag)}
           />
         ))}
-        {showOlder ? (
+        {showOlder && older.length ? (
           <div data-testid="upgrade-older">
             {installed ? (
               <div className="mb-2 flex items-center gap-3 rounded-xl border border-[var(--color-border)] px-4 py-3 text-sm">

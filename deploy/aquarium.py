@@ -2961,6 +2961,11 @@ def installed_info(cfg: Dict[str, str]) -> Dict:
         tag = _git_out(cfg, "describe", "--tags", "--exact-match", "HEAD")
         info["version"] = tag if VERSION_RE.match(tag) else None
         info["branch"] = _git_out(cfg, "symbolic-ref", "--short", "-q", "HEAD") or None
+        try:
+            base = (compat_path(cfg) / "VERSION").read_text().strip()
+        except OSError:
+            base = ""
+        info["base_version"] = base if VERSION_RE.match(base) else None
     state = load_state()
     here = {info["version"], info["commit"]} - {None}
     for rec in reversed(state.get("upgrades", [])):
@@ -3174,6 +3179,11 @@ def upgrade_start(cfg: Dict[str, str], kind: str) -> int:
             return refuse(f"{version} has no server package")
         if version == info["version"]:
             return refuse(f"{version} is already installed")
+        here = version_key(info["version"] or info.get("base_version") or "")
+        if here == version_key(""):
+            return refuse("the version running now is unknown, so no release can be checked as newer")
+        if version_key(version) <= here:
+            return refuse(f"{version} is older than what runs now; only a newer release can be installed")
         target, target_ref = version, version
     else:
         rb = rollback_target(cfg, info)
