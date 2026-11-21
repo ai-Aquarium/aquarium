@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 
 import { ChatMedia } from "@/components/chat/ChatMedia";
 import { mediaRefPath } from "@/lib/chat/media-ref";
+import { newTabRel } from "@/lib/http/link-rel";
 
 /**
  * Renders an assistant reply as Markdown plus a *sanitized* subset of inline
@@ -30,7 +31,7 @@ export function RichText({ content }: { content: string }) {
             <a
               href={href}
               target="_blank"
-              rel="noreferrer noopener"
+              rel={newTabRel(href)}
               className="underline underline-offset-2"
             >
               {children}
