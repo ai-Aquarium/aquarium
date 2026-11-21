@@ -85,6 +85,15 @@ def test_start_refuses_what_it_cannot_install(box, monkeypatch, capsys, body, er
     assert "systemd-run" not in box.log()
 
 
+def test_start_refuses_an_older_release(box, monkeypatch, capsys):
+    released_box(box).make_release("v0.9.0")
+    releases(box)
+    call(box, monkeypatch, capsys, "check")
+    code, answer = call(box, monkeypatch, capsys, "start", {"version": "v0.9.0"})
+    assert code == 1 and "older than what runs now" in answer["error"]
+    assert "systemd-run" not in box.log()
+
+
 def test_start_hands_the_job_to_a_transient_unit(box, monkeypatch, capsys):
     releases(released_box(box))
     code, answer = call(box, monkeypatch, capsys, "start", {"version": "v1.1.0", "by": "Leo <b>"})

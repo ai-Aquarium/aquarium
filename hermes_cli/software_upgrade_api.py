@@ -17,6 +17,7 @@ import json
 import logging
 import re
 import subprocess
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Request
@@ -127,16 +128,18 @@ def _plain(md: str) -> str:
     return text.strip()
 
 
-def select_releases(releases: List[Dict[str, Any]], installed: Optional[str], channel: str) -> Dict[str, Any]:
+def select_releases(releases: List[Dict[str, Any]], installed: Optional[str], channel: str,
+                    base: Optional[str] = None) -> Dict[str, Any]:
     """Split the release list for the page.
 
-    ``newer``: releases above the installed version (all of them when the install is a
-    branch checkout with no version), newest first. Pre-releases only on the beta
-    channel. ``latest``: the newest of ``newer`` — the page's default choice.
-    ``older``: rollback targets below the installed version.
+    ``newer``: releases above the installed version, newest first. Pre-releases only on
+    the beta channel. ``latest``: the newest of ``newer`` — the page's default choice.
+    A branch checkout has no tag, so its ``VERSION`` file (``base``) stands in; with
+    neither, nothing is offered. ``older`` is always empty: the page never offers a
+    release older than what runs; undoing the last upgrade is ``rollback`` instead.
     """
     beta = channel == "beta"
-    here = version_key(installed or "")
+    here = version_key(installed or base or "")
     rows = []
     for rel in releases:
         key = version_key(str(rel.get("tag", "")))
@@ -151,9 +154,24 @@ def select_releases(releases: List[Dict[str, Any]], installed: Optional[str], ch
             "highlights": highlights(str(rel.get("notes") or "")),
         }))
     rows.sort(key=lambda r: r[0], reverse=True)
-    newer = [r for k, r in rows if here is None or k > here]
-    older = [r for k, r in rows if here is not None and k < here]
-    return {"newer": newer, "older": older, "latest": newer[0]["tag"] if newer else None}
+    newer = [r for k, r in rows if here is not None and k > here]
+    return {"newer": newer, "older": [], "latest": newer[0]["tag"] if newer else None}
+
+
+def checkout_base_version(inst: Dict[str, Any]) -> Optional[str]:
+    """The release a branch checkout is built on: the helper's ``base_version``, else this
+    checkout's own ``VERSION`` file (the API runs from that checkout)."""
+    for tag in (inst.get("base_version"), _own_version_file()):
+        if isinstance(tag, str) and version_key(tag.strip()) is not None:
+            return tag.strip()
+    return None
+
+
+def _own_version_file() -> Optional[str]:
+    try:
+        return (Path(__file__).resolve().parents[1] / "VERSION").read_text().strip()
+    except OSError:
+        return None
 
 
 def _job_view(job: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -233,7 +251,8 @@ def status_view(raw: Dict[str, Any], rel: Optional[Dict[str, Any]] = None) -> Di
     if rel is not None:
         packaged_only = installed["kind"] == "release"
         listed = [r for r in rel.get("releases") or [] if not packaged_only or r.get("packaged")]
-        out["releases"] = select_releases(listed, installed["version"], installed["channel"])
+        base = checkout_base_version(inst) if installed["kind"] == "checkout" else None
+        out["releases"] = select_releases(listed, installed["version"], installed["channel"], base)
         out["checked_at"] = rel.get("checked_at") or out["checked_at"]
         out["release_error"] = scrub(rel.get("error")) or None
         out["checkout"] = _checkout_view(rel.get("checkout")) if installed["kind"] == "checkout" else None
@@ -319,6 +338,12 @@ async def upgrade_start(request: Request, body: StartBody):
     if version_key(body.version) is None:
         raise HTTPException(400, "Pick a release like v1.2.3.")
     by = await _confirm_password(request, body.password)
+    raw = await asyncio.to_thread(_call, "status")
+    inst = (raw.get("installed") or {}) if raw.get("ok") else {}
+    here = version_key(inst.get("version") or (
+        checkout_base_version(inst) if inst.get("layout") != "release" else None) or "")
+    if here is None or version_key(body.version) <= here:
+        raise HTTPException(400, "Only a release newer than what runs now can be installed.")
     answer = await asyncio.to_thread(_call, "start", {"version": body.version, "by": by})
     if not answer.get("ok"):
         raise _fail(answer)

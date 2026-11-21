@@ -131,7 +131,8 @@ def test_admin_upgrades_and_rolls_back_with_their_password(client, acting, helpe
     assert resp.status_code == 202 and resp.json()["started"] is True
     assert client.post("/api/software-upgrade/rollback", json={"password": "pw"}).status_code == 202
     assert password_ok == ["pw", "pw"]
-    assert helper.calls == [("start", {"version": "v1.1.0", "by": "Ann"}), ("rollback", {"by": "Ann"})]
+    assert [c for c in helper.calls if c[0] != "status"] == [
+        ("start", {"version": "v1.1.0", "by": "Ann"}), ("rollback", {"by": "Ann"})]
 
 
 def test_admin_with_a_wrong_password_starts_nothing(client, acting, helper, password_ok):
@@ -157,7 +158,7 @@ def test_status_has_no_paths_or_secrets(client, helper):
     rel = body["releases"]
     # stable channel: no pre-release; release install: only packaged releases
     assert [r["tag"] for r in rel["newer"]] == ["v1.1.0"] and rel["latest"] == "v1.1.0"
-    assert [r["tag"] for r in rel["older"]] == ["v0.9.0"] and rel["older"][0]["url"] == ""
+    assert rel["older"] == []  # an older release is never offered
     assert rel["newer"][0]["highlights"] == [{"title": "Highlights", "items": ["Faster chats"]},
                                              {"title": "Fixes", "items": ["Upload no longer fails"]}]
 
@@ -165,7 +166,23 @@ def test_status_has_no_paths_or_secrets(client, helper):
 def test_owner_starts_with_the_password(client, helper, password_ok):
     resp = client.post("/api/software-upgrade/start", json={"version": "v1.1.0", "password": "pw"})
     assert resp.status_code == 202 and resp.json()["started"] is True
-    assert helper.calls == [("start", {"version": "v1.1.0", "by": "Owner"})]
+    assert [c for c in helper.calls if c[0] == "start"] == [("start", {"version": "v1.1.0", "by": "Owner"})]
+
+
+@pytest.mark.parametrize("version", ["v1.0.0", "v0.9.0"])
+def test_start_refuses_a_release_that_is_not_newer(client, helper, password_ok, version):
+    resp = client.post("/api/software-upgrade/start", json={"version": version, "password": "pw"})
+    assert resp.status_code == 400 and "newer" in resp.json()["detail"]
+    assert [c for c in helper.calls if c[0] == "start"] == []
+
+
+def test_checkout_start_uses_its_version_file_as_the_floor(client, helper, password_ok):
+    helper.answers["status"] = {**STATUS, "installed": {
+        **STATUS["installed"], "layout": "git", "version": None, "base_version": "v1.1.0"}}
+    resp = client.post("/api/software-upgrade/start", json={"version": "v0.9.0", "password": "pw"})
+    assert resp.status_code == 400
+    view = client.get("/api/software-upgrade").json()["releases"]
+    assert [r["tag"] for r in view["newer"]] == [] and view["older"] == []
 
 
 def test_wrong_password_starts_nothing(client, helper, password_ok):
@@ -297,8 +314,13 @@ def test_beta_channel_and_checkout_without_a_version():
     beta = su.select_releases(rels, "v1.0.0", "beta")
     assert [r["tag"] for r in beta["newer"]] == ["v1.2.0-beta.1", "v1.1.0", "v1.0.1"]
     assert beta["latest"] == "v1.2.0-beta.1"
-    branch = su.select_releases(rels, None, "stable")  # a develop checkout: every release is a target
-    assert [r["tag"] for r in branch["newer"]] == ["v1.1.0", "v1.0.1", "v0.9.0"] and branch["older"] == []
+    # a develop checkout: its VERSION file is the floor, so older stable releases are never offered
+    branch = su.select_releases(rels, None, "stable", base="v1.0.0")
+    assert [r["tag"] for r in branch["newer"]] == ["v1.1.0", "v1.0.1"] and branch["older"] == []
+    ahead = su.select_releases(rels, None, "stable", base="v1.2.0-rc.2")
+    assert ahead["newer"] == [] and ahead["latest"] is None
+    unknown = su.select_releases(rels, None, "stable")
+    assert unknown["newer"] == [] and unknown["latest"] is None
     newest = su.select_releases(rels, "v1.1.0", "stable")
     assert newest["newer"] == [] and newest["latest"] is None
 
