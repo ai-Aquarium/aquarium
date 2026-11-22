@@ -186,6 +186,8 @@ describe("LeadChatHost panel", () => {
       ["assistant", "Here is a shorter plan."],
     ]);
     expect(screen.getByRole("dialog").textContent).not.toContain("TOOL-OUTPUT");
+    // Same gap between bubbles as the main chat thread.
+    expect(bubbles[0].parentElement?.classList.contains("space-y-3")).toBe(true);
   });
 
   it("sends every turn on the server's lead session, never a fresh one", async () => {
