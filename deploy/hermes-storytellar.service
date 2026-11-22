@@ -1,0 +1,35 @@
+[Unit]
+# StoryTellAR AI authoring gateway — plans/ai-story-authoring in
+# joyaether/peeppop-server. Runs the isolated `storytellar-author` profile's
+# api_server platform only: 127.0.0.1:8650, own API_SERVER_KEY (in the
+# profile's .env), max_concurrent_runs 2 (profile config.yaml). It is a
+# separate process alongside hermes-gateway — installing/enabling it never
+# restarts or reconfigures the main gateway.
+Description=Hermes StoryTellAR authoring gateway (storytellar-author profile)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+ExecStart=/opt/data/hermes-agent/.venv/bin/python -m hermes_cli.main -p storytellar-author gateway run
+WorkingDirectory=/opt/data/hermes-home-staging
+Environment="HOME=/opt/data/hermes-user"
+Environment="USER=hermes"
+Environment="LOGNAME=hermes"
+Environment="PATH=/opt/data/hermes-agent/.venv/bin:/opt/data/hermes-agent/node_modules/.bin:/usr/bin:/opt/data/hermes-user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="VIRTUAL_ENV=/opt/data/hermes-agent/.venv"
+Environment="HERMES_HOME=/opt/data/hermes-home-staging"
+Restart=always
+RestartSec=5
+RestartForceExitStatus=75
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=90
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
