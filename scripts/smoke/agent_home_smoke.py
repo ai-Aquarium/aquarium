@@ -132,6 +132,7 @@ PAGES: Tuple[PageSpec, ...] = (
     PageSpec("/files", ("FilesView", "FilesTabs"), quick=True),
     PageSpec("/files/browse", ("BrowseView", "FilesTabs")),
     PageSpec("/files/bridge", ("FilesTabs",)),
+    PageSpec("/view/zz-smoke-missing", ("HtmlViewerUnavailable",)),
     PageSpec("/bridge"),
     PageSpec("/system", ("SystemHub", "HubCard")),
     PageSpec("/memory", ("MemoryView",), quick=True),
