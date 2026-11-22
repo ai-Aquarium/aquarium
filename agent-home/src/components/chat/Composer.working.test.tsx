@@ -190,24 +190,51 @@ describe("Composer at 390px", () => {
 describe("Composer layout while working", () => {
   const box = () => document.querySelector('[data-component="Composer"]') as HTMLElement;
 
-  it("gives the input the full row on a phone and puts Stop and Send below it", () => {
-    working();
-    const input = screen.getByRole("textbox");
-    const row = input.parentElement as HTMLElement;
-    expect(row.className).toContain("max-sm:flex-wrap");
-    expect(input.className).toContain("max-sm:basis-full");
-    expect(input.className).toContain("max-sm:order-first");
-    // Stop and the split Send sit together at the right end of the action row.
+  const card = () => document.querySelector('[data-component="ComposerCard"]') as HTMLElement;
+  const actions = () => document.querySelector('[data-component="ComposerActions"]') as HTMLElement;
+
+  it("puts the input on its own full-width row, at least three lines tall, with every action below it", () => {
+    working({ storageEnabled: true });
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(input.parentElement).toBe(card());
+    expect(card().firstElementChild).toBe(input);
+    expect(input.rows).toBe(3);
+    expect(input.className).toContain("w-full");
+    expect(input.className).toContain("min-h-[72px]");
+    expect(input.className).toContain("max-h-[min(172px,calc(var(--vv-height,100dvh)*0.4))]");
+    // Attach, lock, the status hint, then Stop and the split Steer — in that order.
+    const row = Array.from(actions().children).map(
+      (el) => el.getAttribute("aria-label") ?? (el as HTMLElement).dataset.component ?? el.tagName,
+    );
+    expect(row).toEqual(["INPUT", "Attach file", "Share a secret securely", "ComposerHint", "Stop the agent", "SendSplit"]);
+    expect(actions().contains(input)).toBe(false);
     const stop = screen.getByRole("button", { name: /stop the agent/i });
-    expect(stop.className).toContain("max-sm:ml-auto");
-    expect(row.contains(document.querySelector('[data-component="SendSplit"]'))).toBe(true);
+    expect(stop.classList.contains("ml-auto")).toBe(true);
+    // On a phone Stop shows its icon only; Steer keeps its label.
+    expect(within(stop).getByText("Stop").className).toContain("max-sm:sr-only");
+    expect(screen.getByRole("button", { name: /^steer$/i }).textContent).toBe("Steer");
   });
 
-  it("keeps the idle composer on one row", () => {
+  it("explains what Enter does in the hint, hidden on a phone", () => {
+    working();
+    const hint = document.querySelector('[data-component="ComposerHint"]') as HTMLElement;
+    expect(hint.textContent).toBe("Agent is working · Enter steers");
+    expect(hint.className).toContain("max-sm:hidden");
+    chooseMode(/queue/i);
+    expect(hint.textContent).toBe("Agent is working · Enter queues");
+  });
+
+  it("keeps the same two-row layout when idle, with Send at the right", () => {
     render(<Composer sending={false} storageEnabled={false} sessionId="s1" onSend={() => true} />);
-    const input = screen.getByRole("textbox");
-    expect((input.parentElement as HTMLElement).className).not.toContain("flex-wrap");
-    expect(input.className).not.toContain("basis-full");
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(input.parentElement).toBe(card());
+    expect(input.rows).toBe(3);
+    expect(document.querySelector('[data-component="ComposerHint"]')!.textContent).toBe(
+      "Enter to send · Shift+Enter for a new line",
+    );
+    const send = screen.getByRole("button", { name: /^send$/i });
+    expect(actions().lastElementChild).toBe(send);
+    expect(send.classList.contains("ml-auto")).toBe(true);
   });
 
   it("raises the open mode menu and its backdrop above the floating launchers (z-60)", () => {
@@ -230,48 +257,41 @@ describe("Composer layout while working", () => {
     expect(onMenuOpenChange).toHaveBeenLastCalledWith(false);
   });
 
-  it("in a narrow panel puts the actions below the input at every screen width", () => {
+  it("in a narrow panel keeps the two-row card, icon-only Stop and no status hint", () => {
     working({ narrow: true });
     const input = screen.getByRole("textbox");
-    const row = input.parentElement as HTMLElement;
-    expect(row.classList.contains("flex-wrap")).toBe(true);
-    expect(input.classList.contains("basis-full")).toBe(true);
-    expect(input.classList.contains("order-first")).toBe(true);
+    const card = input.parentElement as HTMLElement;
+    expect(card.dataset.panelCard).toBe("true");
+    expect(card.contains(document.querySelector('[data-component="ComposerActions"]'))).toBe(true);
     const stop = screen.getByRole("button", { name: /stop the agent/i });
     expect(stop.classList.contains("ml-auto")).toBe(true);
-    // No desktop-only status text squeezing the panel's action row.
-    expect(screen.getByText(/agent is working/i).className).not.toContain("lg:inline");
+    expect(within(stop).getByText("Stop").classList.contains("sr-only")).toBe(true);
+    expect(document.querySelector('[data-component="ComposerHint"]')!.classList.contains("hidden")).toBe(true);
   });
 
-  it("in a narrow panel gives the idle input the full width, with the actions and Send below it", () => {
+  it("in a narrow panel moves the launcher reserve onto the action row, with Send at the right", () => {
     render(<Composer narrow sending={false} storageEnabled sessionId="s1" onSend={() => true} />);
-    const input = screen.getByRole("textbox");
-    expect((input.parentElement as HTMLElement).classList.contains("flex-wrap")).toBe(true);
-    expect(input.classList.contains("basis-full")).toBe(true);
-    expect(input.classList.contains("order-first")).toBe(true);
-    expect(box().className).not.toMatch(/(^|\s)ml-14/);
+    const root = document.querySelector('[data-component="Composer"]') as HTMLElement;
+    expect(root.className).not.toMatch(/(^|\s)ml-14/);
     expect(screen.getByRole("button", { name: /attach file/i }).classList.contains("ml-14")).toBe(true);
     expect(screen.getByRole("button", { name: /^send$/i }).classList.contains("ml-auto")).toBe(true);
   });
 
-  it("drops the left-launcher reserve from the input while working on a phone, keeping it on the action row", () => {
-    working({ storageEnabled: true });
-    const attach = screen.getByRole("button", { name: /attach file/i });
-    expect(box().classList.contains("ml-14")).toBe(true);
-    expect(box().classList.contains("max-sm:ml-0")).toBe(true);
-    expect(attach.classList.contains("max-sm:ml-14")).toBe(true);
+  it("moves the left-launcher reserve onto the action row on a phone, idle and working", () => {
+    for (const sending of [false, true]) {
+      render(<Composer sending={sending} storageEnabled sessionId="s1" onSend={() => true} />);
+      const root = document.querySelector('[data-component="Composer"]') as HTMLElement;
+      expect(root.classList.contains("ml-14")).toBe(true);
+      expect(root.classList.contains("max-sm:ml-0")).toBe(true);
+      expect(screen.getByRole("button", { name: /attach file/i }).classList.contains("max-sm:ml-14")).toBe(true);
+      cleanup();
+    }
   });
 
-  it("keeps the reserve on the whole composer when idle, and none where the layout clears the launcher", () => {
-    const idle = render(
-      <Composer sending={false} storageEnabled sessionId="s1" onSend={() => true} />,
-    );
-    expect(box().classList.contains("ml-14")).toBe(true);
-    expect(box().className).not.toContain("max-sm:ml-0");
-    expect(screen.getByRole("button", { name: /attach file/i }).className).not.toContain("ml-14");
-    idle.unmount();
+  it("adds no reserve where the layout already clears the launcher", () => {
     working({ storageEnabled: true, launcherClearance: false });
-    expect(box().className).not.toContain("ml-14");
+    const root = document.querySelector('[data-component="Composer"]') as HTMLElement;
+    expect(root.className).not.toContain("ml-14");
     expect(screen.getByRole("button", { name: /attach file/i }).className).not.toContain("ml-14");
   });
 });

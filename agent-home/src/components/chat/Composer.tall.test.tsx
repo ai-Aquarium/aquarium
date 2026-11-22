@@ -13,24 +13,11 @@ function composer(props: Partial<Parameters<typeof Composer>[0]> = {}) {
 }
 
 describe("Composer tall (phone chat page)", () => {
-  it("starts at three lines and caps at 40% of the visible height below lg", () => {
-    const { textarea } = composer({ tall: true });
+  it("uses touch-sized actions below lg", () => {
+    const { root, textarea } = composer({ tall: true });
     expect(textarea.dataset.tall).toBe("true");
-    expect(textarea.className).toContain("max-lg:min-h-[86px]");
-    expect(textarea.className).toContain("max-lg:max-h-[calc(var(--vv-height,100dvh)*0.4)]");
-    expect(textarea.className).toContain("max-lg:basis-full");
-    // Desktop sizing stays as before.
-    expect(textarea.className).toContain("min-h-[46px]");
-    expect(textarea.className).toContain("max-h-48");
-  });
-
-  it("wraps the actions into one row under the input, idle and working", () => {
-    for (const sending of [false, true]) {
-      const { root } = composer({ tall: true, sending });
-      const row = root.querySelector("textarea")!.parentElement!;
-      expect(row.className).toContain("max-lg:flex-wrap");
-      cleanup();
-    }
+    expect(root.querySelector('[aria-label="Attach file"]')!.className).toContain("max-lg:h-11");
+    expect(root.querySelector('[data-component="SecretLockButton"]')!.className).toContain("max-lg:w-11");
   });
 
   it("reserves launcher space only on desktop with launcherClearance=desktop", () => {
@@ -40,10 +27,10 @@ describe("Composer tall (phone chat page)", () => {
     expect(root.querySelector('[aria-label="Attach file"]')!.className).not.toContain("ml-14");
   });
 
-  it("leaves the default composer unchanged", () => {
+  it("leaves the default composer without the below-lg sizing", () => {
     const { root, textarea } = composer();
     expect(textarea.dataset.tall).toBeUndefined();
-    expect(textarea.className).not.toContain("max-lg:");
+    expect(root.querySelector('[aria-label="Attach file"]')!.className).not.toContain("max-lg:");
     expect(root.className).toMatch(/(^|\s)ml-14/);
   });
 });
