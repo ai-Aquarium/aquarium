@@ -117,6 +117,20 @@ function PendingInputs({
  * Uploads route through the `agent-home` BFF so the browser never holds a
  * storage key; attachment chips are included on the next send.
  */
+/** The lead chat panel's composer: one bordered card holding the input and its actions. */
+const PANEL_CARD =
+  "rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-1.5 transition-colors focus-within:border-[var(--color-accent)]";
+const PANEL_ICON_BUTTON =
+  "flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]";
+
+function SendArrowIcon() {
+  return (
+    <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function Composer({
   sending,
   storageEnabled,
@@ -384,7 +398,9 @@ export function Composer({
       ref={rootRef}
       data-component="Composer"
       // Lift the open mode menu (and its phone backdrop) above the floating launchers.
-      className={`sticky bottom-0 mt-3 bg-[var(--color-bg)] pt-2${reserve}${menuShown ? " z-[70]" : ""}`}
+      className={`${
+        narrow ? "relative" : "sticky bottom-0 mt-3 bg-[var(--color-bg)] pt-2"
+      }${reserve}${menuShown ? " z-[70]" : ""}`}
       style={{ bottom: "var(--safe-bottom)" }}
     >
       {sending ? <PendingInputs pending={pending} onRemove={onRemovePending} /> : null}
@@ -498,8 +514,9 @@ export function Composer({
       ) : null}
       {/* On a phone while working, the input takes the full width and the actions wrap below it. */}
       <div
-        className={`flex items-end gap-2${
-          tall ? " max-lg:flex-wrap" : narrow ? " flex-wrap" : sending ? " max-sm:flex-wrap" : ""
+        data-panel-card={narrow || undefined}
+        className={`flex gap-2${
+          tall ? " items-end max-lg:flex-wrap" : narrow ? ` flex-wrap items-center gap-y-1 ${PANEL_CARD}` : sending ? " items-end max-sm:flex-wrap" : " items-end"
         }`}
       >
         {storageEnabled ? (
@@ -520,7 +537,7 @@ export function Composer({
               title="Attach a file (image, PDF, DOC, XLS, …)"
               disabled={uploading}
               onClick={() => fileRef.current?.click()}
-              className={`rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm${tall ? " max-lg:min-w-11" : ""} disabled:opacity-60${actionReserve}`}
+              className={`${narrow ? `${PANEL_ICON_BUTTON} text-lg` : "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm"}${tall ? " max-lg:min-w-11" : ""} disabled:opacity-60${actionReserve}`}
             >
               {uploading ? "…" : "+"}
             </button>
@@ -532,7 +549,7 @@ export function Composer({
           aria-label={ts("composer.lock")}
           title={ts("composer.lock")}
           onClick={openSecretBox}
-          className={`rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm${tall ? " max-lg:min-w-11" : ""}${!storageEnabled ? actionReserve : ""}`}
+          className={`${narrow ? PANEL_ICON_BUTTON : "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm"}${tall ? " max-lg:min-w-11" : ""}${!storageEnabled ? actionReserve : ""}`}
         >
           <LockIcon />
         </button>
@@ -553,7 +570,11 @@ export function Composer({
               : "Message your agent… (Shift+Enter for a new line)"
           }
           data-tall={tall || undefined}
-          className={`max-h-48 min-h-[46px] flex-1 resize-none overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm${
+          className={`max-h-48 flex-1 resize-none overflow-y-auto text-sm${
+            narrow
+              ? " min-h-[44px] bg-transparent px-2 py-2 focus:outline-none"
+              : " min-h-[46px] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3"
+          }${
             tall ? " max-lg:order-first max-lg:max-h-[calc(var(--vv-height,100dvh)*0.4)] max-lg:min-h-[86px] max-lg:basis-full" : ""
           }${
             narrow ? " order-first basis-full" : sending ? " max-sm:order-first max-sm:basis-full" : ""
@@ -575,7 +596,7 @@ export function Composer({
               busyLabel="Stopping…"
               aria-label={stopping ? "Stopping the agent" : "Stop the agent"}
               title={stopping ? "Stopping the agent" : "Stop the agent"}
-              className={`flex items-center gap-1.5 rounded-xl bg-red-600 py-3 text-sm font-semibold text-white disabled:opacity-60 ${
+              className={`flex items-center gap-1.5 bg-red-600 text-sm font-semibold text-white disabled:opacity-60 ${narrow ? "rounded-lg py-2" : "rounded-xl py-3"} ${
                 narrow ? "ml-auto px-3" : `px-4 max-sm:ml-auto max-sm:px-3${tall ? " max-lg:ml-auto" : ""}`
               }`}
             >
@@ -589,7 +610,9 @@ export function Composer({
                 disabled={!canSend}
                 busyLabel="Sending…"
                 title={modeInfo(mode).hint}
-                className="rounded-l-xl bg-[var(--color-accent)] px-4 py-3 text-sm font-semibold text-[var(--color-accent-fg)] disabled:opacity-60"
+                className={`bg-[var(--color-accent)] px-4 text-sm font-semibold text-[var(--color-accent-fg)] disabled:opacity-60 ${
+                  narrow ? "rounded-l-lg py-2" : "rounded-l-xl py-3"
+                }`}
               >
                 {modeInfo(mode).label}
               </ActionButton>
@@ -599,7 +622,9 @@ export function Composer({
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((cur) => !cur)}
-                className={`rounded-r-xl border-l border-[color-mix(in_srgb,var(--color-accent-fg)_30%,transparent)] bg-[var(--color-accent)] px-2 py-3 text-xs text-[var(--color-accent-fg)]${tall ? " max-lg:min-w-11" : ""}`}
+                className={`border-l border-[color-mix(in_srgb,var(--color-accent-fg)_30%,transparent)] bg-[var(--color-accent)] px-2 text-xs text-[var(--color-accent-fg)] ${
+                  narrow ? "rounded-r-lg py-2" : "rounded-r-xl py-3"
+                }${tall ? " max-lg:min-w-11" : ""}`}
               >
                 ▾
               </button>
@@ -650,11 +675,12 @@ export function Composer({
             onAction={sendOnce}
             disabled={!canSend}
             busyLabel="Sending…"
-            className={`rounded-xl bg-[var(--color-accent)] py-3 text-sm font-semibold text-[var(--color-accent-fg)] disabled:opacity-60${
-              narrow ? " ml-auto px-3" : " px-4"
+            className={`bg-[var(--color-accent)] text-sm font-semibold text-[var(--color-accent-fg)] disabled:opacity-60${
+              narrow ? " ml-auto flex items-center gap-1.5 rounded-lg px-3 py-2" : " rounded-xl px-4 py-3"
             }${tall ? " max-lg:ml-auto" : ""}`}
           >
             Send
+            {narrow ? <SendArrowIcon /> : null}
           </ActionButton>
         )}
       </div>

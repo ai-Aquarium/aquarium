@@ -669,30 +669,42 @@ export function LeadChatHost({
             ...(composerMenuOpen ? { zIndex: 70 } : {}),
           }}
         >
-          <div className="mb-2 flex items-start justify-between gap-2 px-1">
+          <div className="leadchat-header">
             <div
-              className="leadchat-drag min-w-0 flex-1"
+              className="leadchat-drag flex min-w-0 flex-1 items-center gap-2.5"
               onPointerDown={startPointer("move")}
               title="Drag to move"
             >
-              <h3 className="text-sm font-semibold">Lead chat</h3>
-              <p className="text-[11px] text-[var(--color-muted)]">
-                One long-running session, the same on every device.
-              </p>
+              <span aria-hidden className="leadchat-mark">
+                ✦
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold leading-5">Lead chat</h3>
+                <p className="text-[11px] leading-4 text-[var(--color-muted)]">
+                  One long-running session, the same on every device.
+                </p>
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2 text-sm">
+            <div className="flex shrink-0 items-center gap-1">
               <Link
                 href="/chat"
-                className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-muted)]"
+                className="flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-medium text-[var(--color-fg)] transition-colors hover:border-[var(--color-accent)]"
               >
                 Chats
+                <span aria-hidden className="text-[var(--color-muted)]">
+                  ↗
+                </span>
               </Link>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="text-[var(--color-muted)]"
+                aria-label="Close"
+                title="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
               >
-                Close
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
               </button>
             </div>
           </div>
@@ -714,7 +726,7 @@ export function LeadChatHost({
               messages.map((m, i) => <MessageBubble key={i} message={m} msgIndex={i} />)
             )}
             {streamText ? (
-              <div className="mt-2 whitespace-pre-wrap rounded-xl bg-[var(--color-surface-2)] px-3 py-2 text-sm">
+              <div className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
                 {streamText}
               </div>
             ) : null}
@@ -742,7 +754,7 @@ export function LeadChatHost({
             ) : null}
           </div>
           {/* Above the corner resize grip, so the grip never takes the Send arrow's taps. */}
-          <div data-component="LeadChatComposer" className="relative z-[1]">
+          <div data-component="LeadChatComposer" className="leadchat-composer relative z-[1]">
             <Composer
               narrow
               onMenuOpenChange={setComposerMenuOpen}
