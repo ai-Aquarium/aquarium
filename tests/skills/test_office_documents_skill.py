@@ -208,3 +208,13 @@ def test_registry_script_parses_and_verifies_hash():
     assert reg._sha256(b"abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     with pytest.raises(SystemExit):
         reg.main(["list"])  # --as is required
+
+
+def test_registry_links_open_html_in_the_viewer():
+    reg = _load("registry_file")
+    assert reg._links("a1", "chart.html", "text/html") == {
+        "download_url": "/api/files/a1/content?download=1",
+        "open_url": "/view/a1",
+    }
+    assert reg._links("a2", "page.htm", "application/octet-stream")["open_url"] == "/view/a2"
+    assert "open_url" not in reg._links("a3", "summary.pdf", "application/pdf")

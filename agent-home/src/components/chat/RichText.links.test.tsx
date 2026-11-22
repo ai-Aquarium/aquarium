@@ -27,3 +27,17 @@ describe("RichText links", () => {
     expect(relOf(html, "//evil.example/x")).toBe("noopener noreferrer");
   });
 });
+
+describe("RichText viewer links", () => {
+  it("draws /view/<id> as an Open page chip that stays in this tab, with Download", () => {
+    const html = renderToStaticMarkup(<RichText content="[Oct vs Nov chart](/view/abc)" />);
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const open = doc.querySelector('[data-component="ViewerLink"] a[data-action="open-page"]')!;
+    expect(open.getAttribute("href")).toBe("/view/abc");
+    expect(open.getAttribute("target")).toBeNull();
+    expect(open.textContent).toContain("Oct vs Nov chart");
+    expect(
+      doc.querySelector('[data-component="ViewerLink"] a[data-action="download"]')?.getAttribute("href"),
+    ).toBe("/api/files/abc/content?download=1");
+  });
+});

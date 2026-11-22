@@ -18,7 +18,11 @@
  */
 import "server-only";
 
-import { applyFileSafetyHeaders } from "@/lib/http/file-headers";
+import {
+  applyFileSafetyHeaders,
+  applyHtmlViewHeaders,
+  withNewTabLinks,
+} from "@/lib/http/file-headers";
 
 /** Conditional/partial-read headers that must reach the storage backend. */
 const FORWARDED_REQUEST_HEADERS = [
@@ -41,8 +45,9 @@ const FORWARDED_RESPONSE_HEADERS = [
 export async function proxyBytes(
   request: Request,
   upstreamUrl: string,
-  opts: { filename?: string; download?: boolean } = {},
+  opts: { filename?: string; download?: boolean; htmlView?: boolean } = {},
 ): Promise<Response> {
+  if (opts.htmlView) return proxyHtmlView(upstreamUrl, opts.filename);
   const headers = new Headers();
   for (const name of FORWARDED_REQUEST_HEADERS) {
     const value = request.headers.get(name);
@@ -67,4 +72,20 @@ export async function proxyBytes(
   applyFileSafetyHeaders(out, opts);
 
   return new Response(upstream.body, { status: upstream.status, headers: out });
+}
+
+/**
+ * An HTML page for the isolated viewer: whole (no ranges), with the new-tab
+ * link script added, under the viewer's sandbox CSP
+ * (`applyHtmlViewHeaders`). Upstream errors keep the ordinary file headers.
+ */
+async function proxyHtmlView(upstreamUrl: string, filename?: string): Promise<Response> {
+  const upstream = await fetch(upstreamUrl, { cache: "no-store", redirect: "follow" });
+  const out = new Headers({ "cache-control": "private, no-store" });
+  if (!upstream.ok) {
+    applyFileSafetyHeaders(out, { filename, download: true });
+    return new Response(upstream.body, { status: upstream.status, headers: out });
+  }
+  applyHtmlViewHeaders(out, filename);
+  return new Response(withNewTabLinks(await upstream.text()), { status: 200, headers: out });
 }

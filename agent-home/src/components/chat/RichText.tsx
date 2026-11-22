@@ -6,8 +6,10 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
 import { ChatMedia } from "@/components/chat/ChatMedia";
+import { ViewerLink } from "@/components/chat/ViewerLink";
 import { mediaRefPath } from "@/lib/chat/media-ref";
 import { newTabRel } from "@/lib/http/link-rel";
+import { viewerFileId } from "@/lib/nav/viewer-back";
 
 /**
  * Renders an assistant reply as Markdown plus a *sanitized* subset of inline
@@ -27,16 +29,20 @@ export function RichText({ content }: { content: string }) {
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw, rehypeSanitize]}
         components={{
-          a: ({ children, href }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel={newTabRel(href)}
-              className="underline underline-offset-2"
-            >
-              {children}
-            </a>
-          ),
+          a: ({ children, href }) => {
+            const viewId = viewerFileId(href);
+            if (viewId) return <ViewerLink id={viewId}>{children}</ViewerLink>;
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel={newTabRel(href)}
+                className="underline underline-offset-2"
+              >
+                {children}
+              </a>
+            );
+          },
           // Inline images may be private-bucket refs that must resolve through
           // the signing BFF; fall back to a plain <img> for absolute URLs.
           img: ({ src, alt }) => {
