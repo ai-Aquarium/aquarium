@@ -1,6 +1,6 @@
 ---
 title: "plan: Project Detail redesign — Chat + Planning + Execution + Log"
-status: draft — Leo answered the open questions on 2026-11-22 (see Decisions) and approved the co-create flow on 2026-11-23; nothing is built until he approves the mockup
+status: draft — Leo answered the open questions on 2026-11-22 (see Decisions) and approved the co-create flow and the chat on the right (maximize / minimize) on 2026-11-23; nothing is built until he approves the mockup
 date: 2026-11-22
 type: plan
 origin: Leo, 2026-11-22 (request quoted below)
@@ -72,20 +72,64 @@ three are tabs beside it (Decision 1).
 desktop (lg+)                                                       phone
 ┌ top bar · running strip (unchanged) ────────────────────────────┐ ┌ top bar ───────────┐
 │ ‹ Projects / P12 Weekly sales report  active · weekly · v4 ⋯   │ │ ‹ P12 Weekly sales │
-├──────────────┬──────────────────────────────────────────────────┤ │ [Chat|Plan|Run|Log]│
-│ CHAT         │ [ Planning ] [ Execution ] [ Log ]               │ │ one section at a   │
-│ profile ▾    │                                                  │ │ time; Chat is the  │
-│ messages     │  Planning: Inputs · Playbook · Outputs           │ │ first tab          │
-│ (ChatPane)   │  Execution: current run + runs + compare         │ │                    │
-│ composer     │  Log: what people and agents did                 │ │                    │
-└──────────────┴──────────────────────────────────────────────────┘ └────────────────────┘
+├──────────────────────────────────────────────────┬──────────────┤ │ [Chat|Plan|Run|Log]│
+│ [ Planning ] [ Execution ] [ Log ]               │ CHAT  ⤢  ▸|  │ │ one section at a   │
+│                                                  │ profile ▾    │ │ time; Chat is the  │
+│  Planning: Inputs · Playbook · Outputs           │ messages     │ │ first tab          │
+│  Execution: current run + runs + compare         │ (ChatPane)   │ │                    │
+│  Log: what people and agents did                 │ composer     │ │                    │
+└──────────────────────────────────────────────────┴──────────────┘ └────────────────────┘
 ```
+
+### Chat on the right: maximize and minimize (Leo, 2026-11-23)
+
+Leo: "Let's try to put the chat on the right hand side instead and make sure it can be maximized and minimized quickly."
+
+| State | Desktop layout | Controls (chat header, inline SVG icons with tooltips) | Mockup |
+|---|---|---|---|
+| Open (default) | Planning / Execution / Log on the left, chat column on the right (400px) | **Maximize**, **Minimize** | 3a |
+| Maximized | Chat fills the content width (centred, max ~56rem); the project shrinks to a slim **Show project** strip on the left | **Restore**, **Minimize**; Esc or the strip restores | 3b |
+| Minimized | Project full width; chat collapses to a 52px rail on the right edge: chat icon, profile avatar with an unread dot and count, "Chat · finance" | One click on the rail re-opens | 3c |
+
+- **Phone:** unchanged; Chat stays the first tab and the dock controls are hidden.
+- **Keyboard** *(suggestion)*: Ctrl/⌘+. toggles minimize; Ctrl/⌘+Shift+. toggles maximize;
+  Esc restores from maximized, unless a sheet or the Coral menu is open.
+- **Remembered per user** *(suggestion)*: `{mode: open|max|min, width}` is saved as a user UI
+  preference, so every project opens the way Leo left it. This needs a small generic
+  preference endpoint, since `/api/me/project-view-mode` is being retired. The guide bar
+  in the mockup resets to Open for clarity.
+- **Resize** *(suggestion)*: a drag handle on the chat's left edge sets the width
+  (320–640px); the width is saved with the mode.
+- **New chat (1a–1b)** is a centred single chat, not a split, so it is unchanged. **1c**
+  opens the project with the chat on the right.
+- The Lead chat button sits bottom-right, so the project composer gets right padding;
+  the Coral launcher stays bottom-left.
+
+Component / state work:
+- **`ProjectChatDock` (new):** wraps the existing `ChatPane` and owns `mode` and `width`.
+  It renders the open column, the maximized layout and the rail. `ChatPane` stays the
+  same component (a header-actions slot for the two buttons).
+- **Reuse the `Maximizable` pattern** (`components/ui/Maximizable.tsx`, PRs #926–#930):
+  - Panels never remount: maximize and minimize only swap layout classes, so a typed
+    message, scroll position and a streaming turn survive.
+  - Esc handling, the open-stack rule (only the top panel answers Esc) and focus
+    following the control are reused.
+  - Difference: `Maximizable` fills the whole screen (`fixed inset-0`), while the dock
+    fills the project's content area, so the top bar and Running strip stay. This needs
+    an `inline` variant or a dock-specific layout.
+- **Naming** *(suggestion)*: in `Maximizable`, "⤡ Minimize" means *restore*. The dock uses
+  Leo's words instead: **Restore** returns from maximized, and **Minimize** collapses to
+  the rail.
+- **Unread:** the rail's dot and count come from the chat stream (turns finished while
+  minimized). No new API.
+
+
 
 ### Requirement → screen element → data
 
 | Leo's item | Screen element | Data / API | New? |
 |---|---|---|---|
-| Chat "can always select different profiles" | Left column, always visible on desktop, first tab on phone; one timeline with profile-labelled turns; `ProfilePicker` sets who answers next | one chat session per profile per project, each linked with `project_links kind='conversation'` (exists); a merged timeline read | **New**: per-profile sessions, merged timeline, catch-up summary (below) |
+| Chat "can always select different profiles" | Right column, always available on desktop (open, maximized or minimized to a rail), first tab on phone; one timeline with profile-labelled turns; `ProfilePicker` sets who answers next | one chat session per profile per project, each linked with `project_links kind='conversation'` (exists); a merged timeline read | **New**: per-profile sessions, merged timeline, catch-up summary (below) |
 | "The same chat component" | `ChatPane`/`Composer`/`MessageBubble`/`StatusIndicator`, unchanged, in a narrow variant | `/api/chat/*` | Reuse; layout prop only |
 | Planning › Inputs | Inputs card (files, links, memories, "+ Add") | `InputsTab` data | Reuse |
 | Playbook › text | Playbook card: the active rev's `body` as readable text, steps under it, "Edit" | `GET /playbook` | Reuse data, new layout |
@@ -198,7 +242,7 @@ the log stays cheap.
    and drafts v1 of the playbook. Its reply carries a **project card** *(suggestion)*:
    name, ref, "Playbook v1 proposed", buttons **Open project** and **Activate & run 1**.
 3. **Open project** lands on Planning with the same conversation continued in the
-   left chat column (the creating chat is linked to the project), and v1 shown.
+   right chat column (the creating chat is linked to the project), and v1 shown.
 
 Change vs today: the skill currently stops after `create` and points at /projects; it
 would also draft v1 and link the chat *(suggestion)*.
@@ -247,7 +291,7 @@ Leo: "Should be off completely".
 | PR | What ships | Risk |
 |---|---|---|
 | 0 | This plan + mockup (docs only) | — |
-| 1 | Layout: chat column + Planning / Execution / Log tabs; Planning reuses Inputs (+ Brief), `PlanPanel`, Outputs; Execution reuses `RunsPanel` + board; Log placeholder from `recent_events`; ⋯ sheet for Skills / Settings; `?tab=` map; Task mode removed from the page, the Projects list and the new-project flow, `?view=` redirects | Old deep links; tests that assert the 5 tabs or Task mode |
+| 1 | Layout: Planning / Execution / Log tabs + chat column on the right with Maximize / Restore / Minimize (`ProjectChatDock`); Planning reuses Inputs (+ Brief), `PlanPanel`, Outputs; Execution reuses `RunsPanel` + board; Log placeholder from `recent_events`; ⋯ sheet for Skills / Settings; `?tab=` map; Task mode removed from the page, the Projects list and the new-project flow, `?view=` redirects | Old deep links; tests that assert the 5 tabs or Task mode |
 | 2 | Project chat: one timeline over per-profile sessions, seeded context, catch-up summary in the next user turn, `ProfilePicker` sets who answers, inline "proposed vN" card | Prompt-cache rules; role alternation; profile isolation |
 | 3 | Playbook text + versioning: rev picker, compare any two revs (text + step diff), make active, notes | None new on the API |
 | 4 | Convert to cards: Kanban (lanes by latest run or planning stage) / Graph of steps, edit a step from its card | Graph layout on phone (fallback: list) |
