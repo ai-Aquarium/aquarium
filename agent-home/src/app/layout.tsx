@@ -7,27 +7,13 @@ import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { ThemeScript } from "@/components/ThemeScript";
 import { htmlLang, I18nProvider } from "@/i18n";
 import { getLocale, loadMessages } from "@/i18n/server";
+import { rootMetadata } from "@/lib/branding/metadata";
 import { getBranding } from "@/lib/branding/server";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "Aquarium",
-  description: "Mobile-first face for your Hermes agent.",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "Aquarium",
-  },
-  icons: {
-    icon: [
-      { url: "/brand/aquarium-favicon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico", sizes: "16x16 32x32 48x48" },
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-    ],
-    apple: "/icons/apple-touch-icon.png",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return rootMetadata(await getBranding());
+}
 
 export const viewport: Viewport = {
   width: "device-width",
