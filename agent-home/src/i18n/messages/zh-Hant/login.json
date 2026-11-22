@@ -1,6 +1,8 @@
 {
   "title": "登入",
   "intro": "請用你的 Aquarium 帳戶登入，打開你的助理主頁。",
+  "titleTo": "登入 {name}",
+  "introTo": "請用你的 {name} 帳戶登入，打開你的助理主頁。",
   "tagline": "你的 AI 學徒，同在一個魚缸。",
   "pointChat": "與助理對話，隨時接續上次的進度。",
   "pointToday": "一眼看到需要你處理的事：審批、待辦和項目。",

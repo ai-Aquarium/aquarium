@@ -4,9 +4,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { AquariumMark } from "@/components/brand/AquariumMark";
+import { BoxLogo } from "@/components/brand/BoxLogo";
+import { useBranding } from "@/components/brand/BrandingProvider";
 import { buildInfo, useStatusSummary, type StatusSummaryState } from "@/components/ui/useStatusSummary";
 import { useActivityRunning, type ActivityRunningState } from "@/components/ui/useActivityRunning";
 import type { ProfileRole } from "@/lib/api/my-profiles";
+import { brandName } from "@/lib/branding/branding";
 import type { Role } from "@/types";
 import type { NeedsYouEntry } from "@/types/landing";
 
@@ -68,6 +71,7 @@ export function TopBarView({
 }: TopBarProps & TopBarData) {
   const build = buildInfo(status.summary);
   const barRef = useAutoFit<HTMLElement>();
+  const name = brandName(useBranding().branding);
   return (
     <div data-component="TopBar" data-build-mismatch={build.buildMismatch || undefined}>
       <header
@@ -76,10 +80,10 @@ export function TopBarView({
         className="flex h-14 items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg)] px-4 lg:gap-4"
       >
         <div data-component="brand" className="flex shrink-0 items-center gap-2">
-          <Link href="/" aria-label="Aquarium home" data-action="home" className="flex items-center gap-2 rounded-[var(--radius-md)]">
-            <AquariumMark size={24} title="" />
-            <span data-fit-hide="brand-label" className="text-sm font-semibold text-[var(--color-fg)]">
-              Aquarium
+          <Link href="/" aria-label={`${name} home`} data-action="home" className="flex items-center gap-2 rounded-[var(--radius-md)]">
+            <BoxLogo size={24} />
+            <span data-fit-hide="brand-label" className="max-w-[16rem] truncate text-sm font-semibold text-[var(--color-fg)]">
+              {name}
             </span>
           </Link>
         </div>

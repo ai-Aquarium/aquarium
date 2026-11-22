@@ -15,6 +15,7 @@
 import "server-only";
 
 import { activeEnrolments } from "@/lib/api/my-profiles";
+import type { Branding } from "@/lib/branding/branding";
 import type { SkillVersionDetail, SkillVersionDiff, SkillVersionList } from "@/lib/skills/versions";
 import { hermesApiBaseUrl } from "@/lib/env";
 import type { SecurityBasicsResult } from "@/lib/api/security-basics";
@@ -944,6 +945,31 @@ export class HermesApiClient {
   /** Save the signed-in person's own creature; nobody else's. */
   async setMyCreature(creature: CreatureId): Promise<{ creature: CreatureId; chosen: boolean }> {
     return this.request("/api/me/creature", { method: "PUT", json: { creature } });
+  }
+
+  /** The box's entity name and logo metadata. Unauthed (the sign-in page reads it). */
+  async branding(): Promise<Branding> {
+    return this.request("/api/branding");
+  }
+
+  /** The uploaded logo's raw response (bytes + content type). Unauthed. */
+  async brandingLogo(): Promise<Response> {
+    return fetch(`${this.baseUrl}/api/branding/logo`, { cache: "no-store" });
+  }
+
+  /** Set (or with "" clear) the entity name. Owner only (Python re-checks). */
+  async setBrandingName(name: string): Promise<Branding> {
+    return this.request("/api/settings/branding", { method: "PUT", json: { name } });
+  }
+
+  /** Store a logo given as base64 image bytes. Owner only (Python re-checks). */
+  async setBrandingLogo(data: string): Promise<Branding> {
+    return this.request("/api/settings/branding/logo", { method: "PUT", json: { data } });
+  }
+
+  /** Remove the logo so the monogram shows again. Owner only. */
+  async resetBrandingLogo(): Promise<Branding> {
+    return this.request("/api/settings/branding/logo", { method: "DELETE" });
   }
 
   /** List the interactive auth providers (login-page bootstrap). Unauthed. */

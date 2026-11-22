@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
+import { BrandingProvider } from "@/components/brand/BrandingProvider";
 import { ChunkErrorListener } from "@/components/ChunkErrorListener";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { ThemeScript } from "@/components/ThemeScript";
 import { htmlLang, I18nProvider } from "@/i18n";
 import { getLocale, loadMessages } from "@/i18n/server";
+import { getBranding } from "@/lib/branding/server";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -36,7 +38,7 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const locale = await getLocale();
+  const [locale, branding] = await Promise.all([getLocale(), getBranding()]);
   return (
     <html lang={htmlLang(locale)} data-theme="dark" suppressHydrationWarning>
       <head>
@@ -44,7 +46,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body data-component="RootLayout">
         <I18nProvider locale={locale} messages={loadMessages(locale)}>
-          {children}
+          <BrandingProvider initial={branding}>{children}</BrandingProvider>
         </I18nProvider>
         <ServiceWorkerRegister />
         <ChunkErrorListener />

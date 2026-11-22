@@ -46,6 +46,8 @@ PUBLIC = {
     "POST /api/secret-links/{token}",
     "GET /login",
     "GET /api/auth/providers",
+    "GET /api/branding",
+    "GET /api/branding/logo",
     "GET /auth/login",
     "GET /auth/callback",
     "POST /auth/password-login",

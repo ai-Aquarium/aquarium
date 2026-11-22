@@ -22,13 +22,14 @@ export const SETTINGS_SECTIONS = [
   "model-timeouts",
   "skills-permissions",
   "accounts",
+  "box-identity",
 ] as const;
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number];
 
 export interface SettingsAccess {
   canManageMembers: boolean;
   canManageTools: boolean;
-  /** Owner-only sections (Accounts) need the install owner. */
+  /** Owner-only sections (Accounts, Name and logo) need the install owner. */
   isOwner?: boolean;
 }
 
@@ -65,6 +66,7 @@ export function canOpenSettingsSection(id: SettingsSectionId, access: SettingsAc
     case "menu":
       return access.canManageTools;
     case "accounts":
+    case "box-identity":
       return access.isOwner === true;
     default:
       return true;
@@ -105,6 +107,7 @@ export const YOU_ENTRIES: SettingsEntryId[] = [
 export const ADMIN_ENTRIES: SettingsEntryId[] = [
   "people",
   "accounts",
+  "box-identity",
   "tools",
   "entity-goal",
   "capacity",
