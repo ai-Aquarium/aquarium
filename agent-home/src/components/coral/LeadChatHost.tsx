@@ -710,7 +710,7 @@ export function LeadChatHost({
           </div>
           <div
             ref={scrollRef}
-            className="leadchat-scroll"
+            className="leadchat-scroll space-y-3"
             style={
               effectiveRect ? { maxHeight: "none", flex: 1, minHeight: 0 } : undefined
             }
