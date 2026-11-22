@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
 import { NO_BRANDING, type Branding } from "@/lib/branding/branding";
 
@@ -18,7 +18,12 @@ const BrandingContext = createContext<BrandingState>({ branding: NO_BRANDING, se
  */
 export function BrandingProvider({ initial, children }: { initial: Branding; children: ReactNode }) {
   const [branding, setBranding] = useState(initial);
-  useEffect(() => setBranding(initial), [initial]);
+  // A fresh server read (e.g. after router.refresh) wins over the local copy.
+  const [seen, setSeen] = useState(initial);
+  if (seen !== initial) {
+    setSeen(initial);
+    setBranding(initial);
+  }
   const value = useMemo(() => ({ branding, setBranding }), [branding]);
   return <BrandingContext.Provider value={value}>{children}</BrandingContext.Provider>;
 }

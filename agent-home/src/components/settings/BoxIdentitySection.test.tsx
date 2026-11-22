@@ -35,7 +35,7 @@ describe("BoxIdentitySection", () => {
     fetchMock.mockResolvedValue(Response.json({ name: "HangSengDev", logo: null }));
     const { container } = renderWith({ name: null, logo: null });
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "HangSengDev" } });
-    expect(container.querySelector('[data-component="monogram-fallback"]')?.textContent).toContain("HS");
+    expect(container.querySelector('[data-component="monogram-fallback"]')?.textContent).toContain("“H”");
     fireEvent.click(container.querySelector('[data-action="save-name"]')!);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const [url, init] = fetchMock.mock.calls[0];

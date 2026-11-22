@@ -8,7 +8,8 @@ import { AquariumMark } from "./AquariumMark";
 import { useBranding } from "./BrandingProvider";
 
 /**
- * The box's logo at `size` px: the owner's upload in a rounded square, else a
+ * The box's logo at `size` px: the owner's upload fitted (not cropped) in a
+ * rounded white square, else a
  * monogram from the entity name on the accent colour, else the Aquarium mark.
  * Decorative — the name always sits beside it. Pass `branding` to draw a
  * preview instead of the live branding.
@@ -29,8 +30,8 @@ export function BoxLogo({ size = 24, branding: override }: { size?: number; bran
         height={size}
         data-box-logo="image"
         onError={() => setFailed(src)}
-        className="shrink-0 bg-white object-cover"
-        style={style}
+        className="shrink-0 bg-white object-contain"
+        style={{ ...style, padding: Math.round(size * 0.08) }}
       />
     );
   }

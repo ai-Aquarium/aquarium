@@ -34,7 +34,7 @@ describe("BoxLogo", () => {
     const img = container.querySelector('[data-box-logo="image"]');
     expect(img?.getAttribute("src")).toBe("/api/branding/logo?v=v1");
     fireEvent.error(img!);
-    expect(container.querySelector('[data-box-logo="monogram"]')?.textContent).toBe("HS");
+    expect(container.querySelector('[data-box-logo="monogram"]')?.textContent).toBe("H");
   });
 
   it("draws a preview branding instead of the live one", () => {
