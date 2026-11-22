@@ -2,7 +2,10 @@
 
 import type { ReactNode } from "react";
 
-import { PHONE_SECTIONS, type PhoneSection } from "@/components/projects/tabs/sections";
+import {
+  PHONE_SECTIONS,
+  type PhoneSection,
+} from "@/components/projects/tabs/sections";
 import { useT } from "@/i18n";
 
 /**
@@ -39,7 +42,10 @@ export function ProjectTabsNav({
             const on = section === active;
             const badge = badges[section] ?? 0;
             return (
-              <li key={section} className={section === "chat" ? "lg:hidden" : undefined}>
+              <li
+                key={section}
+                className={section === "chat" ? "lg:hidden" : undefined}
+              >
                 <button
                   type="button"
                   role="tab"

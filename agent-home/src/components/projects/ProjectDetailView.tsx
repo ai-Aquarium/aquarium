@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState, type ComponentType } from "react";
 
 import { ChatPane } from "@/components/chat/ChatPane";
-import { ProjectChatDock, useChatDock } from "@/components/projects/chat/ProjectChatDock";
+import {
+  ProjectChatDock,
+  useChatDock,
+} from "@/components/projects/chat/ProjectChatDock";
 import { ProjectLog } from "@/components/projects/log/ProjectLog";
 import { ChevronDownIcon, MoreIcon } from "@/components/ui/icons";
 import { Sheet } from "@/components/ui/Sheet";
@@ -25,10 +28,7 @@ import {
   type ReadinessItem,
 } from "@/components/projects/readiness";
 import { revealTarget } from "@/components/projects/revealTarget";
-import {
-  durationLabel,
-  tokenCountLabel,
-} from "@/components/projects/format";
+import { durationLabel, tokenCountLabel } from "@/components/projects/format";
 import { SummariseSheet } from "@/components/projects/SummariseSheet";
 import {
   CADENCE_GLYPH,
@@ -176,7 +176,9 @@ export function ProjectDetailView({
   const [target] = useState(() => resolveTabParam(initialTab));
   const [section, setSection] = useState<PhoneSection>(target.section);
   const [sheet, setSheet] = useState<SheetPart | null>(target.sheet ?? null);
-  const [sheetPart, setSheetPart] = useState<SheetPart>(target.sheet ?? "skills");
+  const [sheetPart, setSheetPart] = useState<SheetPart>(
+    target.sheet ?? "skills",
+  );
   // The panels render on the server too; `section` on desktop is never "chat".
   const shown = section === "chat" ? "planning" : section;
   const writeTabParam = (value: string | null) => {
@@ -189,7 +191,9 @@ export function ProjectDetailView({
   const scrollTo = (part: ProjectTab) => {
     if (typeof window === "undefined") return;
     window.requestAnimationFrame(() =>
-      document.getElementById(`project-section-${part}`)?.scrollIntoView({ block: "start" }),
+      document
+        .getElementById(`project-section-${part}`)
+        ?.scrollIntoView({ block: "start" }),
     );
   };
   useEffect(() => {
@@ -238,7 +242,9 @@ export function ProjectDetailView({
     planning: project.clarify?.open_count ?? 0,
   };
   const needsYou = blockedCount + triageCount;
-  const liveRun = project.runs.find((run) => run.status === "running" || run.status === "waiting");
+  const liveRun = project.runs.find(
+    (run) => run.status === "running" || run.status === "waiting",
+  );
   // A saved open/closed choice (this browser) wins over the live-run default.
   const [savedStatus, saveStatus] = usePersistentState<StatusPref>(
     STATUS_OPEN_KEY,
@@ -246,10 +252,16 @@ export function ProjectDetailView({
     parseStatusPref,
     String,
   );
-  const statusOpen = savedStatus ? savedStatus === "open" : needsYou > 0 || Boolean(liveRun);
+  const statusOpen = savedStatus
+    ? savedStatus === "open"
+    : needsYou > 0 || Boolean(liveRun);
   const statusLine = [
     liveRun ? `Run ${liveRun.run_no} ${liveRun.status}` : project.status,
-    needsYou === 1 ? t("needsYouOne") : needsYou > 1 ? t("needsYou", { count: needsYou }) : null,
+    needsYou === 1
+      ? t("needsYouOne")
+      : needsYou > 1
+        ? t("needsYou", { count: needsYou })
+        : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -267,7 +279,14 @@ export function ProjectDetailView({
     onChangeRequest: openChange,
   };
   const parts = SECTION_PARTS[shown];
-  const action = nextAction(project, board, readiness, playbook, undefined, canLead);
+  const action = nextAction(
+    project,
+    board,
+    readiness,
+    playbook,
+    undefined,
+    canLead,
+  );
 
   const meta = [
     project.status,
@@ -302,6 +321,8 @@ export function ProjectDetailView({
     </button>
   );
   const SheetSection = TAB_COMPONENT[sheetPart];
+  // On a phone the Chat tab shows only the tab bar above the chat.
+  const phoneHide = section === "chat" ? "max-lg:hidden" : "";
 
   return (
     <div
@@ -312,12 +333,9 @@ export function ProjectDetailView({
     >
       <div
         data-component="ProjectMain"
-        className={`flex min-w-0 flex-1 flex-col gap-4 ${
-          section === "chat" ? "max-lg:[&>*:not([data-component=ProjectTabsNav])]:hidden" : ""
-        } ${
-          dock.mode === "max" ? "lg:hidden" : ""
-        }`}
+        className={`flex min-w-0 flex-1 flex-col gap-4 ${dock.mode === "max" ? "lg:hidden" : ""}`}
       >
+        <div className={`flex min-w-0 flex-col gap-4 ${phoneHide}`}>
           <BusyRegion
             busy={refreshing}
             label={refreshing ? "Talking to the agent…" : undefined}
@@ -365,45 +383,57 @@ export function ProjectDetailView({
           </BusyRegion>
 
           {/* ── Status: the journey bar and live status; collapsible on a phone ── */}
-        <aside
-          data-component="ProjectStatus"
-          aria-label={t("statusAria")}
-          data-open={statusOpen ? "true" : "false"}
-          className={`min-w-0 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 lg:border-0 lg:bg-transparent lg:p-0`}
-        >
-          <button
-            type="button"
-            data-action="toggle-project-status"
-            aria-expanded={statusOpen}
-            onClick={() => saveStatus(statusOpen ? "closed" : "open")}
-            className="flex min-h-11 w-full items-center gap-2 text-left lg:hidden"
+          <aside
+            data-component="ProjectStatus"
+            aria-label={t("statusAria")}
+            data-open={statusOpen ? "true" : "false"}
+            className={`min-w-0 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 lg:border-0 lg:bg-transparent lg:p-0`}
           >
-            <span className="text-sm font-semibold">{t("status")}</span>
-            <span className="min-w-0 flex-1 truncate text-xs text-[var(--color-muted)]">{statusLine}</span>
-            <ChevronDownIcon
-              aria-hidden
-              className={`h-4 w-4 shrink-0 text-[var(--color-muted)] transition-transform ${statusOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-          <div className={`flex flex-col gap-3 ${statusOpen ? "mt-2 lg:mt-0" : "max-lg:hidden"}`}>
-            <div data-component="ProjectStickyBars">
-              <JourneyBar
+            <button
+              type="button"
+              data-action="toggle-project-status"
+              aria-expanded={statusOpen}
+              onClick={() => saveStatus(statusOpen ? "closed" : "open")}
+              className="flex min-h-11 w-full items-center gap-2 text-left lg:hidden"
+            >
+              <span className="text-sm font-semibold">{t("status")}</span>
+              <span className="min-w-0 flex-1 truncate text-xs text-[var(--color-muted)]">
+                {statusLine}
+              </span>
+              <ChevronDownIcon
+                aria-hidden
+                className={`h-4 w-4 shrink-0 text-[var(--color-muted)] transition-transform ${statusOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            <div
+              className={`flex flex-col gap-3 ${statusOpen ? "mt-2 lg:mt-0" : "max-lg:hidden"}`}
+            >
+              <div data-component="ProjectStickyBars">
+                <JourneyBar
+                  project={project}
+                  action={action}
+                  readiness={readiness}
+                  canLead={canLead}
+                  canAct={canAct}
+                  onNavigate={selectTab}
+                  onReveal={reveal}
+                  onChangeRequest={openChange}
+                />
+              </div>
+              <LiveStatusBar
                 project={project}
-                action={action}
-                readiness={readiness}
-                canLead={canLead}
-                canAct={canAct}
-                onNavigate={selectTab}
-                onReveal={reveal}
-                onChangeRequest={openChange}
+                board={board}
+                runnable={runnable}
+                ownsNextStep={false}
               />
             </div>
-            <LiveStatusBar project={project} board={board} runnable={runnable} ownsNextStep={false} />
-          </div>
-        </aside>
+          </aside>
 
-        {/* ── Tools, About, readiness: below the journey bar ─────────── */}
-          {!project.archived || project.goal || project.usage || project.summary ? (
+          {/* ── Tools, About, readiness: below the journey bar ─────────── */}
+          {!project.archived ||
+          project.goal ||
+          project.usage ||
+          project.summary ? (
             <section
               data-component="ProjectDetails"
               aria-label="Project details"
@@ -416,15 +446,27 @@ export function ProjectDetailView({
                   aria-label="Project tools"
                   className="mt-2 flex flex-wrap gap-1.5"
                 >
-                  <button type="button" onClick={() => setAddOpen(true)} className={TOOL_BTN}>
+                  <button
+                    type="button"
+                    onClick={() => setAddOpen(true)}
+                    className={TOOL_BTN}
+                  >
                     Add
                   </button>
                   {canLead ? (
-                    <button type="button" onClick={() => setEditOpen(true)} className={TOOL_BTN}>
+                    <button
+                      type="button"
+                      onClick={() => setEditOpen(true)}
+                      className={TOOL_BTN}
+                    >
                       Edit
                     </button>
                   ) : null}
-                  <button type="button" onClick={() => setSummariseOpen(true)} className={TOOL_BTN}>
+                  <button
+                    type="button"
+                    onClick={() => setSummariseOpen(true)}
+                    className={TOOL_BTN}
+                  >
                     {project.summary ? "Update summary" : "Summarise"}
                   </button>
                 </div>
@@ -436,9 +478,13 @@ export function ProjectDetailView({
                     About
                   </summary>
                   {project.goal ? (
-                    <p className="mt-1 text-sm text-[var(--color-muted)]">{project.goal}</p>
+                    <p className="mt-1 text-sm text-[var(--color-muted)]">
+                      {project.goal}
+                    </p>
                   ) : null}
-                  {project.usage ? <ProjectUsageLine usage={project.usage} /> : null}
+                  {project.usage ? (
+                    <ProjectUsageLine usage={project.usage} />
+                  ) : null}
                   {project.summary ? (
                     <div
                       data-component="ProjectSummary"
@@ -456,24 +502,37 @@ export function ProjectDetailView({
               ) : null}
 
               {!project.archived && !runnable ? (
-                <details data-component="ProjectReadinessDetails" className="mt-2">
+                <details
+                  data-component="ProjectReadinessDetails"
+                  className="mt-2"
+                >
                   <summary className="cursor-pointer select-none text-xs font-medium text-[var(--color-muted)]">
-                    Before it can run · {readiness.filter((item) => item.ok).length} of {readiness.length} ready
+                    Before it can run ·{" "}
+                    {readiness.filter((item) => item.ok).length} of{" "}
+                    {readiness.length} ready
                   </summary>
-                  <ReadinessChecklist items={readiness} findings={findings} onItem={reveal} />
+                  <ReadinessChecklist
+                    items={readiness}
+                    findings={findings}
+                    onItem={reveal}
+                  />
                 </details>
               ) : null}
             </section>
           ) : null}
-
-  
-        <ProjectTabsNav active={section} onSelect={selectSection} badges={tabBadges} end={more} />
+        </div>
+        <ProjectTabsNav
+          active={section}
+          onSelect={selectSection}
+          badges={tabBadges}
+          end={more}
+        />
 
         <div
           data-component="ProjectTabPanel"
           role="tabpanel"
           data-active-tab={shown}
-          className="flex min-w-0 flex-col gap-6"
+          className={`flex min-w-0 flex-col gap-6 ${phoneHide}`}
         >
           {shown === "log" ? (
             <ProjectLog project={project} board={board} />
@@ -517,7 +576,9 @@ export function ProjectDetailView({
               onMessageCount={onMessageCount}
             />
           ) : (
-            <p className="p-3 text-sm text-[var(--color-muted)]">{t("dock.unavailable")}</p>
+            <p className="p-3 text-sm text-[var(--color-muted)]">
+              {t("dock.unavailable")}
+            </p>
           )
         }
       </ProjectChatDock>
@@ -530,7 +591,11 @@ export function ProjectDetailView({
           component="ProjectMoreSheet"
           onClose={() => setSheet(null)}
         >
-          <div role="tablist" aria-label={t("more.title")} className="mb-3 flex gap-1">
+          <div
+            role="tablist"
+            aria-label={t("more.title")}
+            className="mb-3 flex gap-1"
+          >
             {SHEET_PARTS.map((part) => (
               <button
                 key={part}
@@ -549,7 +614,11 @@ export function ProjectDetailView({
               </button>
             ))}
           </div>
-          <section id={`project-section-${sheetPart}`} data-section={sheetPart} className="flex min-w-0 flex-col gap-2">
+          <section
+            id={`project-section-${sheetPart}`}
+            data-section={sheetPart}
+            className="flex min-w-0 flex-col gap-2"
+          >
             <SheetSection {...tabProps} />
           </section>
         </Sheet>

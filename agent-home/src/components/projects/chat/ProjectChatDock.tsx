@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 
 import {
   CollapseRightIcon,
@@ -32,12 +40,19 @@ const DESKTOP = "(min-width: 1024px)";
 /** Another maximized panel or an open dialog owns Esc. */
 function escBelongsElsewhere(target: EventTarget | null): boolean {
   if (typeof document === "undefined") return false;
-  if (target instanceof Element && target.closest('[role="dialog"]')) return true;
-  return document.querySelector('[data-maximizable][data-maximized="true"], [role="dialog"][aria-modal="true"]') !== null;
+  if (target instanceof Element && target.closest('[role="dialog"]'))
+    return true;
+  return (
+    document.querySelector(
+      '[data-maximizable][data-maximized="true"], [role="dialog"][aria-modal="true"]',
+    ) !== null
+  );
 }
 
 /** The dock's mode + width, saved per person, and its keyboard shortcuts. */
-export function useChatDock(userId: string): [DockState, (action: DockAction) => void] {
+export function useChatDock(
+  userId: string,
+): [DockState, (action: DockAction) => void] {
   const [saved, save] = usePersistentState(
     dockStorageKey(userId),
     DOCK_DEFAULT,
@@ -58,7 +73,12 @@ export function useChatDock(userId: string): [DockState, (action: DockAction) =>
       const action = dockShortcut(e);
       if (!action) return;
       if (action.type === "escape") {
-        if (stateRef.current.mode !== "max" || e.defaultPrevented || escBelongsElsewhere(e.target)) return;
+        if (
+          stateRef.current.mode !== "max" ||
+          e.defaultPrevented ||
+          escBelongsElsewhere(e.target)
+        )
+          return;
       }
       e.preventDefault();
       dispatch(action);
@@ -107,7 +127,8 @@ export function ProjectChatDock({
   const onMessageCount = useCallback((n: number) => setCount(n), []);
   if (mode !== "min" && seen !== null) setSeen(null);
   if (mode === "min" && seen === null) setSeen(count);
-  const unread = mode === "min" && seen !== null ? Math.max(0, count - seen) : 0;
+  const unread =
+    mode === "min" && seen !== null ? Math.max(0, count - seen) : 0;
 
   const restoreRef = useRef<HTMLButtonElement>(null);
   const maximizeRef = useRef<HTMLButtonElement>(null);
@@ -116,7 +137,8 @@ export function ProjectChatDock({
   useEffect(() => {
     if (previous.current === mode) return;
     previous.current = mode;
-    if (typeof window === "undefined" || !window.matchMedia?.(DESKTOP).matches) return;
+    if (typeof window === "undefined" || !window.matchMedia?.(DESKTOP).matches)
+      return;
     if (mode === "min") railRef.current?.focus();
     else if (mode === "max") restoreRef.current?.focus();
     else maximizeRef.current?.focus();
@@ -129,7 +151,12 @@ export function ProjectChatDock({
   };
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     if (!drag.current) return;
-    setDragWidth(dockReducer(saved, { type: "resize", width: drag.current.width + drag.current.x - e.clientX }).width);
+    setDragWidth(
+      dockReducer(saved, {
+        type: "resize",
+        width: drag.current.width + drag.current.x - e.clientX,
+      }).width,
+    );
   };
   const onPointerUp = () => {
     if (!drag.current) return;
@@ -166,7 +193,9 @@ export function ProjectChatDock({
           className="hidden w-10 shrink-0 flex-col items-center gap-2 self-stretch rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] py-3 text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] lg:flex"
         >
           <PanelLeftIcon />
-          <span className="[writing-mode:vertical-rl]">{t("dock.showProject")}</span>
+          <span className="[writing-mode:vertical-rl]">
+            {t("dock.showProject")}
+          </span>
         </button>
       ) : null}
       <aside
@@ -206,7 +235,11 @@ export function ProjectChatDock({
             data-action="open-chat"
             onClick={() => dispatch({ type: "restore" })}
             title={t("dock.openHint")}
-            aria-label={unread > 0 ? t("dock.openUnread", { count: unread }) : t("dock.open")}
+            aria-label={
+              unread > 0
+                ? t("dock.openUnread", { count: unread })
+                : t("dock.open")
+            }
             className="hidden h-full w-12 flex-col items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] py-3 text-[var(--color-muted)] hover:text-[var(--color-fg)] lg:flex"
           >
             <span className="relative">
@@ -221,7 +254,9 @@ export function ProjectChatDock({
               ) : null}
             </span>
             <MessageIcon />
-            <span className="text-xs [writing-mode:vertical-rl]">{t("dock.title")}</span>
+            <span className="text-xs [writing-mode:vertical-rl]">
+              {t("dock.title")}
+            </span>
           </button>
         ) : null}
 
@@ -236,8 +271,12 @@ export function ProjectChatDock({
           >
             {avatar}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{t("dock.title")}</p>
-              <p className="truncate text-xs text-[var(--color-muted)]">{t("dock.profile", { profile })}</p>
+              <p className="truncate text-sm font-semibold">
+                {t("dock.title")}
+              </p>
+              <p className="truncate text-xs text-[var(--color-muted)]">
+                {t("dock.profile", { profile })}
+              </p>
             </div>
             {mode === "max" ? (
               <button
@@ -275,7 +314,9 @@ export function ProjectChatDock({
               <CollapseRightIcon />
             </button>
           </header>
-          <div className="flex min-h-0 flex-1 flex-col p-2">{children(onMessageCount)}</div>
+          <div className="flex min-h-0 flex-1 flex-col p-2">
+            {children(onMessageCount)}
+          </div>
         </div>
       </aside>
     </>
