@@ -22,7 +22,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 echo "Fetching joyaether/peeppop-server@$BRANCH ..."
 git clone --quiet --depth 1 --branch "$BRANCH" --filter=blob:none \
   --sparse "$REPO" "$TMP/repo"
-git -C "$TMP/repo" sparse-checkout set .agents/skills
+git -C "$TMP/repo" sparse-checkout set .agents/skills tools/hk-spatial-mcp
 
 for s in "${SKILLS[@]}"; do
   src="$TMP/repo/.agents/skills/$s"
@@ -31,6 +31,16 @@ for s in "${SKILLS[@]}"; do
   cp -R "$src" "$PROFILE_DIR/skills/$s"
   echo "synced $s"
 done
+
+# self-hosted hk-spatial MCP (tools/hk-spatial-mcp in the same repo)
+mcp_src="$TMP/repo/tools/hk-spatial-mcp/hk_spatial_mcp.py"
+if [ -f "$mcp_src" ]; then
+  mkdir -p "$PROFILE_DIR/mcp" "$PROFILE_DIR/workspace/hk_data"
+  cp "$mcp_src" "$PROFILE_DIR/mcp/hk_spatial_mcp.py"
+  chgrp -R hermes-tools "$PROFILE_DIR/workspace/hk_data" 2>/dev/null || true
+  chmod -R g+rwX "$PROFILE_DIR/workspace/hk_data" 2>/dev/null || true
+  echo "synced hk_spatial_mcp.py -> $PROFILE_DIR/mcp/"
+fi
 find "$PROFILE_DIR/skills" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
 chown -R hermes:hermes "$PROFILE_DIR/skills"
 echo "Done -> $PROFILE_DIR/skills"
