@@ -152,6 +152,15 @@ systemctl daemon-reload
 if [ "${restart_agent_home:-0}" = 1 ]; then
   systemctl restart agent-home
 fi
+# hermes-storytellar is picked up by the hermes-*.service glob like every
+# other unit, but a restart there can kill an authoring run worth tens of
+# minutes of model time — print the in-flight count first so an interrupted
+# job is a deliberate choice, not a surprise.
+if systemctl list-unit-files hermes-storytellar.service --state=enabled --no-legend | grep -q .; then
+  st_runs=$(curl -s -m 5 http://127.0.0.1:8650/health/detailed 2>/dev/null \
+    | ./.venv/bin/python -c 'import json,sys; print(json.load(sys.stdin).get("active_agents", 0))' 2>/dev/null || true)
+  echo "== storytellar authoring runs in progress: ${st_runs:-unknown} =="
+fi
 for u in $UNITS; do systemctl restart "$u"; done
 sleep 15
 fail=0
