@@ -28,18 +28,11 @@ export function isBrandingLogoType(type: string): boolean {
   return (BRANDING_LOGO_TYPES as readonly string[]).includes(type);
 }
 
-/** Up to two letters for the default logo: "Leo Lau" → "LL", "HangSengDev" → "HS". */
+/** The default logo's letters: the first letter of the first two words ("Leo Lau" → "LL"); one word → one letter ("HangSengDev" → "H"). */
 export function monogramFor(name: string | null | undefined): string {
   const words = (name ?? "").trim().split(/[\s\-_.·]+/u).filter(Boolean);
-  if (words.length === 0) return "";
-  const first = (w: string) => Array.from(w)[0];
-  if (words.length >= 2) return (first(words[0]) + first(words[1])).toLocaleUpperCase();
-  const chars = Array.from(words[0]);
-  const capitals = chars.filter((c) => c !== c.toLocaleLowerCase());
-  if (capitals.length >= 2) return capitals.slice(0, 2).join("");
-  // A script without letter case (e.g. Chinese) reads best as one character.
-  if (chars[0].toLocaleUpperCase() === chars[0].toLocaleLowerCase()) return chars[0];
-  return chars.slice(0, 2).join("").toLocaleUpperCase();
+  const first = (w: string) => Array.from(w)[0].toLocaleUpperCase();
+  return words.slice(0, 2).map(first).join("");
 }
 
 export function brandName(branding: Branding): string {

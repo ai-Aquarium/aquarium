@@ -5,10 +5,10 @@ import { brandName, brandingLogoSrc, monogramFor, NO_BRANDING, parseBranding } f
 describe("monogramFor", () => {
   it.each([
     ["Leo Lau", "LL"],
-    ["HangSengDev", "HS"],
+    ["HangSengDev", "H"],
     ["hang seng dev", "HS"],
     ["Reef-team", "RT"],
-    ["acme", "AC"],
+    ["acme", "A"],
     ["Q", "Q"],
     ["恒生", "恒"],
     ["  ", ""],
