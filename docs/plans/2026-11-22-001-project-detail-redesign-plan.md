@@ -1,6 +1,6 @@
 ---
 title: "plan: Project Detail redesign — Chat + Planning + Execution + Log"
-status: draft — Leo answered the open questions on 2026-11-22 (see Decisions); nothing is built until he approves the mockup
+status: draft — Leo answered the open questions on 2026-11-22 (see Decisions) and approved the co-create flow on 2026-11-23; nothing is built until he approves the mockup
 date: 2026-11-22
 type: plan
 origin: Leo, 2026-11-22 (request quoted below)
@@ -91,6 +91,7 @@ desktop (lg+)                                                       phone
 | Playbook › text | Playbook card: the active rev's `body` as readable text, steps under it, "Edit" | `GET /playbook` | Reuse data, new layout |
 | Playbook › Versioning | Rev picker (v1…v4, active, proposed), note + author + date, "Compare v3 → v4" diff (text + steps), "Make active" | `revisions[]`, `POST /playbook/{rev}/activate`; diff from `planDiff.ts` + a text diff *(suggestion)* | UI new; no new API |
 | Playbook › Convert to cards | "Cards" toggle on the playbook: **Kanban** (one card per step) with a **Lanes by: Latest run \| Planning stage** switch (Decision 3), or **Graph** (DAG from `depends_on`, checkpoints marked) | `steps[]`; latest run's `project_run_cards`; Planning stage = Draft (new or changed vs the active rev) / Ready / Checkpoint (`checkpoint` flag) | UI new; no new API |
+| Co-create the playbook in chat (Leo, 2026-11-23) | Chat column + Planning › Playbook: agent asks back, option cards, a live **v6 draft** whose text, steps, cards and graph nodes highlight changes vs the base rev; **Ask about this** on every paragraph, step and card quotes it into the composer; **Save as v6** → proposed → Make active | today `POST/GET /{slug}/playbook/draft` (one-shot job, outside chat); **new** working draft + quote metadata (see "Co-create the playbook") | **New** *(suggestion)* |
 | Planning › Outputs | Outputs card (declared outputs, last delivery, accept) | `OutputsTab` data | Reuse |
 | Execution › Current run + card status | Current run: rev, progress, per-card status (Done / Running / Needs you / To do), Continue/Stop, opens `RunView` | `GET /runs/{n}`, `useRunLive` | Reuse; compact layout |
 | Execution › Collection of runs | Runs table (run, rev, started, duration, status, score, cost) + score trend + "Compare" (pick 2–3 runs: per-step outcome, score, duration, cost, retro lines) | `GET /runs` + `GET /runs/{n}`; *(suggestion)* `GET /{slug}/runs/compare?runs=5,6,7` to avoid N reads | Compare UI new; endpoint optional |
@@ -126,6 +127,52 @@ Leo: "you propose a solution that works the best".
   rev), `run`, `runs`, `retro`. Chat turns that produce one show an inline card:
   "Proposed v5 · 2 steps changed · Review" which opens Planning › Playbook on the diff.
   Activating and scoring stay human-only, as today.
+
+### Co-create the playbook in chat (Leo, 2026-11-23)
+
+Leo asked: "how do I chat about the playbook?  The key use case is for user to ask questions, ask advices to co-create the project steps (playbook) together with the agent.  Which page shows that user interfaac?"
+
+We proposed the flow below and he replied "Yes, please go ahead". It lives on the Project
+Detail page: the chat column plus Planning › Playbook. The flow is ours *(suggestion)*.
+
+| Step | What Leo sees | Mockup |
+|---|---|---|
+| 1. Ask | "What's missing from this playbook?" or "How should I handle late CRM exports?" (also a quick prompt above the composer) | 2a3 |
+| 2. Agent asks back, then options | 1–2 clarifying questions, then 2–3 **option cards** with pros and cons | 2a3, 2a4 |
+| 3. Pick or reply | **Pick B**, or answer in his own words | 2a4 → 2a5 |
+| 4. Live draft | The agent edits a **v6 draft**; the rev row shows `v6 draft`; changed paragraphs, steps, cards and graph nodes are highlighted vs v5 as they talk | 2a5, 2a7 |
+| 5. Ask about this | Every paragraph, step, card and graph node has **Ask about this**; it quotes that part into the composer ("Step 2 · Pull the CRM export") | 2a6 |
+| 6. Save | **Save as v6** turns the draft into a proposed rev; then the normal **Make active** (human-only) | 2a8 |
+
+Data / API *(suggestion)*:
+
+- **Today:** `POST /{slug}/playbook/draft` starts a one-shot background job (auxiliary
+  task `projects_plan`) that drafts from the brief outside the chat; `GET …/playbook/draft`
+  polls it; the result lands as an ordinary inactive revision. State is in-process
+  (`_PLAN_DRAFTS`). It cannot follow a conversation.
+- **Working draft (new):** one persisted draft per project: `project_playbook_drafts`
+  (`project_id`, `base_rev`, `body`, `steps` JSON, `updated_by`, `session_id`,
+  `updated_at`).
+  - The agent edits it through a CLI verb guided by the projects skill (no new core tool):
+    `hermes projects playbook draft show|set|patch-step|discard`.
+  - The UI reads `GET /{slug}/playbook/working-draft` (draft, `base_rev`, diff vs base:
+    `planDiff.ts` for steps plus a paragraph diff). It refreshes when a chat turn that
+    called the verb finishes, using the chat stream's tool events, or by polling.
+  - `POST /{slug}/playbook/working-draft/save` creates a proposed rev through the same
+    path as `POST /playbook`. `DELETE` discards the draft.
+  - Writes carry `base_rev` + `updated_at`, so a manual edit and an agent edit can't
+    silently overwrite each other.
+  - Activation stays human-only (`POST /playbook/{rev}/activate`).
+- **Option cards (new):** the agent replies with a small structured block (e.g. a fenced
+  `options` JSON: label, title, pros, cons) that `MessageBubble` renders as cards. Picking
+  one sends a normal user message ("Option B: …"), so the transcript stays plain text.
+- **Ask about this (UI + message metadata):**
+  - The composer holds a quote `{kind: paragraph|step|card, rev, key|index, text}`.
+  - On send, the quote becomes a quoted prefix in the user message text
+    (`> Step 2 · Pull the CRM export`) and is also kept as message metadata, so the agent
+    knows exactly which step is meant.
+  - It goes in the user turn, never the system prompt, so prompt caching and role
+    alternation are unaffected.
 
 ### Log data (Decision 6)
 
@@ -172,6 +219,9 @@ would also draft v1 and link the chat *(suggestion)*.
 
 Fewest clicks: steps 1→3 are 4 taps (Review, Make active, Run now, Continue).
 
+Before step 1, Leo can **co-create** the next version with the agent: ask, answer its
+questions, pick an option, and watch the v6 draft change (mockup steps 2a3–2a8, below).
+
 ## Removing Task mode (Decision 4)
 
 Leo: "Should be off completely".
@@ -204,6 +254,7 @@ Leo: "Should be off completely".
 | 5 | Execution: compact current run with per-card status; runs table, score trend, compare 2–3 runs (+ optional compare endpoint) | N run reads; card ↔ step mapping for ad-hoc cards |
 | 6 | Log: `GET /{slug}/log` for people and agents (runs, re-plans, tool calls) derived from existing records; then `project_activity` for brief / tools / members edits | New table + route-auth tests; tool-call reads per run |
 | 7 | Start from chat: skill drafts v1 + links the chat; project card in the chat reply | Skill change is behaviour change for every profile |
+| 8 | Co-create: working draft API + `hermes projects playbook draft` CLI verb, live highlights, **Ask about this** quotes, option cards in chat, **Save as vN** | Agent and lead editing the draft at once (`base_rev` + `updated_at` check); option-card format in `MessageBubble` |
 
 ## Decisions (Leo, 2026-11-22)
 
