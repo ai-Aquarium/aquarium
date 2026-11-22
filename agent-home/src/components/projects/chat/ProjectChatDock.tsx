@@ -174,7 +174,7 @@ export function ProjectChatDock({
         data-mode={mode}
         aria-label={t("dock.aria")}
         style={mode === "open" ? { width } : undefined}
-        className={`relative min-h-0 min-w-0 flex-col max-lg:h-[calc(100dvh-13rem)] max-lg:min-h-[420px] lg:sticky lg:top-4 lg:h-[calc(100dvh-7rem)] ${
+        className={`relative min-h-0 min-w-0 flex-col max-lg:h-[calc(100dvh-13rem)] max-lg:min-h-[420px] lg:sticky lg:top-4 lg:h-[calc(100dvh-11rem)] ${
           phoneOpen ? "flex" : "max-lg:hidden lg:flex"
         } ${mode === "max" ? "lg:flex-1" : "lg:shrink-0"} ${mode === "min" ? "lg:w-12" : ""}`}
       >

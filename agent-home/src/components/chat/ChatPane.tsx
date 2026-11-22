@@ -564,6 +564,7 @@ export function ChatPane({
         composerInitialText={autoSend ? undefined : initialDraft}
         sessionRef={sessions.find((s) => s.id === sessionId)?.ref}
         compactOnPhone
+        composerLauncherClearance={!compact}
         aboveComposer={<DataSourcePicker initialId={initialDataSourceId} />}
       />
 

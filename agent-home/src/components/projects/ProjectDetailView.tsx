@@ -291,7 +291,7 @@ export function ProjectDetailView({
       }}
       title={t("more.hint")}
       aria-label={t("more.aria")}
-      className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+      className="inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-muted)] hover:text-[var(--color-fg)]"
     >
       <MoreIcon />
       {skillCandidates > 0 ? (
@@ -312,7 +312,9 @@ export function ProjectDetailView({
     >
       <div
         data-component="ProjectMain"
-        className={`flex min-w-0 flex-1 flex-col gap-4 ${section === "chat" ? "max-lg:hidden" : ""} ${
+        className={`flex min-w-0 flex-1 flex-col gap-4 ${
+          section === "chat" ? "max-lg:[&>*:not([data-component=ProjectTabsNav])]:hidden" : ""
+        } ${
           dock.mode === "max" ? "lg:hidden" : ""
         }`}
       >

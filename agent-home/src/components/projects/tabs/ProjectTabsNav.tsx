@@ -33,7 +33,7 @@ export function ProjectTabsNav({
       <div className="min-w-0 overflow-x-auto">
         <ul
           role="tablist"
-          className="flex w-max gap-1 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1"
+          className="flex w-max gap-0.5 rounded-[var(--radius-lg)] lg:gap-1 border border-[var(--color-border)] bg-[var(--color-surface)] p-1"
         >
           {PHONE_SECTIONS.map((section) => {
             const on = section === active;
@@ -46,7 +46,7 @@ export function ProjectTabsNav({
                   aria-selected={on}
                   data-tab={section}
                   onClick={() => onSelect(section)}
-                  className={`flex h-9 items-center gap-1.5 whitespace-nowrap rounded-[var(--radius-md)] px-3 text-sm ${
+                  className={`flex h-9 items-center gap-1 whitespace-nowrap rounded-[var(--radius-md)] px-2.5 text-sm lg:gap-1.5 lg:px-3 ${
                     on
                       ? "bg-[var(--color-surface-2)] font-semibold text-[var(--color-fg)]"
                       : "text-[var(--color-muted)] hover:text-[var(--color-fg)]"
