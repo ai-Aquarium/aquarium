@@ -272,6 +272,7 @@ export function LandingClient({
               needsYouCount={needsYouTotal}
               name={accountName}
               onOpenChat={openSession}
+              storageEnabled={storageEnabled}
             />
           )
         }

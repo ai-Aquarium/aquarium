@@ -127,6 +127,18 @@ export const PanelRightIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const PaperclipIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m21.4 11.1-8.9 8.9a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6l8.2-8.2" />
+  </Icon>
+);
+
+export const ArrowUpIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 19V5M5 12l7-7 7 7" />
+  </Icon>
+);
+
 export const PencilIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z" />

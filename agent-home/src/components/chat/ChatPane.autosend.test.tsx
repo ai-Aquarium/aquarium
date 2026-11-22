@@ -3,6 +3,7 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChatPane } from "@/components/chat/ChatPane";
+import { setHandOffAttachments } from "@/lib/chat/pending-attachments";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
@@ -37,5 +38,27 @@ describe("ChatPane auto-send hand-off", () => {
     );
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(window.location.pathname + window.location.search).toBe("/chat?keep=1");
+  });
+
+  it("sends the files attached on the landing page with the first turn", async () => {
+    const file = { path: "u/p/a.pdf", name: "a.pdf", content_type: "application/pdf", size: 10 };
+    setHandOffAttachments("hello", [file]);
+    render(
+      <ChatPane
+        initialSessions={[]}
+        initialSessionId={null}
+        initialMessages={[]}
+        storageEnabled
+        profile="default"
+        initialDraft="hello"
+        autoSend
+      />,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit | undefined][];
+    const turn = calls.find(([, init]) => typeof init?.body === "string" && init.body.includes('"message"'));
+    expect(JSON.parse(String(turn?.[1]?.body)).attachments).toEqual([file]);
+    // The composer does not get them a second time.
+    expect(sessionStorage.getItem("agent-home:hand-off-attachments")).toBeNull();
   });
 });
