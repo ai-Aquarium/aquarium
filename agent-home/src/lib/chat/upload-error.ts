@@ -16,6 +16,11 @@ function parse(text: string): ErrorBody | null {
 }
 
 export function uploadFailureMessage(fileName: string, status: number, text: string): string {
+  return `${fileName}: ${uploadFailureReason(status, text)}`;
+}
+
+/** {@link uploadFailureMessage} without the file name (a chip already shows it). */
+export function uploadFailureReason(status: number, text: string): string {
   const body = parse(text);
   const code = typeof body?.error === "string" && body.error ? body.error : null;
   const detail = typeof body?.detail === "string" && body.detail.trim() ? body.detail.trim() : null;
@@ -26,7 +31,7 @@ export function uploadFailureMessage(fileName: string, status: number, text: str
       : text.trim()
         ? "Upload failed: the server sent an unexpected response."
         : "Upload failed: the server sent no details.");
-  return `${fileName}: ${what} (HTTP ${status}${code ? `, ${code}` : ""})`;
+  return `${what} (HTTP ${status}${code ? `, ${code}` : ""})`;
 }
 
 /** Read a response body as JSON; null for an empty or non-JSON body. */

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChatActivity } from "@/components/chat/StatusIndicator";
 import { useFollowLatest } from "@/components/chat/useFollowLatest";
 import { markSessionRead } from "@/lib/chat/last-read";
+import { takeHandOffAttachments } from "@/lib/chat/pending-attachments";
 import {
   insertSteeredBubble,
   setLastAssistantContent,
@@ -864,7 +865,7 @@ export function useChatConversation({
     const url = new URL(window.location.href);
     for (const key of ["new", "autosend", "draft"]) url.searchParams.delete(key);
     window.history.replaceState(null, "", url.pathname + url.search + url.hash);
-    void send(initialDraft, []);
+    void send(initialDraft, takeHandOffAttachments(initialDraft));
     // Once, on arrival: the landing page handed over a turn the user already sent.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
