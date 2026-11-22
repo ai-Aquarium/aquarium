@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { AccountSecurity } from "@/components/account/AccountSecurity";
 import { AppsSettings, UploadsSettings } from "@/components/settings/AppsSettings";
 import { AquariumIdleSetting, CreaturePicker } from "@/components/settings/AquariumSettings";
+import { BoxIdentitySection } from "@/components/settings/BoxIdentitySection";
 import { EntityGoalSection } from "@/components/settings/EntityGoalSection";
 import { MenuSection } from "@/components/settings/MenuSection";
 import { AccountsSettings } from "@/components/settings/AccountsSettings";
@@ -148,6 +149,7 @@ const ENTRY_ICON: Record<SettingsEntryId, (p: IconProps) => ReactNode> = {
   "model-timeouts": CpuIcon,
   "skills-permissions": LockIcon,
   accounts: MessageIcon,
+  "box-identity": SparklesIcon,
 };
 
 /** Figma `hub-card` on tablet/desktop, `list-row` on phones: the whole card is the link. */
@@ -304,6 +306,8 @@ function SettingsSection({
       return <SkillsPermissionsSection />;
     case "accounts":
       return <AccountsSettings />;
+    case "box-identity":
+      return <BoxIdentitySection />;
     default:
       // tools, get-ready and upgrade have their own routes.
       return null;

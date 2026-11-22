@@ -9,6 +9,8 @@
   "GET /api/aquarium": "signed-in",
   "GET /api/aquarium/settings": "signed-in",
   "PUT /api/aquarium/settings": "admin",
+  "GET /api/branding": "public",
+  "GET /api/branding/logo": "public",
   "GET /api/data/sources": "signed-in",
   "GET /api/data/sources/[id]": "signed-in",
   "POST /api/data/sources/[id]/draft": "signed-in",
@@ -436,5 +438,8 @@
   "GET /api/sites/[id]/tables": "signed-in",
   "GET /api/sites/[id]/tables/[entity]": "signed-in",
   "GET /api/sites/[id]/tables/[entity]/export": "signed-in",
-  "GET /api/sites/[id]/history/[entity]/[key]": "signed-in"
+  "GET /api/sites/[id]/history/[entity]/[key]": "signed-in",
+  "PUT /api/settings/branding": "owner",
+  "PUT /api/settings/branding/logo": "owner",
+  "DELETE /api/settings/branding/logo": "owner"
 }

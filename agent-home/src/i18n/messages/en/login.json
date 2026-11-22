@@ -1,6 +1,8 @@
 {
   "title": "Sign in",
   "intro": "Sign in with your Aquarium account to open your agent home.",
+  "titleTo": "Sign in to {name}",
+  "introTo": "Sign in with your {name} account to open your agent home.",
   "tagline": "Your AI apprentices, all in one bowl.",
   "pointChat": "Chat with your agents and pick up where you left off.",
   "pointToday": "See what needs you: approvals, to-dos and projects.",

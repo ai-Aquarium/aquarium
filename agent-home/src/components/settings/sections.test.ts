@@ -27,6 +27,13 @@ describe("settings sections", () => {
     expect(canOpenSettingsSection("aquarium", { canManageMembers: true, canManageTools: false })).toBe(true);
     expect(visibleSettingsSections({ canManageMembers: true, canManageTools: true })).toContain("menu");
   });
+
+  it("lets only the owner open Name and logo", () => {
+    expect(canOpenSettingsSection("box-identity", { canManageMembers: true, canManageTools: true })).toBe(false);
+    expect(canOpenSettingsSection("box-identity", { canManageMembers: true, canManageTools: true, isOwner: true })).toBe(true);
+    expect(settingsIndexGroups({ canManageMembers: true, canManageTools: true }).admin).not.toContain("box-identity");
+    expect(settingsIndexGroups({ canManageMembers: true, canManageTools: true, isOwner: true }).admin).toContain("box-identity");
+  });
 });
 
 describe("settings index groups", () => {

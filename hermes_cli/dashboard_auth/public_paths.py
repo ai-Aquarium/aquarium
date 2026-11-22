@@ -79,6 +79,11 @@ PUBLIC_API_PATHS: frozenset[str] = frozenset({
     # throttled per IP and per token.
     "/api/seminar/survey/state",
     "/api/seminar/survey/submit",
+    # Box branding (hermes_cli/branding_api.py): the entity name and logo the
+    # sign-in page shows before anyone is signed in. Reads only; writes are
+    # owner-gated.
+    "/api/branding",
+    "/api/branding/logo",
 })
 
 # Token-in-path public routes: ``<prefix><token>`` with exactly one non-empty

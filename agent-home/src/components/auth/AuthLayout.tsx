@@ -2,13 +2,15 @@
 
 import type { ReactNode } from "react";
 
-import { AquariumMark } from "@/components/brand/AquariumMark";
+import { BoxLogo } from "@/components/brand/BoxLogo";
+import { useBranding } from "@/components/brand/BrandingProvider";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useT } from "@/i18n/client";
+import { brandName } from "@/lib/branding/branding";
 
 /**
  * The branded signed-out frame (Figma "Inner — Sign-in & edge states"): the
- * Aquarium mark top-left, the language switch top-right, one centred column
+ * box's logo and name top-left (the Aquarium mark until the owner names it), the language switch top-right, one centred column
  * and a quiet footer. No launcher, health or account controls — nobody is
  * signed in yet — and no Back: these are entry pages.
  */
@@ -29,6 +31,7 @@ export function AuthLayout({
   component?: string;
 }) {
   const t = useT("auth");
+  const { branding } = useBranding();
   return (
     <div
       data-component={component ?? "AuthLayout"}
@@ -37,8 +40,10 @@ export function AuthLayout({
     >
       <header className="flex items-center justify-between gap-3 px-4 pb-2 pt-[max(0.75rem,var(--safe-top))] lg:px-8 lg:pt-4">
         <span className="flex min-w-0 items-center gap-2">
-          <AquariumMark size={28} title="" />
-          <span className="text-lg font-semibold tracking-tight text-[var(--color-fg)]">Aquarium</span>
+          <BoxLogo size={28} />
+          <span data-brand-name className="truncate text-lg font-semibold tracking-tight text-[var(--color-fg)]">
+            {brandName(branding)}
+          </span>
         </span>
         <LanguageSwitch />
       </header>
@@ -58,7 +63,7 @@ export function AuthLayout({
         ) : (
           <div className={`w-full min-w-0 ${wide ? "max-w-[860px]" : "max-w-[420px]"}`}>{children}</div>
         )}
-        <p className="mt-6 text-center text-xs text-[var(--color-muted)]">{t("footer")}</p>
+        <p className="mt-6 text-center text-xs text-[var(--color-muted)]">{branding.name ? t("poweredBy", { name: branding.name }) : t("footer")}</p>
       </main>
     </div>
   );
