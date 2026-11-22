@@ -1,0 +1,70 @@
+{
+  "view": {
+    "aria": "計劃顯示方式",
+    "text": "文字",
+    "kanban": "看板",
+    "graph": "圖表"
+  },
+  "lanesBy": {
+    "label": "分欄依據",
+    "run": "最近一次執行",
+    "plan": "規劃階段"
+  },
+  "showing": {
+    "proposed": "第 {rev} 版（建議中）",
+    "active": "第 {rev} 版（使用中）"
+  },
+  "caption": {
+    "run": "每個步驟一張卡片。分欄 = 最近一次執行中的狀態：第 {run} 次執行。",
+    "runPinned": "每個步驟一張卡片。分欄 = 最近一次執行中的狀態：第 {run} 次執行（第 {rev} 版）。",
+    "noRun": "每個步驟一張卡片。尚未執行，所以所有步驟都在「尚未執行」。",
+    "runLoading": "正在載入最近一次執行…",
+    "runFailed": "無法載入最近一次執行，因此不顯示其狀態。",
+    "plan": "每個步驟一張卡片。草稿 = 與使用中的版本相比為新增或已修改；就緒 = 未變更；檢查點 = 需要等待人員處理。",
+    "planNoActive": "每個步驟一張卡片。目前沒有使用中的版本，所以除需等待人員的步驟外，全部都是草稿。",
+    "graph": "依各步驟的依賴關係繪製；虛線外框代表檢查點。顏色顯示最近一次執行的狀態。",
+    "graphList": "按順序列出步驟及各自需要等待的步驟。"
+  },
+  "lane": {
+    "new": "尚未執行",
+    "todo": "待辦",
+    "running": "執行中",
+    "needs": "需要你處理",
+    "done": "完成",
+    "draft": "草稿",
+    "ready": "就緒",
+    "checkpoint": "檢查點"
+  },
+  "card": {
+    "open": "開啟步驟：{title}",
+    "checkpoint": "檢查點",
+    "after": "在 {steps} 之後",
+    "host": "{profile}（主機）",
+    "nobody": "沒有設定檔",
+    "empty": "沒有"
+  },
+  "graph": {
+    "aria": "以依賴關係圖顯示計劃步驟",
+    "start": "最先開始"
+  },
+  "edit": {
+    "title": "步驟 {n}",
+    "titleLabel": "步驟",
+    "bodyLabel": "給代理的詳細說明（選填）",
+    "assigneeLabel": "負責者",
+    "hostDefault": "主機設定檔（{profile}）",
+    "noHost": "主機設定檔",
+    "dependsLabel": "在以下步驟之後開始",
+    "dependsNone": "這是唯一的步驟。",
+    "checkpointLabel": "檢查點：繼續之前先等待人員處理",
+    "save": "儲存為新版本",
+    "saving": "正在儲存…",
+    "cancel": "取消",
+    "close": "關閉",
+    "hint": "儲存後會建議第 {next} 版；由負責人設為使用中後，會從下一次執行開始套用。",
+    "awaiting": "有一個建議中的版本正在等待。請先啟用或捨棄它，再修改步驟。",
+    "archived": "此專案已封存，計劃無法修改。",
+    "titleRequired": "步驟需要標題。"
+  },
+  "noSteps": "此版本尚未有任何步驟。"
+}

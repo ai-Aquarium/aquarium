@@ -13,6 +13,9 @@ export function PlanTab({ project, playbook, canLead }: ProjectTabProps) {
         hostProfile={project.host_profile}
         canActivate={canLead}
         archived={project.archived}
+        latestRunNo={
+          project.runs.length > 0 ? Math.max(...project.runs.map((r) => r.run_no)) : null
+        }
       />
     </div>
   );

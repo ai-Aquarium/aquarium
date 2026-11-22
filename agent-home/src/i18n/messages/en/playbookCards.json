@@ -1,0 +1,70 @@
+{
+  "view": {
+    "aria": "Show the plan as",
+    "text": "Text",
+    "kanban": "Kanban",
+    "graph": "Graph"
+  },
+  "lanesBy": {
+    "label": "Lanes by",
+    "run": "Latest run",
+    "plan": "Planning stage"
+  },
+  "showing": {
+    "proposed": "Revision {rev} (proposed)",
+    "active": "Revision {rev} (active)"
+  },
+  "caption": {
+    "run": "One card per step. Lanes = state in the latest run: run {run}.",
+    "runPinned": "One card per step. Lanes = state in the latest run: run {run} (revision {rev}).",
+    "noRun": "One card per step. No run yet, so every step is in Not run yet.",
+    "runLoading": "Loading the latest run…",
+    "runFailed": "Could not load the latest run, so its states are not shown.",
+    "plan": "One card per step. Draft = new or changed vs the active revision; Ready = unchanged; Checkpoint = waits for a person.",
+    "planNoActive": "One card per step. Nothing is active yet, so every step is a Draft unless it waits for a person.",
+    "graph": "Graph from each step's dependencies; a dashed border is a checkpoint. Colours show the latest run.",
+    "graphList": "Steps in order, with what each waits on."
+  },
+  "lane": {
+    "new": "Not run yet",
+    "todo": "To do",
+    "running": "Running",
+    "needs": "Needs you",
+    "done": "Done",
+    "draft": "Draft",
+    "ready": "Ready",
+    "checkpoint": "Checkpoint"
+  },
+  "card": {
+    "open": "Open step: {title}",
+    "checkpoint": "checkpoint",
+    "after": "after {steps}",
+    "host": "{profile} (host)",
+    "nobody": "No profile",
+    "empty": "None"
+  },
+  "graph": {
+    "aria": "Plan steps as a dependency graph",
+    "start": "Starts first"
+  },
+  "edit": {
+    "title": "Step {n}",
+    "titleLabel": "Step",
+    "bodyLabel": "Details for the agent (optional)",
+    "assigneeLabel": "Who does it",
+    "hostDefault": "Host profile ({profile})",
+    "noHost": "Host profile",
+    "dependsLabel": "Starts after",
+    "dependsNone": "This is the only step.",
+    "checkpointLabel": "Checkpoint: wait for a person before going on",
+    "save": "Save as a new revision",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "close": "Close",
+    "hint": "Saving proposes revision {next}; it applies from the next run once a lead makes it active.",
+    "awaiting": "A proposed revision is waiting. Activate or discard it before you change a step.",
+    "archived": "This project is archived, so its plan can't change.",
+    "titleRequired": "A step needs a title."
+  },
+  "noSteps": "This revision has no steps yet."
+}
