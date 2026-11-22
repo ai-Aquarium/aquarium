@@ -19,11 +19,10 @@
   "uncategorized": "未分類",
   "movedTo": "已移到 {name}",
   "tabs": {
-    "overview": "概覽",
-    "work": "工作",
-    "files": "檔案",
-    "skills": "技能",
-    "setup": "設定",
+    "planning": "規劃",
+    "execution": "執行",
+    "log": "紀錄",
+    "chat": "對話",
     "aria": "項目分區"
   },
   "status": "狀態",
@@ -176,5 +175,39 @@
     "enableFromVersions": "在「版本」中啟用",
     "preload": "在這個專案的執行中預先載入",
     "preloaded": "已在這個專案的執行中預先載入（技能啟用後才會使用）。"
+  },
+  "brief": "簡介",
+  "more": {
+    "hint": "技能與設定",
+    "aria": "更多：技能與設定",
+    "title": "技能與設定"
+  },
+  "dock": {
+    "aria": "項目對話",
+    "title": "項目對話",
+    "profile": "回答者：{profile}",
+    "maximize": "放大對話",
+    "maximizeHint": "放大對話（Ctrl/⌘+Shift+.）",
+    "restore": "還原對話",
+    "restoreHint": "還原對話（Esc）",
+    "minimize": "縮小對話",
+    "minimizeHint": "縮小對話（Ctrl/⌘+.）",
+    "showProject": "顯示項目",
+    "showProjectHint": "顯示項目（Esc）",
+    "open": "開啟對話",
+    "openHint": "開啟對話（Ctrl/⌘+.）",
+    "openUnread": "開啟對話，{count} 則未讀",
+    "resize": "調整對話寬度",
+    "unavailable": "暫時無法載入對話。"
+  },
+  "log": {
+    "filterAria": "按執行者顯示",
+    "all": "全部",
+    "people": "人員",
+    "agents": "代理",
+    "empty": "暫無紀錄。",
+    "note": "目前只顯示卡片事件和執行；對話和規劃修改稍後會加入紀錄。",
+    "person": "人員",
+    "agent": "代理"
   }
 }

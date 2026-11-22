@@ -121,7 +121,7 @@ describe("projects filter URL round-trip", () => {
   });
 
   it("lands the landing page's Scheduled button on the Scheduled chip", () => {
-    // `/projects?view=project&schedule=set`: `view` is the mode switch, not a filter.
+    // An old `/projects?view=project&schedule=set` link: `view` is not a filter.
     expect(filtersFromParams(new URLSearchParams("view=project&schedule=set")).view).toBe("scheduled");
     const html = renderToStaticMarkup(
       <ProjectsFilters value={{ ...EMPTY_FILTERS, view: "scheduled" }} onChange={() => {}} />,

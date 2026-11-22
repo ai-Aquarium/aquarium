@@ -19,11 +19,10 @@
   "uncategorized": "Uncategorized",
   "movedTo": "Moved to {name}",
   "tabs": {
-    "overview": "Overview",
-    "work": "Work",
-    "files": "Files",
-    "skills": "Skills",
-    "setup": "Setup",
+    "planning": "Planning",
+    "execution": "Execution",
+    "log": "Log",
+    "chat": "Chat",
     "aria": "Project sections"
   },
   "status": "Status",
@@ -176,5 +175,39 @@
     "enableFromVersions": "Enable from Versions",
     "preload": "Preload in this project's runs",
     "preloaded": "Preloaded in this project's runs (used once the skill is enabled)."
+  },
+  "brief": "Brief",
+  "more": {
+    "hint": "Skills and settings",
+    "aria": "More: skills and settings",
+    "title": "Skills and settings"
+  },
+  "dock": {
+    "aria": "Project chat",
+    "title": "Project chat",
+    "profile": "Answering: {profile}",
+    "maximize": "Maximize chat",
+    "maximizeHint": "Maximize chat (Ctrl/⌘+Shift+.)",
+    "restore": "Restore chat",
+    "restoreHint": "Restore chat (Esc)",
+    "minimize": "Minimize chat",
+    "minimizeHint": "Minimize chat (Ctrl/⌘+.)",
+    "showProject": "Show project",
+    "showProjectHint": "Show project (Esc)",
+    "open": "Open chat",
+    "openHint": "Open chat (Ctrl/⌘+.)",
+    "openUnread": "Open chat, {count} unread",
+    "resize": "Resize chat",
+    "unavailable": "The chat couldn't load right now."
+  },
+  "log": {
+    "filterAria": "Show entries by",
+    "all": "All",
+    "people": "People",
+    "agents": "Agents",
+    "empty": "Nothing logged yet.",
+    "note": "Card events and runs for now; chat turns and plan edits join the log later.",
+    "person": "Person",
+    "agent": "Agent"
   }
 }

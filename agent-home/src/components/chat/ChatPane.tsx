@@ -63,6 +63,10 @@ export interface ChatPaneProps {
   initialHighlight?: string;
   /** `?source=<id>`: the data source the "Ask about" picker starts on. */
   initialDataSourceId?: string;
+  /** A narrow host (the project page's chat dock): no chats sidebar. */
+  compact?: boolean;
+  /** Told how many messages the open conversation holds (unread counts). */
+  onMessageCount?(count: number): void;
 }
 
 /**
@@ -81,6 +85,8 @@ export function ChatPane({
   autoSend = false,
   initialHighlight,
   initialDataSourceId,
+  compact = false,
+  onMessageCount,
 }: ChatPaneProps) {
   const router = useRouter();
   // Every client read below carries the selected profile, because a profile is
@@ -473,13 +479,22 @@ export function ChatPane({
     setInSearchOpen(true);
   }
 
+  const messageCount = conv.messages.length;
+  const onMessageCountRef = useRef(onMessageCount);
+  useEffect(() => {
+    onMessageCountRef.current = onMessageCount;
+  });
+  useEffect(() => {
+    onMessageCountRef.current?.(messageCount);
+  }, [messageCount]);
+
   return (
     <div data-component="ChatPane" className="flex min-h-0 flex-1 gap-6">
       <aside
         ref={sidebarRef}
         data-component="chat-sidebar"
         aria-label="Chats"
-        className="hidden w-[288px] shrink-0 overflow-y-auto border-r border-[var(--color-border)] pr-3 lg:flex lg:flex-col"
+        className={`hidden w-[288px] shrink-0 overflow-y-auto border-r border-[var(--color-border)] pr-3 ${compact ? "" : "lg:flex lg:flex-col"}`}
       >
         <ChatsSidebar
           profile={profile}

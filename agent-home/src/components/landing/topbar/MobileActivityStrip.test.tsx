@@ -41,11 +41,11 @@ describe("MobileActivityStrip", () => {
     const link = screen.getByRole("link", { name: /^Scheduled: 6/ });
     expect(toggle.contains(link)).toBe(false);
     expect(link.textContent).toBe("6");
-    expect(link.getAttribute("href")).toBe("/projects?view=project&schedule=set");
+    expect(link.getAttribute("href")).toBe("/projects?schedule=set");
     expect(link.className).toContain("h-11");
     fireEvent.click(toggle);
     const footer = screen.getByText("6 scheduled → Projects");
-    expect(footer.closest("a")?.getAttribute("href")).toBe("/projects?view=project&schedule=set");
+    expect(footer.closest("a")?.getAttribute("href")).toBe("/projects?schedule=set");
   });
 
   it("keeps the Scheduled link reachable when nothing is running", () => {

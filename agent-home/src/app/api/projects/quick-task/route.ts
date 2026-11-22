@@ -1,5 +1,5 @@
 /**
- * POST /api/projects/quick-task — Task mode's Start task: one request becomes
+ * POST /api/projects/quick-task — the quick-start sheet: one request becomes
  * an ordinary one-off project; the agent words the brief, drafts the plan,
  * activates it and starts run 1 (or stops after the draft with
  * `check_plan_first`). Same create + activation gates as Project mode.
