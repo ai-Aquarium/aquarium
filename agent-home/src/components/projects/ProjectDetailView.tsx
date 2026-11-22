@@ -329,7 +329,7 @@ export function ProjectDetailView({
       data-component="ProjectDetailView"
       data-active-section={section}
       data-dock={dock.mode}
-      className="flex min-w-0 items-start gap-4 lg:gap-6"
+      className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:gap-6"
     >
       <div
         data-component="ProjectMain"
