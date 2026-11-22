@@ -18,14 +18,16 @@ export function isSearchShortcut(e: KeyboardEvent): boolean {
 }
 
 /** Calls `onTrigger` when the chat search shortcut is pressed anywhere on the page. */
-export function useSearchShortcut(onTrigger: () => void): void {
+export function useSearchShortcut(onTrigger: () => void, enabled = true): void {
   const ref = useRef(onTrigger);
+  const enabledRef = useRef(enabled);
   useEffect(() => {
     ref.current = onTrigger;
+    enabledRef.current = enabled;
   });
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!isSearchShortcut(e)) return;
+      if (!enabledRef.current || !isSearchShortcut(e)) return;
       e.preventDefault();
       ref.current();
     };

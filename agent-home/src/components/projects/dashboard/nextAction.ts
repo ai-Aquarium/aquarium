@@ -35,6 +35,7 @@ import type {
 export type DashIntent =
   | { kind: "continue_run"; runNo: number }
   | { kind: "resume_run"; runNo: number }
+  | { kind: "retry_task" }
   | { kind: "approve_cards"; taskIds: string[]; startRun: boolean }
   | { kind: "start_run" }
   | { kind: "unblock_card"; taskId: string }
@@ -57,6 +58,7 @@ export interface DashAction {
 const MUTATIONS = new Set<DashIntent["kind"]>([
   "continue_run",
   "resume_run",
+  "retry_task",
   "approve_cards",
   "start_run",
   "unblock_card",
@@ -344,12 +346,22 @@ export function needsYouItems({
       tone: "danger",
       title: `Run ${latest.run_no} ${latest.status === "failed" ? "failed" : "is blocked"}`,
       detail: latest.outcome?.trim() || "It stopped before finishing its plan.",
-      action: {
-        label: `Resume run ${latest.run_no}`,
-        pendingLabel: "Resuming…",
-        effect: `Picks run ${latest.run_no} up from where its cards stopped.`,
-        intent: { kind: "resume_run", runNo: latest.run_no },
-      },
+      // A one-off retries through the task route, which also reopens the
+      // to-do the failed run closed.
+      action:
+        project.cadence === "one_off"
+          ? {
+              label: "Retry",
+              pendingLabel: "Retrying…",
+              effect: "Runs the plan again and reopens its to-do.",
+              intent: { kind: "retry_task" },
+            }
+          : {
+              label: `Resume run ${latest.run_no}`,
+              pendingLabel: "Resuming…",
+              effect: `Picks run ${latest.run_no} up from where its cards stopped.`,
+              intent: { kind: "resume_run", runNo: latest.run_no },
+            },
       secondary: openRunAction(latest.run_no, "See what went wrong"),
     });
   }

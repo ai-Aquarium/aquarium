@@ -26,10 +26,7 @@ import {
   isCategoryOverrideTag,
   type ChatCategory,
 } from "@/lib/chat/categorize";
-import {
-  chatHeaderActionsRef,
-  noopChatHeaderActions,
-} from "@/lib/chat/header-actions";
+import { chatHeaderActionsRef, noopChatHeaderActions } from "@/lib/chat/header-actions";
 import { chatTranscriptText, copyText } from "@/lib/chat/copy-chat";
 import {
   nextActiveAfterArchive,
@@ -39,6 +36,7 @@ import {
 } from "@/lib/chat/session-order";
 import { withProfileBody, withProfileQuery } from "@/lib/chat/profile";
 import { useSearchShortcut } from "@/lib/chat/search-shortcut";
+import { useT } from "@/i18n";
 import { fetchSessionList } from "@/lib/chat/session-list-fetch";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import type {
@@ -70,6 +68,8 @@ export interface ChatPaneProps {
   compact?: boolean;
   /** Told how many messages the open conversation holds (unread counts). */
   onMessageCount?(count: number): void;
+  /** Mounted but off screen (a minimized dock, another phone tab). */
+  hidden?: boolean;
 }
 
 /**
@@ -90,7 +90,9 @@ export function ChatPane({
   initialDataSourceId,
   compact = false,
   onMessageCount,
+  hidden = false,
 }: ChatPaneProps) {
+  const tChat = useT("chatPage");
   const router = useRouter();
   // Every client read below carries the selected profile, because a profile is
   // a whole HERMES_HOME: reading the default profile's sessions while the turn
@@ -120,6 +122,7 @@ export function ChatPane({
     autoSend,
     findSession: (id) => sessions.find((s) => s.id === id),
     onSessionsStale: () => void refreshSessions(),
+    hidden,
   });
   const {
     sessionId,
@@ -132,9 +135,7 @@ export function ChatPane({
     openConversation,
     startNewConversation,
   } = conv;
-  const [detailsSession, setDetailsSession] = useState<SessionSummary | null>(
-    null,
-  );
+  const [detailsSession, setDetailsSession] = useState<SessionSummary | null>(null);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Set when the search shortcut opened the drawer, so it focuses its search.
@@ -175,7 +176,7 @@ export function ChatPane({
     }
     setDrawerFocusSearch(true);
     setDrawerOpen(true);
-  });
+  }, !hidden);
 
   async function refreshSessions() {
     try {
@@ -188,8 +189,7 @@ export function ChatPane({
       // route's doc comment for the empty-string-vs-absent distinction).
       params.set("exclude_sources", "");
       if (includeTags.length > 0) params.set("tags", includeTags.join(","));
-      if (excludeTags.length > 0)
-        params.set("exclude_tags", excludeTags.join(","));
+      if (excludeTags.length > 0) params.set("exclude_tags", excludeTags.join(","));
       params.set("tag_match", matchMode);
       // `force`: every caller reaches here right after a mutation — a shared
       // in-flight GET could answer with pre-mutation state, and the 2 s reuse
@@ -277,16 +277,12 @@ export function ChatPane({
 
   async function loadAllTags() {
     try {
-      const res = await fetch(path("/api/chat/sessions/tags"), {
-        cache: "no-store",
-      });
+      const res = await fetch(path("/api/chat/sessions/tags"), { cache: "no-store" });
       if (res.ok) {
         const body = (await res.json()) as { tags?: SessionTag[] };
         if (body.tags) setAllTags(body.tags);
       }
-    } catch {
-      /* non-fatal */
-    }
+    } catch { /* non-fatal */ }
   }
 
   // Load session tags when the SessionModal opens.
@@ -297,18 +293,14 @@ export function ChatPane({
     if (s.id) {
       try {
         const res = await fetch(
-          path(
-            `/api/chat/sessions/tags/get?sessionId=${encodeURIComponent(s.id)}`,
-          ),
+          path(`/api/chat/sessions/tags/get?sessionId=${encodeURIComponent(s.id)}`),
           { cache: "no-store" },
         );
         if (res.ok) {
           const body = (await res.json()) as { tags?: SessionTag[] };
           if (body.tags) setSessionTags(body.tags);
         }
-      } catch {
-        /* non-fatal */
-      }
+      } catch { /* non-fatal */ }
     }
   }
 
@@ -381,9 +373,7 @@ export function ChatPane({
     const res = await fetch("/api/chat/sessions/tags/add", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(
-        payload({ sessionId: s.id, name: suggestion.tag_name }),
-      ),
+      body: JSON.stringify(payload({ sessionId: s.id, name: suggestion.tag_name })),
     });
     if (!res.ok) throw new Error("Failed to add tag.");
     const body = (await res.json()) as { tag?: SessionTag };
@@ -404,11 +394,7 @@ export function ChatPane({
 
   // Auto-suggest tags when opening the SessionModal if the session has 5+ messages.
   useEffect(() => {
-    if (
-      !detailsSession ||
-      detailsSession.message_count < 5 ||
-      tagSuggestions.length > 0
-    ) {
+    if (!detailsSession || detailsSession.message_count < 5 || tagSuggestions.length > 0) {
       return;
     }
     const t = setTimeout(() => void suggestTags(), 0);
@@ -458,15 +444,11 @@ export function ChatPane({
       if (active) void onOpenDetails(active);
     };
     chatHeaderActionsRef.current.openChats = () => setDrawerOpen(true);
-    chatHeaderActionsRef.current.toggleFilters = () =>
-      setFiltersOpen(!filtersOpen);
+    chatHeaderActionsRef.current.toggleFilters = () => setFiltersOpen(!filtersOpen);
     chatHeaderActionsRef.current.copyChat = () => {
       const live = conv.liveActivity[conv.selKey];
       return copyText(
-        chatTranscriptText(
-          conv.messages,
-          live ? { tools: live.tools, reasoning: live.reasoning } : null,
-        ),
+        chatTranscriptText(conv.messages, live ? { tools: live.tools, reasoning: live.reasoning } : null),
       );
     };
   });
@@ -496,9 +478,7 @@ export function ChatPane({
     if (result.session_id !== sessionId) {
       // Another chat: navigate like a sidebar row, so the title, address and
       // Back all follow; the chat page re-opens with `?find=` highlighted.
-      router.push(
-        `${chatHref(result.session_id, profile)}&find=${encodeURIComponent(term)}`,
-      );
+      router.push(`${chatHref(result.session_id, profile)}&find=${encodeURIComponent(term)}`);
       return;
     }
     setHighlightTerm(term);
@@ -533,66 +513,80 @@ export function ChatPane({
         />
       </aside>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <ChatFiltersPanel
-          open={filtersOpen}
-          onToggle={() => setFiltersOpen(!filtersOpen)}
-          profile={profile}
-          filterCount={includeTags.length + excludeTags.length}
-          searchActive={inSearchOpen || highlightTerm !== undefined}
-          compactOnPhone
-        >
-          {/* Tag filter bar */}
-          <TagFilterBar
-            tags={allTags}
-            includeTags={includeTags}
-            excludeTags={excludeTags}
-            matchMode={matchMode}
-            onToggle={toggleTagFilter}
-            onMatchModeChange={setMatchMode}
-          />
+      {compact ? (
+        <div className="flex justify-end pb-1">
+          <button
+            type="button"
+            data-action="dock-new-chat"
+            onClick={startNewConversation}
+            className="inline-flex h-8 items-center rounded-[var(--radius-md)] border border-[var(--color-border)] px-2 text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+          >
+            {tChat("newChat")}
+          </button>
+        </div>
+      ) : null}
+      <ChatFiltersPanel
+        open={filtersOpen}
+        onToggle={() => setFiltersOpen(!filtersOpen)}
+        profile={profile}
+        filterCount={includeTags.length + excludeTags.length}
+        searchActive={inSearchOpen || highlightTerm !== undefined}
+        compactOnPhone
+      >
+      {/* Tag filter bar */}
+      <TagFilterBar
+        tags={allTags}
+        includeTags={includeTags}
+        excludeTags={excludeTags}
+        matchMode={matchMode}
+        onToggle={toggleTagFilter}
+        onMatchModeChange={setMatchMode}
+      />
 
-          {/* In-conversation search toggle (all-sessions search lives in the chats sidebar / drawer). */}
-          {sessionId && (
-            <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setInSearchOpen((v) => !v);
-                  setHighlightTerm(undefined);
-                }}
-                className={`rounded-lg px-2 py-0.5 text-xs ${
-                  inSearchOpen
-                    ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
-                    : "text-[var(--color-muted)] border border-[var(--color-border)]"
-                }`}
-              >
-                🔍 In conversation
-              </button>
-            </div>
-          )}
+      {/* In-conversation search toggle (all-sessions search lives in the chats sidebar / drawer). */}
+      {sessionId && (
+        <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-1">
+          <button
+            type="button"
+            onClick={() => {
+              setInSearchOpen((v) => !v);
+              setHighlightTerm(undefined);
+            }}
+            className={`rounded-lg px-2 py-0.5 text-xs ${
+              inSearchOpen
+                ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
+                : "text-[var(--color-muted)] border border-[var(--color-border)]"
+            }`}
+          >
+            🔍 In conversation
+          </button>
+        </div>
+      )}
 
-          {/* In-session search bar */}
-          {inSearchOpen && (
-            <InSessionSearch
-              messages={messages}
-              onClose={() => {
-                setInSearchOpen(false);
-                setHighlightTerm(undefined);
-              }}
-              highlightRef={highlightCallbackRef}
-            />
-          )}
-        </ChatFiltersPanel>
-
-        <ChatConversationView
-          conv={conv}
-          storageEnabled={storageEnabled}
-          composerInitialText={autoSend ? undefined : initialDraft}
-          sessionRef={sessions.find((s) => s.id === sessionId)?.ref}
-          compactOnPhone
-          composerLauncherClearance={!compact}
-          aboveComposer={<DataSourcePicker initialId={initialDataSourceId} />}
+      {/* In-session search bar */}
+      {inSearchOpen && (
+        <InSessionSearch
+          messages={messages}
+          onClose={() => {
+            setInSearchOpen(false);
+            setHighlightTerm(undefined);
+          }}
+          highlightRef={highlightCallbackRef}
         />
+      )}
+      </ChatFiltersPanel>
+
+      <ChatConversationView
+        conv={conv}
+        storageEnabled={storageEnabled}
+        composerInitialText={autoSend ? undefined : initialDraft}
+        sessionRef={sessions.find((s) => s.id === sessionId)?.ref}
+        compactOnPhone
+        composerLauncherClearance={!compact}
+        aboveComposer={<DataSourcePicker initialId={initialDataSourceId} />}
+      />
+
+
       </div>
       <ChatsDrawer
         open={drawerOpen}
@@ -635,6 +629,7 @@ export function ChatPane({
           profile={profile}
         />
       ) : null}
+
     </div>
   );
 }

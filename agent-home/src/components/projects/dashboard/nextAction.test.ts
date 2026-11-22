@@ -123,12 +123,17 @@ describe("nextAction priority", () => {
   });
 
   it("(a) the latest run failed and nothing is open: resume it", () => {
-    const p = project({ runs: [run({ run_no: 1 }), run({ run_no: 2, status: "failed", outcome: "Drive refused upload" })] });
+    const p = project({ cadence: "repeatable", runs: [run({ run_no: 1 }), run({ run_no: 2, status: "failed", outcome: "Drive refused upload" })] });
     const h = hero(p);
     expect(h.state).toBe("failed");
     expect(h.tone).toBe("danger");
     expect(h.why).toBe("Drive refused upload");
     expect(h.primary.intent).toEqual({ kind: "resume_run", runNo: 2 });
+  });
+
+  it("(a) a failed one-off retries through the task route", () => {
+    const p = project({ cadence: "one_off", runs: [run({ run_no: 2, status: "failed" })] });
+    expect(hero(p).primary.intent).toEqual({ kind: "retry_task" });
   });
 
   it("(b) agent triage cards with no run open: approve, then start one run", () => {

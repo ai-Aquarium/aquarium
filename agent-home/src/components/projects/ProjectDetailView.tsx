@@ -6,6 +6,7 @@ import { ChatPane } from "@/components/chat/ChatPane";
 import {
   ProjectChatDock,
   useChatDock,
+  useIsDesktop,
 } from "@/components/projects/chat/ProjectChatDock";
 import { ProjectLog } from "@/components/projects/log/ProjectLog";
 import { ChevronDownIcon, MoreIcon } from "@/components/ui/icons";
@@ -322,6 +323,7 @@ export function ProjectDetailView({
   );
   const SheetSection = TAB_COMPONENT[sheetPart];
   // On a phone the Chat tab shows only the tab bar above the chat.
+  const desktop = useIsDesktop();
   const phoneHide = section === "chat" ? "max-lg:hidden" : "";
 
   return (
@@ -566,13 +568,13 @@ export function ProjectDetailView({
         {(onMessageCount) =>
           chat ? (
             <ChatPane
-              key={chat.sessionId ?? "new"}
               compact={dock.mode !== "max"}
               initialSessions={chat.sessions}
               initialSessionId={chat.sessionId}
               initialMessages={chat.messages}
               storageEnabled={chat.storageEnabled}
               profile={chat.profile}
+              hidden={desktop ? dock.mode === "min" : section !== "chat"}
               onMessageCount={onMessageCount}
             />
           ) : (

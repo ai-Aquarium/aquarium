@@ -102,6 +102,8 @@ export interface ChatConversationOptions {
   findSession: (id: string) => SessionSummary | undefined;
   /** A turn ended or a title may have landed: re-read the conversation list. */
   onSessionsStale: () => void;
+  /** Mounted but off screen (a minimized dock): don't mark anything read. */
+  hidden?: boolean;
 }
 
 /**
@@ -118,6 +120,7 @@ export function useChatConversation({
   initialDraft,
   autoSend = false,
   findSession,
+  hidden = false,
   onSessionsStale,
 }: ChatConversationOptions) {
   const path = (p: string) => withProfileQuery(p, profile);
@@ -127,6 +130,15 @@ export function useChatConversation({
   };
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [messages, setMessages] = useState<ChatMessage[]>(visibleTurns(initialMessages));
+  const hiddenRef = useRef(hidden);
+  hiddenRef.current = hidden;
+  const markRead = (id: string) => {
+    if (!hiddenRef.current) markSessionRead(id);
+  };
+  // Shown again: what arrived while off screen has now been seen.
+  useEffect(() => {
+    if (!hidden && sessionId) markSessionRead(sessionId);
+  }, [hidden, sessionId]);
   const [loadingThread, setLoadingThread] = useState(loadOnMount && initialSessionId !== null);
   // Per-session state, keyed by session id (or NEW_KEY). Turns run per session
   // so the user can switch conversations at any time without cancelling or
@@ -300,7 +312,7 @@ export function useChatConversation({
         setMessages(
           withLiveTurn(visibleTurns(body.messages ?? []), liveRef.current.get(keyOf(id))),
         );
-        markSessionRead(id);
+        markRead(id);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load conversation.");
@@ -328,7 +340,7 @@ export function useChatConversation({
         setMessages(
           withLiveTurn(visibleTurns(body.messages ?? []), liveRef.current.get(keyOf(id))),
         );
-        markSessionRead(id);
+        markRead(id);
       }
     } catch {
       // A stale transcript is non-fatal — the next change retries.
@@ -705,7 +717,7 @@ export function useChatConversation({
         setSessionId(landed);
         selectedRef.current = landed;
       }
-      if (landed && onThisSession()) markSessionRead(landed);
+      if (landed && onThisSession()) markRead(landed);
       // A turn stopped before its first token completes with no text; never
       // leave a blank reply bubble behind.
       if (onThisSession()) setMessages(dropTrailingEmptyAssistant);
@@ -800,7 +812,7 @@ export function useChatConversation({
   useEffect(() => {
     if (!initialSessionId) return;
     if (loadOnMount) void loadConversation(initialSessionId);
-    else markSessionRead(initialSessionId);
+    else markRead(initialSessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

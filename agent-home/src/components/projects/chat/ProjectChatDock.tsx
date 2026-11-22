@@ -5,7 +5,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
@@ -45,12 +44,26 @@ function escBelongsElsewhere(target: EventTarget | null): boolean {
     return true;
   return (
     document.querySelector(
-      '[data-maximizable][data-maximized="true"], [role="dialog"][aria-modal="true"]',
+      '[data-maximizable][data-maximized="true"], [role="dialog"][aria-modal="true"], #coral-panel[role="menu"]',
     ) !== null
   );
 }
 
 /** The dock's mode + width, saved per person, and its keyboard shortcuts. */
+/** True at the desktop breakpoint, where the dock (not the Chat tab) shows chat. */
+export function useIsDesktop(): boolean {
+  const [desktop, setDesktop] = useState(true);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia(DESKTOP);
+    const sync = () => setDesktop(mq.matches);
+    sync();
+    mq.addEventListener?.("change", sync);
+    return () => mq.removeEventListener?.("change", sync);
+  }, []);
+  return desktop;
+}
+
 export function useChatDock(
   userId: string,
 ): [DockState, (action: DockAction) => void] {
@@ -118,6 +131,7 @@ export function ProjectChatDock({
   children: (onMessageCount: (count: number) => void) => ReactNode;
 }) {
   const t = useT("projects");
+  const desktop = useIsDesktop();
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const width = dragWidth ?? saved.width;
   const mode = saved.mode;
@@ -203,14 +217,8 @@ export function ProjectChatDock({
         data-component="ProjectChatDock"
         data-mode={mode}
         aria-label={t("dock.aria")}
-        style={
-          mode === "open"
-            ? ({ "--dock-w": `${width}px` } as CSSProperties)
-            : undefined
-        }
-        className={`relative min-h-0 min-w-0 flex-col max-lg:h-[calc(100dvh-13rem)] max-lg:w-full ${
-          mode === "open" ? "lg:w-[var(--dock-w)]" : ""
-        } max-lg:min-h-[420px] lg:sticky lg:top-4 lg:h-[calc(100dvh-11rem)] ${
+        style={mode === "open" && desktop ? { width } : undefined}
+        className={`relative min-h-0 min-w-0 flex-col max-lg:h-[calc(100dvh-13rem)] max-lg:w-full max-lg:min-h-[420px] lg:sticky lg:top-4 lg:h-[calc(100dvh-11rem)] ${
           phoneOpen ? "flex" : "max-lg:hidden lg:flex"
         } ${mode === "max" ? "lg:flex-1" : "lg:shrink-0"} ${mode === "min" ? "lg:w-12" : ""}`}
       >

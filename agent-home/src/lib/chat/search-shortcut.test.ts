@@ -27,6 +27,18 @@ describe("isSearchShortcut", () => {
 });
 
 describe("useSearchShortcut", () => {
+  it("does nothing while disabled (a hidden chat)", () => {
+    const onTrigger = vi.fn();
+    const { rerender } = renderHook(({ on }) => useSearchShortcut(onTrigger, on), {
+      initialProps: { on: false },
+    });
+    press(document.body, { key: "k", ctrlKey: true });
+    expect(onTrigger).not.toHaveBeenCalled();
+    rerender({ on: true });
+    press(document.body, { key: "k", ctrlKey: true });
+    expect(onTrigger).toHaveBeenCalledTimes(1);
+  });
+
   it("fires on / from the page body and prevents the default", () => {
     const onTrigger = vi.fn();
     renderHook(() => useSearchShortcut(onTrigger));
