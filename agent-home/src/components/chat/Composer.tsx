@@ -16,6 +16,12 @@ import { formatUploadLimit, UPLOAD_WARN_BYTES } from "@/lib/chat/upload-limit";
 import { uploadLimitBytes } from "@/lib/chat/upload-limit-client";
 import type { ChatAttachment, ChatInputMode, ChatSendResult, PendingChatInput } from "@/types";
 
+/** Text handed to a mounted composer; a new `seq` puts `text` in the field again. */
+export interface ComposerDraft {
+  text: string;
+  seq: number;
+}
+
 /** Smallest limit Settings → Uploads allows: smaller files skip the lookup. */
 const MIN_LIMIT_BYTES = 1024 * 1024;
 
@@ -139,6 +145,7 @@ export function Composer({
   onStop,
   stopping = false,
   initialText = "",
+  draft,
   launcherClearance = true,
   pending = [],
   onRemovePending,
@@ -153,6 +160,11 @@ export function Composer({
   sessionId: string | null;
   /** Pre-filled text (a deep link's `?draft=`); the user still presses send. */
   initialText?: string;
+  /**
+   * Text handed over after mount (the project page's "Discuss in chat"):
+   * each new `seq` replaces the field and focuses it; the user still sends.
+   */
+  draft?: ComposerDraft;
   /**
    * Resolves `false` when the message never reached the agent (a transport
    * failure, not a mid-turn error) — the composer then puts the draft and
@@ -199,6 +211,17 @@ export function Composer({
   const [oversizeFiles, setOversizeFiles] = useState<File[] | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const textRef = useRef<HTMLTextAreaElement | null>(null);
+  // A handed-over draft replaces the field once per `seq` (state adjusted
+  // during render), then the field takes focus.
+  const [draftSeen, setDraftSeen] = useState<number | undefined>(undefined);
+  if (draft && draft.seq !== draftSeen) {
+    setDraftSeen(draft.seq);
+    setText(draft.text);
+  }
+  const draftSeq = draft?.seq;
+  useEffect(() => {
+    if (draftSeq != null) textRef.current?.focus();
+  }, [draftSeq]);
   const ts = useT("secretPrompt");
   // FG-37: the "share a secret" popup (lock button, or text moved out of the box).
   const [secretBox, setSecretBox] = useState<{

@@ -15,6 +15,7 @@ import {
   serializeFiltersOpen,
 } from "@/components/chat/ChatFiltersPanel";
 import { ChatConversationView } from "@/components/chat/ChatConversationView";
+import type { ComposerDraft } from "@/components/chat/Composer";
 import { DataSourcePicker } from "@/components/chat/DataSourcePicker";
 import { InSessionSearch } from "@/components/chat/InSessionSearch";
 import { SessionModal } from "@/components/chat/SessionModal";
@@ -70,6 +71,8 @@ export interface ChatPaneProps {
   onMessageCount?(count: number): void;
   /** Mounted but off screen (a minimized dock, another phone tab). */
   hidden?: boolean;
+  /** Text put into the composer after mount (the project page's "Discuss in chat"). */
+  composerDraft?: ComposerDraft;
 }
 
 /**
@@ -91,6 +94,7 @@ export function ChatPane({
   compact = false,
   onMessageCount,
   hidden = false,
+  composerDraft,
 }: ChatPaneProps) {
   const tChat = useT("chatPage");
   const router = useRouter();
@@ -580,6 +584,7 @@ export function ChatPane({
         conv={conv}
         storageEnabled={storageEnabled}
         composerInitialText={autoSend ? undefined : initialDraft}
+        composerDraft={composerDraft}
         sessionRef={sessions.find((s) => s.id === sessionId)?.ref}
         compactOnPhone
         composerLauncherClearance={!compact}

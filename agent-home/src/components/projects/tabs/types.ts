@@ -10,6 +10,7 @@ import type {
 /** The project page's tabs, in order. The Dashboard is the landing tab. */
 export const PROJECT_TABS = [
   "dashboard",
+  "runs",
   "scope",
   "board",
   "outputs",
@@ -24,6 +25,7 @@ export type ProjectTab = (typeof PROJECT_TABS)[number];
 
 export const PROJECT_TAB_LABEL: Record<ProjectTab, string> = {
   dashboard: "Dashboard",
+  runs: "Runs",
   scope: "Scope",
   board: "Board",
   outputs: "Outputs",
@@ -56,4 +58,6 @@ export interface ProjectTabProps {
   onNavigate: (tab: ProjectTab) => void;
   /** Open the "What's changed?" flow, optionally pre-filled. */
   onChangeRequest: (initialText?: string) => void;
+  /** Put text into the project chat's composer and bring the chat up. */
+  onDiscussInChat?: (text: string) => void;
 }

@@ -2472,6 +2472,8 @@ export interface ProjectRunBrief {
   summary?: string | null;
   error?: string | null;
   score_user: number | null;
+  /** The playbook version the run executed (the list returns full rows). */
+  playbook_rev?: number | null;
   /** Started from Task mode: Start approved every card of the run, so
    * cards still in triage are queued for a slot, not waiting on a person. */
   auto_approve?: boolean;
@@ -2496,6 +2498,9 @@ export interface ProjectRunCard {
   failed_attempts?: number;
   last_error?: string | null;
   last_outcome?: string | null;
+  /** When the card's worker started / finished (epoch seconds), for per-step time. */
+  started_at?: number | null;
+  completed_at?: number | null;
 }
 
 /** A blocked task in the run's dependency tree — why a run stalls. */

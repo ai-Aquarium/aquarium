@@ -16,7 +16,7 @@ export type PhoneSection = (typeof PHONE_SECTIONS)[number];
 /** What each section shows, top to bottom (the older tabs, reused). */
 export const SECTION_PARTS: Record<ProjectSection, readonly ProjectTab[]> = {
   planning: ["scope", "inputs", "plan", "outputs"],
-  execution: ["dashboard", "board", "iterations"],
+  execution: ["runs", "dashboard", "board", "iterations"],
   log: [],
 };
 
@@ -56,7 +56,7 @@ export function resolveTabParam(value: string | null | undefined): TabTarget {
     case "board":
     case "iterations":
     case "runs":
-      return { section: "execution", part: raw === "runs" ? "iterations" : (raw as ProjectTab) };
+      return { section: "execution", part: raw as ProjectTab };
     case "work":
     case "dashboard":
     case "overview":

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { SecretRequestPrompt } from "@/components/chat/SecretRequestPrompt";
 import { ApprovalCard } from "@/components/chat/thread/ApprovalCard";
-import { Composer } from "@/components/chat/Composer";
+import { Composer, type ComposerDraft } from "@/components/chat/Composer";
 import { LiveActivity } from "@/components/chat/LiveActivity";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { StatusIndicator } from "@/components/chat/StatusIndicator";
@@ -24,6 +24,7 @@ export function ChatConversationView({
   conv,
   storageEnabled,
   composerInitialText,
+  composerDraft,
   composerLauncherClearance = true,
   sessionRef,
   compactOnPhone = false,
@@ -34,6 +35,8 @@ export function ChatConversationView({
   conv: ChatConversation;
   storageEnabled: boolean;
   composerInitialText?: string;
+  /** Text put into the composer later (a new `seq` replaces the field). */
+  composerDraft?: ComposerDraft;
   composerLauncherClearance?: boolean;
   /**
    * The chat page's phone layout: no ref/copy row (Copy is in the title-bar
@@ -160,6 +163,7 @@ export function ChatConversationView({
         storageEnabled={storageEnabled}
         sessionId={sessionId}
         initialText={composerInitialText}
+        draft={composerDraft}
         onSend={conv.send}
         onStop={() => void conv.stopTurn()}
         stopping={selTurn?.stopping ?? false}

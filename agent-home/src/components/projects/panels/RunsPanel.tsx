@@ -128,7 +128,7 @@ const ROW_PENDING: Record<RunRowAction, string> = {
  * Continue / Cancel / Stop for one live run. Its own action lock, so steering
  * one run never blocks (or is mistaken for) another row's write.
  */
-function RunRowActions({
+export function RunRowActions({
   slug,
   runNo,
   status,

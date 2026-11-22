@@ -1,0 +1,72 @@
+{
+  "current": {
+    "heading": "目前執行",
+    "run": "第 {n} 次執行",
+    "version": "劇本 v{rev}",
+    "progress": "已完成 {n}%",
+    "open": "開啟執行",
+    "loading": "正在載入執行…",
+    "loadFailed": "無法載入這次執行。",
+    "noCards": "尚無卡片。",
+    "score": "你的評分",
+    "scoreAria": "為第 {n} 次執行評分（1 至 5）",
+    "scoreSaved": "已儲存",
+    "saving": "儲存中…",
+    "retro": "回顧"
+  },
+  "state": {
+    "done": "完成",
+    "running": "進行中",
+    "needs": "需要你",
+    "todo": "待辦",
+    "skipped": "已略過",
+    "none": "此次執行沒有"
+  },
+  "status": {
+    "running": "進行中",
+    "waiting": "等待中",
+    "blocked": "受阻",
+    "done": "完成",
+    "failed": "失敗",
+    "cancelled": "已取消"
+  },
+  "table": {
+    "heading": "執行紀錄",
+    "empty": "尚未執行。計劃準備好後，按頂部的「立即執行」— 每次執行及其結果都會列在這裡。",
+    "compareCol": "比較",
+    "run": "執行",
+    "version": "版本",
+    "started": "開始",
+    "duration": "耗時",
+    "status": "狀態",
+    "score": "評分",
+    "pick": "勾選 2–3 次執行以並排比較。",
+    "max": "一次最多比較 3 次執行。",
+    "compare": "比較 {n} 次執行",
+    "select": "比較第 {n} 次執行",
+    "unscored": "—"
+  },
+  "trend": {
+    "heading": "評分趨勢",
+    "empty": "為已完成的執行評 1–5 分，即可看到劇本的進步。",
+    "aria": "各次執行的 1–5 評分",
+    "avg": "v{rev}：平均 {avg}（{count}）",
+    "avgNoRev": "無版本：平均 {avg}（{count}）"
+  },
+  "compare": {
+    "heading": "比較第 {runs} 次執行",
+    "close": "關閉比較",
+    "score": "評分",
+    "duration": "耗時",
+    "cost": "成本",
+    "steps": "步驟",
+    "retro": "回顧",
+    "noRetro": "尚無回顧。",
+    "slowest": "最慢",
+    "discuss": "在聊天中討論",
+    "loading": "正在載入執行…",
+    "loadFailed": "無法載入這些執行。",
+    "draft": "比較此專案的第 {runs} 次執行：\n{lines}\n最好的一次為何較好？劇本應作哪些修改？",
+    "line": "- 第 {n} 次執行（劇本 v{rev}）：{status}，{duration}，評分 {score}"
+  }
+}

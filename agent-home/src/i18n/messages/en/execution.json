@@ -1,0 +1,72 @@
+{
+  "current": {
+    "heading": "Current run",
+    "run": "Run {n}",
+    "version": "playbook v{rev}",
+    "progress": "{n}% done",
+    "open": "Open run",
+    "loading": "Loading the run…",
+    "loadFailed": "Couldn’t load this run.",
+    "noCards": "No cards yet.",
+    "score": "Your score",
+    "scoreAria": "Score run {n} from 1 to 5",
+    "scoreSaved": "Saved",
+    "saving": "Saving…",
+    "retro": "Retro"
+  },
+  "state": {
+    "done": "Done",
+    "running": "Running",
+    "needs": "Needs you",
+    "todo": "To do",
+    "skipped": "Skipped",
+    "none": "Not in this run"
+  },
+  "status": {
+    "running": "Running",
+    "waiting": "Waiting",
+    "blocked": "Blocked",
+    "done": "Done",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  },
+  "table": {
+    "heading": "Runs",
+    "empty": "No runs yet. When the plan is ready, press Run now in the header — each run lands here with its outcome.",
+    "compareCol": "Compare",
+    "run": "Run",
+    "version": "Version",
+    "started": "Started",
+    "duration": "Duration",
+    "status": "Status",
+    "score": "Score",
+    "pick": "Tick 2–3 runs to compare them side by side.",
+    "max": "Up to 3 runs at a time.",
+    "compare": "Compare {n} runs",
+    "select": "Compare run {n}",
+    "unscored": "—"
+  },
+  "trend": {
+    "heading": "Score trend",
+    "empty": "Score finished runs 1–5 to see how the playbook improves.",
+    "aria": "Your 1–5 scores by run",
+    "avg": "v{rev}: avg {avg} ({count})",
+    "avgNoRev": "No version: avg {avg} ({count})"
+  },
+  "compare": {
+    "heading": "Compare runs {runs}",
+    "close": "Close comparison",
+    "score": "Score",
+    "duration": "Duration",
+    "cost": "Cost",
+    "steps": "Steps",
+    "retro": "Retro",
+    "noRetro": "No retro yet.",
+    "slowest": "slowest",
+    "discuss": "Discuss in chat",
+    "loading": "Loading runs…",
+    "loadFailed": "Couldn’t load these runs.",
+    "draft": "Compare runs {runs} of this project:\n{lines}\nWhat made the best run better, and what should change in the playbook?",
+    "line": "- Run {n} (playbook v{rev}): {status}, {duration}, score {score}"
+  }
+}

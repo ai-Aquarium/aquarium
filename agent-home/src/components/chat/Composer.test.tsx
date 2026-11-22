@@ -40,6 +40,22 @@ function routedFetch(attachment: object, limit = 1024 ** 3) {
 const uploadCalls = (fetchMock: ReturnType<typeof vi.fn>) =>
   fetchMock.mock.calls.filter((call) => call[0] === "/api/chat/upload");
 
+describe("Composer handed-over draft", () => {
+  it("fills the field once per seq and leaves the user's edits alone otherwise", () => {
+    const props = { sending: false, storageEnabled: false, sessionId: "s1", onSend: () => undefined };
+    const { getByPlaceholderText, rerender } = render(
+      <Composer {...props} draft={{ text: "compare runs 7, 8", seq: 1 }} />,
+    );
+    const box = getByPlaceholderText(/Message your agent/) as HTMLTextAreaElement;
+    expect(box.value).toBe("compare runs 7, 8");
+    fireEvent.change(box, { target: { value: "my own words" } });
+    rerender(<Composer {...props} draft={{ text: "compare runs 7, 8", seq: 1 }} />);
+    expect(box.value).toBe("my own words");
+    rerender(<Composer {...props} draft={{ text: "compare runs 8, 9", seq: 2 }} />);
+    expect(box.value).toBe("compare runs 8, 9");
+  });
+});
+
 describe("Composer draft restore", () => {
   it("puts the text back when onSend reports a transport failure", async () => {
     const { getByRole, getByPlaceholderText } = render(

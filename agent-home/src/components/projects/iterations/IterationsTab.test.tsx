@@ -30,9 +30,9 @@ describe("IterationsTab markup", () => {
     expect(html).toMatch(/Keep it under 500 words[\s\S]*from iteration 1/);
   });
 
-  it("keeps All runs and Standing instructions reachable", () => {
+  it("keeps Standing instructions reachable; the runs list lives in Execution's Runs table", () => {
     const html = renderToStaticMarkup(<IterationsTab {...tabProps()} />);
-    expect(html).toContain("All runs");
+    expect(html).not.toContain("All runs");
     expect(html).toContain("Standing instructions");
     expect(html).toContain('data-component="IterationsTab"');
   });
