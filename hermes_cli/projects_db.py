@@ -383,6 +383,20 @@ CREATE TABLE IF NOT EXISTS project_clarifications (
 );
 CREATE INDEX IF NOT EXISTS idx_project_clarifications
     ON project_clarifications(project_id, round_no, position);
+-- The project Log's own record (Stage 6): the edits no other table keeps —
+-- brief / tools / members / settings changes and the human judgements
+-- (activate, continue, stop) whose actor is otherwise lost. Everything
+-- else on the Log is derived from the tables above at read time.
+CREATE TABLE IF NOT EXISTS project_activity (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    actor       TEXT,                          -- user id; NULL = system
+    action      TEXT NOT NULL,                 -- e.g. brief_edited, member_removed
+    detail      TEXT NOT NULL DEFAULT '{}',    -- JSON, display-safe fields only
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_activity
+    ON project_activity(project_id, created_at DESC);
 """
 
 
@@ -3777,3 +3791,56 @@ def clarify_summary(conn: sqlite3.Connection, project_id: str) -> dict:
         "understanding": confirmed[-1]["understanding"] if confirmed else None,
         "confirmed_at": confirmed[-1]["confirmed_at"] if confirmed else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Project activity (Stage 6 Log)
+# ---------------------------------------------------------------------------
+
+
+def record_project_activity(
+    conn: sqlite3.Connection,
+    project_id: str,
+    action: str,
+    *,
+    actor: Optional[str] = None,
+    detail: Optional[dict] = None,
+) -> None:
+    """Append one Log row for an edit no other table records.
+
+    Best-effort by design: the edit it describes has already happened, so a
+    failure to log it must never fail the request that made it.
+    """
+    try:
+        with write_txn(conn):
+            conn.execute(
+                "INSERT INTO project_activity "
+                "(project_id, actor, action, detail, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (project_id, actor, action,
+                 json.dumps(detail or {}, sort_keys=True), _now()),
+            )
+    except sqlite3.Error:
+        logger.warning("project activity not recorded: %s", action, exc_info=True)
+
+
+def list_project_activity(
+    conn: sqlite3.Connection, project_id: str
+) -> List[dict]:
+    rows = conn.execute(
+        "SELECT id, actor, action, detail, created_at FROM project_activity "
+        "WHERE project_id = ? ORDER BY created_at DESC, id DESC",
+        (project_id,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        try:
+            detail = json.loads(r["detail"] or "{}")
+        except ValueError:
+            detail = {}
+        out.append({
+            "id": int(r["id"]), "actor": r["actor"], "action": r["action"],
+            "detail": detail if isinstance(detail, dict) else {},
+            "created_at": int(r["created_at"]),
+        })
+    return out
