@@ -1,0 +1,17 @@
+{
+  "title": "網頁",
+  "meta": "網頁 · {size}",
+  "isolated": "此網頁在隔離框架中顯示：網頁的程式碼會執行，但無法存取你的登入、你的檔案或 agent-home 其他部分。網頁內的連結會在新分頁開啟。",
+  "isolatedShort": "隔離網頁：無法存取你的登入或檔案。",
+  "opening": "正在開啟網頁…",
+  "openPage": "開啟網頁",
+  "openNewTab": "在新分頁開啟",
+  "openingTab": "正在開啟…",
+  "download": "下載",
+  "downloading": "正在下載…",
+  "back": "返回{label}",
+  "unavailable.title": "此網頁無法在這裏顯示",
+  "unavailable.missing": "檔案已被移除，或你沒有權限存取。",
+  "unavailable.notHtml": "此檔案不是網頁，但你仍可以下載。",
+  "unavailable.error": "暫時無法載入此網頁。請稍後再試，或直接下載。"
+}

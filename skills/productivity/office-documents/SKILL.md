@@ -148,7 +148,13 @@ re-downloads to confirm the stored bytes match.
    sheet dimensions you can quote back.
 4. Re-read the output (`text` / `dump`) to confirm it says what you intended.
 5. If the user should see it in agent-home, `registry_file.py put` it and
-   report the `asset_id`; the file appears on `/files`.
+   report the `asset_id`; the file appears on `/files`. Give the user the
+   printed link as Markdown: `open_url` (`/view/<asset_id>`) for an HTML
+   page such as an interactive chart or report — it opens in agent-home's
+   isolated viewer — and `download_url` for any other file. Never start a
+   local web server or SSH tunnel to show an HTML file; `localhost` links
+   only work on the box itself. Something with its own server or data is a
+   local app (`/apps/<slug>`), not a file.
 
 ## Pitfalls
 

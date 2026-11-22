@@ -124,4 +124,68 @@ describe("GET /api/files/:id/content", () => {
     fileLink.mockRejectedValueOnce(new Error("boom"));
     expect((await get("f1")).status).toBe(502);
   });
+
+  describe("HTML pages", () => {
+    const html = () =>
+      new Response("<html><head></head><body><script>x()</script></body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    beforeEach(() => {
+      fileLink.mockResolvedValue({
+        url: "http://127.0.0.1:8000/sign/chart.html?token=t",
+        expires_in: 300,
+        filename: "chart.html",
+        content_type: "text/html",
+      });
+      fetchMock.mockImplementation(async () => html());
+    });
+
+    it("sends a browser opening the plain link to the viewer", async () => {
+      const res = await get("f 1", { headers: { "sec-fetch-dest": "document" } });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("location")).toBe("/view/f%201");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("still downloads on ?download=1 and when fetched by a script", async () => {
+      for (const [query, headers] of [
+        ["?download=1", { "sec-fetch-dest": "document" }],
+        ["", {}],
+      ] as const) {
+        const res = await get("f1", { query, headers });
+        expect(res.status).toBe(200);
+        expect(res.headers.get("content-disposition")).toMatch(/^attachment;/);
+        expect(res.headers.get("content-security-policy")).toMatch(/^sandbox;/);
+      }
+    });
+
+    it("serves ?view=1 inline with script allowed but an opaque origin", async () => {
+      const res = await get("f1", { query: "?view=1", headers: { "sec-fetch-dest": "iframe", range: "bytes=0-1" } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-disposition")).toMatch(/^inline;/);
+      expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      const csp = res.headers.get("content-security-policy")!;
+      expect(csp).toMatch(/^sandbox allow-scripts /);
+      expect(csp).not.toContain("allow-same-origin");
+      expect(csp).toContain("connect-src 'none'");
+      expect(res.headers.get("cache-control")).toBe("private, no-store");
+      const body = await res.text();
+      expect(body).toContain("<script>x()</script>");
+      expect(body).toContain('a.target="_blank"');
+      expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get("range")).toBeNull();
+    });
+
+    it("never runs a non-HTML file through ?view=1", async () => {
+      fileLink.mockResolvedValueOnce({
+        url: "http://127.0.0.1:8000/sign/x.svg",
+        expires_in: 300,
+        filename: "x.svg",
+        content_type: "image/svg+xml",
+      });
+      const res = await get("f1", { query: "?view=1" });
+      expect(res.headers.get("content-disposition")).toMatch(/^attachment;/);
+      expect(res.headers.get("content-security-policy")).toMatch(/^sandbox;/);
+    });
+  });
 });

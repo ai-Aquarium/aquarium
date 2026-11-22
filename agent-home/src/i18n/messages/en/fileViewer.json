@@ -1,0 +1,17 @@
+{
+  "title": "Page",
+  "meta": "Web page · {size}",
+  "isolated": "Shown in an isolated frame: the page's scripts run, but it can't see your sign-in, your files or the rest of agent-home. Links inside open in a new tab.",
+  "isolatedShort": "Isolated page: it can't see your sign-in or files.",
+  "opening": "Opening the page…",
+  "openPage": "Open page",
+  "openNewTab": "Open in new tab",
+  "openingTab": "Opening…",
+  "download": "Download",
+  "downloading": "Downloading…",
+  "back": "Back to {label}",
+  "unavailable.title": "This page can't be shown here",
+  "unavailable.missing": "The file was removed, or you don't have access to it.",
+  "unavailable.notHtml": "This file isn't a web page. You can still download it.",
+  "unavailable.error": "The page couldn't be loaded right now. Try again in a moment, or download it."
+}

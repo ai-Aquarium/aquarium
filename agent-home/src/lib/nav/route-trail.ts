@@ -31,6 +31,7 @@ const ROUTES: RouteNode[] = [
   { pattern: "/files", label: "Files", parent: "/" },
   { pattern: "/files/browse", label: "Browse", parent: "/" },
   { pattern: "/files/bridge", label: "Folder Bridge", parent: "/" },
+  { pattern: "/view/:id", label: "Page", parent: "/files" },
   { pattern: "/bridge", label: "Folder Bridge", parent: "/files" },
   { pattern: "/fb/:token", label: "Folder Bridge", parent: "/files" },
   { pattern: "/system", label: "System", parent: "/" },

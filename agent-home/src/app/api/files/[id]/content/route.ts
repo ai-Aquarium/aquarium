@@ -10,11 +10,15 @@
  * so a stable, per-principal URL is the only thing that ever reaches a page.
  *
  * `?download=1` asks for a download disposition rather than inline viewing.
+ * `?view=1` serves an HTML page for the isolated viewer (`/view/<id>`): inline,
+ * script allowed, opaque origin (`HTML_VIEW_CSP`). Opening an HTML file's
+ * plain link in the browser goes to that viewer instead of downloading.
  */
 import { NextResponse } from "next/server";
 
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
+import { isHtmlFile } from "@/lib/http/file-headers";
 import { proxyBytes } from "@/lib/http/proxy-bytes";
 
 export async function GET(
@@ -26,13 +30,23 @@ export async function GET(
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
   const { id } = await params;
-  const download = new URL(req.url).searchParams.get("download") === "1";
+  const query = new URL(req.url).searchParams;
+  const download = query.get("download") === "1";
+  const view = !download && query.get("view") === "1";
   try {
     const client = await apiClientForRequest();
     const link = await client.fileLink(id, download);
+    const html = isHtmlFile(link.content_type, link.filename);
+    if (html && !download && !view && req.headers.get("sec-fetch-dest") === "document") {
+      return new Response(null, {
+        status: 303,
+        headers: { location: `/view/${encodeURIComponent(id)}`, "cache-control": "no-store" },
+      });
+    }
     return await proxyBytes(req, link.url, {
       filename: link.filename,
       download,
+      htmlView: view && html,
     });
   } catch (err) {
     if (err instanceof HermesApiError) {

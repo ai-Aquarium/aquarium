@@ -112,3 +112,63 @@ export function applyFileSafetyHeaders(
   headers.set("cross-origin-resource-policy", "same-origin");
   return headers;
 }
+
+/**
+ * The isolated HTML viewer (`/view/<id>`, `?view=1` on the file route): an
+ * agent-made page whose script must run (an interactive chart), so it cannot
+ * use {@link FILE_RESPONSE_CSP}. `sandbox` without `allow-same-origin` gives
+ * the document an opaque origin, so it has no cookies, no storage and no
+ * same-origin access to agent-home; `connect-src 'none'` stops fetch/XHR/
+ * WebSocket entirely and forms are refused. Scripts, styles and fonts may load
+ * from `https:` CDNs (Plotly, Chart.js…). Links leave in a new tab
+ * (`allow-popups-to-escape-sandbox` so the opened site works normally).
+ */
+export const HTML_VIEW_CSP =
+  "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads; " +
+  "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https: data: blob:; " +
+  "style-src 'unsafe-inline' https: data:; img-src https: data: blob:; font-src https: data:; " +
+  "media-src https: data: blob:; worker-src blob:; connect-src 'none'; form-action 'none'; " +
+  "frame-src 'none'; object-src 'none'; frame-ancestors 'self'";
+
+const HTML_TYPES = new Set(["text/html", "application/xhtml+xml"]);
+const UNTYPED = new Set(["", "application/octet-stream"]);
+
+/** An HTML page: typed as HTML, or untyped with an `.html`/`.htm` name. */
+export function isHtmlFile(contentType: string | null | undefined, filename?: string | null): boolean {
+  const type = essenceOf(contentType);
+  if (HTML_TYPES.has(type)) return true;
+  return UNTYPED.has(type) && /\.x?html?$/i.test(filename ?? "");
+}
+
+/**
+ * Inserted at the top of the page: a click on a link to another page opens
+ * it in a new tab, because the viewer's frame may only show this one page.
+ * In-page `#anchor` links still scroll.
+ */
+export const NEW_TAB_LINKS_SCRIPT =
+  '<script>document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&' +
+  'e.target.closest("a[href]");if(!a||a.target)return;var h=a.getAttribute("href")||"";' +
+  'if(h.charAt(0)==="#"||/^javascript:/i.test(h))return;a.target="_blank";a.rel="noopener";},true);</script>';
+
+/** `html` with {@link NEW_TAB_LINKS_SCRIPT} after `<head>` (or `<html>`, or the doctype). */
+export function withNewTabLinks(html: string): string {
+  for (const re of [/<head\b[^>]*>/i, /<html\b[^>]*>/i, /<!doctype[^>]*>/i]) {
+    const m = re.exec(html);
+    if (m) {
+      const at = m.index + m[0].length;
+      return html.slice(0, at) + NEW_TAB_LINKS_SCRIPT + html.slice(at);
+    }
+  }
+  return NEW_TAB_LINKS_SCRIPT + html;
+}
+
+/** Headers for an HTML page shown in the isolated viewer (mutates `headers`). */
+export function applyHtmlViewHeaders(headers: Headers, filename?: string | null): Headers {
+  headers.set("content-type", "text/html; charset=utf-8");
+  headers.set("content-disposition", contentDisposition("inline", filename || "page.html"));
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("content-security-policy", HTML_VIEW_CSP);
+  headers.set("cross-origin-resource-policy", "same-origin");
+  headers.set("referrer-policy", "no-referrer");
+  return headers;
+}

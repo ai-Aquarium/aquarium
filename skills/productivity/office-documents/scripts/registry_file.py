@@ -99,6 +99,17 @@ async def cmd_get(args: argparse.Namespace) -> None:
     )
 
 
+def _links(asset_id: str, filename: str, content_type: str) -> dict[str, str]:
+    """Relative agent-home links to give the user: an HTML page opens in the
+    isolated viewer; every file can be downloaded."""
+    out = {"download_url": f"/api/files/{asset_id}/content?download=1"}
+    if content_type.split(";")[0].strip().lower() in ("text/html", "application/xhtml+xml") or (
+        filename.lower().endswith((".html", ".htm")) and content_type in ("", "application/octet-stream")
+    ):
+        out["open_url"] = f"/view/{asset_id}"
+    return out
+
+
 async def cmd_put(args: argparse.Namespace) -> None:
     from hermes_cli.file_registry import MAX_REGISTER_BYTES, store_and_register
 
@@ -135,6 +146,7 @@ async def cmd_put(args: argparse.Namespace) -> None:
                 "sha256": asset.sha256,
                 "storage_path": asset.storage_path,
                 "verified": verified,
+                **_links(asset.id, asset.filename, content_type),
             }
         )
     )

@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
+import { isHtmlFile } from "@/lib/http/file-headers";
+import { viewerHref } from "@/lib/nav/viewer-back";
+
 import { BusyRegion } from "@/components/ui/BusyRegion";
 import type {
   FileAsset,
@@ -361,14 +364,24 @@ export function FileDetail({
         </dl>
 
         <div className="mt-4 flex flex-wrap gap-2 text-xs">
-          <a
-            href={`/api/files/${encodeURIComponent(file.id)}/content`}
-            target="_blank"
-            rel="noopener"
-            className="rounded-lg border border-[var(--color-accent)] px-3 py-1.5 text-[var(--color-accent)]"
-          >
-            View
-          </a>
+          {isHtmlFile(file.content_type, file.filename) ? (
+            <a
+              href={viewerHref(file.id, "/files")}
+              data-action="open-page"
+              className="rounded-lg border border-[var(--color-accent)] px-3 py-1.5 text-[var(--color-accent)]"
+            >
+              Open page
+            </a>
+          ) : (
+            <a
+              href={`/api/files/${encodeURIComponent(file.id)}/content`}
+              target="_blank"
+              rel="noopener"
+              className="rounded-lg border border-[var(--color-accent)] px-3 py-1.5 text-[var(--color-accent)]"
+            >
+              View
+            </a>
+          )}
           <a
             href={`/api/files/${encodeURIComponent(file.id)}/content?download=1`}
             className="rounded-lg border border-[var(--color-border)] px-3 py-1.5"
