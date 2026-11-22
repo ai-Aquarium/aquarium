@@ -106,6 +106,21 @@ describe("SoftwareUpgradeView", () => {
     expect(screen.getByText(/Step 2 of 3/)).toBeTruthy();
   });
 
+  it("animates the running step and counts how long it has been working", () => {
+    const started = new Date(Date.now() - 75_000).toISOString();
+    const job = {
+      ...JOB,
+      steps: [step("backup", "done"), { ...step("download", "running"), started }, step("checks", "pending")],
+    } as SoftwareUpgradeJob;
+    render(<SoftwareUpgradeView initial={{ ...STATUS, job }} />);
+    const row = document.querySelector('[data-step="download"]')!;
+    expect(row.getAttribute("aria-current")).toBe("step");
+    expect(row.querySelector('img[src="/brand/aquarium-loader.svg"]')).not.toBeNull();
+    expect(row.textContent).toMatch(/Working… 1 m 1[5-7] s so far/);
+    expect(document.querySelector('[data-step="checks"] img')).toBeNull();
+    expect(screen.getByTestId("upgrade-progress-current")).toBeTruthy();
+  });
+
   it("offers rollback after a finished upgrade it watched", () => {
     const done = { ...JOB, running: false, result: "ok", finished: "2026-11-05T09:04:37Z" };
     render(<SoftwareUpgradeView initial={{ ...STATUS, job: done, rollback_to: "v1.1.0" }} />);
