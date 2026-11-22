@@ -149,7 +149,6 @@
   "POST /api/projects": "signed-in",
   "POST /api/projects/quick-task": "signed-in",
   "POST /api/projects/[slug]/quick-task/start": "signed-in",
-  "PUT /api/me/project-view-mode": "signed-in",
   "GET /api/me/creature": "signed-in",
   "PUT /api/me/creature": "signed-in",
   "DELETE /api/projects/[slug]": "signed-in",

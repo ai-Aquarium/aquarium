@@ -7,8 +7,8 @@ import { fmtElapsed } from "@/components/ui/useActivityRunning";
 import { useT, type Translator } from "@/i18n";
 import type { ScheduledSummary } from "@/types";
 
-/** Projects › Scheduled, forced into Project mode over a saved Task-mode preference. */
-export const SCHEDULED_HREF = "/projects?view=project&schedule=set";
+/** Projects › Scheduled. */
+export const SCHEDULED_HREF = "/projects?schedule=set";
 
 function part(t: Translator, key: string, count: number): string {
   return count === 1 ? t(`scheduled.${key}One`) : t(`scheduled.${key}Many`, { count });

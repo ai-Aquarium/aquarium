@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The project page: Back comes from the shell; a one-off opens as its Task view. */
+/** The project page: Back comes from the shell; every project opens the one page. */
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -12,7 +12,13 @@ vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("NEXT_NOT_FOUND");
   },
+  redirect: (to: string) => {
+    throw new Error(`NEXT_REDIRECT ${to}`);
+  },
 }));
+
+vi.mock("@/lib/auth/session", () => ({ readSession: async () => ({ profile: "default" }) }));
+vi.mock("@/lib/env", () => ({ storageConfigured: () => false }));
 
 vi.mock("@/lib/auth/principal", () => ({
   requirePrincipal: async () => ({ user_id: "leo", role: "owner" }),
@@ -43,17 +49,12 @@ vi.mock("@/components/MobileShell", () => ({
 }));
 
 // The detail view has its own tests; only the page's chrome is under test.
-const viewContext = vi.hoisted(() =>
-  vi.fn<(...args: unknown[]) => Promise<{ device: string; mode: string }>>(async () => ({
-    device: "desktop",
-    mode: "project",
-  })),
-);
-vi.mock("@/components/projects/task/viewModeServer", () => ({
-  projectViewContext: viewContext,
-}));
+const detailProps = vi.hoisted(() => vi.fn());
 vi.mock("@/components/projects/ProjectDetailView", () => ({
-  ProjectDetailView: () => <div data-testid="detail" />,
+  ProjectDetailView: (props: unknown) => {
+    detailProps(props);
+    return <div data-testid="detail" />;
+  },
 }));
 
 import Page from "./page";
@@ -72,19 +73,31 @@ describe("the project page", () => {
     expect(getByTestId("shell").getAttribute("data-title")).toBe("AWS EC2 instance health check");
     expect(queryByRole("link", { name: "← Projects" })).toBeNull();
     expect(getByTestId("detail")).toBeTruthy();
-    expect(viewContext.mock.calls[0][1]).toBeUndefined();
   });
 
-  it("opens a one-off as its Task view unless the URL names a tab or view", async () => {
+  it("opens a one-off on the same project page, with the chat", async () => {
     projectMock.mockResolvedValue({ name: "Quote", cadence: "one_off" });
-    render(await Page({ params: PARAMS }));
-    expect(viewContext.mock.calls.at(-1)?.[1]).toBe("task");
-    cleanup();
-    render(await Page({ params: PARAMS, searchParams: Promise.resolve({ view: "project" }) }));
-    expect(viewContext.mock.calls.at(-1)?.[1]).toBe("project");
-    cleanup();
-    render(await Page({ params: PARAMS, searchParams: Promise.resolve({ tab: "work" }) }));
-    expect(viewContext.mock.calls.at(-1)?.[1]).toBe("project");
+    const { getByTestId } = render(await Page({ params: PARAMS }));
+    expect(getByTestId("detail")).toBeTruthy();
+    expect(detailProps.mock.calls.at(-1)?.[0]).toMatchObject({
+      chat: { profile: "default", sessionId: null, messages: [] },
+    });
+  });
+
+  it.each([
+    [{ view: "task" }, "/projects/aws-ec2-instance-health-check"],
+    [{ view: "project", tab: "work" }, "/projects/aws-ec2-instance-health-check?tab=work"],
+  ])("redirects the old %o link to the one page", async (query, to) => {
+    await expect(Page({ params: PARAMS, searchParams: Promise.resolve(query) })).rejects.toThrow(
+      `NEXT_REDIRECT ${to}`,
+    );
+    expect(projectMock).not.toHaveBeenCalled();
+  });
+
+  it("passes ?tab= through for the view to map", async () => {
+    projectMock.mockResolvedValue({ name: "Quote", cadence: "one_off" });
+    render(await Page({ params: PARAMS, searchParams: Promise.resolve({ tab: "board" }) }));
+    expect(detailProps.mock.calls.at(-1)?.[0]).toMatchObject({ initialTab: "board" });
   });
 
   it("shows the friendly error when the project couldn't load", async () => {

@@ -18,6 +18,8 @@ export function mutationSteps(slug: string, intent: DashIntent): MutationStep[] 
       return [{ path: `${base}/runs/${intent.runNo}/continue`, method: "POST" }];
     case "resume_run":
       return [{ path: `${base}/runs/${intent.runNo}/resume`, method: "POST" }];
+    case "retry_task":
+      return [{ path: `${base}/quick-task/start`, method: "POST" }];
     case "start_run":
       return [{ path: `${base}/runs`, method: "POST" }];
     case "unblock_card":
@@ -58,6 +60,8 @@ export function confirmedText(intent: DashIntent, data: unknown): string {
       return `Run ${intent.runNo} is going again.`;
     case "resume_run":
       return `Run ${intent.runNo} resumed.`;
+    case "retry_task":
+      return runNo != null ? `Run ${runNo} started.` : "Task started again.";
     case "start_run":
       return runNo != null ? `Run ${runNo} started.` : "Run started.";
     case "unblock_card":

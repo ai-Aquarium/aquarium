@@ -218,6 +218,7 @@ describe("mutationSteps", () => {
   it("maps every mutation to its route; navigation sends nothing", () => {
     expect(mutationSteps("p", { kind: "continue_run", runNo: 3 })).toEqual([{ path: "/api/projects/p/runs/3/continue", method: "POST" }]);
     expect(mutationSteps("p", { kind: "resume_run", runNo: 3 })).toEqual([{ path: "/api/projects/p/runs/3/resume", method: "POST" }]);
+    expect(mutationSteps("p", { kind: "retry_task" })).toEqual([{ path: "/api/projects/p/quick-task/start", method: "POST" }]);
     expect(mutationSteps("p", { kind: "start_run" })).toEqual([{ path: "/api/projects/p/runs", method: "POST" }]);
     expect(mutationSteps("p", { kind: "unblock_card", taskId: "t" })).toEqual([
       { path: "/api/projects/p/cards/t", method: "PATCH", body: { status: "ready" } },

@@ -33,7 +33,6 @@ const SENDS_CHANGE =
 // `.ts` helpers that send a change but serialise themselves, so callers may
 // fire them without a busy button. Each entry says how.
 const SELF_LOCKED: Record<string, string> = {
-  "components/projects/task/saveViewMode.ts": "one PUT in flight per device; later taps coalesce",
   "components/chat/useChatConversation.ts":
     "approval POST goes through its own useAction; one live turn per session",
 };

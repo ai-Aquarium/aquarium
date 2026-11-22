@@ -341,6 +341,7 @@ const SCENARIOS: Scenario[] = [
         doctor={{ slug: SLUG, health: "ok", findings: [], clean: true }}
         callerUserId="leo"
         isInstanceAdmin={false}
+        initialTab="execution"
       />
     ),
     control: (r) => journeyPrimary(r, "Start iteration 1"),
@@ -367,6 +368,7 @@ const SCENARIOS: Scenario[] = [
         doctor={{ slug: SLUG, health: "ok", findings: [], clean: true }}
         callerUserId="leo"
         isInstanceAdmin={false}
+        initialTab="execution"
       />
     ),
     control: (r) => journeyPrimary(r, "Activate"),
@@ -390,6 +392,7 @@ const SCENARIOS: Scenario[] = [
         doctor={{ slug: SLUG, health: "ok", findings: [], clean: true }}
         callerUserId="leo"
         isInstanceAdmin={false}
+        initialTab="execution"
       />
     ),
     control: (r) => journeyPrimary(r, "Continue run 14"),

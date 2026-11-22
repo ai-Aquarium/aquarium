@@ -36,6 +36,7 @@ import {
 } from "@/lib/chat/session-order";
 import { withProfileBody, withProfileQuery } from "@/lib/chat/profile";
 import { useSearchShortcut } from "@/lib/chat/search-shortcut";
+import { useT } from "@/i18n";
 import { fetchSessionList } from "@/lib/chat/session-list-fetch";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import type {
@@ -63,6 +64,12 @@ export interface ChatPaneProps {
   initialHighlight?: string;
   /** `?source=<id>`: the data source the "Ask about" picker starts on. */
   initialDataSourceId?: string;
+  /** A narrow host (the project page's chat dock): no chats sidebar. */
+  compact?: boolean;
+  /** Told how many messages the open conversation holds (unread counts). */
+  onMessageCount?(count: number): void;
+  /** Mounted but off screen (a minimized dock, another phone tab). */
+  hidden?: boolean;
 }
 
 /**
@@ -81,7 +88,11 @@ export function ChatPane({
   autoSend = false,
   initialHighlight,
   initialDataSourceId,
+  compact = false,
+  onMessageCount,
+  hidden = false,
 }: ChatPaneProps) {
+  const tChat = useT("chatPage");
   const router = useRouter();
   // Every client read below carries the selected profile, because a profile is
   // a whole HERMES_HOME: reading the default profile's sessions while the turn
@@ -111,6 +122,7 @@ export function ChatPane({
     autoSend,
     findSession: (id) => sessions.find((s) => s.id === id),
     onSessionsStale: () => void refreshSessions(),
+    hidden,
   });
   const {
     sessionId,
@@ -164,7 +176,7 @@ export function ChatPane({
     }
     setDrawerFocusSearch(true);
     setDrawerOpen(true);
-  });
+  }, !hidden);
 
   async function refreshSessions() {
     try {
@@ -473,13 +485,22 @@ export function ChatPane({
     setInSearchOpen(true);
   }
 
+  const messageCount = conv.messages.length;
+  const onMessageCountRef = useRef(onMessageCount);
+  useEffect(() => {
+    onMessageCountRef.current = onMessageCount;
+  });
+  useEffect(() => {
+    onMessageCountRef.current?.(messageCount);
+  }, [messageCount]);
+
   return (
     <div data-component="ChatPane" className="flex min-h-0 flex-1 gap-6">
       <aside
         ref={sidebarRef}
         data-component="chat-sidebar"
         aria-label="Chats"
-        className="hidden w-[288px] shrink-0 overflow-y-auto border-r border-[var(--color-border)] pr-3 lg:flex lg:flex-col"
+        className={`hidden w-[288px] shrink-0 overflow-y-auto border-r border-[var(--color-border)] pr-3 ${compact ? "" : "lg:flex lg:flex-col"}`}
       >
         <ChatsSidebar
           profile={profile}
@@ -492,6 +513,18 @@ export function ChatPane({
         />
       </aside>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {compact ? (
+        <div className="flex justify-end pb-1">
+          <button
+            type="button"
+            data-action="dock-new-chat"
+            onClick={startNewConversation}
+            className="inline-flex h-8 items-center rounded-[var(--radius-md)] border border-[var(--color-border)] px-2 text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+          >
+            {tChat("newChat")}
+          </button>
+        </div>
+      ) : null}
       <ChatFiltersPanel
         open={filtersOpen}
         onToggle={() => setFiltersOpen(!filtersOpen)}
@@ -549,6 +582,7 @@ export function ChatPane({
         composerInitialText={autoSend ? undefined : initialDraft}
         sessionRef={sessions.find((s) => s.id === sessionId)?.ref}
         compactOnPhone
+        composerLauncherClearance={!compact}
         aboveComposer={<DataSourcePicker initialId={initialDataSourceId} />}
       />
 

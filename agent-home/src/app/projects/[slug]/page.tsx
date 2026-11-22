@@ -1,14 +1,14 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { MobileShell } from "@/components/MobileShell";
 import { ProjectsLoadError } from "@/components/projects/ProjectsLoadError";
-import { isTaskCadence } from "@/components/projects/task/viewMode";
-import { ProjectViewSwitch } from "@/components/projects/task/ProjectViewSwitch";
-import { projectViewContext } from "@/components/projects/task/viewModeServer";
-import { ProjectDetailView } from "@/components/projects/ProjectDetailView";
+import { ProjectDetailView, type ProjectChat } from "@/components/projects/ProjectDetailView";
+import { withoutViewParam } from "@/components/projects/tabs/sections";
 import { RefBadge } from "@/components/refs/RefBadge";
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, requirePrincipal } from "@/lib/auth/principal";
+import { readSession } from "@/lib/auth/session";
+import { storageConfigured } from "@/lib/env";
 import type {
   ProjectBoardView,
   ProjectDetail,
@@ -33,11 +33,14 @@ export default async function Page({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<{ tab?: string | string[]; view?: string | string[] }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const principal = await requirePrincipal();
   const { slug } = await params;
-  const query = await searchParams;
+  const query = (await searchParams) ?? {};
+  // Task mode is gone: an old `?view=task|project` link lands on the one page.
+  const unified = withoutViewParam(`/projects/${encodeURIComponent(slug)}`, query);
+  if (unified) redirect(unified);
   const rawTab = query?.tab;
   const initialTab = Array.isArray(rawTab) ? rawTab[0] : rawTab;
   const client = await apiClientForRequest();
@@ -61,7 +64,7 @@ export default async function Page({
     );
   }
 
-  const [board, playbook, directives, doctor, view] = await Promise.all([
+  const [board, playbook, directives, doctor, chat] = await Promise.all([
     client.projectBoard(slug).catch((): ProjectBoardView | null => null),
     client.projectPlaybook(slug).catch(
       (): ProjectPlaybookResponse | null => null,
@@ -70,12 +73,7 @@ export default async function Page({
       (): ProjectDirectivesResponse | null => null,
     ),
     client.projectDoctor(slug).catch((): ProjectDoctorDetail | null => null),
-    // A tab link means Project mode: tabs only exist there.
-    // A one-off opens as its Task view unless the URL asks for the project.
-    projectViewContext(
-      client,
-      initialTab ? "project" : query?.view ?? (isTaskCadence(project.cadence) ? "task" : undefined),
-    ),
+    projectChat(),
   ]);
   const isInstanceAdmin = principal.role === "owner" || principal.role === "admin";
 
@@ -94,28 +92,44 @@ export default async function Page({
       }
       wide
     >
-      <ProjectViewSwitch
-        initialMode={view.mode}
-        task={{
-          project,
-          board,
-          playbook,
-          directives,
-          callerUserId: principal.user_id,
-          isInstanceAdmin,
-        }}
-      >
-        <ProjectDetailView
-          project={project}
-          board={board}
-          playbook={playbook}
-          directives={directives}
-          doctor={doctor}
-          callerUserId={principal.user_id}
-          isInstanceAdmin={isInstanceAdmin}
-          initialTab={initialTab}
-        />
-      </ProjectViewSwitch>
+      <ProjectDetailView
+        project={project}
+        board={board}
+        playbook={playbook}
+        directives={directives}
+        doctor={doctor}
+        callerUserId={principal.user_id}
+        isInstanceAdmin={isInstanceAdmin}
+        initialTab={initialTab}
+        chat={chat}
+      />
     </MobileShell>
   );
+}
+
+/**
+ * The docked project chat: the same conversations `/chat` shows (the
+ * session's profile, newest first, the latest one open). Best-effort — a
+ * failed read leaves the dock on a fresh conversation.
+ */
+async function projectChat(): Promise<ProjectChat> {
+  const profile = (await readSession())?.profile ?? "default";
+  const chat: ProjectChat = {
+    profile,
+    storageEnabled: storageConfigured(),
+    sessions: [],
+    sessionId: null,
+    messages: [],
+  };
+  try {
+    const client = await apiClientForRequest({ profile });
+    const list = await client.allSessions({ order: "recent" });
+    chat.sessions = list.sessions;
+    chat.sessionId = list.sessions[0]?.id ?? null;
+    if (chat.sessionId) chat.messages = (await client.sessionMessages(chat.sessionId)).messages;
+  } catch {
+    chat.sessionId = null;
+    chat.messages = [];
+  }
+  return chat;
 }

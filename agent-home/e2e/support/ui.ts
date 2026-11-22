@@ -24,8 +24,7 @@ export const PAGE_MARKERS: Record<string, string> = {
   "/chat": "ChatPane",
   "/inbox": "InboxView",
   "/memory": "MemoryView",
-  // Present in both project and task mode; the mode is saved per device.
-  "/projects": "ProjectsModeView",
+  "/projects": "ProjectsList",
   "/files": "FilesView",
   "/files/browse": "BrowseView",
   "/activity": "TraceTimeline",
@@ -54,7 +53,10 @@ export const pageTitle = (page: Page): Locator =>
   component(page, "MobileShell").locator("header h1");
 
 /** Assert the shell rendered, with its marker and no error panel. */
-export async function expectPageReady(page: Page, route: string): Promise<void> {
+export async function expectPageReady(
+  page: Page,
+  route: string,
+): Promise<void> {
   // `.last()`: a route's loading skeleton renders its own shell until the
   // page streams in.
   const shell = component(page, "MobileShell").last();
@@ -73,7 +75,9 @@ export async function expectPageReady(page: Page, route: string): Promise<void> 
 // ── Coral menu ───────────────────────────────────────────────────────────
 
 export const coralFab = (page: Page): Locator =>
-  component(page, "CoralHost").locator("button[aria-controls], button[aria-expanded]").last();
+  component(page, "CoralHost")
+    .locator("button[aria-controls], button[aria-expanded]")
+    .last();
 
 export const coralMenu = (page: Page): Locator =>
   page.locator("#coral-panel[role='menu']");
@@ -107,8 +111,12 @@ export async function fillLogin(page: Page, creds: Credentials): Promise<void> {
   if (await provider.count()) {
     await provider.selectOption(LOGIN_PROVIDER);
   }
-  await form.locator('input[autocomplete="username"], input[autocomplete="email"]').fill(creds.email);
-  await form.locator('input[autocomplete="current-password"]').fill(creds.password);
+  await form
+    .locator('input[autocomplete="username"], input[autocomplete="email"]')
+    .fill(creds.email);
+  await form
+    .locator('input[autocomplete="current-password"]')
+    .fill(creds.password);
   await form.locator('button[type="submit"]').click();
 }
 
@@ -128,7 +136,9 @@ export const healthPill = (page: Page): Locator =>
 /** Opens the health readings (desktop popover or phone sheet). */
 export async function openHealthReadings(page: Page): Promise<Locator> {
   await page
-    .locator('[data-component="HealthPill"][data-variant="compact"]:visible, [data-action="health-open"]:visible')
+    .locator(
+      '[data-component="HealthPill"][data-variant="compact"]:visible, [data-action="health-open"]:visible',
+    )
     .first()
     .click();
   const readings = component(page, "HealthReadings").last();
@@ -141,9 +151,11 @@ export const statusRefresh = (readings: Locator): Locator =>
 // ── Chat ─────────────────────────────────────────────────────────────────
 
 export const chat = {
-  newButton: (page: Page) => page.getByRole("button", { name: "New conversation" }),
+  newButton: (page: Page) =>
+    page.getByRole("button", { name: "New conversation" }),
   composer: (page: Page) => component(page, "Composer").locator("textarea"),
-  send: (page: Page) => component(page, "Composer").getByRole("button", { name: "Send" }),
+  send: (page: Page) =>
+    component(page, "Composer").getByRole("button", { name: "Send" }),
   thread: (page: Page) => component(page, "ChatThread"),
   /** The streaming reply, or the settled assistant bubble once it finished. */
   replyStarted: (page: Page) =>
@@ -151,7 +163,9 @@ export const chat = {
       '[data-component="LiveReply"], [data-component="LiveActivity"], [data-component="MessageBubble"][data-role="assistant"], [data-component="MessageBubble"].justify-start',
     ),
   activeChip: (page: Page) =>
-    component(page, "SessionTabs").getByRole("button", { name: /^Edit conversation/ }),
+    component(page, "SessionTabs").getByRole("button", {
+      name: /^Edit conversation/,
+    }),
   modal: (page: Page) => component(page, "SessionModal"),
 };
 
@@ -172,13 +186,22 @@ export const projects = {
   activate: (page: Page) =>
     page
       .locator('[data-action="activate"]')
-      .or(component(page, "JourneyBar").getByRole("button", { name: /^Activate\b/ }))
+      .or(
+        component(page, "JourneyBar").getByRole("button", {
+          name: /^Activate\b/,
+        }),
+      )
       .first(),
   runNow: (page: Page) =>
     page
       .locator('[data-action="run-now"]')
-      .or(component(page, "JourneyBar").getByRole("button", { name: /^Start iteration \d+/ }))
+      .or(
+        component(page, "JourneyBar").getByRole("button", {
+          name: /^Start iteration \d+/,
+        }),
+      )
       .first(),
-  lifecycleMenu: (page: Page) => page.getByRole("button", { name: "Project actions" }),
+  lifecycleMenu: (page: Page) =>
+    page.getByRole("button", { name: "Project actions" }),
   runView: (page: Page) => component(page, "RunView"),
 };

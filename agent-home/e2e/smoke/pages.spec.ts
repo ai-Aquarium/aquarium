@@ -60,14 +60,8 @@ test.describe("key pages", { tag: "@smoke" }, () => {
     test.skip((await links.count()) === 0, "no projects visible to this account");
     const href = await links.first().getAttribute("href");
     await page.goto(href!);
-    // One-off projects open as a Task; the rest open the full project page.
-    const detail = projects.detail(page);
-    const task = component(page, "TaskView");
-    await expect(detail.or(task)).toBeVisible();
-    if (await task.isVisible()) {
-      await expect(component(page, "TaskHeader")).toBeVisible();
-    } else {
-      await expect(component(page, "ProjectHeader")).toBeVisible();
-    }
+    // Every project, one-offs included, opens the one project page.
+    await expect(projects.detail(page)).toBeVisible();
+    await expect(component(page, "ProjectHeader")).toBeVisible();
   });
 });

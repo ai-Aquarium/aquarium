@@ -3002,11 +3002,10 @@ export interface ProjectBoardView {
   now?: number;
 }
 
-/** The two views of Projects and the device classes a choice is kept for. */
-export type ProjectViewMode = "task" | "project";
+/** The device classes a page lays out for. */
 export type ViewDevice = "desktop" | "phone";
 
-/** Task mode's Start task: one request, a profile and the check-in level. */
+/** The quick-start sheet: one request, a profile and the check-in level. */
 export interface QuickTaskPayload {
   request: string;
   host_profile: string;

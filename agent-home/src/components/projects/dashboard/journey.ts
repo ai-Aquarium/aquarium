@@ -92,6 +92,7 @@ const MEMBER_ACTS = new Set<DashIntent["kind"]>([
   "start_run",
   "continue_run",
   "resume_run",
+  "retry_task",
   "approve_cards",
   "unblock_card",
 ]);

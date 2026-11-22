@@ -602,13 +602,16 @@ describe("ProjectDetailView", () => {
     expect(html).toContain("Where this stands");
     expect(html).toContain("Summarised");
     expect(html).toContain("Update summary");
-    // Five tabs group the nine sections; Overview (the Dashboard) leads.
+    // Chat (phone only) / Planning / Execution / Log; Planning leads, with
+    // the project chat docked beside it and Skills + Settings behind ⋯.
     expect(html).toContain('data-component="ProjectTabsNav"');
-    for (const label of ["Overview", "Work", "Files", "Skills", "Setup"]) {
+    for (const label of ["Chat", "Planning", "Execution", "Log"]) {
       expect(html).toContain(`>${label}`);
     }
-    expect(html).toContain('data-active-tab="dashboard"');
-    expect(html).toContain('data-active-group="overview"');
+    expect(html).toContain('data-active-tab="planning"');
+    expect(html).toContain('data-active-section="planning"');
+    expect(html).toContain('data-component="ProjectChatDock"');
+    expect(html).toContain('data-action="project-more"');
     expect(html).not.toContain('data-component="PanelAnchors"');
   });
 
@@ -654,12 +657,12 @@ describe("ProjectDetailView", () => {
         directives={null}
         callerUserId="leo"
         isInstanceAdmin={false}
-        initialTab="settings"
+        initialTab="iterations"
       />,
     );
-    expect(html).toContain('data-active-tab="settings"');
-    expect(html).toContain('data-component="ToolsPanel"');
-    expect(html).not.toContain('data-component="DashboardTab"');
+    expect(html).toContain('data-active-tab="execution"');
+    expect(html).toContain('id="project-section-iterations"');
+    expect(html).not.toContain('id="project-section-plan"');
     const unknown = renderToStaticMarkup(
       <ProjectDetailView
         project={PROJECT}
@@ -671,7 +674,7 @@ describe("ProjectDetailView", () => {
         initialTab="nope"
       />,
     );
-    expect(unknown).toContain('data-active-tab="dashboard"');
+    expect(unknown).toContain('data-active-tab="planning"');
   });
 
   it("never puts Run now / Activate / Continue in the header — the journey bar owns them", () => {
@@ -1156,7 +1159,7 @@ describe("boundary expectations", () => {
   });
 });
 
-describe("ProjectDetailView — four tabs", () => {
+describe("ProjectDetailView — Planning / Execution / Log", () => {
   const render = (initialTab?: string) =>
     renderToStaticMarkup(
       <ProjectDetailView
@@ -1170,44 +1173,50 @@ describe("ProjectDetailView — four tabs", () => {
       />,
     );
 
-  it("maps every older ?tab= value onto the tab that now holds it", () => {
+  it("maps every older ?tab= value onto the section that now holds it", () => {
     const cases: Array<[string, string]> = [
-      ["dashboard", "overview"],
-      ["board", "work"],
-      ["iterations", "work"],
-      ["outputs", "files"],
-      ["inputs", "files"],
-      ["scope", "setup"],
-      ["plan", "setup"],
-      ["settings", "setup"],
-      ["skills", "skills"],
+      ["scope", "planning"],
+      ["inputs", "planning"],
+      ["plan", "planning"],
+      ["outputs", "planning"],
+      ["dashboard", "execution"],
+      ["board", "execution"],
+      ["iterations", "execution"],
     ];
-    for (const [legacy, group] of cases) {
+    for (const [legacy, section] of cases) {
       const html = render(legacy);
-      expect(html).toContain(`data-active-group="${group}"`);
-      expect(html).toContain(`data-section="${legacy}"`);
+      expect(html).toContain(`data-active-section="${section}"`);
+      expect(html).toContain(`id="project-section-${legacy}"`);
     }
   });
 
-  it("deep-links ?tab=skills to the project Skills tab, between Files and Setup", () => {
-    const html = render("skills");
-    expect(html).toContain('data-active-group="skills"');
-    expect(html).toContain('data-component="SkillsTab"');
-    const order = ["overview", "work", "files", "skills", "setup"].map((g) => html.indexOf(`data-tab="${g}"`));
+  it("shows the Brief (Scope) at the top of Planning, ahead of Inputs, Playbook and Outputs", () => {
+    const html = render("planning");
+    const order = ["scope", "inputs", "plan", "outputs"].map((part) => html.indexOf(`id="project-section-${part}"`));
     expect(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1]))).toBe(true);
+    expect(html).toContain(">Brief</h2>");
   });
 
-  it("opens a tab by its own name and shows all of its sections", () => {
-    const html = render("setup");
-    expect(html).toContain('data-active-group="setup"');
-    for (const section of ["scope", "plan", "settings"]) {
-      expect(html).toContain(`id="project-section-${section}"`);
+  it("keeps Skills and Settings in the ⋯ sheet, which ?tab=skills / ?tab=settings open", () => {
+    for (const tab of [undefined, "planning", "execution", "log"]) {
+      const html = render(tab);
+      expect(html).not.toContain('data-component="ProjectMoreSheet"');
+      expect(html).not.toContain('id="project-section-skills"');
+      expect(html).not.toContain('id="project-section-settings"');
     }
-    expect(html).not.toContain('data-section="dashboard"');
+    for (const tab of ["skills", "settings"]) {
+      const html = render(tab);
+      expect(html).toContain('data-active-section="planning"');
+      expect(html).toContain('data-component="ProjectMoreSheet"');
+      expect(html).toContain(`id="project-section-${tab}"`);
+    }
   });
 
-  it("keeps the phone Status section on Overview only", () => {
-    expect(render()).toMatch(/data-component="ProjectStatus"[^>]*class="[^"]*lg:col-start-2 [^"]*"/);
-    expect(render("work")).toMatch(/data-component="ProjectStatus"[^>]*class="[^"]*max-lg:hidden/);
+  it("opens the Log from ?tab=log with its All / People / Agents filter", () => {
+    const html = render("log");
+    expect(html).toContain('data-component="ProjectLog"');
+    for (const filter of ["all", "people", "agents"]) expect(html).toContain(`data-filter="${filter}"`);
+    expect(html).not.toContain('id="project-section-plan"');
   });
 });
+

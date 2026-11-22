@@ -305,3 +305,22 @@ export const CopyIcon = (p: IconProps) => (
     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
   </Icon>
 );
+
+export const MaximizeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+  </Icon>
+);
+
+export const RestoreIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+  </Icon>
+);
+
+export const CollapseRightIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M15 3v18M8 9l3 3-3 3" />
+  </Icon>
+);

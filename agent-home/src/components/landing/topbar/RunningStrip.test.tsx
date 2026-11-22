@@ -92,7 +92,7 @@ describe("RunningStripView", () => {
     render(<RunningStripView items={[item()]} now={MOCK_NOW} scheduled={MOCK_SCHEDULED} />);
     const button = screen.getByRole("link", { name: /^Scheduled: 6/ });
     expect(button.getAttribute("href")).toBe(SCHEDULED_HREF);
-    expect(SCHEDULED_HREF).toBe("/projects?view=project&schedule=set");
+    expect(SCHEDULED_HREF).toBe("/projects?schedule=set");
     expect(button.textContent).toBe("Scheduled6");
     expect(button.getAttribute("title")).toBe("3 projects · 2 cards · 1 job · next in 2h 00m");
   });
