@@ -123,9 +123,21 @@ export function stripAttachmentNotes(content: string): string {
   return rest;
 }
 
-/** What the user typed: without the attachment notes and app-context line. */
+/**
+ * The project chat block (`hermes_cli/projects_chat_api.py`): the seeded
+ * project context and the catch-up digest, put at the top of a user turn for
+ * the agent — not what the person typed.
+ */
+const PROJECT_CHAT_BLOCK = /^\[project chat:[^\n]*\n[\s\S]*?\n\[\/project chat\][ \t]*(?:\r?\n){0,2}/;
+
+/** Remove the project chat block from the top of a user turn. */
+export function stripProjectChatBlock(content: string): string {
+  return content.replace(PROJECT_CHAT_BLOCK, "");
+}
+
+/** What the user typed: without the attachment notes, app-context line and project block. */
 export function stripInjectedContext(content: string): string {
-  return stripUiContextLine(stripAttachmentNotes(content));
+  return stripProjectChatBlock(stripUiContextLine(stripAttachmentNotes(content)));
 }
 
 /**

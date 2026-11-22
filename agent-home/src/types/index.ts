@@ -386,6 +386,12 @@ export interface ChatMessage {
   clientKey?: string;
   /** A user message delivered mid-turn (a steer) while the agent was working. */
   sentWhileWorking?: boolean;
+  /** Project chat: the profile whose conversation holds this turn. */
+  profile?: string;
+  /** Project chat: how many missed turns this user turn's catch-up covered. */
+  catchUp?: number;
+  /** Project chat: this user turn carried the seeded project context. */
+  seeded?: boolean;
 }
 
 /**
@@ -3728,6 +3734,53 @@ export interface AskProjectResponse {
   sources: AskProjectSource[];
   /** A requirement the answer suggests, ready for "Turn into a requirement…". */
   suggested_requirement?: string;
+}
+
+// ── Projects redesign: project chat ──
+
+/** One turn of the merged project chat timeline (`GET …/chat/timeline`). */
+export interface ProjectChatTurn {
+  id?: number | null;
+  role: "user" | "assistant";
+  content: string;
+  /** Unix seconds (fractional). */
+  timestamp: number;
+  profile: string;
+  session_id: string;
+  catch_up?: number;
+  seeded?: boolean;
+}
+
+/** A playbook revision saved while the project chat ran. */
+export interface ProjectChatProposal {
+  rev: number;
+  base_rev: number | null;
+  active: boolean;
+  created_at: number | null;
+  created_by: string | null;
+  note: string | null;
+  added: number;
+  removed: number;
+  changed: number;
+  added_titles: string[];
+}
+
+export interface ProjectChatTimeline {
+  /** The conversation each profile keeps in this project (one per profile). */
+  sessions: { profile: string; session_id: string }[];
+  messages: ProjectChatTurn[];
+  truncated: boolean;
+  proposals: ProjectChatProposal[];
+  /** Who answered last — the picker's default. */
+  last_profile: string | null;
+}
+
+/** `POST …/chat/prepare` — the user turn to send, with any project block. */
+export interface ProjectChatPrepared {
+  session_id: string;
+  message: string;
+  seeded: boolean;
+  catch_up: number;
 }
 
 // ── Projects redesign: outputs ──

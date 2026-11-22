@@ -30,6 +30,12 @@ interface SendBody {
    * agent can understand references like "this page" or "the button I'm on".
    */
   uiContext?: unknown;
+  /**
+   * Project chat (2026-11-22 plan, stage 2): link the conversation to this
+   * project and let the API put the project context / catch-up at the top of
+   * this user turn — never the system prompt, never an extra message.
+   */
+  projectSlug?: unknown;
 }
 
 function withAttachments(message: string, attachments: ChatAttachment[]): string {
@@ -147,17 +153,28 @@ export async function POST(request: Request): Promise<Response> {
   const message = withUiContext(withAttachments(rawMessage, attachments), body.uiContext);
 
   try {
-    const client = await apiClientForRequest({ profile: profileFromBody(body) });
+    const profile = profileFromBody(body);
+    const client = await apiClientForRequest({ profile });
     let sessionId =
       typeof body.sessionId === "string" && body.sessionId ? body.sessionId : "";
     if (!sessionId) {
       const created = await client.createSession();
       sessionId = created.session_id;
     }
+    let turn = message;
+    if (typeof body.projectSlug === "string" && body.projectSlug) {
+      const registry = await apiClientForRequest();
+      const prepared = await registry.prepareProjectChat(body.projectSlug, {
+        profile: profile ?? "default",
+        session_id: sessionId,
+        message,
+      });
+      turn = prepared.message;
+    }
     const agentAttachments = await signAttachments(attachments);
     const upstream = await client.openChatStream(
       sessionId,
-      message,
+      turn,
       agentAttachments,
     );
     return new Response(upstream.body, {

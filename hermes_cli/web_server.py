@@ -443,6 +443,7 @@ from hermes_cli.projects_api import router as _projects_router  # noqa: E402
 from hermes_cli.refs_api import router as _refs_router  # noqa: E402
 from hermes_cli.projects_categories_api import router as _projects_categories_router  # noqa: E402
 from hermes_cli.projects_ask_api import router as _projects_ask_router  # noqa: E402
+from hermes_cli.projects_chat_api import router as _projects_chat_router  # noqa: E402
 from hermes_cli.projects_clarify_api import router as _projects_clarify_router  # noqa: E402
 from hermes_cli.projects_outputs_api import router as _projects_outputs_router  # noqa: E402
 from hermes_cli.projects_live_api import router as _projects_live_router  # noqa: E402
@@ -491,6 +492,7 @@ app.include_router(_projects_router)
 app.include_router(_refs_router)
 app.include_router(_projects_categories_router)
 app.include_router(_projects_ask_router)
+app.include_router(_projects_chat_router)
 app.include_router(_projects_clarify_router)
 app.include_router(_projects_outputs_router)
 app.include_router(_projects_live_router)

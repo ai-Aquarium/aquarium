@@ -159,6 +159,7 @@
   "GET /api/projects/[slug]/artifacts/[artifactId]/content": "signed-in",
   "GET /api/projects/[slug]/assignable-profiles": "signed-in",
   "POST /api/projects/[slug]/ask": "signed-in",
+  "GET /api/projects/[slug]/chat/timeline": "signed-in",
   "PATCH /api/projects/[slug]/autonomy": "signed-in",
   "GET /api/projects/[slug]/board": "signed-in",
   "GET /api/projects/[slug]/board/context": "signed-in",

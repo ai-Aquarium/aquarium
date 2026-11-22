@@ -116,6 +116,11 @@ export interface ChatStreamParams {
    * reply in the selected profile's history.
    */
   profile?: string;
+  /**
+   * Project chat: the turn joins this project's chat timeline, and the server
+   * puts the project context / catch-up at the top of this same user turn.
+   */
+  projectSlug?: string;
 }
 
 /** One parsed SSE frame. Exported: the projects run activity stream is the
@@ -186,6 +191,7 @@ export async function streamChatTurn(
       message: params.message,
       attachments: params.attachments,
       profile: params.profile,
+      projectSlug: params.projectSlug,
       uiContext: chatContextLine(formatUiContext(getUiContext()), getUiContext()?.path ?? null, getChatDataSource()) ?? undefined,
     }),
     signal: params.signal,
