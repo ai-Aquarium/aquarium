@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { AquariumLoader } from "@/components/brand/AquariumLoader";
 import { useTimeLabel } from "@/components/projects/useTimeLabel";
 import { ActionButton } from "@/components/ui/ActionButton";
 import { CredentialForm, SubmitLabel } from "@/components/ui/CredentialForm";
@@ -529,21 +530,57 @@ const ICON: Record<string, string> = {
   pending: "bg-[var(--color-bg)] text-[var(--color-muted)]",
 };
 
+/** Seconds since `iso`, ticking every second while `active` (null before hydration). */
+function useElapsed(iso: string | null, active: boolean): number | null {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const tick = () => setNow(Math.floor(Date.now() / 1000));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  const from = epoch(iso);
+  return active && now != null && from != null ? Math.max(0, now - from) : null;
+}
+
 function StepRow({ step, index, tag }: { step: SoftwareUpgradeStep; index: number; tag: string }) {
   const t = useT("upgrade");
-  const mark = step.state === "done" ? "✓" : step.state === "failed" ? "✕" : step.state === "running" ? "●" : String(index + 1);
+  const running = step.state === "running";
+  const mark = step.state === "done" ? "✓" : step.state === "failed" ? "✕" : String(index + 1);
   const took = between(step.started, step.finished);
+  const elapsed = useElapsed(step.started, running);
   return (
-    <li data-step={step.key} data-state={step.state} className="flex items-start gap-3 border-b border-[var(--color-border)] py-2 last:border-0">
-      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${ICON[step.state] ?? ICON.pending}`}>
-        {mark}
-      </span>
+    <li
+      data-step={step.key}
+      data-state={step.state}
+      aria-current={running ? "step" : undefined}
+      className={`flex items-start gap-3 border-b border-[var(--color-border)] py-2 last:border-0 ${
+        running ? "-mx-2 rounded-[var(--radius-md)] bg-[var(--color-accent)]/10 px-2" : ""
+      }`}
+    >
+      {running ? (
+        <AquariumLoader
+          size={24}
+          label={t("stepRunning", { step: t(`step.${step.key}`, { tag }) })}
+          className="flex h-6 w-6 shrink-0 items-center justify-center"
+        />
+      ) : (
+        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${ICON[step.state] ?? ICON.pending}`}>
+          {mark}
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <b className="text-sm">{t(`step.${step.key}`, { tag })}</b>
         <div className="text-xs text-[var(--color-muted)]">
           {t(`stepHint.${step.key}`)}
           {step.state === "done" && took != null ? ` · ${tookLabel(took)}` : ""}
         </div>
+        {running ? (
+          <div data-testid="upgrade-step-working" className="mt-0.5 text-xs font-medium text-[var(--color-accent)]">
+            {elapsed != null ? t("workingFor", { took: tookLabel(elapsed) }) : t("working")}
+          </div>
+        ) : null}
       </div>
     </li>
   );
@@ -618,7 +655,16 @@ function JobPanel({
         {job.running ? (
           <>
             <div className="mb-1 mt-3 h-2 overflow-hidden rounded-full bg-[var(--color-bg)]">
-              <i className="block h-full bg-[var(--color-accent)]" style={{ width: `${Math.round((done / total) * 100)}%` }} />
+              <div className="flex h-full">
+                <i className="block h-full bg-[var(--color-accent)]" style={{ width: `${Math.round((done / total) * 100)}%` }} />
+                {current >= 0 ? (
+                  <i
+                    data-testid="upgrade-progress-current"
+                    className="block h-full animate-pulse bg-[var(--color-accent)]/50"
+                    style={{ width: `${Math.round(100 / total)}%` }}
+                  />
+                ) : null}
+              </div>
             </div>
             <p className="text-xs text-[var(--color-muted)]">
               {t("stepOf", { n: Math.min(total, (current >= 0 ? current : done) + 1), total })} · {t("carriesOn")}
