@@ -13846,6 +13846,9 @@ async def create_session_endpoint(request: Request):
     body = body or {}
     profile = body.get("profile") or None
     principal = await _chat_principal(request, profile)
+    # A project group chat's conversations stay out of the ordinary chat
+    # lists (which ask for source=agent_home); only that one value is taken.
+    source = "project_chat" if body.get("source") == "project_chat" else "agent_home"
     raw_id = body.get("id") or body.get("session_id")
     session_id = str(raw_id).strip() if raw_id else f"home_{int(time.time())}_{uuid.uuid4().hex[:8]}"
 
@@ -13858,7 +13861,7 @@ async def create_session_endpoint(request: Request):
     try:
         if db.get_session(session_id):
             raise HTTPException(status_code=409, detail="Session already exists")
-        db.ensure_session(session_id, source="agent_home", user_id=principal.user_id)
+        db.ensure_session(session_id, source=source, user_id=principal.user_id)
     finally:
         db.close()
     from hermes_cli import chat_refs
@@ -13868,7 +13871,7 @@ async def create_session_endpoint(request: Request):
         session_id,
         _cron_profile_home(profile)[0] if profile else chat_refs.acting_profile_name(),
     )
-    return {"session_id": session_id, "source": "agent_home", "ref": ref}
+    return {"session_id": session_id, "source": source, "ref": ref}
 
 
 @app.delete("/api/sessions/{session_id}")

@@ -413,10 +413,12 @@ SIGNED_IN = {
     # --- end B1 ---
     # projects_ask_api: project membership checked per project
     "POST /api/registry/projects/{slug}/ask",
-    # projects_chat_api: project membership checked per project; only the
-    # caller's own conversations are read or linked
+    # projects_chat_api: project membership checked per project; members read
+    # the group chat, viewers never post, only the caller's own
+    # conversations are linked
     "GET /api/registry/projects/{slug}/chat/timeline",
     "POST /api/registry/projects/{slug}/chat/prepare",
+    "POST /api/registry/projects/{slug}/chat/messages",
     # projects_clarify_api: project membership checked per project
     "GET /api/registry/projects/{slug}/clarify",
     "POST /api/registry/projects/{slug}/clarify/questions",
