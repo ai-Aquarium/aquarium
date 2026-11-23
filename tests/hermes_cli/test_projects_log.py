@@ -471,3 +471,29 @@ def test_activity_inside_an_open_write_commits_with_it(env):
     assert any(
         r["action"] == "tools_edited" for r in _all(env, project["slug"])
     )
+
+
+def test_retro_and_delivery_by_an_agent_stay_with_the_agent(env):
+    project = _create(env)
+    pid, slug = project["id"], project["slug"]
+    client, state, _ = env
+    with projects_db.connect_closing() as conn:
+        run = projects_db.open_project_run(
+            conn, project_id=pid, trigger="schedule", profile="default",
+        )
+        oid = projects_db.get_project_outputs(conn, pid)[0]["id"]
+    state["subject"] = ""  # a session-less caller: an agent through the CLI
+    assert client.post(
+        f"{_PREFIX}/{slug}/runs/{run['run_no']}/retro", json={"retro": "ok"}
+    ).status_code == 200
+    assert client.post(
+        f"{_PREFIX}/{slug}/outputs/{oid}/deliver",
+        json={"label": "draft.md", "profile": "writer", "run_id": run["id"]},
+    ).status_code == 200
+    agents = {r["action"]: r for r in _all(env, slug, actor="agents")}
+    assert agents["run_retro"]["who"] == "default"
+    assert agents["output_delivered"]["who"] == "writer"
+    assert not any(
+        r["action"] in ("run_retro", "output_delivered")
+        for r in _all(env, slug, actor="people")
+    )
