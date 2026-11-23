@@ -146,10 +146,45 @@ def test_cli_passes_nothing_on_for_a_forged_ticket_and_still_refuses_as():
         cli.check(["tool", "--as", "root", "new", "demo"])
 
 
+def test_cli_runs_projects_as_the_ticket_person_with_the_ticket():
+    ticket = pt.sign("mia", KEY, _future())
+    argv = ["projects", "playbook", "p12", "save", "-"]
+    assert cli.as_requester(cli.check(argv), argv, ticket, KEY) == (
+        ["projects", "--actor=mia", "playbook", "p12", "save", "-"], ticket)
+
+
+@pytest.mark.parametrize("ticket", ["", "garbage", pt.sign("root", b"guessed", _future()),
+                                    pt.sign("mia", KEY, _future(-60))])
+def test_cli_refuses_projects_without_a_valid_ticket_never_running_as_the_owner(ticket):
+    argv = ["projects", "create", "g", "--description", "-", "--output", "o"]
+    with pytest.raises(cli.Refused):
+        cli.as_requester(cli.check(argv), argv, ticket, KEY)
+    with pytest.raises(cli.Refused):
+        cli.as_requester(cli.check(argv), argv, pt.sign("mia", KEY, _future()), b"")
+
+
+def test_cli_keeps_the_chat_only_for_projects_create_and_pins_its_host():
+    env = {"HERMES_SESSION_ID": "20261123_141100_ab12", "HERMES_SESSION_PROFILE": "sales",
+           "HERMES_SESSION_USER_ID": "mia"}
+    create = ["projects", "create", "g", "--description", "-", "--output", "o"]
+    kept, extra = cli.session_args(["projects", "create"], create, env)
+    assert kept == {"HERMES_SESSION_ID": "20261123_141100_ab12", "HERMES_SESSION_PROFILE": "sales"}
+    assert extra == ["--host-profile=sales"]
+    assert cli.session_args(["projects", "create"], [*create, "--host-profile", "sales"], env)[1] == []
+    for other in (["--host-profile", "default"], ["--host-profile=default"]):
+        with pytest.raises(cli.Refused):
+            cli.session_args(["projects", "create"], [*create, *other], env)
+    assert cli.session_args(["projects", "playbook"], ["projects", "playbook", "p"], env) == ({}, [])
+    assert cli.session_args(["tool", "new"], ["tool", "new", "x"], env) == ({}, [])
+    bad = {"HERMES_SESSION_ID": "x;rm -rf /", "HERMES_SESSION_PROFILE": "../root"}
+    assert cli.session_args(["projects", "create"], create, bad) == ({}, [])
+
+
 def test_sudoers_keeps_the_ticket_for_the_helper():
     rule = (REPO / "deploy/sudoers.d/hermes-tools").read_text()
     keep = next(line for line in rule.splitlines() if "env_keep" in line)
     assert pt.ENV_VAR in keep and cli.TICKET_ENV == pt.ENV_VAR
+    assert all(name in keep for name in cli.SESSION_ENV)
 
 
 # --- hermes tool operator resolution ---------------------------------------------

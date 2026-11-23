@@ -53,6 +53,20 @@ cli = _load()
     (["skills", "install", "official/productivity/telephony", "--yes"], ["skills", "install"]),
     (["memory", "status"], ["memory", "status"]),
     (["tool", "new", "--help"], ["tool", "new"]),
+    (["projects", "create", "Weekly report", "--description", "-", "--output", "Report",
+      "--from-chat", "2", "--chat-summary", "Leo asked for it.", "--json"], ["projects", "create"]),
+    (["projects", "create", "Goal", "--description=-", "--output=O", "--host-profile", "sales"],
+     ["projects", "create"]),
+    (["projects", "create", "--help"], ["projects", "create"]),
+    (["projects", "playbook", "p12"], ["projects", "playbook"]),
+    (["projects", "playbook", "p12", "show", "3", "--json"], ["projects", "playbook"]),
+    (["projects", "playbook", "p12", "save", "-", "--note", "v1"], ["projects", "playbook"]),
+    (["projects", "playbook", "p12", "draft"], ["projects", "playbook"]),
+    (["projects", "playbook", "p12", "draft", "set", '{"body": "b", "steps": []}',
+      "--from-rev", "2"], ["projects", "playbook"]),
+    (["projects", "playbook", "p12", "draft", "patch-step", "pull", '{"title": "Pull"}',
+      "--after", "load", "--expected-version", "4"], ["projects", "playbook"]),
+    (["projects", "playbook", "p12", "draft", "discard"], ["projects", "playbook"]),
 ])
 def test_allowed(argv, path):
     assert cli.check(argv) == path
@@ -88,10 +102,67 @@ def test_allowed(argv, path):
     ["vpn", "migrate"],
     ["tool"],
     ["tool", "list", "x\x00y"],
+    # projects: only create + playbook propose/show/draft, as the chatting person
+    ["projects", "--actor", "leo", "create", "g", "--description", "-", "--output", "o"],
+    ["projects", "--actor=leo", "playbook", "p"],
+    ["projects", "--as-human", "playbook", "p"],
+    ["projects", "-p", "other", "playbook", "p"],
+    ["projects", "playbook", "p", "--profile", "other"],
+    ["projects", "create", "g", "--description", "/opt/data/hermes-home/.env", "--output", "o"],
+    ["projects", "create", "g", "--description", "-", "--output", "o", "--host-profile", "../x"],
+    ["projects", "create", "g", "--description", "-", "--output", "o", "--from-chat", "9"],
+    ["projects", "create", "g", "h", "--description", "-", "--output", "o"],
+    ["projects", "create", "g", "--description", "-", "--output", "o", "--home", "/tmp"],
+    ["projects", "playbook", "p", "save", "/opt/data/hermes-home/.env"],
+    ["projects", "playbook", "p", "save"],
+    ["projects", "playbook", "p", "activate", "1"],
+    ["projects", "playbook", "p", "toolsets"],
+    ["projects", "playbook", "p", "show", "../x"],
+    ["projects", "playbook", "p", "draft", "set", "/etc/shadow"],
+    ["projects", "playbook", "p", "draft", "patch-step", "pull", "~/.env"],
+    ["projects", "playbook", "p", "draft", "save"],
+    ["projects", "playbook"],
+    ["projects", "delete", "p"],
+    ["projects", "archive", "p"],
+    ["projects", "restore", "p"],
+    ["projects", "run", "p"],
+    ["projects", "members", "p", "--add", "x"],
+    ["projects", "list"],
 ])
 def test_refused(argv):
     with pytest.raises(cli.Refused):
         cli.check(argv)
+
+
+def _shim(tmp_path, *argv):
+    """The real shim, with a stand-in sudo that echoes what the helper gets."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    fake = bin_dir / "sudo"
+    fake.write_text('#!/bin/bash\nprintf "%s\\n" "$@"; echo "STDIN:$(cat)"\n')
+    fake.chmod(0o755)
+    return subprocess.run(
+        ["bash", str(REPO / "deploy/hermes-tools-shim"), *argv],
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin"}, stdin=subprocess.DEVNULL,
+        capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="bash shim")
+def test_shim_reads_the_projects_files_as_the_agent_and_passes_stdin(tmp_path):
+    spec = tmp_path / "v1.json"
+    spec.write_text('{"body": "plan"}')
+    brief = tmp_path / "brief.md"
+    brief.write_text("the brief")
+    out = _shim(tmp_path, "projects", "playbook", "p12", "save", str(spec))
+    assert out[:-1] == ["-n", "-u", "hermes", "/usr/local/sbin/hermes-tools-cli",
+                        "projects", "playbook", "p12", "save", "-"]
+    assert 'STDIN:{"body": "plan"}' in out
+    for flag in (["--description", str(brief)], [f"--description={brief}"]):
+        out = _shim(tmp_path, "projects", "create", "Goal", *flag, "--output", "O")
+        assert str(brief) not in "\n".join(out) and "STDIN:the brief" in out
+    out = _shim(tmp_path, "projects", "create", "Goal", "--description", "-", "--output", "O")
+    assert "STDIN:" in out and "-" in out
 
 
 def test_rule_lets_hermes_tools_reach_the_cli_as_hermes_only():
