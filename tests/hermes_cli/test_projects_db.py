@@ -409,7 +409,7 @@ def test_rebase_moves_a_stale_proposal_onto_the_active_revision(conn):
     result = pdb.rebase_playbook_rev(conn, pid, mine, created_by="leo")
     new = result["rev"]
     assert result == {
-        "rev": new, "from_rev": mine, "base_rev": agent, "conflicts": [], "kept": False,
+        "rev": new, "from_rev": mine, "base_rev": agent, "conflicts": [],
     }
     assert new > mine
     after = pdb.get_playbook(conn, pid, new)
@@ -417,8 +417,9 @@ def test_rebase_moves_a_stale_proposal_onto_the_active_revision(conn):
     assert [s["title"] for s in after["steps"]] == [
         "Pull CRM export, wait 3h", "Send to the list",
     ]
-    # Nothing builds on the old proposal, so the updated copy replaces it.
-    assert pdb.get_playbook(conn, pid, mine) is None
+    # The old proposal is left exactly as it was; only Discard removes it.
+    old = pdb.get_playbook(conn, pid, mine)
+    assert old["base_rev"] == v1 and old["steps"][1]["title"] == "Send"
     # Superseded (once active) revisions are history, not proposals.
     assert pdb.rebase_playbook_rev(conn, pid, v1) == {"refused": "active"}
     assert pdb.rebase_playbook_rev(conn, pid, 99) == {"refused": "not_found"}
@@ -446,6 +447,25 @@ def test_a_plan_written_from_nothing_records_base_zero_and_stays_a_proposal(conn
     assert pdb.rebase_playbook_rev(conn, pid, v1) == {"refused": "no_base"}
 
 
+def test_sibling_proposals_merge_from_their_shared_pending_parent(conn):
+    pid = pdb.create_project(conn, name="Siblings", folders=["/tmp/siblings"])
+    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A"), ("b", "B")))
+    pdb.activate_playbook_rev(conn, pid, v1)
+    parent = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A1"), ("b", "B")))
+    first = pdb.save_playbook_rev(
+        conn, project_id=pid, steps=_steps(("a", "A2"), ("b", "B")), base_rev=parent
+    )
+    second = pdb.save_playbook_rev(
+        conn, project_id=pid, steps=_steps(("a", "A1"), ("b", "B2")), base_rev=parent
+    )
+    pdb.activate_playbook_rev(conn, pid, first)
+    # Both inherited A1 from the parent; only the active one changed it
+    # further, so its A2 must survive the update.
+    up = pdb.rebase_playbook_rev(conn, pid, second)
+    assert up["conflicts"] == []
+    assert [s["title"] for s in pdb.get_playbook(conn, pid, up["rev"])["steps"]] == ["A2", "B2"]
+
+
 def test_rebasing_a_parent_keeps_its_children_on_a_true_base(conn):
     pid = pdb.create_project(conn, name="Chain", folders=["/tmp/chain"])
     v1 = pdb.save_playbook_rev(
@@ -469,7 +489,6 @@ def test_rebasing_a_parent_keeps_its_children_on_a_true_base(conn):
     pdb.activate_playbook_rev(conn, pid, other)
 
     up = pdb.rebase_playbook_rev(conn, pid, parent)
-    assert up["kept"] is True  # the child still builds on it
     assert pdb.get_playbook(conn, pid, parent)["steps"][0]["title"] == "Collect (3h)"
     pdb.activate_playbook_rev(conn, pid, up["rev"])
 

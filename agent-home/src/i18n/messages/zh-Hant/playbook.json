@@ -67,6 +67,6 @@
   "updating": "正在更新…",
   "updatedNotice": "v{from} 已更新到 v{active}，存為 v{rev}，仍是建議版本。",
   "updatedConflicts": "v{from} 已更新到 v{active}，存為 v{rev}。雙方都改動了 {what}；已保留 v{from} 的版本。啟用前請先比較。",
-  "updatedKept": "v{from} 會保留，因為其他建議版本以它為基礎。",
+  "updatedKept": "v{from} 保持不變，仍在列表中。",
   "conflictText": "文字說明"
 }

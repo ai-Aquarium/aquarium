@@ -293,7 +293,7 @@ describe("PlanPanel — several proposals at once", () => {
   it("Update onto active POSTs the rebase, follows the new proposal and names what both sides changed", async () => {
     const fetchMock = server((url, init) =>
       init?.method === "POST" && url === `${BASE}/playbook/6/rebase`
-        ? jsonResponse(200, { rev: 8, from_rev: 6, base_rev: 5, conflicts: ["clean", "body"], kept: true })
+        ? jsonResponse(200, { rev: 8, from_rev: 6, base_rev: 5, conflicts: ["clean", "body"] })
         : null,
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -308,7 +308,7 @@ describe("PlanPanel — several proposals at once", () => {
     expect(chip(container, 8).getAttribute("aria-pressed")).toBe("true");
     expect(chip(container, 8).getAttribute("data-outdated")).toBeNull();
     expect(
-      await findByText(/v6 was updated onto v5 as v8\. Both changed clean, the text; v6's version was kept\..*v6 stays/),
+      await findByText(/v6 was updated onto v5 as v8\. Both changed clean, the text; v6's version was kept\..*v6 is unchanged/),
     ).toBeTruthy();
   });
 

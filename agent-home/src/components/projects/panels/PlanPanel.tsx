@@ -896,7 +896,7 @@ function RevisionDecision({
                 what: updated.conflicts.map((key) => (key === "body" ? t("conflictText") : key)).join(", "),
               })
             : t("updatedNotice", { rev: rev.rev, from: updated.from, active: updated.active })}
-          {updated.kept ? ` ${t("updatedKept", { from: updated.from })}` : ""}
+          {` ${t("updatedKept", { from: updated.from })}`}
         </p>
       ) : null}
       {addsNote ? (
@@ -933,7 +933,7 @@ function RevisionDecision({
  * proposal). When both changed the same step, the proposal's version is
  * kept and named, so nothing is dropped silently.
  */
-type ProposalUpdate = { rev: number; from: number; active: number; conflicts: string[]; kept: boolean };
+type ProposalUpdate = { rev: number; from: number; active: number; conflicts: string[] };
 
 function UpdateOntoActive({
   slug,
@@ -947,7 +947,7 @@ function UpdateOntoActive({
   onUpdated: (update: ProposalUpdate) => void;
 }) {
   const t = useT("playbook");
-  const action = useProjectAction<{ rev?: number; base_rev?: number; conflicts?: string[]; kept?: boolean }>();
+  const action = useProjectAction<{ rev?: number; base_rev?: number; conflicts?: string[] }>();
   return (
     <>
       <ActionButton
@@ -964,7 +964,6 @@ function UpdateOntoActive({
                 from: rev,
                 active: data.base_rev ?? activeRev,
                 conflicts: data.conflicts ?? [],
-                kept: Boolean(data.kept),
               });
             },
           })

@@ -2904,7 +2904,7 @@ export class HermesApiClient {
   async rebaseProjectPlaybook(
     slug: string,
     rev: number,
-  ): Promise<{ rev: number; from_rev: number; base_rev: number; conflicts: string[]; kept: boolean }> {
+  ): Promise<{ rev: number; from_rev: number; base_rev: number; conflicts: string[] }> {
     return this.request(
       `/api/registry/projects/${encodeURIComponent(slug)}/playbook/${encodeURIComponent(rev)}/rebase`,
       { method: "POST", json: {} },
