@@ -145,7 +145,7 @@ describe("PlanPanel — a proposed revision is the pending decision", () => {
     ],
   };
 
-  it("locks Draft/Write while a proposal waits, offering Activate and Discard", async () => {
+  it("locks Draft/Write while a proposal waits, offering Make active and Discard", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(() => Promise.resolve(jsonResponse(200, { status: "idle" }))),
@@ -156,8 +156,8 @@ describe("PlanPanel — a proposed revision is the pending decision", () => {
     expect(
       (getByText("Draft with the agent") as HTMLButtonElement).disabled,
     ).toBe(true);
-    expect((getByText("Write plan") as HTMLButtonElement).disabled).toBe(true);
-    expect(getByText("Activate")).toBeTruthy();
+    expect((getByText("Write playbook") as HTMLButtonElement).disabled).toBe(true);
+    expect(getByText("Make active")).toBeTruthy();
     const discard = container.querySelector('[data-action="discard-revision"]');
     expect(discard).toBeTruthy();
     expect((discard as HTMLButtonElement).disabled).toBe(false);
@@ -199,7 +199,7 @@ describe("PlanPanel — a proposed revision is the pending decision", () => {
     expect(
       (getByText("Draft with the agent") as HTMLButtonElement).disabled,
     ).toBe(false);
-    expect((getByText("Write plan") as HTMLButtonElement).disabled).toBe(false);
+    expect((getByText("Write playbook") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("a refused discard surfaces the reason in place and keeps the proposal", async () => {
@@ -222,7 +222,7 @@ describe("PlanPanel — a proposed revision is the pending decision", () => {
     const alert = await findByRole("alert");
     expect(alert.textContent).toMatch(/cannot be discarded/);
     // Nothing was lost — the decision row is still there.
-    expect(getByText("Activate")).toBeTruthy();
+    expect(getByText("Make active")).toBeTruthy();
     expect(router.refresh).not.toHaveBeenCalled();
   });
 });
@@ -240,7 +240,7 @@ describe("PlanPanel — a superseded revision is history, not a pending decision
     note: "drafted by the agent",
   });
 
-  it("keeps an older inactive revision out of the proposals and leaves Draft/Revise open", () => {
+  it("keeps an older inactive revision out of the proposals and leaves Draft/Edit open", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(() => Promise.resolve(jsonResponse(200, { status: "idle" }))),
@@ -251,14 +251,23 @@ describe("PlanPanel — a superseded revision is history, not a pending decision
         playbook={{ active: REV(2, 1, "Second plan."), revisions: [REV(2, 1, "Second plan."), REV(1, 0, "First plan.")] }}
       />,
     );
-    expect(container.querySelector('[data-component="ProposedRevisions"]')).toBeNull();
-    expect(queryByText(/awaiting a decision/)).toBeNull();
-    const earlier = container.querySelector('[data-component="EarlierRevisions"]');
-    expect(earlier?.textContent).toContain("Earlier revisions (1)");
-    expect(earlier?.textContent).toContain("First plan.");
-    expect(getByText("Switch back to this")).toBeTruthy();
+    // Opens on the active version; the older one is no pending decision.
+    expect(container.querySelector('[data-component="PlaybookRevision"]')?.getAttribute("data-state")).toBe("active");
+    expect(container.querySelector('[data-component="RevisionDecision"]')).toBeNull();
+    expect(queryByText("Make active")).toBeNull();
     expect((getByText("Draft with the agent") as HTMLButtonElement).disabled).toBe(false);
-    expect((getByText("Revise") as HTMLButtonElement).disabled).toBe(false);
+    expect((getByText("Edit") as HTMLButtonElement).disabled).toBe(false);
+
+    // Picking v1 shows it as history, with the way back.
+    fireEvent.click(container.querySelector('[data-component="RevisionPicker"] [data-rev="1"]')!);
+    const earlier = container.querySelector('[data-component="PlaybookRevision"]');
+    expect(earlier?.getAttribute("data-state")).toBe("earlier");
+    expect(earlier?.textContent).toContain("First plan.");
+    expect(container.querySelector('[data-component="RevisionDecision"]')?.textContent).toContain(
+      "v1 is an earlier version, not in use",
+    );
+    expect(getByText("Make active")).toBeTruthy();
+    expect((getByText("Edit") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("confirms the activation once the refreshed plan shows the new revision active", async () => {
@@ -276,8 +285,9 @@ describe("PlanPanel — a superseded revision is history, not a pending decision
     const { container, getByText, findByText, rerender } = render(
       <PlanPanel {...PROPS} playbook={before} />,
     );
-    expect(container.querySelector('[data-component="ProposedRevisions"]')).toBeTruthy();
-    fireEvent.click(getByText("Activate"));
+    // Opens on the proposal — it is the pending decision.
+    expect(container.querySelector('[data-component="PlaybookRevision"]')?.getAttribute("data-state")).toBe("proposed");
+    fireEvent.click(getByText("Make active"));
     await vi.waitFor(() => expect(router.refresh).toHaveBeenCalled());
 
     rerender(
@@ -289,10 +299,11 @@ describe("PlanPanel — a superseded revision is history, not a pending decision
         }}
       />,
     );
-    await findByText(/Revision 3 is now the active plan/);
-    expect(container.querySelector('[data-component="ProposedRevisions"]')).toBeNull();
-    expect(container.querySelector('[data-component="EarlierRevisions"]')?.textContent).toContain(
-      "Second plan.",
+    await findByText(/v3 is now the active playbook/);
+    expect(container.querySelector('[data-component="PlaybookRevision"]')?.getAttribute("data-state")).toBe("active");
+    expect(container.querySelector('[data-component="RevisionDecision"]')).toBeNull();
+    expect(container.querySelector('[data-component="RevisionPicker"] [data-rev="2"]')?.getAttribute("data-state")).toBe(
+      "earlier",
     );
   });
 });

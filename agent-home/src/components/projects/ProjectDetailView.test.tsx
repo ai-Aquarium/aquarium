@@ -314,7 +314,7 @@ describe("detail panels", () => {
     const html = renderToStaticMarkup(
       <PlanPanel {...PLAN_PROPS} playbook={{ active: null, revisions: [] }} />,
     );
-    expect(html).toContain("Write plan");
+    expect(html).toContain("Write playbook");
     expect(html).toContain('data-component="DraftPlanWithAgent"');
     expect(html).toContain("Draft with the agent");
     // The agent-draft door never leaves the project page for chat.
@@ -344,8 +344,8 @@ describe("detail panels", () => {
     );
     expect(html).toContain("Draft it");
     expect(html).toContain("Send it");
-    expect(html).toContain("revision 3");
-    expect(html).toContain("Revise");
+    expect(html).toContain("v3: “added the send checkpoint”");
+    expect(html).toContain(">Edit<");
   });
 
   it("PlanPanel shows a retro's proposed revision awaiting a decision", () => {
@@ -368,22 +368,23 @@ describe("detail panels", () => {
     const html = renderToStaticMarkup(
       <PlanPanel {...PLAN_PROPS} playbook={playbook} />,
     );
-    expect(html).toContain('data-component="ProposedRevisions"');
-    expect(html).toContain("awaiting a decision");
+    expect(html).toContain('data-component="RevisionDecision" data-state="proposed"');
+    expect(html).toContain("v2 is proposed");
     expect(html).toContain("proposed by run 14");
-    expect(html).toContain(">Activate<");
+    expect(html).toContain(">Make active<");
     expect(html).toContain('data-action="discard-revision"');
     // A pending proposal is the only decision on the table — drafting or
     // writing on top of it would just stack another undecided revision.
-    expect(html.match(/disabled=""/g)).toHaveLength(2);
-    expect(html).toContain("activate or discard it first");
+    expect(html).toMatch(/data-component="DraftPlanWithAgent"[^>]*disabled=""/);
+    expect(html).toMatch(/data-component="EditPlaybook"[^>]*disabled=""/);
+    expect(html).toContain("make it active or discard it first");
 
     const member = renderToStaticMarkup(
       <PlanPanel {...PLAN_PROPS} canActivate={false} playbook={playbook} />,
     );
-    expect(member).not.toContain(">Activate<");
+    expect(member).not.toContain(">Make active<");
     expect(member).not.toContain('data-action="discard-revision"');
-    expect(member).toContain("a lead activates or discards");
+    expect(member).toContain("A lead makes it active or discards it.");
   });
 
   it("GuidancePanel shows proposed directives with the member's Activate", () => {

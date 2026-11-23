@@ -12,6 +12,7 @@ import {
   AssignmentDetails,
   ProfileFacts,
   WhoDoesWhat,
+  ASSIGNMENT_FIELDS,
   assignmentForSave,
   assignmentOf,
   hasAssignment,
@@ -25,9 +26,20 @@ import type {
   ProjectPlaybookResponse,
   StepAssignment,
 } from "@/types";
-import { useTimeLabel } from "@/components/projects/useTimeLabel";
+import { useT } from "@/i18n";
 import { PlaybookCards, PlaybookViewSwitch } from "@/components/projects/cards/PlaybookCards";
 import type { CardsView } from "@/components/projects/cards/stepCards";
+import { PencilIcon, SparklesIcon } from "@/components/ui/icons";
+import { CompareIcon } from "@/components/projects/playbook/icons";
+import { RevisionCompare } from "@/components/projects/playbook/RevisionCompare";
+import { RevisionPicker } from "@/components/projects/playbook/RevisionPicker";
+import {
+  defaultCompareBase,
+  defaultRevision,
+  revisionState,
+  revisionsAscending,
+  type RevisionState,
+} from "@/components/projects/playbook/revisions";
 
 /** How often the panel asks the server whether the agent's draft is ready. */
 export const DRAFT_POLL_MS = 2_000;
@@ -40,6 +52,11 @@ interface StepDraft {
   /** The step's C-3 assignment fields as loaded, and the assignee they explain. */
   assignment: StepAssignment | null;
   origAssignee: string;
+  /** The stored step this draft edits (and its `after` as loaded): what the
+   * editor does not show — body, mode, toolsets, extra dependencies — is
+   * saved back unchanged. */
+  orig?: PlaybookStep;
+  origAfter?: string;
 }
 
 const EMPTY_STEP: StepDraft = {
@@ -67,19 +84,39 @@ export function stepKey(title: string, index: number, taken: Set<string>): strin
 }
 
 function stepsToPayload(drafts: StepDraft[]): PlaybookStep[] {
+  const kept = drafts.filter((d) => d.title.trim());
   const taken = new Set<string>();
-  const keyed = drafts
-    .filter((d) => d.title.trim())
-    .map((d, i) => ({ draft: d, key: stepKey(d.title.trim(), i, taken) }));
+  const storedKey = new Map<StepDraft, string>();
+  for (const d of kept) {
+    if (d.orig?.key && !taken.has(d.orig.key)) {
+      taken.add(d.orig.key);
+      storedKey.set(d, d.orig.key);
+    }
+  }
+  const keyed = kept.map((d, i) => ({ draft: d, key: storedKey.get(d) ?? stepKey(d.title.trim(), i, taken) }));
   const byTitle = new Map(keyed.map((k) => [k.draft.title.trim(), k.key]));
-  return keyed.map(({ draft, key }) => ({
-    key,
-    title: draft.title.trim(),
-    assignee: draft.assignee || null,
-    depends_on: draft.after && byTitle.has(draft.after) ? [byTitle.get(draft.after)!] : [],
-    checkpoint: draft.checkpoint,
-    ...assignmentForSave(draft.assignment, draft.origAssignee, draft.assignee),
-  }));
+  const live = new Set(keyed.map((k) => k.key));
+  return keyed.map(({ draft, key }) => {
+    const { orig } = draft;
+    const stored: Record<string, unknown> = { ...(orig ?? {}) };
+    for (const field of ASSIGNMENT_FIELDS) delete stored[field];
+    delete stored.needs;
+    const depends_on =
+      orig && draft.after === draft.origAfter
+        ? (orig.depends_on ?? orig.needs ?? []).filter((k) => live.has(k))
+        : draft.after && byTitle.has(draft.after)
+          ? [byTitle.get(draft.after)!]
+          : [];
+    return {
+      ...stored,
+      key,
+      title: draft.title.trim(),
+      assignee: draft.assignee || null,
+      depends_on,
+      checkpoint: draft.checkpoint,
+      ...assignmentForSave(draft.assignment, draft.origAssignee, draft.assignee),
+    };
+  });
 }
 
 /**
@@ -105,14 +142,19 @@ function draftsFromRev(rev: PlaybookRev | null): StepDraft[] {
   const steps = rev?.steps ?? [];
   if (steps.length === 0) return [{ ...EMPTY_STEP }];
   const titleByKey = new Map(steps.map((s) => [s.key, s.title]));
-  return steps.map((s) => ({
-    title: s.title,
-    assignee: s.assignee ?? "",
-    after: titleByKey.get((s.depends_on ?? s.needs ?? [])[0] ?? "") ?? "",
-    checkpoint: Boolean(s.checkpoint),
-    assignment: assignmentOf(s),
-    origAssignee: s.assignee ?? "",
-  }));
+  return steps.map((s) => {
+    const after = titleByKey.get((s.depends_on ?? s.needs ?? [])[0] ?? "") ?? "";
+    return {
+      title: s.title,
+      assignee: s.assignee ?? "",
+      after,
+      checkpoint: Boolean(s.checkpoint),
+      assignment: assignmentOf(s),
+      origAssignee: s.assignee ?? "",
+      orig: s,
+      origAfter: after,
+    };
+  });
 }
 
 /** True when any step of these revisions says why it got its profile. */
@@ -150,11 +192,11 @@ function assigneeOptions(
 }
 
 /**
- * The active playbook, labelled **Plan** — "playbook" is our word, not the
- * user's (§13). Prose plus steps as an indented list, its revision and who
- * activated it. Proposed revisions (§8.2 — a retro's write-back, a draft
- * saved here, or one the agent drafted on request) render beneath with the
- * lead's Activate; saving is open to any member, activation stays a human
+ * The project's playbook (Planning tab): a row of version chips, the
+ * picked version's text and steps, and — for a proposed or earlier
+ * version — the lead's Make active (or Discard). Compare puts any two
+ * versions side by side (text diff + step diff). Saving is open to any
+ * member and takes an optional version note; activation stays a human
  * lead/admin act (§7.2).
  *
  * "Draft with the agent" starts a server-side job (`POST …/playbook/draft`)
@@ -184,17 +226,28 @@ export function PlanPanel({
   /** Member or lead: may propose a step change from its card. */
   canPropose?: boolean;
 }) {
-  const timeLabel = useTimeLabel();
+  const t = useT("playbook");
   const { refresh } = useRefresh();
   const active = playbook?.active ?? null;
-  const { proposed, earlier } = splitRevisions(playbook);
+  const activeRev = active?.rev ?? null;
+  const { proposed } = splitRevisions(playbook);
+  const listed = revisionsAscending(playbook);
+  const revisions =
+    active != null && !listed.some((r) => r.rev === active.rev)
+      ? [...listed, active].sort((a, b) => a.rev - b.rev)
+      : listed;
 
+  /** The version chip the user picked; falls back when it is discarded. */
+  const [picked, setPicked] = useState<number | null>(null);
+  const [comparing, setComparing] = useState(false);
+  const [compareFrom, setCompareFrom] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   /** The revision the editor was opened from; the server carries its step assignments. */
   const [baseRev, setBaseRev] = useState<number | null>(null);
   const [body, setBody] = useState("");
+  const [note, setNote] = useState("");
   const [steps, setSteps] = useState<StepDraft[]>([{ ...EMPTY_STEP }]);
-  const saveAction = useProjectAction();
+  const saveAction = useProjectAction<{ rev?: number }>();
   const busy = saveAction.busy;
   const draftAction = useProjectAction<ProjectPlaybookDraftState>();
   const [error, setError] = useState<string | null>(null);
@@ -202,8 +255,18 @@ export function PlanPanel({
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [activatedRev, setActivatedRev] = useState<number | null>(null);
   const [view, setView] = useState<CardsView>("text");
+  const byRev = (rev: number | null) => (rev == null ? undefined : revisions.find((r) => r.rev === rev));
+  const selected = byRev(picked) ?? byRev(defaultRevision(playbook)) ?? active;
+  const compareBase =
+    selected == null
+      ? undefined
+      : compareFrom != null && compareFrom !== selected.rev && byRev(compareFrom)
+        ? byRev(compareFrom)
+        : byRev(defaultCompareBase(playbook, selected.rev));
+  const selectedState = selected ? revisionState(selected, activeRev) : null;
+
   // A proposed revision is a pending decision — the only moves are
-  // Activate or Discard. Starting another draft/write on top of it would
+  // Make active or Discard. Starting another draft/write on top of it would
   // just stack more undecided revisions.
   const awaitingDecision = !editing && proposed.length > 0;
 
@@ -211,7 +274,7 @@ export function PlanPanel({
 
   const roster = useAssignableProfiles(
     slug,
-    playbook != null && (editing || showsAssignments([active, ...proposed])),
+    playbook != null && (editing || showsAssignments([active, selected ?? null, ...proposed])),
   );
   const cardByName = new Map((roster ?? []).map((p) => [p.name, p]));
 
@@ -226,6 +289,7 @@ export function PlanPanel({
         setDraftNotice(
           `The agent proposed revision ${state.rev ?? ""} — review it below and activate it when it looks right.`,
         );
+        if (typeof state.rev === "number") setPicked(state.rev);
         refresh();
       } else if (state.status === "failed") {
         setError(
@@ -236,9 +300,8 @@ export function PlanPanel({
         );
       }
     },
-    [refresh],
+    [refresh, setDrafting, setDraftNotice, setPicked, setError],
   );
-
   // On mount: resume waiting on a draft started before a reload. While
   // drafting: poll until the job settles. Both use the same GET.
   const unavailable = playbook == null;
@@ -290,10 +353,12 @@ export function PlanPanel({
   const openEditor = (from: PlaybookRev | null) => {
     setActivatedRev(null);
     setBody(from?.body ?? "");
+    setNote("");
     setSteps(draftsFromRev(from));
     setBaseRev(from?.rev ?? null);
     setError(null);
     saveAction.clearError();
+    setComparing(false);
     setEditing(true);
   };
 
@@ -309,13 +374,25 @@ export function PlanPanel({
         body: body.trim(),
         steps: payload,
         ...(baseRev != null ? { base_rev: baseRev } : {}),
+        ...(note.trim() ? { note: note.trim() } : {}),
       },
-      onSuccess: () => setEditing(false),
+      onSuccess: (data) => {
+        setEditing(false);
+        if (typeof data?.rev === "number") setPicked(data.rev);
+      },
     });
+  };
+
+  const selectRev = (rev: number) => {
+    setPicked(rev);
+    setActivatedRev(null);
   };
 
   const inputClass =
     "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]";
+  const toolClass =
+    "inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-xs disabled:opacity-50";
+  const pendingTitle = awaitingDecision ? t("pendingDecision") : undefined;
 
   return (
     <section
@@ -325,10 +402,22 @@ export function PlanPanel({
     >
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="flex-1 text-xs uppercase tracking-wide text-[var(--color-muted)]">
-          Plan
+          {t("title")}
         </h2>
-        {!editing && (active != null || proposed.length > 0) ? (
-          <PlaybookViewSwitch view={view} onChange={setView} />
+        {!editing && revisions.length > 0 ? <PlaybookViewSwitch view={view} onChange={setView} /> : null}
+        {!editing && revisions.length > 0 && view === "text" ? (
+          <button
+            type="button"
+            data-component="CompareRevisions"
+            aria-pressed={comparing}
+            onClick={() => setComparing((on) => !on)}
+            disabled={revisions.length < 2}
+            title={revisions.length < 2 ? t("compareOnlyOne") : undefined}
+            className={`${toolClass} ${comparing ? "border-[var(--color-accent)] text-[var(--color-accent)]" : ""}`}
+          >
+            <CompareIcon size={14} />
+            {t("compare")}
+          </button>
         ) : null}
         {!archived && !editing && playbook != null ? (
           <ActionButton
@@ -337,29 +426,24 @@ export function PlanPanel({
             pendingLabel="Starting the draft…"
             onClick={draftWithAgent}
             disabled={drafting || awaitingDecision}
-            title={
-              awaitingDecision
-                ? "A proposed revision is waiting — activate or discard it first."
-                : undefined
-            }
-            className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-xs disabled:opacity-50"
+            title={pendingTitle}
+            className={toolClass}
           >
+            <SparklesIcon size={14} />
             {drafting ? "Agent is drafting…" : "Draft with the agent"}
           </ActionButton>
         ) : null}
         {!archived && !editing ? (
           <button
             type="button"
+            data-component="EditPlaybook"
             onClick={() => openEditor(active)}
             disabled={awaitingDecision}
-            title={
-              awaitingDecision
-                ? "A proposed revision is waiting — activate or discard it first."
-                : undefined
-            }
-            className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-xs disabled:opacity-50"
+            title={pendingTitle}
+            className={toolClass}
           >
-            {active ? "Revise" : "Write plan"}
+            <PencilIcon size={14} />
+            {active ? t("edit") : t("write")}
           </button>
         ) : null}
       </div>
@@ -370,7 +454,7 @@ export function PlanPanel({
         </p>
       ) : (
         <>
-          {active == null && !editing && !drafting && proposed.length === 0 ? (
+          {active == null && !editing && !drafting && revisions.length === 0 ? (
             <p className="mt-2 text-sm text-[var(--color-muted)]">
               No active plan yet — a run needs one. Ask the agent to draft one
               from the brief, or write it here; either way you activate it
@@ -390,13 +474,13 @@ export function PlanPanel({
             </p>
           ) : null}
 
-          {activatedRev != null && active?.rev === activatedRev ? (
+          {activatedRev != null && activeRev === activatedRev ? (
             <p
               data-component="PlanActivatedNotice"
               role="status"
               className="mt-2 text-sm text-[var(--color-accent)]"
             >
-              Revision {activatedRev} is now the active plan — the next run uses it.
+              {t("activatedNotice", { rev: activatedRev })}
             </p>
           ) : null}
 
@@ -406,7 +490,7 @@ export function PlanPanel({
             </p>
           ) : null}
 
-          {view !== "text" && !editing && (active != null || proposed.length > 0) ? (
+          {view !== "text" && !editing && playbook != null && revisions.length > 0 ? (
             <PlaybookCards
               slug={slug}
               playbook={playbook}
@@ -419,61 +503,53 @@ export function PlanPanel({
             />
           ) : null}
 
-          {active != null && (view === "text" || editing) ? (
-            <>
-              {active.body ? (
-                <p className="mt-2 whitespace-pre-wrap text-sm">
-                  {active.body}
-                </p>
-              ) : null}
-              {active.steps && active.steps.length > 0 ? (
-                <WhoDoesWhat steps={active.steps} hostProfile={hostProfile} />
-              ) : null}
-              {active.steps && active.steps.length > 0 ? (
-                <ol className="mt-2 flex flex-col gap-1">
-                  {active.steps.map((step, index) => (
-                    <li
-                      key={step.key}
-                      className="flex items-baseline gap-2 rounded-lg bg-[var(--color-surface-2)] px-3 py-1.5 text-sm"
-                      style={{
-                        marginLeft: `${((step.depends_on ?? step.needs)?.length ?? 0) > 0 ? 1 : 0}rem`,
-                      }}
-                    >
-                      <span className="text-xs text-[var(--color-muted)]">
-                        {index + 1}.
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        {step.title}
-                        {step.checkpoint ? (
-                          <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-[var(--color-warn-text)]">
-                            checkpoint
-                          </span>
-                        ) : null}
-                        {step.assignee && !hasAssignment(step) ? (
-                          <span className="ml-2 text-xs text-[var(--color-muted)]">
-                            → {step.assignee}
-                          </span>
-                        ) : null}
-                        <AssignmentDetails
-                          assignment={step}
-                          assignee={step.assignee}
-                          hostProfile={hostProfile}
-                          profile={cardByName.get(step.assignee || hostProfile || "")}
-                        />
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
-              <p className="mt-2 text-xs text-[var(--color-muted)]">
-                revision {active.rev}
-                {active.note ? ` · ${active.note}` : ""}
-                {active.activated_at != null
-                  ? ` · activated ${timeLabel(active.activated_at)}`
-                  : ""}
-                {active.created_by ? ` · by ${active.created_by}` : ""}
-              </p>
-            </>
+          {selected != null && !editing && view === "text" ? (
+            <RevisionPicker
+              revisions={revisions}
+              activeRev={activeRev}
+              selected={selected}
+              onSelect={selectRev}
+            />
+          ) : null}
+
+          {selected != null && !editing && view === "text" && comparing && compareBase ? (
+            <RevisionCompare
+              revisions={revisions}
+              activeRev={activeRev}
+              from={compareBase}
+              to={selected}
+              onFrom={setCompareFrom}
+              onTo={(rev) => selectRev(rev)}
+              onSwap={() => {
+                setCompareFrom(selected.rev);
+                selectRev(compareBase.rev);
+              }}
+              onClose={() => setComparing(false)}
+            />
+          ) : null}
+
+          {selected != null && !editing && view === "text" && !(comparing && compareBase) ? (
+            <RevisionBody
+              rev={selected}
+              state={selectedState ?? "active"}
+              hostProfile={hostProfile}
+              cardByName={cardByName}
+            />
+          ) : null}
+
+          {selected != null &&
+          !editing &&
+          selectedState !== "active" &&
+          (view === "text" || selectedState === "proposed") ? (
+            <RevisionDecision
+              key={selected.rev}
+              slug={slug}
+              rev={selected}
+              state={selectedState ?? "proposed"}
+              canActivate={canActivate}
+              archived={archived}
+              onActivated={setActivatedRev}
+            />
           ) : null}
 
           {editing ? (
@@ -619,6 +695,18 @@ export function PlanPanel({
                   </button>
                 </div>
 
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-xs text-[var(--color-muted)]">{t("noteLabel")}</span>
+                  <input
+                    data-component="VersionNote"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    maxLength={200}
+                    placeholder={t("notePlaceholder")}
+                    className={inputClass}
+                  />
+                </label>
+
                 <p className="text-xs text-[var(--color-muted)]">
                   Saving proposes a new revision; nothing changes until a lead
                   activates it.
@@ -646,51 +734,6 @@ export function PlanPanel({
             </BusyRegion>
           ) : null}
 
-          {proposed.length > 0 ? (
-            <div className="mt-3" data-component="ProposedRevisions">
-              <h3 className="text-xs font-medium text-[var(--color-muted)]">
-                Proposed revisions — awaiting a decision
-              </h3>
-              <ul className="mt-1.5 flex flex-col gap-2">
-                {proposed.map((rev) => (
-                  <RevisionRow
-                    key={rev.rev}
-                    slug={slug}
-                    rev={rev}
-                    canActivate={canActivate}
-                    archived={archived}
-                    onActivated={setActivatedRev}
-                    hostProfile={hostProfile}
-                    cardByName={cardByName}
-                  />
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {earlier.length > 0 && !editing ? (
-            <details className="mt-3" data-component="EarlierRevisions">
-              <summary className="cursor-pointer text-xs font-medium text-[var(--color-muted)]">
-                Earlier revisions ({earlier.length}) — not in use
-              </summary>
-              <ul className="mt-1.5 flex flex-col gap-2">
-                {earlier.map((rev) => (
-                  <RevisionRow
-                    key={rev.rev}
-                    slug={slug}
-                    rev={rev}
-                    canActivate={canActivate}
-                    archived={archived}
-                    onActivated={setActivatedRev}
-                    activateLabel="Switch back to this"
-                    hostProfile={hostProfile}
-                    cardByName={cardByName}
-                  />
-                ))}
-              </ul>
-            </details>
-          ) : null}
-
           {error ? (
             <p role="alert" className="mt-2 text-sm text-[var(--color-danger)]">
               {error}
@@ -704,103 +747,151 @@ export function PlanPanel({
   );
 }
 
+
 /**
- * One inactive revision: its prose, steps and provenance, with the lead's
- * Discard + Activate (members see who decides instead).
+ * One version's text and steps, as runs read them: prose, who does what,
+ * then the steps as an indented list (a dependent step sits one level in).
  */
-function RevisionRow({
-  slug,
+function RevisionBody({
   rev,
-  canActivate,
-  archived,
-  onActivated,
-  activateLabel = "Activate",
+  state,
   hostProfile = null,
   cardByName,
 }: {
-  slug: string;
   rev: PlaybookRev;
-  canActivate: boolean;
-  archived: boolean;
-  onActivated: (rev: number) => void;
-  activateLabel?: string;
+  state: RevisionState;
   hostProfile?: string | null;
-  cardByName?: Map<string, AssignableProfile>;
+  cardByName: Map<string, AssignableProfile>;
 }) {
+  const steps = rev.steps ?? [];
   return (
-    <li className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm">
-      {rev.body ? <p className="whitespace-pre-wrap">{rev.body}</p> : null}
-      {(rev.steps ?? []).length > 0 ? (
-        <WhoDoesWhat steps={rev.steps ?? []} hostProfile={hostProfile} />
-      ) : null}
-      {(rev.steps ?? []).length > 0 ? (
-        <ol className="mt-1 flex flex-col gap-0.5 text-xs">
-          {(rev.steps ?? []).map((step, index) => (
-            <li key={step.key}>
-              {index + 1}. {step.title}
-              {step.assignee && !hasAssignment(step) ? ` → ${step.assignee}` : ""}
-              {step.checkpoint ? " · checkpoint" : ""}
-              <AssignmentDetails
-                assignment={step}
-                assignee={step.assignee}
-                hostProfile={hostProfile}
-                profile={cardByName?.get(step.assignee || hostProfile || "")}
-              />
+    <div data-component="PlaybookRevision" data-rev={rev.rev} data-state={state}>
+      {rev.body ? <p className="mt-2 whitespace-pre-wrap text-sm">{rev.body}</p> : null}
+      {steps.length > 0 ? <WhoDoesWhat steps={steps} hostProfile={hostProfile} /> : null}
+      {steps.length > 0 ? (
+        <ol className="mt-2 flex flex-col gap-1">
+          {steps.map((step, index) => (
+            <li
+              key={step.key}
+              className="flex items-baseline gap-2 rounded-lg bg-[var(--color-surface-2)] px-3 py-1.5 text-sm"
+              style={{
+                marginLeft: `${((step.depends_on ?? step.needs)?.length ?? 0) > 0 ? 1 : 0}rem`,
+              }}
+            >
+              <span className="text-xs text-[var(--color-muted)]">{index + 1}.</span>
+              <span className="min-w-0 flex-1">
+                {step.title}
+                {step.checkpoint ? (
+                  <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-[var(--color-warn-text)]">
+                    checkpoint
+                  </span>
+                ) : null}
+                {step.assignee && !hasAssignment(step) ? (
+                  <span className="ml-2 text-xs text-[var(--color-muted)]">→ {step.assignee}</span>
+                ) : null}
+                <AssignmentDetails
+                  assignment={step}
+                  assignee={step.assignee}
+                  hostProfile={hostProfile}
+                  profile={cardByName.get(step.assignee || hostProfile || "")}
+                />
+              </span>
             </li>
           ))}
         </ol>
       ) : (
-        <p className="text-[var(--color-muted)]">no steps</p>
+        <p className="mt-2 text-sm text-[var(--color-muted)]">no steps</p>
       )}
-      <div className="mt-1.5 flex items-center gap-2">
-        <p className="min-w-0 flex-1 text-xs text-[var(--color-muted)]">
-          revision {rev.rev}
-          {rev.note ? ` · ${rev.note}` : ""}
-          {rev.created_by ? ` · by ${rev.created_by}` : ""}
-        </p>
-        {!archived && canActivate ? (
-          <>
-            <DiscardRevision slug={slug} rev={rev.rev} />
-            <ActivateRevision
-              slug={slug}
-              rev={rev.rev}
-              label={activateLabel}
-              onActivated={onActivated}
-            />
-          </>
-        ) : null}
-        {!archived && !canActivate ? (
-          <span className="text-xs text-[var(--color-muted)]">
-            a lead activates or discards
-          </span>
-        ) : null}
-      </div>
-    </li>
+    </div>
   );
 }
 
 /**
- * A lead's Discard on one proposed revision — "this draft is wrong",
- * the paired decision to Activate. Refused server-side when the rev is
+ * The decision bar under a version that is not in use: what making it
+ * active means, then the lead's Discard + Make active (members see who
+ * decides). A version saved without a note can be given one here — it
+ * rides on the activate call.
+ */
+function RevisionDecision({
+  slug,
+  rev,
+  state,
+  canActivate,
+  archived,
+  onActivated,
+}: {
+  slug: string;
+  rev: PlaybookRev;
+  state: RevisionState;
+  canActivate: boolean;
+  archived: boolean;
+  onActivated: (rev: number) => void;
+}) {
+  const t = useT("playbook");
+  const [note, setNote] = useState("");
+  const addsNote = !archived && canActivate && !rev.note?.trim();
+  return (
+    <div
+      data-component="RevisionDecision"
+      data-state={state}
+      className={`mt-3 flex flex-col gap-2 rounded-xl border px-3 py-2.5 text-sm ${
+        state === "proposed"
+          ? "border-dashed border-[var(--color-warn)] bg-[var(--color-attention-bg)]"
+          : "border-[var(--color-border)] bg-[var(--color-surface-2)]"
+      }`}
+    >
+      <p>{t(state === "proposed" ? "proposedBanner" : "earlierBanner", { rev: rev.rev })}</p>
+      {addsNote ? (
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-[var(--color-muted)]">{t("noteLabel")}</span>
+          <input
+            data-component="ActivationNote"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={200}
+            placeholder={t("notePlaceholder")}
+            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
+          />
+        </label>
+      ) : null}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {!archived && canActivate ? (
+          <>
+            <DiscardRevision slug={slug} rev={rev.rev} />
+            <ActivateRevision slug={slug} rev={rev.rev} note={note} onActivated={onActivated} />
+          </>
+        ) : null}
+        {!archived && !canActivate ? (
+          <span className="text-xs text-[var(--color-muted)]">{t("leadDecides")}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A lead's Discard on one inactive revision — "this draft is wrong",
+ * the paired decision to Make active. Refused server-side when the rev is
  * active or a run pinned it (then the error surfaces inline).
  */
 function DiscardRevision({ slug, rev }: { slug: string; rev: number }) {
+  const t = useT("playbook");
   const action = useProjectAction();
   return (
     <>
       <ActionButton
         data-action="discard-revision"
         busy={action.busy}
-        pendingLabel="Discarding…"
+        pendingLabel={t("discarding")}
         onClick={() =>
           void action.run(
             `/api/projects/${encodeURIComponent(slug)}/playbook/${rev}`,
             { method: "DELETE" },
           )
         }
-        className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-xs disabled:opacity-50"
+        className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-border)] px-3 text-sm disabled:opacity-50"
       >
-        Discard
+        {t("discard")}
       </ActionButton>
       <ActionError
         action={action}
@@ -811,36 +902,37 @@ function DiscardRevision({ slug, rev }: { slug: string; rev: number }) {
 }
 
 /**
- * A lead's Activate on one proposed revision — its own lock, so activating
- * one revision never leaves another row looking idle mid-write.
+ * A lead's Make active on one revision — its own lock, so activating
+ * never leaves another control looking idle mid-write.
  */
 function ActivateRevision({
   slug,
   rev,
-  label,
+  note,
   onActivated,
 }: {
   slug: string;
   rev: number;
-  label: string;
+  note: string;
   onActivated: (rev: number) => void;
 }) {
+  const t = useT("playbook");
   const action = useProjectAction();
   return (
     <>
       <ActionButton
         data-action="activate-revision"
         busy={action.busy}
-        pendingLabel="Activating…"
+        pendingLabel={t("activating")}
         onClick={() =>
           void action.run(
             `/api/projects/${encodeURIComponent(slug)}/playbook/${rev}/activate`,
-            { body: {}, onSuccess: () => onActivated(rev) },
+            { body: note.trim() ? { note: note.trim() } : {}, onSuccess: () => onActivated(rev) },
           )
         }
-        className="rounded-lg bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
+        className="inline-flex min-h-11 items-center rounded-lg bg-[var(--color-accent)] px-3 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
       >
-        {label}
+        {t("makeActive")}
       </ActionButton>
       <ActionError
         action={action}
