@@ -7,9 +7,10 @@
 #
 #   sudo -n -u hermes /usr/local/sbin/hermes-tools-cli <args>
 #
-# `hermes tool config NAME --file F` is the one command that names a file: it is
-# read here, as hermes-tools, and passed on as --json, so the helper never opens
-# a path chosen by the agent. Install only a root-owned copy:
+# Files the agent names are read here, as hermes-tools, so the helper never opens
+# a path chosen by the agent: `hermes tool config NAME --file F` is passed on as
+# --json, and `hermes projects create --description F` / `hermes projects playbook
+# SLUG save F` become stdin ('-'). Install only a root-owned copy:
 #
 #   install -D -m 0755 -o root -g root deploy/hermes-tools-shim /usr/local/lib/hermes-tools/bin/hermes
 set -euo pipefail
@@ -38,5 +39,21 @@ if (( is_tool_config )); then
     i=$((i + 1))
   done
   args=("${out[@]}")
+fi
+stdin_file=
+if [[ ${#args[@]} -ge 1 && ${args[0]} == projects ]]; then
+  for ((i = 1; i < ${#args[@]}; i++)); do
+    a=${args[i]}
+    if [[ $a == --description && $((i + 1)) -lt ${#args[@]} && ${args[i+1]} != - ]]; then
+      stdin_file=${args[i+1]}; args[i+1]=-
+    elif [[ $a == --description=* && $a != --description=- ]]; then
+      stdin_file=${a#--description=}; args[i]=--description=-
+    elif [[ $a == playbook && $((i + 3)) -lt ${#args[@]} && ${args[i+2]} == save && ${args[i+3]} != - ]]; then
+      stdin_file=${args[i+3]}; args[i+3]=-
+    fi
+  done
+fi
+if [[ -n $stdin_file ]]; then
+  exec sudo -n -u hermes /usr/local/sbin/hermes-tools-cli "${args[@]}" < "$stdin_file"
 fi
 exec sudo -n -u hermes /usr/local/sbin/hermes-tools-cli "${args[@]}"

@@ -45,9 +45,15 @@ KEEP_ENV = {
 }
 #: The requester ticket the gateway mints per chat turn (hermes_cli/principal_ticket.py).
 #: Verified here with the key only hermes can read, and turned into
-#: ``hermes tool --as=<user>``; ``hermes tool`` refuses to run without it.
+#: ``hermes tool --as=<user>`` (``hermes tool`` refuses to run without it) or
+#: ``hermes projects --actor=<user>`` (refused here without it: that CLI would
+#: otherwise act as the owner).
 TICKET_ENV = "HERMES_PRINCIPAL_TICKET"
 TICKET_KEY = "auth/principal-ticket.key"
+#: The chat a ``projects create --from-chat`` runs in (gateway session var),
+#: kept only for that command; the CLI finds the profile holding it and requires
+#: its owner to be the ticket's person, and that profile hosts the project.
+SESSION_ENV = {"HERMES_SESSION_ID": re.compile(r"[A-Za-z0-9_.:-]{1,128}")}
 TICKET_RE = re.compile(r"v1\.([A-Za-z0-9_-]{1,1024})\.([0-9]{1,16})\.([A-Za-z0-9_-]{43})")
 MAX_ARGS = 256
 MAX_ARG_LEN = 256 * 1024
@@ -67,6 +73,63 @@ _KANBAN_LIST = {"--mine": F, "--assignee": V, "--status": V, "--tenant": V,
 _CRON_JOB = {"--name": V, "--deliver": V, "--repeat": V, "--skill": V,
              "--script": V, "--no-agent": F, "--workdir": V}
 _VPN = {"--json": F}
+#: Text read from stdin only: the shim turns a file the agent names into stdin.
+STDIN = frozenset({"-"})
+CADENCES = frozenset({"one_off", "repeatable", "standing"})
+_NUM = re.compile(r"[0-9]{1,9}")
+#: A project slug/ref or step key: one URL path segment, never ``..`` or ``/``.
+_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+ARGS = "args"  # a leaf's check of its positional arguments
+
+
+def _one(what):
+    def check_args(pos):
+        if len(pos) != 1:
+            raise Refused(f"needs exactly one {what}")
+    return check_args
+
+
+def _json_arg(value):
+    if value != "-" and not value.lstrip().startswith("{"):
+        raise Refused("give the JSON inline ({...}) or '-' for stdin, never a path")
+
+
+#: ``playbook <slug> [show [rev] | save - | draft <verb> ...]``. ``save`` (propose a
+#: revision) reads stdin; ``activate`` is a person's act and stays off.
+#: Phase 8 co-create: the agent edits only the chatting person's working draft.
+#: A new ``draft`` verb the projects skill needs goes in PLAYBOOK_DRAFT.
+PLAYBOOK_DRAFT = {
+    "show": 0,
+    "discard": 0,
+    "set": 1,         # <json>
+    "patch-step": 2,  # <key> <json>
+}
+
+
+def _playbook_args(pos):
+    if not pos:
+        raise Refused("`hermes projects playbook` needs a project")
+    if not _NAME.fullmatch(pos[0]):
+        raise Refused("the project must be its slug or ref")
+    action, rest = (pos[1], pos[2:]) if len(pos) > 1 else ("show", [])
+    if action == "show":
+        if len(rest) > 1 or (rest and not _NUM.fullmatch(rest[0])):
+            raise Refused("playbook show takes at most a revision number")
+    elif action == "save":
+        if rest != ["-"]:
+            raise Refused("playbook save reads the spec from stdin ('-')")
+    elif action == "draft":
+        verb, extra = (rest[0], rest[1:]) if rest else ("show", [])
+        if verb not in PLAYBOOK_DRAFT:
+            raise Refused(f"`playbook draft {verb}` is not available")
+        if len(extra) != PLAYBOOK_DRAFT[verb]:
+            raise Refused(f"playbook draft {verb} takes {PLAYBOOK_DRAFT[verb]} argument(s)")
+        if extra:
+            _json_arg(extra[-1])
+        if verb == "patch-step" and ("/" in extra[0] or extra[0] in (".", "..")):
+            raise Refused("the step key must be one name")
+    else:
+        raise Refused(f"`hermes projects playbook {action}` is not available")
 
 #: command -> {"opts": options at this level, "subs": subcommands} or leaf options.
 #: Anything not listed, at any level, is refused: hermes config/auth/dashboard/
@@ -139,6 +202,17 @@ COMMANDS = {
         "inspect": {},
     }},
     "memory": {"subs": {"status": {}}},
+    # Start a project from chat and propose its playbook, as the chatting person
+    # (ticket -> --actor; an --actor given must be that person). The host is the
+    # chat's profile. Off: --as-human, --host-profile, delete/archive/restore,
+    # activate, run, members.
+    "projects": {"opts": {"--actor": V}, "subs": {
+        "create": {ARGS: _one("goal sentence"), "--description": STDIN, "--output": V,
+                   "--name": V, "--cadence": CADENCES, "--audience": V, "--goal-id": V,
+                   "--from-chat": re.compile(r"[1-5]"), "--chat-summary": V, "--json": F},
+        "playbook": {ARGS: _playbook_args, "--note": V, "--after": V,
+                     "--expected-version": _NUM, "--from-rev": _NUM, "--json": F},
+    }},
 }
 HELP = {"-h": F, "--help": F}
 
@@ -165,7 +239,7 @@ def _option(argv, i, opts):
         _check_value(name, spec, value)
         return i + 1
     if spec is not F:
-        if i + 1 >= len(argv) or argv[i + 1].startswith("-"):
+        if i + 1 >= len(argv) or (argv[i + 1].startswith("-") and argv[i + 1] != "-"):
             raise Refused(f"{name} needs a value (write {name}=VALUE if it starts with '-')")
         _check_value(name, spec, argv[i + 1])
         return i + 2
@@ -196,9 +270,17 @@ def check(argv):
         path.append(tok)
         node = node["subs"][tok]
         i += 1
-    opts = {**HELP, **node}
+    opts = {**HELP, **{k: v for k, v in node.items() if k != ARGS}}
+    positional, helped = [], False
     while i < len(argv):
-        i = _option(argv, i, opts) if argv[i].startswith("-") else i + 1
+        if argv[i].startswith("-") and argv[i] != "-":
+            helped = helped or argv[i] in HELP
+            i = _option(argv, i, opts)
+        else:
+            positional.append(argv[i])
+            i += 1
+    if ARGS in node and not helped:
+        node[ARGS](positional)
     return path
 
 
@@ -289,18 +371,56 @@ def _ticket_key(home, uids, bad_gids):
         return fh.read().strip()
 
 
-def as_requester(path, argv, ticket, key, now_ms=None):
-    """``(argv, ticket)`` for the real CLI: a verified ticket becomes ``tool --as=<user>``.
+#: Commands that act as the chatting person, and the option that names them.
+AS_REQUESTER = {"tool": "--as", "projects": "--actor"}
 
-    Only ``hermes tool …`` acts on it. Anything else, or a ticket that does not
-    verify, passes no ticket on, and ``hermes tool`` then refuses (fails closed).
+
+def as_requester(path, argv, ticket, key, now_ms=None):
+    """``(argv, ticket)`` for the real CLI: a verified ticket becomes
+    ``tool --as=<user>`` or ``projects --actor=<user>``.
+
+    Anything else passes no ticket on. For ``hermes tool`` a ticket that does not
+    verify passes nothing on and the CLI refuses (fails closed); ``hermes projects``
+    would act as the owner without one, so it is refused here.
     """
-    if not path or path[0] != "tool":
+    if not path or path[0] not in AS_REQUESTER:
         return argv, ""
     user_id = verify_ticket(ticket, key, now_ms)
     if user_id is None:
+        if path[0] == "projects":
+            raise Refused("`hermes projects` runs only for the person in this chat "
+                          "(no valid requester ticket)")
         return argv, ""
-    return [argv[0], f"--as={user_id}", *argv[1:]], ticket
+    rest = argv[1:]
+    if path[0] == "projects":
+        rest, named = _without_option(rest, "--actor")
+        if any(n != user_id for n in named):
+            raise Refused("--actor can only be the person in this chat")
+    return [argv[0], f"{AS_REQUESTER[path[0]]}={user_id}", *rest], ticket
+
+
+def _without_option(argv, name):
+    """``(argv without NAME and its values, the values)``."""
+    out, values, i = [], [], 0
+    while i < len(argv):
+        if argv[i] == name and i + 1 < len(argv):
+            values.append(argv[i + 1])
+            i += 2
+        elif argv[i].startswith(name + "="):
+            values.append(argv[i].partition("=")[2])
+            i += 1
+        else:
+            out.append(argv[i])
+            i += 1
+    return out, values
+
+
+def session_args(path, environ):
+    """The chat env a ``projects create`` runs in (checked), else nothing."""
+    if path != ["projects", "create"]:
+        return {}
+    return {k: environ[k] for k, pattern in SESSION_ENV.items()
+            if environ.get(k) and pattern.fullmatch(environ[k])}
 
 
 def main(argv):
@@ -340,16 +460,22 @@ def main(argv):
         value = os.environ.get(key, "")
         if value and pattern.fullmatch(value):
             env[key] = value
-    env.pop(TICKET_ENV, None)
+    for key in (TICKET_ENV, *SESSION_ENV):
+        env.pop(key, None)
     ticket = os.environ.get(TICKET_ENV, "")
-    if path[0] == "tool" and ticket:
+    if path[0] in AS_REQUESTER and (ticket or path[0] == "projects"):
         try:
             ticket_key = _ticket_key(conf["HERMES_HOME"], {0, me.pw_uid}, bad_gids)
         except (Refused, OSError):
             ticket_key = b""
-        argv, ticket = as_requester(path, argv, ticket, ticket_key)
+        try:
+            argv, ticket = as_requester(path, argv, ticket, ticket_key)
+        except Refused as exc:
+            print(f"hermes: refused: {exc}.", file=sys.stderr)
+            return 2
         if ticket:
             env[TICKET_ENV] = ticket
+    env.update(session_args(path, os.environ))
     env.update({
         "HERMES_HOME": conf["HERMES_HOME"],
         "HOME": me.pw_dir,

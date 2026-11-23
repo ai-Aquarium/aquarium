@@ -534,14 +534,9 @@ async def _from_chat(args) -> dict:
     session_id = _session_env("HERMES_SESSION_ID")
     if not session_id:
         raise ValueError("no chat: run it from the chat that asked for the project")
-    profile = _session_env("HERMES_SESSION_PROFILE") or chat_refs.acting_profile_name()
-    db = projects_chat_api._session_db(profile)  # noqa: SLF001 - same package
-    if db is None:
-        raise ValueError(f"no chats on profile {profile!r}")
-    try:
-        owner = db.session_owner_user_id(session_id)
-    finally:
-        db.close()
+    bound = _session_env("HERMES_SESSION_PROFILE")
+    profile, owner = _chat_owner(session_id, bound or chat_refs.acting_profile_name(),
+                                 search=not bound)
     if not owner:
         raise ValueError("this chat has no owner to quote")
     ticket = os.environ.get(principal_ticket.ENV_VAR, "").strip()
@@ -554,7 +549,29 @@ async def _from_chat(args) -> dict:
         profile=profile, session_id=session_id, user_id=owner, count=args.from_chat,
     )
     name = await projects_chat_api._display_name(owner) or owner  # noqa: SLF001
-    return {"user_id": owner, "name": name, "request": request}
+    return {"user_id": owner, "name": name, "request": request, "profile": profile}
+
+
+def _chat_owner(session_id: str, profile: str, *, search: bool):
+    """``(profile, owner)`` of the chat: on *profile*, or — when the session
+    did not say which profile it runs on (Agent Home) — the profile whose
+    chats hold it."""
+    from hermes_cli import chat_refs, projects_chat_api
+
+    names = [profile]
+    if search:
+        names += [n for n, _home in chat_refs.profile_homes() if n != profile]
+    for name in names:
+        db = projects_chat_api._session_db(name)  # noqa: SLF001 - same package
+        if db is None:
+            continue
+        try:
+            owner = db.session_owner_user_id(session_id)
+        finally:
+            db.close()
+        if owner:
+            return name, owner
+    return profile, None
 
 
 def _seed_project(slug: str, args) -> dict:
@@ -591,7 +608,9 @@ def _cmd_create(api: _Api, args) -> int:
     body: dict[str, Any] = {
         "goal": args.goal,
         "description": description,
-        "host_profile": args.host_profile,
+        "host_profile": args.host_profile
+        or (getattr(args, "chat", None) or {}).get("profile")
+        or "default",
         "outputs": [{"title": t} for t in args.output],
     }
     if args.name:
@@ -1080,8 +1099,11 @@ def _cmd_playbook(api: _Api, args) -> int:
             )
             return 2
         try:
-            with open(os.path.expanduser(args.file_or_rev), encoding="utf-8") as fh:
-                spec = json.load(fh)
+            if args.file_or_rev == "-":
+                spec = json.load(sys.stdin)
+            else:
+                with open(os.path.expanduser(args.file_or_rev), encoding="utf-8") as fh:
+                    spec = json.load(fh)
         except (OSError, ValueError) as exc:
             print(f"projects: cannot read playbook file: {exc}", file=sys.stderr)
             return 2
@@ -1564,7 +1586,9 @@ def register_projects_subparser(
         "--cadence", default=None, choices=["one_off", "repeatable", "standing"]
     )
     create.add_argument(
-        "--host-profile", default="default", help="The profile runs start in"
+        "--host-profile", default=None,
+        help="The profile runs start in (default: the chat's profile with "
+        "--from-chat, else default)"
     )
     create.add_argument("--audience", default=None, help="Who the outputs are for")
     create.add_argument("--goal-id", default=None, help="Linked FG-29 goal id")
