@@ -56,7 +56,8 @@ def _mask_fences(content: str) -> str:
     A fence closes only at a line of the same character at least as long as
     its opener, so a ``````skill-draft`````` block holding a nested ```` ``` ````
     example stays one block (the gateway's masker pairs any two ```` ``` ````).
-    An unclosed fence runs to the end.
+    Used together with the gateway's masker (:func:`_protected_scan`), which
+    covers same-length nesting that CommonMark would close early.
     """
     chars = list(content)
     pos = 0
@@ -69,14 +70,47 @@ def _mask_fences(content: str) -> str:
             pos = opener.end()  # backticks in the info string: not a fence
             continue
         closer = re.compile(
-            r"^ {0,3}" + re.escape(fence[0]) + "{%d,}[ \t]*$" % len(fence), re.MULTILINE
+            r"^ {0,3}" + re.escape(fence[0]) + "{%d,}[ \t]*\r?$" % len(fence), re.MULTILINE
         ).search(content, opener.end())
-        end = closer.end() if closer else len(content)
+        if closer is None:
+            pos = opener.end()  # unclosed: leave it to the gateway's masker
+            continue
+        end = closer.end()
         for i in range(opener.start(), end):
             if chars[i] != "\n":
                 chars[i] = " "
         pos = end
     return "".join(chars)
+
+
+def _protected_scan(content: str) -> str:
+    """*content* with every span either masker treats as code blanked."""
+    from gateway.platforms.base import BasePlatformAdapter
+
+    gateway = BasePlatformAdapter._mask_protected_spans(content)
+    fences = _mask_fences(content)
+    scan = "".join(
+        " " if (g == " " or f == " ") and c != "\n" else c
+        for c, g, f in zip(content, gateway, fences)
+    )
+    return BasePlatformAdapter._mask_json_string_media(scan)
+
+
+def _in_managed_root(path: str) -> bool:
+    """True for Hermes caches and operator allow dirs (screenshots, exports ...).
+
+    The gateway trusts these unconditionally; tools such as browser_vision
+    write there on a member's behalf, outside the member's own folder.
+    """
+    from gateway.platforms.base import _media_delivery_allowed_roots, _path_is_within
+
+    for root in _media_delivery_allowed_roots():
+        try:
+            if _path_is_within(Path(path), root.expanduser().resolve(strict=False)):
+                return True
+        except (OSError, RuntimeError, ValueError):
+            continue
+    return False
 
 
 def _label(name: str) -> str:
@@ -168,7 +202,7 @@ class _Uploader:
         safe = validate_media_delivery_path(path)
         if not safe:
             return _note(name, "file is outside the folders the app can share")
-        if check_file_access(Path(safe)):
+        if not _in_managed_root(safe) and check_file_access(Path(safe)):
             return _note(name, "file is outside your own folder")
         try:
             size = os.stat(safe).st_size
@@ -257,8 +291,7 @@ async def rewrite_media_tags(
         _normalize_media_tag_path,
     )
 
-    scan = BasePlatformAdapter._mask_protected_spans(_mask_fences(content))
-    scan = BasePlatformAdapter._mask_json_string_media(scan)
+    scan = _protected_scan(content)
     # The shared tag regex lets an unquoted path contain spaces, so it can run
     # on past the file ("MEDIA:/a/c.png and MEDIA:/a/d.csv" is one match).
     # Cut such a match at the first extension that names an existing file.

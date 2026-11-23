@@ -405,7 +405,32 @@ def test_nested_fence_examples_in_a_longer_fence_are_left_alone(tmp_path):
     assert out.endswith(")") and "![c.png](" in out
 
 
-def test_unclosed_fence_hides_the_rest():
-    content = "```\nMEDIA:/tmp/never.png"
-    out, edits, storage, _ = _rewrite(content)
-    assert out == content and edits == [] and storage.uploads == []
+def test_same_length_nested_fences_in_a_draft_are_left_alone(tmp_path):
+    chart = tmp_path / "c.png"
+    chart.write_bytes(PNG)
+    example = f"MEDIA:{tmp_path}/report.pdf"
+    draft = (
+        "```skill-draft\n# Skill\n```bash\nmake\n```\n"
+        f"Then reply with {example}\n```sh\necho {example}\n```\n```\n"
+    )
+    out, edits, storage, _ = _rewrite(f"{draft}Here: MEDIA:{chart}")
+    assert out.startswith(draft)
+    assert len(edits) == 1 and "![c.png](" in out
+
+
+def test_crlf_fences_do_not_hide_later_attachments(tmp_path):
+    chart = tmp_path / "c.png"
+    chart.write_bytes(PNG)
+    block = "````\r\nMEDIA:/tmp/example.png\r\n````\r\n"
+    out, edits, _, _ = _rewrite(f"{block}Chart: MEDIA:{chart}\r\n")
+    assert out.startswith(block)
+    assert len(edits) == 1 and "![c.png](" in out
+
+
+def test_member_attaches_a_screenshot_from_the_hermes_cache():
+    from gateway.platforms import base
+
+    shot = _old_file(base._HERMES_HOME / "cache" / "screenshots" / "shot.png", PNG)
+    out, storage = _rewrite_as(MIA, f"MEDIA:{shot}")
+    assert out.startswith("![shot.png](/api/chat/media?path=mia%2Ffiles%2F")
+    assert len(storage.uploads) == 1
