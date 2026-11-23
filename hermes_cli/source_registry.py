@@ -817,7 +817,8 @@ async def display_name_for(user_id: Optional[str]) -> Optional[str]:
         return None
     for e in await enrolments(user_id, store_factory=principal_store_factory()):
         display = str(getattr(e.principal, "display", "") or "").strip()
-        if display:
+        # Enrolment stores the login email as the display when none was given.
+        if display and not _EMAIL.match(display):
             return display[:MAX_DISPLAY_CHARS]
     return None
 

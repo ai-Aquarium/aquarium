@@ -241,3 +241,26 @@ def test_drafts_carry_the_owners_display_name(env, monkeypatch):
     assert client.get(_url(project, "/me")).json()["draft"]["display_name"] is None
     state["actor"] = OWNER
     assert client.get(_url(project, "/me")).json()["draft"]["display_name"] == "Leo Lau"
+
+
+def test_draft_names_never_show_a_login_email(env, monkeypatch):
+    """Enrolment stores the email as the display when none was given; drafts show the id instead."""
+    from types import SimpleNamespace
+
+    from hermes_cli import console_scope
+
+    client, state = env
+    project = _project_with_active_plan(env)
+    displays = {"leo": ["leo@example.com", "Leo Lau"], "ada": ["ada@example.com"]}
+
+    async def _enrolments(user_id, store_factory=None):
+        return [SimpleNamespace(principal=SimpleNamespace(display=d)) for d in displays[user_id]]
+
+    monkeypatch.setattr(console_scope, "enrolments", _enrolments)
+    monkeypatch.setattr(console_scope, "principal_store_factory", lambda: None)
+    client.put(_url(project, "/me"), json={"body": "Leo's idea"})
+    state["actor"] = MEMBER_P
+    client.put(_url(project, "/me"), json={"body": "Ada's idea"})
+
+    names = {d["user_id"]: d["display_name"] for d in client.get(_url(project)).json()["drafts"]}
+    assert names == {"leo": "Leo Lau", "ada": None}
