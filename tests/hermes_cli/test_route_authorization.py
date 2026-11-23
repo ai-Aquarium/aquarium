@@ -51,6 +51,8 @@ PUBLIC = {
     "GET /auth/login",
     "GET /auth/callback",
     "POST /auth/password-login",
+    # rotates a session from its refresh-token cookie; a dead/missing RT gets 401
+    "POST /auth/refresh",
     "POST /auth/logout",
     # rotates a session from its own refresh-token cookie; 401 without one
     "POST /auth/refresh",
