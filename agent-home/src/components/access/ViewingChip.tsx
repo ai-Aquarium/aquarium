@@ -17,9 +17,10 @@ function loadRoster(): Promise<ViewablePeople | null> {
   return roster;
 }
 
-export function useViewableRoster(): ViewablePeople | null {
+export function useViewableRoster(enabled = true): ViewablePeople | null {
   const [people, setPeople] = useState<ViewablePeople | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     let live = true;
     void loadRoster().then((r) => {
       if (live) setPeople(r);
@@ -27,7 +28,7 @@ export function useViewableRoster(): ViewablePeople | null {
     return () => {
       live = false;
     };
-  }, []);
+  }, [enabled]);
   return people;
 }
 

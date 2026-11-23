@@ -504,8 +504,8 @@ def personal_view(principal: Principal) -> Principal:
     """``principal`` reading as a member: the "Whose data" default (FG-38).
 
     For *listing* what is the caller's own on surfaces that bypass scoping
-    for the owner/admin (projects, boards, activity). Never use it to
-    authorize a write: it only drops authority, for the length of one read.
+    for the owner/admin (projects, boards, activity), and for gating a write
+    to what is the caller's own. It only ever drops authority.
     """
     if getattr(principal, "role", None) not in ("owner", "admin"):
         return principal

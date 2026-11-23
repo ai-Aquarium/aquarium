@@ -76,8 +76,11 @@ export function TodoRow({
   onStage,
   busy = false,
   from = "",
+  badge = null,
 }: {
   todo: Todo;
+  /** Whose it is, when not the viewer's (view-only, "Whose data"). */
+  badge?: React.ReactNode;
   /** The list's query string, so the detail page's Back restores the filters. */
   from?: string;
   /** Move the to-do along; the list owns the request and the optimism. */
@@ -95,6 +98,7 @@ export function TodoRow({
           staged ? "opacity-70" : ""
         }`}
       >
+        {badge ? <div className="mb-1 flex">{badge}</div> : null}
         <Link
           href={`/todos/${encodeURIComponent(todo.id)}${from ? `?from=${encodeURIComponent(from)}` : ""}`}
           className="flex items-start gap-2"

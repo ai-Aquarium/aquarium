@@ -591,3 +591,21 @@ def test_agent_home_turns_select_the_agent_home_prompt_hint(client, capture_turn
     resp = client.post(f"/api/sessions/s-hint/{path}", json={"message": "hi"})
     assert resp.status_code == 200
     assert capture_turn["kwargs"]["prompt_platform"] == "agent_home"
+
+
+def test_run_approval_is_answered_only_by_whoever_asked(client, monkeypatch):
+    """Seeing someone's chat (FG-38 "Whose data") is not answering for them."""
+    from hermes_cli import web_server
+    from tools import approval as _ap
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("resolved someone else's approval")
+
+    monkeypatch.setattr(_ap, "resolve_gateway_approval", _boom)
+    monkeypatch.setattr(
+        _ap, "list_pending_gateway_approvals",
+        lambda keys: [{"session_key": "run_abc", "requester_user_id": "someone-else"}],
+    )
+    monkeypatch.setattr(web_server, "_comms_session_subject", lambda request: "leo")
+    resp = client.post("/v1/runs/run_abc/approval", json={"choice": "approve"})
+    assert resp.status_code == 403

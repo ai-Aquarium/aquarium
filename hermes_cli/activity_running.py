@@ -296,8 +296,12 @@ def cron_items(
 
     running: list[tuple[str, dict]] = []
     for profile, cron_dir in dirs:
-        for job in list_running_jobs(cron_dir):
-            running.append((profile, job))
+        live = list_running_jobs(cron_dir)
+        # A running marker carries no owner: the job record has it.
+        stored = {j.get("id"): j.get("owner_user_id") for j in _read_jobs(cron_dir)} if live else {}
+        for job in live:
+            owner = job.get("owner_user_id") or stored.get(job["job_id"])
+            running.append((profile, {**job, "owner_user_id": owner} if owner else job))
     if not running:
         return []
 
@@ -401,8 +405,14 @@ def scheduled_summary(
     enrolled: Iterable[str],
     job_dirs: Optional[Iterable[tuple[str, Path]]] = None,
     mine: Optional[str] = None,
+    owners: Optional[Iterable[str]] = None,
+    personal: Optional[tuple[Any, Iterable[str]]] = None,
 ) -> dict[str, Any]:
     """What is waiting on time, counted for the caller.
+
+    With ``owners`` (a widened "Whose data" view) only the picked people's
+    schedules count, plus what ``personal`` (``(reader, enrolled)`` of the
+    caller's own view) would count; each schedule once.
 
     * ``projects`` — active, unarchived projects with a schedule the caller
       can read (``_can_read``);
@@ -425,6 +435,9 @@ def scheduled_summary(
 
     enrolled_set = set(enrolled)
     admin = _instance_admin(principal)
+    picked = set(owners) if owners is not None else None
+    reader, reader_enrolled = personal if personal else (None, ())
+    reader_enrolled = set(reader_enrolled)
     card_counts = _scheduled_card_counts(principal)
     next_runs: list[int] = []
     projects = 0
@@ -452,6 +465,11 @@ def scheduled_summary(
             profiles = projects_db.get_project_profiles(conn, project.id)
             if not _can_read(project, role, principal, enrolled_set, profiles):
                 continue
+            if picked is not None and project.owner_user_id not in picked and not (
+                reader is not None
+                and _can_read(project, role, reader, reader_enrolled, profiles)
+            ):
+                continue
             if pid in scheduled_ids and _has_active_schedule(project):
                 projects += 1
                 if project.next_run_at:
@@ -467,7 +485,11 @@ def scheduled_summary(
             for job in _read_jobs(cron_dir):
                 if not job.get("enabled", True) or job.get("id") in linked_jobs:
                     continue
-                if not admin and job.get("owner_user_id") != mine:
+                owner = job.get("owner_user_id")
+                if picked is not None:
+                    if owner != mine and owner not in picked:
+                        continue
+                elif not admin and owner != mine:
                     continue
                 cron_jobs += 1
                 when = _iso_epoch(job.get("next_run_at"))

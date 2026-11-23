@@ -459,3 +459,29 @@ def test_route_signed_in_owner_opens_on_just_me(route, monkeypatch):
     assert client.get("/api/activity/running").json() == []
     body = client.get("/api/activity/running?owners=leo,eve").json()
     assert [(i["id"], i["owner_user_id"]) for i in body] == [("s-eve", "eve")]
+
+
+def test_a_running_standalone_job_is_its_owner_s(env, tmp_path):
+    # The live marker carries no owner; the job record does.
+    cron_dir = tmp_path / "cron"
+    _jobs_file(cron_dir, [{"id": "job-a", "name": "Ada's digest", "owner_user_id": "ada"}])
+    _marker(cron_dir, "job-a", "Ada's digest")
+    dirs = [("default", cron_dir)]
+    [row] = act.cron_items(MEMBER_P, set(), dirs, mine="ada")
+    assert row["owner_user_id"] == "ada"
+    assert act.cron_items(MEMBER_P, set(), dirs, mine="sam") == []
+
+
+def test_a_widened_schedule_counts_only_the_picked_people(env, tmp_path):
+    cron_dir = tmp_path / "cron"
+    _jobs_file(cron_dir, [
+        {"id": "job-l", "name": "Mine", "enabled": True, "owner_user_id": "leo"},
+        {"id": "job-a", "name": "Ada's", "enabled": True, "owner_user_id": "ada"},
+        {"id": "job-s", "name": "Sam's", "enabled": True, "owner_user_id": "sam"},
+    ])
+    dirs = [("default", cron_dir)]
+    everyone = _counts(act.scheduled_summary(OWNER, set(), job_dirs=dirs))
+    picked = _counts(act.scheduled_summary(
+        OWNER, set(), job_dirs=dirs, mine="leo", owners={"ada"},
+    ))
+    assert everyone[2] == 3 and picked[2] == 2
