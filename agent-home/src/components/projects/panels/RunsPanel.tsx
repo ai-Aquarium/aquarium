@@ -128,14 +128,17 @@ const ROW_PENDING: Record<RunRowAction, string> = {
  * Continue / Cancel / Stop for one live run. Its own action lock, so steering
  * one run never blocks (or is mistaken for) another row's write.
  */
-function RunRowActions({
+export function RunRowActions({
   slug,
   runNo,
   status,
+  large = false,
 }: {
   slug: string;
   runNo: number;
   status: ProjectRunStatus;
+  /** 44px buttons (the Execution tab's current run). */
+  large?: boolean;
 }) {
   const { ask, dialog } = useConfirm();
   const action = useProjectAction();
@@ -147,8 +150,8 @@ function RunRowActions({
       `/api/projects/${encodeURIComponent(slug)}/runs/${runNo}/${next}`,
     );
   };
-  const actionClass =
-    "rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-xs disabled:opacity-50";
+  const size = large ? "min-h-11 px-4 text-sm" : "px-2.5 py-1 text-xs";
+  const actionClass = `rounded-lg border border-[var(--color-border)] ${size} disabled:opacity-50`;
   const pending = (name: RunRowAction) => action.busy && which === name;
 
   return (
@@ -163,7 +166,7 @@ function RunRowActions({
           pendingLabel={ROW_PENDING.continue}
           onClick={() => fire("continue")}
           disabled={action.busy}
-          className="rounded-lg bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
+          className={`rounded-lg bg-[var(--color-accent)] ${size} font-medium text-[var(--color-accent-fg)] disabled:opacity-50`}
         >
           Continue
         </ActionButton>

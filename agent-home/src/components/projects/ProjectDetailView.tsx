@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ComponentType } from "react";
 
 import { ChatPane } from "@/components/chat/ChatPane";
+import type { ComposerDraft } from "@/components/chat/Composer";
 import {
   ProjectChatDock,
   useChatDock,
@@ -44,6 +45,7 @@ import { ChangeRequestSheet } from "@/components/projects/changes/ChangeRequestS
 import { LiveStatusBar } from "@/components/projects/live/LiveStatusBar";
 import { BoardTab } from "@/components/projects/tabs/BoardTab";
 import { DashboardTab } from "@/components/projects/tabs/DashboardTab";
+import { ExecutionRuns } from "@/components/projects/execution/ExecutionRuns";
 import { InputsTab } from "@/components/projects/tabs/InputsTab";
 import { ScopeTab } from "@/components/projects/tabs/ScopeTab";
 import { IterationsTab } from "@/components/projects/tabs/IterationsTab";
@@ -89,6 +91,7 @@ const TOOL_BTN =
 
 const TAB_COMPONENT: Record<ProjectTab, ComponentType<ProjectTabProps>> = {
   dashboard: DashboardTab,
+  runs: ExecutionRuns,
   scope: ScopeTab,
   board: BoardTab,
   outputs: OutputsTab,
@@ -201,6 +204,8 @@ export function ProjectDetailView({
     if (target.part) scrollTo(target.part);
   }, [target]);
   const [dock, dockDispatch] = useChatDock(callerUserId);
+  // "Discuss in chat" (a run comparison): fill the docked chat's composer.
+  const [composerDraft, setComposerDraft] = useState<ComposerDraft | undefined>(undefined);
   // An old tab name (a readiness link, a dashboard card): open its section
   // and scroll to it, or open the ⋯ sheet on Skills / Settings.
   const selectTab = useCallback((next: ProjectTab) => {
@@ -266,6 +271,15 @@ export function ProjectDetailView({
   ]
     .filter(Boolean)
     .join(" · ");
+  const desktop = useIsDesktop();
+  const discussInChat = (text: string) => {
+    setComposerDraft((prev) => ({ text, seq: (prev?.seq ?? 0) + 1 }));
+    if (desktop) {
+      if (dock.mode === "min") dockDispatch({ type: "restore" });
+    } else {
+      selectSection("chat");
+    }
+  };
   const tabProps: ProjectTabProps = {
     project,
     board,
@@ -278,6 +292,7 @@ export function ProjectDetailView({
     runnable,
     onNavigate: selectTab,
     onChangeRequest: openChange,
+    onDiscussInChat: discussInChat,
   };
   const parts = SECTION_PARTS[shown];
   const action = nextAction(
@@ -323,7 +338,6 @@ export function ProjectDetailView({
   );
   const SheetSection = TAB_COMPONENT[sheetPart];
   // On a phone the Chat tab shows only the tab bar above the chat.
-  const desktop = useIsDesktop();
   const phoneHide = section === "chat" ? "max-lg:hidden" : "";
 
   return (
@@ -548,9 +562,11 @@ export function ProjectDetailView({
                   data-section={part}
                   className="flex min-w-0 scroll-mt-20 flex-col gap-2"
                 >
-                  <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                    {part === "scope" ? t("brief") : PROJECT_TAB_LABEL[part]}
-                  </h2>
+                  {part === "runs" ? null : (
+                    <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                      {part === "scope" ? t("brief") : PROJECT_TAB_LABEL[part]}
+                    </h2>
+                  )}
                   <Section {...tabProps} />
                 </section>
               );
@@ -576,6 +592,7 @@ export function ProjectDetailView({
               profile={chat.profile}
               hidden={desktop ? dock.mode === "min" : section !== "chat"}
               onMessageCount={onMessageCount}
+              composerDraft={composerDraft}
             />
           ) : (
             <p className="p-3 text-sm text-[var(--color-muted)]">

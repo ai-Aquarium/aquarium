@@ -21,6 +21,7 @@ describe("?tab= mapping", () => {
     ["setup", { section: "planning", part: "scope" }],
     ["board", { section: "execution", part: "board" }],
     ["iterations", { section: "execution", part: "iterations" }],
+    ["runs", { section: "execution", part: "runs" }],
     ["work", { section: "execution" }],
     ["skills", { section: "planning", sheet: "skills" }],
     ["settings", { section: "planning", sheet: "settings" }],

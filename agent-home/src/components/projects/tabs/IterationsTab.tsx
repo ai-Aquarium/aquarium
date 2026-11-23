@@ -7,7 +7,6 @@ import { RequirementHistory } from "@/components/projects/iterations/Requirement
 import { groupIterations } from "@/components/projects/iterations/groupIterations";
 import { useChangesHistory } from "@/components/projects/iterations/useChangesHistory";
 import { GuidancePanel } from "@/components/projects/panels/GuidancePanel";
-import { RunsPanel } from "@/components/projects/panels/RunsPanel";
 import type { ProjectTabProps } from "@/components/projects/tabs/types";
 
 const DISCLOSURE =
@@ -51,12 +50,6 @@ export function IterationsTab({ project, directives, playbook, onChangeRequest }
         </div>
       </section>
       <RequirementHistory requirements={grouped.requirements} />
-      <details className={DISCLOSURE}>
-        <summary className="cursor-pointer text-sm font-medium">All runs</summary>
-        <div className="mt-3">
-          <RunsPanel slug={project.slug} runs={project.runs} archived={project.archived} />
-        </div>
-      </details>
       <details className={DISCLOSURE}>
         <summary className="cursor-pointer text-sm font-medium">Standing instructions</summary>
         <div className="mt-3">

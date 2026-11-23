@@ -883,3 +883,32 @@ def test_run_reports_completion_and_card_attempt_history(env):
     body = client.get(f"/api/registry/projects/{project['slug']}/runs/1").json()
     assert body["completion_percent"] == 33
     assert approve_id in {c["task_id"] for c in body["cards"]}
+
+
+def test_run_cards_carry_step_timing_for_comparison(env):
+    """Comparing runs needs each step's time: a card's ``started_at`` and
+    ``completed_at`` ride on the run detail — unset until the card is
+    claimed, and a finished card never ends before it started."""
+    project = _active_project(env)
+    client, _state = env
+    _save_and_activate_playbook(env, project)
+    started = client.post(
+        f"/api/registry/projects/{project['slug']}/runs", json={}
+    ).json()
+    gather_id = started["cards"]["gather"]
+
+    body = client.get(f"/api/registry/projects/{project['slug']}/runs/1").json()
+    card = {c["task_id"]: c for c in body["cards"]}[gather_id]
+    assert card["started_at"] is None and card["completed_at"] is None
+
+    with kanban_db.connect_closing() as bconn:
+        assert kanban_db.claim_task(bconn, gather_id, claimer="test:1")
+        assert kanban_db.complete_task(bconn, gather_id, result="ok")
+    body = client.get(f"/api/registry/projects/{project['slug']}/runs/1").json()
+    card = {c["task_id"]: c for c in body["cards"]}[gather_id]
+    assert card["status"] == "done"
+    assert card["started_at"] is not None
+    assert card["completed_at"] >= card["started_at"]
+    # Cards not yet started stay untimed.
+    others = [c for c in body["cards"] if c["task_id"] != gather_id]
+    assert all(c["completed_at"] is None for c in others)

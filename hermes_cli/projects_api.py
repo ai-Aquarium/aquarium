@@ -4508,6 +4508,9 @@ def _run_payload(
             "step_key": rc.get("step_key"),
             "status": task.status if task else None,
             "title": task.title if task else None,
+            # Per-step timing for run comparison (Execution tab).
+            "started_at": task.started_at if task else None,
+            "completed_at": task.completed_at if task else None,
         }
         card.update(_card_attempts(bconn, rc["task_id"]))
         cards.append(card)
