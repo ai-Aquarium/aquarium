@@ -76,7 +76,7 @@ export default async function Page({
       (): ProjectDirectivesResponse | null => null,
     ),
     client.projectDoctor(slug).catch((): ProjectDoctorDetail | null => null),
-    projectChat(slug, project.profiles.map((p) => p.profile)),
+    projectChat(slug, (project.profiles ?? []).map((p) => p.profile)),
   ]);
   const isInstanceAdmin = principal.role === "owner" || principal.role === "admin";
 
