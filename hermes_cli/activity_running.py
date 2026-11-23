@@ -43,8 +43,11 @@ def _item(
     href: Optional[str],
     profile: Optional[str],
     status: str,
+    owner: Optional[str] = None,
 ) -> dict[str, Any]:
+    extra = {"owner_user_id": owner} if owner else {}
     return {
+        **extra,
         "kind": kind,
         "id": item_id,
         "name": (name or "").strip()[:120] or kind,
@@ -77,12 +80,14 @@ def chat_items(
     runs: Iterable[dict],
     scope: Optional[str],
     open_db: Callable[[Optional[str]], Any],
+    owners: Optional[set] = None,
 ) -> list[dict]:
     """Live agent-home turns the caller may see.
 
     *runs* are snapshots of in-flight ``_CHAT_RUNS`` entries
     (``run_id``/``session_id``/``profile``/``started_at``); *scope* is the
-    caller's chat scope (``None`` = every conversation).
+    caller's chat scope (``None`` = every conversation); ``owners`` narrows
+    it to conversations those people own. Rows carry their owner.
     """
     by_profile: dict[Optional[str], list[dict]] = {}
     for run in runs:
@@ -101,13 +106,16 @@ def chat_items(
                 if sid in seen:
                     continue
                 seen.add(sid)
-                if scope is not None and db.session_owner_user_id(sid) != scope:
+                owner = db.session_owner_user_id(sid)
+                if scope is not None and owner != scope:
+                    continue
+                if owners is not None and owner not in owners:
                     continue
                 title = db.get_session_title(sid) or "Chat"
                 out.append(
                     _item(
                         "chat", sid, title, run.get("started_at"),
-                        _chat_href(sid, profile), profile, "running",
+                        _chat_href(sid, profile), profile, "running", owner,
                     )
                 )
         finally:
@@ -196,7 +204,7 @@ def project_items(principal, enrolled: Iterable[str]) -> list[dict]:
             _item(
                 "project_run", run["id"], f"{project.name} · run {run['run_no']}",
                 run["started_at"], _project_href(project.slug, "runs", run["run_no"]),
-                run.get("profile"), run["status"],
+                run.get("profile"), run["status"], project.owner_user_id,
             )
         )
     for card in cards:
@@ -208,7 +216,7 @@ def project_items(principal, enrolled: Iterable[str]) -> list[dict]:
             _item(
                 "card", card["id"], card["title"], card["started_at"],
                 _project_href(project.slug, "cards", card["id"]),
-                card.get("assignee"), "running",
+                card.get("assignee"), "running", project.owner_user_id,
             )
         )
     return out
@@ -279,7 +287,10 @@ def cron_items(
     principal,
     enrolled: Iterable[str],
     dirs: Iterable[tuple[str, Path]],
+    mine: Optional[str] = None,
 ) -> list[dict]:
+    """Running cron jobs the caller may see; ``mine`` also shows that
+    person's own standalone jobs (the owner/admin "just me" view)."""
     from cron.jobs import list_running_jobs
     from hermes_cli.projects_api import _instance_admin
 
@@ -298,13 +309,14 @@ def cron_items(
     out: list[dict] = []
     for profile, job in running:
         project = linked.get(job["job_id"])
-        if project is None and not admin:
+        owner = job.get("owner_user_id") or (project.owner_user_id if project else None)
+        if project is None and not admin and not (mine and owner == mine):
             continue
         out.append(
             _item(
                 "cron", f"{profile}:{job['job_id']}", job["name"], job["started_at"],
                 _project_href(project.slug) if project is not None else None,
-                profile, "running",
+                profile, "running", owner,
             )
         )
     return out
@@ -388,6 +400,7 @@ def scheduled_summary(
     principal,
     enrolled: Iterable[str],
     job_dirs: Optional[Iterable[tuple[str, Path]]] = None,
+    mine: Optional[str] = None,
 ) -> dict[str, Any]:
     """What is waiting on time, counted for the caller.
 
@@ -397,7 +410,7 @@ def scheduled_summary(
       board, in such a readable project (a private card is its owner's);
     * ``cron_jobs`` — enabled jobs no project is linked to, owner/admin
       only (anyone else 0: a job behind their project is under
-      ``projects``).
+      ``projects``); with ``mine``, also that person's own jobs.
 
     ``next_run_at`` is the soonest of the counted schedules (epoch seconds,
     from the ``next_run_at`` display caches), or None.
@@ -449,10 +462,12 @@ def scheduled_summary(
             )
 
     cron_jobs = 0
-    if admin:
+    if admin or mine:
         for _profile, cron_dir in (cron_job_dirs() if job_dirs is None else job_dirs):
             for job in _read_jobs(cron_dir):
                 if not job.get("enabled", True) or job.get("id") in linked_jobs:
+                    continue
+                if not admin and job.get("owner_user_id") != mine:
                     continue
                 cron_jobs += 1
                 when = _iso_epoch(job.get("next_run_at"))

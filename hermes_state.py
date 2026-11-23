@@ -3273,10 +3273,13 @@ class SessionDB:
         id_query: str = None,
         user_id: str = None,
         root_ids: Optional[List[str]] = None,
+        user_ids: Optional[List[Optional[str]]] = None,
     ) -> List[Dict[str, Any]]:
         """List sessions with preview (first user message) and last active timestamp.
 
-        ``user_id`` restricts the list to conversations that user owns.
+        ``user_id`` restricts the list to conversations that user owns;
+        ``user_ids`` to conversations any of those users own (``None`` in it:
+        also conversations with no owner).
         ``root_ids`` restricts it to those surfaced (root) ids — e.g. a
         user's pins, which key on the compression root.
 
@@ -3329,6 +3332,14 @@ class SessionDB:
         if user_id:
             where_clauses.append("s.user_id = ?")
             params.append(user_id)
+        if user_ids is not None:
+            ids = [u for u in dict.fromkeys(user_ids) if u]
+            owned = f"s.user_id IN ({','.join('?' for _ in ids)})" if ids else "0"
+            # ``None`` in ``user_ids`` also matches conversations with no owner.
+            where_clauses.append(
+                f"({owned} OR s.user_id IS NULL)" if None in user_ids else owned
+            )
+            params.extend(ids)
         if root_ids is not None:
             if not root_ids:
                 return []
@@ -5614,6 +5625,7 @@ class SessionDB:
         exclude_children: bool = False,
         exclude_sources: List[str] = None,
         user_id: str = None,
+        user_ids: Optional[List[Optional[str]]] = None,
     ) -> int:
         """Count sessions, optionally filtered by source.
 
@@ -5641,6 +5653,14 @@ class SessionDB:
         if user_id:
             where_clauses.append("s.user_id = ?")
             params.append(user_id)
+        if user_ids is not None:
+            ids = [u for u in dict.fromkeys(user_ids) if u]
+            owned = f"s.user_id IN ({','.join('?' for _ in ids)})" if ids else "0"
+            # ``None`` in ``user_ids`` also matches conversations with no owner.
+            where_clauses.append(
+                f"({owned} OR s.user_id IS NULL)" if None in user_ids else owned
+            )
+            params.extend(ids)
         if source:
             where_clauses.append("s.source = ?")
             params.append(source)

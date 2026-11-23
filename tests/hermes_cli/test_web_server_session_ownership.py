@@ -85,8 +85,8 @@ def chats():
         db.close()
 
 
-def _listed(client):
-    resp = client.get("/api/sessions", params={"limit": 50})
+def _listed(client, **params):
+    resp = client.get("/api/sessions", params={"limit": 50, **params})
     assert resp.status_code == 200
     return {s["id"] for s in resp.json()["sessions"]}, resp.json()["total"]
 
@@ -111,8 +111,12 @@ def test_member_lists_only_their_own_chats(client, acting, chats):
     ids, total = _listed(client)
     assert ids == {"s-mia"} and total == 1
 
+    # The owner's list opens on their own (and pre-multi-user, unowned) chats;
+    # others' only when named ("Whose data").
     acting["as"] = OWNER
     ids, _ = _listed(client)
+    assert ids == {"s-legacy"}
+    ids, _ = _listed(client, owners="root,mia,tom")
     assert {"s-mia", "s-legacy"} <= ids
     assert ids & {"s-tom", "s-tom-2"}
 
@@ -174,6 +178,10 @@ def test_search_hides_other_peoples_messages(client, acting, chats):
 
     acting["as"] = OWNER
     found = client.get("/api/sessions/search", params={"q": "salary"}).json()["results"]
+    assert {r["lineage_root"] for r in found} == {"s-legacy"}
+    found = client.get(
+        "/api/sessions/search", params={"q": "salary", "owners": "root,tom"}
+    ).json()["results"]
     assert {r["lineage_root"] for r in found} == {"s-tom", "s-legacy"}
 
 
@@ -182,7 +190,7 @@ def test_bulk_delete_only_removes_own_chats(client, acting, chats):
     resp = client.post("/api/sessions/bulk-delete", json={"ids": ["s-mia", "s-tom", "s-legacy"]})
     assert resp.json()["deleted"] == 1
     acting["as"] = OWNER
-    ids, _ = _listed(client)
+    ids, _ = _listed(client, owners="root,mia")
     assert "s-mia" not in ids and "s-legacy" in ids
 
 

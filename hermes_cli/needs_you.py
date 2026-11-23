@@ -111,6 +111,28 @@ def _open_action(href: str, label: str = "Open") -> dict:
     return {"id": "open", "label": label, "style": "primary", "href": href}
 
 
+def mark_team(items: Iterable[dict]) -> list[dict]:
+    """Tag duties of the owner/admin *role*, not of one person (shown as Team)."""
+    return [{**item, "team": True} for item in items]
+
+
+def mark_foreign(items: Iterable[dict], owner: Optional[str]) -> list[dict]:
+    """Somebody else's waits seen in a widened "Whose data" view (FG-38).
+
+    View-only: only the person may act, so every action but Open is dropped.
+    """
+    out = []
+    for item in items:
+        who = owner or item["context"].get("owner_user_id")
+        opens = [a for a in item.get("actions") or [] if a.get("id") == "open" or (
+            a.get("href") and not a.get("endpoint"))]
+        out.append({
+            **item, "foreign": True, "owner_user_id": who,
+            "actions": opens or [_open_action(item["href"])],
+        })
+    return out
+
+
 def _post_action(
     action_id: str, label: str, style: str, endpoint: str,
     body: Optional[dict] = None,
@@ -590,6 +612,11 @@ def project_entries(principal, enrolled: Iterable[str], covered: set[tuple]) -> 
             context={"project_slug": project.slug},
             href=project_href(project.slug), created_at=p["created_at"],
         ))
+    owner_by_slug = {p.slug: p.owner_user_id for p in projects.values() if p.owner_user_id}
+    for item in out:
+        owner = owner_by_slug.get(item["context"].get("project_slug"))
+        if owner:
+            item["context"]["owner_user_id"] = owner
     return out
 
 
@@ -600,23 +627,30 @@ def project_entries(principal, enrolled: Iterable[str], covered: set[tuple]) -> 
 
 def chat_approval_entries(
     approvals: Iterable[dict], runs: dict, principal, *, admin: bool,
+    requesters: Iterable[str] = (),
 ) -> list[dict]:
     """Rows for ``tools.approval.list_pending_gateway_approvals()``.
 
     ``runs`` maps an agent-home ``run_id`` (the approval session key) to
     ``{session_id, profile}``; approvals on other surfaces (Telegram, CLI)
     are answered there and skipped. A run is the requester's; one with no
-    recorded requester is the instance admin's.
+    recorded requester is the instance admin's (tagged Team). ``requesters``
+    adds other people's, view-only (the widened "Whose data" view).
     """
     from gateway.run import _redact_approval_command
 
+    others = set(requesters) - {principal.user_id}
     out: list[dict] = []
     for a in approvals:
         run = runs.get(a["session_key"])
         if run is None:
             continue
         requester = a.get("requester_user_id")
-        if requester != principal.user_id and not (requester is None and admin):
+        if (
+            requester != principal.user_id
+            and not (requester is None and admin)
+            and requester not in others
+        ):
             continue
         run_id = a["session_key"]
         href = chat_href(run["session_id"], run.get("profile"))
@@ -642,6 +676,10 @@ def chat_approval_entries(
                 {**_open_action(href, "Open chat"), "style": "secondary"},
             ],
         ))
+        if requester is None:
+            out[-1] = mark_team(out[-1:])[0]
+        elif requester != principal.user_id:
+            out[-1] = mark_foreign(out[-1:], requester)[0]
     return out
 
 
