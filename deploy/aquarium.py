@@ -2064,6 +2064,8 @@ def _apply_base(path: Path, key: Path, dest: Path, manifest: Dict) -> None:
                 for member in tar:
                     if member.isfile() and member.name in wanted:
                         tar.extract(member, dest, filter="tar")
+            with open(os.devnull, "wb") as sink:  # read to the end so gpg never blocks on a full pipe
+                shutil.copyfileobj(gpg.stdout, sink)
         except (tarfile.TarError, EOFError, OSError) as error:
             gpg.kill()
             raise Fail(f"cannot open the base backup {name} ({error.__class__.__name__})", "Use a full backup.")
