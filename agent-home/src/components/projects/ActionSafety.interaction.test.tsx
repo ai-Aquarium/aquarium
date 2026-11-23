@@ -566,7 +566,7 @@ const SCENARIOS: Scenario[] = [
         archived={false}
       />
     ),
-    control: (r) => r.getByRole("button", { name: "Activate" }),
+    control: (r) => r.getByRole("button", { name: "Make active" }),
     pending: "Activating…",
     method: "POST",
     path: `${BASE}/playbook/2/activate`,
@@ -607,7 +607,7 @@ const SCENARIOS: Scenario[] = [
         archived={false}
       />
     ),
-    prepare: (r) => fireEvent.click(r.getByRole("button", { name: "Revise" })),
+    prepare: (r) => fireEvent.click(r.getByRole("button", { name: "Edit" })),
     control: (r) => r.getByRole("button", { name: "Save as revision" }),
     pending: "Saving…",
     method: "POST",

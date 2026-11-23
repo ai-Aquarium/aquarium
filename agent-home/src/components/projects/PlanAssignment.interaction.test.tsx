@@ -135,7 +135,7 @@ describe("PlanPanel — who does what", () => {
     const { container } = render(
       <PlanPanel {...PROPS} playbook={{ active: null, revisions: [proposed] }} />,
     );
-    const block = container.querySelector('[data-component="ProposedRevisions"]')!;
+    const block = container.querySelector('[data-component="PlaybookRevision"][data-state="proposed"]')!;
     expect(block.querySelector('[data-component="WhoDoesWhat"]')).toBeTruthy();
     expect(block.textContent).toContain("Writes reports.");
   });
@@ -148,7 +148,7 @@ describe("PlanPanel — the step editor's assignee picker", () => {
     const { container, getByText, getByLabelText } = render(
       <PlanPanel {...PROPS} playbook={{ active: REV, revisions: [REV] }} />,
     );
-    fireEvent.click(getByText("Revise"));
+    fireEvent.click(getByText("Edit"));
     const picker = getByLabelText("Step 1 assignee") as HTMLSelectElement;
     await vi.waitFor(() => within(picker).getByText("researcher (not in project yet)"));
     expect(within(picker).getByText("default (host)")).toBeTruthy();
@@ -190,7 +190,7 @@ describe("PlanPanel — the step editor's assignee picker", () => {
     const { getByText, getByLabelText, container } = render(
       <PlanPanel {...PROPS} playbook={{ active: old, revisions: [old] }} />,
     );
-    fireEvent.click(getByText("Revise"));
+    fireEvent.click(getByText("Edit"));
     await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === ROSTER_URL)).toBe(true));
     const picker = getByLabelText("Step 1 assignee") as HTMLSelectElement;
     expect(Array.from(picker.options).map((o) => o.value)).toEqual(["", "default", "writer"]);
