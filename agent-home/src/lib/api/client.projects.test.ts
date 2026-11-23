@@ -140,6 +140,7 @@ describe("HermesApiClient projects", () => {
     });
     await c.activateProjectPlaybook("digest", 2, "approved by leo");
     await c.retireProjectDirective("digest", "d1");
+    await c.startProjectFirstRun("digest", 2);
 
     const calls = fetchMock.mock.calls;
     expect(String(calls[0][0])).toBe(
@@ -155,6 +156,10 @@ describe("HermesApiClient projects", () => {
     expect(String(calls[2][0])).toBe(
       "http://api.test/api/registry/projects/digest/directives/d1/retire",
     );
+    expect(String(calls[3][0])).toBe(
+      "http://api.test/api/registry/projects/digest/playbook/2/first-run",
+    );
+    expect(calls[3][1]?.method).toBe("POST");
   });
 
   it("output accept + deliver and links hit the judgement routes", async () => {

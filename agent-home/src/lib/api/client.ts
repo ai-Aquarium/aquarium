@@ -2901,6 +2901,18 @@ export class HermesApiClient {
     );
   }
 
+  /** Make `rev` active and start run 1 in one human act (lead/admin).
+   *  Idempotent: a repeat returns run 1 with `started: false`. */
+  async startProjectFirstRun(
+    slug: string,
+    rev: number,
+  ): Promise<{ rev: number; run: ProjectRun; started: boolean }> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/playbook/${encodeURIComponent(rev)}/first-run`,
+      { method: "POST", json: {} },
+    );
+  }
+
   /** Update a proposal written from an older revision onto the active
    *  one; it stays proposed. `conflicts` names steps (or "body") both
    *  sides changed — the proposal's version was kept. */

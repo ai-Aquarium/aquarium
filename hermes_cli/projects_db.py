@@ -3609,18 +3609,27 @@ def open_project_run(
     playbook_rev: Optional[int] = None,
     trace_id: Optional[str] = None,
     auto_approve: bool = False,
+    first_only: bool = False,
 ) -> dict:
     """Open the run row: ``run_no = max+1``, status ``running`` (§6).
 
     Raises :class:`RunAlreadyOpen` while another run of the project is
     ``running`` or ``waiting``; checked inside the write transaction so two
-    concurrent starts cannot both open one."""
+    concurrent starts cannot both open one. ``first_only`` opens run 1 or
+    nothing (:class:`FirstRunTaken`), checked in the same transaction."""
     if trigger not in VALID_RUN_TRIGGERS:
         raise ValueError(f"trigger must be one of {sorted(VALID_RUN_TRIGGERS)}")
     if not str(profile or "").strip():
         raise ValueError("run profile is required")
     rid = _new_row_id("run")
     with write_txn(conn):
+        if first_only:
+            taken = conn.execute(
+                "SELECT MIN(run_no) AS n FROM project_runs WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            if taken["n"] is not None:
+                raise FirstRunTaken(int(taken["n"]))
         open_runs = list_open_project_runs(conn, project_id)
         if open_runs:
             raise RunAlreadyOpen(open_runs[0]["run_no"], open_runs[0]["status"])
@@ -3640,6 +3649,14 @@ def open_project_run(
              1 if auto_approve else 0),
         )
     return get_project_run_by_id(conn, rid)
+
+
+class FirstRunTaken(ValueError):
+    """``first_only`` asked for run 1 and the project already has a run."""
+
+    def __init__(self, run_no: int):
+        self.run_no = run_no
+        super().__init__(f"this project already has run {run_no}")
 
 
 def get_project_run_by_id(

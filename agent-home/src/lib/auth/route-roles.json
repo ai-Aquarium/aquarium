@@ -207,6 +207,7 @@
   "POST /api/projects/[slug]/playbook": "signed-in",
   "DELETE /api/projects/[slug]/playbook/[rev]": "signed-in",
   "POST /api/projects/[slug]/playbook/[rev]/activate": "signed-in",
+  "POST /api/projects/[slug]/playbook/[rev]/first-run": "signed-in",
   "POST /api/projects/[slug]/playbook/[rev]/rebase": "signed-in",
   "GET /api/projects/[slug]/playbook/draft": "signed-in",
   "POST /api/projects/[slug]/playbook/draft": "signed-in",

@@ -17,8 +17,9 @@ function api(project: Record<string, unknown>, revisions = [{ rev: 1, active: fa
     if (url === "/api/projects/weekly-sales/playbook") {
       return new Response(JSON.stringify({ active: null, revisions }));
     }
-    if (url.endsWith("/activate")) return new Response(JSON.stringify({ rev: 1, active: true }));
-    if (url.endsWith("/runs")) return new Response(JSON.stringify({ run_no: 1 }));
+    if (url.endsWith("/first-run")) {
+      return new Response(JSON.stringify({ rev: 1, run: { run_no: 1 }, started: true }));
+    }
     return new Response("{}", { status: 404 });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -46,7 +47,7 @@ describe("ProjectCard", () => {
     );
   });
 
-  it("makes v1 active, opens the project and starts run 1 on click, never before", async () => {
+  it("makes v1 active and starts run 1 in one request on click, never before", async () => {
     const calls = api(lead);
     const r = render(<ProjectCard card={card} />);
     const button = await r.findByRole("button", { name: "Make v1 active & run 1" });
@@ -57,11 +58,9 @@ describe("ProjectCard", () => {
     fireEvent.click(button);
     await waitFor(() => expect(r.getByText("Run 1 started")).toBeTruthy());
     expect(calls.slice(2).map(([u, i]) => `${i?.method} ${u}`)).toEqual([
-      "POST /api/projects/weekly-sales/playbook/1/activate",
-      "PATCH /api/projects/weekly-sales",
-      "POST /api/projects/weekly-sales/runs",
+      "POST /api/projects/weekly-sales/playbook/1/first-run",
     ]);
-    expect(JSON.parse(String(calls[4][1]?.body))).toEqual({ playbook_rev: 1 });
+    expect(new Headers(calls[2][1]?.headers).get("Idempotency-Key")).toBeTruthy();
   });
 
   it("offers no Make active to someone who can't", async () => {
@@ -83,13 +82,13 @@ describe("ProjectCard", () => {
     expect(r.getByRole("link", { name: "Open project" })).toBeTruthy();
   });
 
-  it("stops at the first refused step", async () => {
+  it("shows the refusal and starts nothing else", async () => {
     const calls = api(lead);
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
         calls.push([url, init]);
-        if (url.endsWith("/activate")) {
+        if (url.endsWith("/first-run")) {
           return new Response(JSON.stringify({ detail: "only a lead can" }), { status: 403 });
         }
         if (url.endsWith("/playbook")) {
@@ -101,6 +100,9 @@ describe("ProjectCard", () => {
     const r = render(<ProjectCard card={card} />);
     fireEvent.click(await r.findByRole("button", { name: "Make v1 active & run 1" }));
     await waitFor(() => expect(r.getByRole("alert")).toBeTruthy());
-    expect(calls.some(([u]) => u.endsWith("/runs"))).toBe(false);
+    expect(r.getByRole("alert").textContent).toContain("Only a lead of this project can do that.");
+    expect(calls.filter(([, i]) => i?.method).map(([u]) => u)).toEqual([
+      "/api/projects/weekly-sales/playbook/1/first-run",
+    ]);
   });
 });

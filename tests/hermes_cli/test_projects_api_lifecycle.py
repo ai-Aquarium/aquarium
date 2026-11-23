@@ -675,6 +675,7 @@ def test_archived_project_refuses_every_mutating_route(env):
         ("POST", f"{PREFIX}/{slug}/cards", {"title": "One more thing"}),
         ("POST", f"{PREFIX}/{slug}/playbook", {"steps": STEPS}),
         ("POST", f"{PREFIX}/{slug}/playbook/1/activate", {}),
+        ("POST", f"{PREFIX}/{slug}/playbook/1/first-run", {}),
         ("POST", f"{PREFIX}/{slug}/outputs", {"title": "Late artefact"}),
         ("POST", f"{PREFIX}/{slug}/outputs/output-1/deliver", {}),
         ("PATCH", f"{PREFIX}/{slug}/outputs/output-1", {"status": "delivered"}),
@@ -990,3 +991,200 @@ def test_run_detail_not_stalled_while_fresh_and_unblocked(env):
     payload = client.get(f"{PREFIX}/{slug}/runs/{run['run_no']}").json()
     assert payload["stalled"] is False
     assert payload["blocked_tasks"] == []
+
+
+# ---------------------------------------------------------------------------
+# Make v1 active & run 1 — one idempotent human act (the chat's project card)
+# ---------------------------------------------------------------------------
+
+
+def _planning_project_with_v1(env) -> tuple[str, int]:
+    project = _create_active_project(env)
+    client, _state = env
+    with projects_db.connect_closing() as conn:
+        projects_db.set_project_status(conn, project["id"], "planning")
+    resp = client.post(
+        f"{PREFIX}/{project['slug']}/playbook", json={"body": "v1", "steps": STEPS}
+    )
+    assert resp.status_code == 200, resp.text
+    return project["slug"], resp.json()["rev"]
+
+
+def _pid(env, slug) -> str:
+    client, _state = env
+    return client.get(f"{PREFIX}/{slug}").json()["id"]
+
+
+def _runs(env, slug) -> list[int]:
+    client, _state = env
+    return [r["run_no"] for r in client.get(f"{PREFIX}/{slug}/runs").json()["runs"]]
+
+
+def test_first_run_makes_the_proposal_active_and_starts_run_1(env):
+    client, _state = env
+    slug, rev = _planning_project_with_v1(env)
+    resp = client.post(f"{PREFIX}/{slug}/playbook/{rev}/first-run", json={})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["started"] is True and body["run"]["run_no"] == 1
+    assert body["run"]["playbook_rev"] == rev
+    detail = client.get(f"{PREFIX}/{slug}").json()
+    assert detail["status"] == "active"
+    assert client.get(f"{PREFIX}/{slug}/playbook").json()["active"]["rev"] == rev
+    assert _runs(env, slug) == [1]
+
+
+def test_first_run_repeated_returns_run_1_and_starts_nothing(env):
+    client, _state = env
+    slug, rev = _planning_project_with_v1(env)
+    first = client.post(f"{PREFIX}/{slug}/playbook/{rev}/first-run", json={}).json()
+    again = client.post(f"{PREFIX}/{slug}/playbook/{rev}/first-run", json={})
+    assert again.status_code == 200, again.text
+    assert again.json()["started"] is False
+    assert again.json()["run"]["id"] == first["run"]["id"]
+    assert _runs(env, slug) == [1]
+
+
+def test_concurrent_first_run_clicks_start_one_run(env):
+    import threading
+
+    client, _state = env
+    slug, rev = _planning_project_with_v1(env)
+    barrier = threading.Barrier(2)
+    results: list = []
+
+    def click():
+        barrier.wait()
+        results.append(client.post(f"{PREFIX}/{slug}/playbook/{rev}/first-run", json={}))
+
+    threads = [threading.Thread(target=click) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert [r.status_code for r in results] == [200, 200], [r.text for r in results]
+    assert sorted(r.json()["started"] for r in results) == [False, True]
+    assert {r.json()["run"]["run_no"] for r in results} == {1}
+    assert _runs(env, slug) == [1]
+
+
+def test_first_run_that_loses_the_race_inside_the_start_returns_the_winner(env, monkeypatch):
+    """Another process opens run 1 between this request's check and its
+    start: the run row's transaction refuses, and the answer is that run."""
+    client, _state = env
+    slug, rev = _planning_project_with_v1(env)
+    real_start = projects_run.start_run
+
+    def start_after_another(pconn, bconn, **kwargs):
+        real_start(pconn, bconn, **{**kwargs, "first_only": False})
+        return real_start(pconn, bconn, **kwargs)
+
+    monkeypatch.setattr(projects_run, "start_run", start_after_another)
+    resp = client.post(f"{PREFIX}/{slug}/playbook/{rev}/first-run", json={})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["started"] is False and resp.json()["run"]["run_no"] == 1
+    assert _runs(env, slug) == [1]
+
+
+def test_open_project_run_first_only_refuses_once_a_run_exists(env):
+    _slug, _rev = _planning_project_with_v1(env)
+    with projects_db.connect_closing() as conn:
+        pid = _pid(env, _slug)
+        projects_db.open_project_run(
+            conn, project_id=pid, trigger="manual", profile="default"
+        )
+        projects_db.update_project_run(
+            conn, projects_db.get_project_run(conn, pid, 1)["id"], status="done"
+        )
+        with pytest.raises(projects_db.FirstRunTaken):
+            projects_db.open_project_run(
+                conn, project_id=pid, trigger="manual", profile="default",
+                first_only=True,
+            )
+
+
+def test_first_run_refuses_a_project_that_already_ran_and_changes_nothing(env):
+    client, _state = env
+    project = _create_active_project(env)
+    slug = project["slug"]
+    _save_and_activate_playbook(env, project)
+    run = client.post(f"{PREFIX}/{slug}/runs", json={}).json()["run"]
+    with projects_db.connect_closing() as conn:
+        projects_db.update_project_run(conn, run["id"], status="done")
+    v2 = client.post(
+        f"{PREFIX}/{slug}/playbook", json={"body": "v2", "steps": STEPS}
+    ).json()["rev"]
+    resp = client.post(f"{PREFIX}/{slug}/playbook/{v2}/first-run", json={})
+    assert resp.status_code == 409 and "already run" in resp.json()["detail"]
+    assert client.get(f"{PREFIX}/{slug}/playbook").json()["active"]["rev"] == 1
+    assert _runs(env, slug) == [1]
+
+
+@pytest.mark.parametrize("status", ["paused", "done"])
+def test_first_run_refuses_a_project_that_is_not_planning_or_active(env, status):
+    client, _state = env
+    slug, rev = _planning_project_with_v1(env)
+    with projects_db.connect_closing() as conn:
+        pid = _pid(env, slug)
+        projects_db.set_project_status(conn, pid, status)
+    resp = client.post(f"{PREFIX}/{slug}/playbook/{rev}/first-run", json={})
+    assert resp.status_code == 409 and status in resp.json()["detail"]
+    assert client.get(f"{PREFIX}/{slug}/playbook").json()["active"] is None
+    assert _runs(env, slug) == []
+
+
+def test_first_run_unknown_revision_is_404(env):
+    client, _state = env
+    slug, _rev = _planning_project_with_v1(env)
+    assert client.post(f"{PREFIX}/{slug}/playbook/99/first-run", json={}).status_code == 404
+    assert _runs(env, slug) == []
+
+
+@pytest.mark.parametrize(
+    "who,expected",
+    [(MEMBER_P, 403), (VIEWER_P, 403)],
+    ids=["member", "viewer"],
+)
+def test_first_run_is_for_a_lead_or_admin(env, who, expected):
+    client, state = env
+    slug, rev = _planning_project_with_v1(env)
+    state["actor"] = who
+    state["subject"] = who.user_id
+    try:
+        resp = client.post(f"{PREFIX}/{slug}/playbook/{rev}/first-run", json={})
+    finally:
+        state["actor"] = OWNER
+        state["subject"] = OWNER.user_id
+    assert resp.status_code == expected
+    assert client.get(f"{PREFIX}/{slug}/playbook").json()["active"] is None
+    assert _runs(env, slug) == []
+
+
+def test_first_run_for_a_project_lead_who_is_an_instance_member(env):
+    client, state = env
+    slug, rev = _planning_project_with_v1(env)
+    with projects_db.connect_closing() as conn:
+        pid = _pid(env, slug)
+        projects_db.add_project_member(conn, project_id=pid, user_id="lea", role="lead")
+    state["actor"] = LEAD_P
+    state["subject"] = LEAD_P.user_id
+    try:
+        resp = client.post(f"{PREFIX}/{slug}/playbook/{rev}/first-run", json={})
+    finally:
+        state["actor"] = OWNER
+        state["subject"] = OWNER.user_id
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["started"] is True
+
+
+def test_first_run_is_a_human_act(env):
+    client, state = env
+    slug, rev = _planning_project_with_v1(env)
+    state["subject"] = ""
+    try:
+        resp = client.post(f"{PREFIX}/{slug}/playbook/{rev}/first-run", json={})
+    finally:
+        state["subject"] = OWNER.user_id
+    assert resp.status_code == 403 and "human" in resp.json()["detail"].lower()
+    assert client.get(f"{PREFIX}/{slug}/playbook").json()["active"] is None
+    assert _runs(env, slug) == []
