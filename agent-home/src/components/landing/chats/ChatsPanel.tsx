@@ -27,6 +27,17 @@ import {
 /** Recent rows shown before "All chats" takes over. */
 export const RECENT_LIMIT = 30;
 
+const ALL_CHATS_CLASS =
+  "mt-auto inline-flex shrink-0 items-center justify-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[13px] font-medium leading-[18px] text-[var(--color-fg)] hover:bg-[var(--color-surface-2)]";
+
+const allChatsLabel = (
+  <>
+    <MessageIcon size={16} />
+    All chats
+    <ArrowRightIcon size={14} className="text-[var(--color-muted)]" />
+  </>
+);
+
 export interface ChatsPanelProps {
   /** The session's profile; the list, pins and suggestions are scoped to it. */
   profile?: string;
@@ -38,6 +49,10 @@ export interface ChatsPanelProps {
   initialSessions?: LandingSession[];
   /** Where "All chats" goes. */
   allChatsHref?: string;
+  /** "All chats" calls this instead of following `allChatsHref` (a page that already is `/chat`). */
+  onAllChats?: () => void;
+  /** List every chat, not just the latest {@link RECENT_LIMIT}, and drop the "All chats" button. */
+  showAll?: boolean;
   fetchImpl?: typeof fetch;
   /** Show category chips (All / Kanban / Daily / Scheduled / Others) that filter the list. */
   categoryFilter?: boolean;
@@ -109,6 +124,8 @@ export function ChatsPanel({
   activeSessionId = null,
   initialSessions,
   allChatsHref = "/chat",
+  onAllChats,
+  showAll = false,
   fetchImpl = fetch,
   searchShortcut = false,
   onNavigate,
@@ -191,7 +208,8 @@ export function ChatsPanel({
     showUndo(t("archivedToast"), () => setArchived({ ...s, archived: true }, false));
   };
   const pinned = chats.pinned.filter(inCategory);
-  const recent = chats.recent.filter(inCategory).slice(0, RECENT_LIMIT);
+  const recentInCategory = chats.recent.filter(inCategory);
+  const recent = showAll ? recentInCategory : recentInCategory.slice(0, RECENT_LIMIT);
   const empty = !chats.loading && chats.sessions.filter((s) => !s.archived).length === 0;
   const resumeId =
     highlightLatest && !activeSessionId && !searching && (!categoryFilter || category === "all")
@@ -324,16 +342,15 @@ export function ChatsPanel({
         )}
       </nav>
 
-      <Link
-        href={allChatsHref}
-        onClick={onNavigate}
-        data-component="AllChatsButton"
-        className="mt-auto inline-flex shrink-0 items-center justify-center gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[13px] font-medium leading-[18px] text-[var(--color-fg)] hover:bg-[var(--color-surface-2)]"
-      >
-        <MessageIcon size={16} />
-        All chats
-        <ArrowRightIcon size={14} className="text-[var(--color-muted)]" />
-      </Link>
+      {showAll ? null : onAllChats ? (
+        <button type="button" onClick={onAllChats} data-component="AllChatsButton" className={ALL_CHATS_CLASS}>
+          {allChatsLabel}
+        </button>
+      ) : (
+        <Link href={allChatsHref} onClick={onNavigate} data-component="AllChatsButton" className={ALL_CHATS_CLASS}>
+          {allChatsLabel}
+        </Link>
+      )}
       {toast}
     </div>
   );
