@@ -121,13 +121,13 @@ def _clip(text: Any, n: int = _SNIPPET) -> str:
     return value if len(value) <= n else value[: n - 1] + "…"
 
 
-_NON_CHAT_SOURCES = ("cron", "projects", "subagent", "tool")
+_NON_CHAT_SOURCES = ("cron", "projects", "subagent", "tool", "triage")
 _SCAN_LIMIT = 400
 
 
 def is_chat(session: Dict[str, Any]) -> bool:
     """A conversation someone had with the agent, not a project run, board
-    card worker, scheduled job or delegated subagent. Card workers run as
+    card worker, scheduled job, channel triage turn or delegated subagent. Card workers run as
     ``cli`` sessions inside a kanban workspace (same rule as agent-home's
     ``isKanbanWorkspace``); project runs use a ``projects:<slug>:run-N`` source.
     """
@@ -143,7 +143,7 @@ def _recent_chats(db, user_scope: Optional[str], page: int):
     offset = 0
     while offset < _SCAN_LIMIT:
         rows = db.list_sessions_rich(
-            exclude_sources=["cron"],
+            exclude_sources=["cron", "triage"],
             limit=page,
             offset=offset,
             order_by_last_active=True,

@@ -88,6 +88,23 @@ describe("ChatsSidebar", () => {
     expect(screen.getByText(/No chats match/)).toBeTruthy();
   });
 
+  it("keeps triage-agent turns out of All and Recent, under their own Triage chip", async () => {
+    const triage = { ...sessions[2], id: "s-triage", source: "triage", title: "Email triage batch", last_active: NOW / 1000, pinned_at: null };
+    install({
+      "GET /api/chat/sessions": () => json({ sessions: [...sessions, triage] }),
+      "GET /api/chat/pin-suggestions": () => json({ items: [], generated_at: 1 }),
+    });
+    render(<ChatsSidebar profiles={profiles} categoryFilter />);
+    await screen.findByRole("region", { name: "Recent chats" });
+    expect(rowNames("Recent chats")).not.toContain("Email triage batch");
+    const chip = (c: string) =>
+      document.querySelector(`[data-action="filter-category"][data-category="${c}"]`) as HTMLButtonElement;
+    expect(chip("all").textContent).toContain(String(sessions.filter((s) => !s.archived).length));
+    expect(chip("triage").textContent).toMatch(/Triage\s*1/);
+    fireEvent.click(chip("triage"));
+    await waitFor(() => expect(screen.getByText("Email triage batch")).toBeTruthy());
+  });
+
   it("pins both suggested chats", async () => {
     const f = install({
       "GET /api/chat/sessions": () => json({ sessions }),

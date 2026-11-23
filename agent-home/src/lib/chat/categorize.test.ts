@@ -12,6 +12,7 @@ import {
   categoryOverrideTagName,
   groupSessionsByCategory,
   isCategoryOverrideTag,
+  isTriageSession,
 } from "@/lib/chat/categorize";
 import type { SessionSummary, SessionTag } from "@/types";
 
@@ -76,6 +77,12 @@ describe("categorizeSession", () => {
       cwd: "/opt/data/hermes-home/kanban/workspaces/t_x",
     });
     expect(categorizeSession(s, NOW)).toBe("kanban");
+  });
+
+  it("classifies a triage-agent session as triage, even from today", () => {
+    expect(categorizeSession(session({ source: "triage" }), NOW)).toBe("triage");
+    expect(isTriageSession({ source: "triage" })).toBe(true);
+    expect(isTriageSession({ source: "cli" })).toBe(false);
   });
 
   it("cron wins over same-day when both apply", () => {
@@ -206,6 +213,6 @@ describe("groupSessionsByCategory", () => {
 
   it("returns empty arrays for categories with no matches", () => {
     const groups = groupSessionsByCategory([]);
-    expect(groups).toEqual({ kanban: [], daily: [], scheduled: [], others: [] });
+    expect(groups).toEqual({ kanban: [], daily: [], scheduled: [], triage: [], others: [] });
   });
 });

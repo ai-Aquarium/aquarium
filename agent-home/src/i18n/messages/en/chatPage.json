@@ -8,6 +8,7 @@
     "kanban": "Kanban",
     "daily": "Daily",
     "scheduled": "Scheduled",
+    "triage": "Triage",
     "others": "Others"
   },
   "loadError": "Couldn't load your conversations",

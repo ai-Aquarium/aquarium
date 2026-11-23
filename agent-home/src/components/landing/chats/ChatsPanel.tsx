@@ -20,6 +20,7 @@ import { useT } from "@/i18n";
 import {
   CHAT_CATEGORY_ORDER,
   categorizeSession,
+  isTriageSession,
   type ChatCategory,
 } from "@/lib/chat/categorize";
 
@@ -159,14 +160,18 @@ export function ChatsPanel({
   );
   const t = useT("chatPage");
   const [category, setCategory] = useState<ChatCategory | "all">("all");
+  // Triage-agent turns are not chats anyone started: they only show under
+  // their own "Triage" chip, never in "All", the recent list or as the resume row.
   const inCategory = (s: LandingSession) =>
-    !categoryFilter || category === "all" || categorizeSession(s) === category;
+    categoryFilter && category !== "all"
+      ? categorizeSession(s) === category
+      : !isTriageSession(s);
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = { all: 0 };
     if (!categoryFilter) return counts;
     for (const s of [...chats.pinned, ...chats.recent]) {
-      counts.all += 1;
       const c = categorizeSession(s);
+      if (!isTriageSession(s)) counts.all += 1;
       counts[c] = (counts[c] ?? 0) + 1;
     }
     return counts;

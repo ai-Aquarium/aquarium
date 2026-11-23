@@ -8,6 +8,7 @@
     "kanban": "看板",
     "daily": "今日",
     "scheduled": "排程",
+    "triage": "分流",
     "others": "其他"
   },
   "loadError": "無法載入你的對話",

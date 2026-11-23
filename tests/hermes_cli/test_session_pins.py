@@ -349,4 +349,5 @@ def test_is_chat():
     assert is_chat({"source": "telegram"})
     assert not is_chat({"source": "projects:demo:run-3"})
     assert not is_chat({"source": "cron"})
+    assert not is_chat({"source": "triage"})
     assert not is_chat({"source": "cli", "cwd": "/x/kanban/boards/ops/workspaces/t_1"})
