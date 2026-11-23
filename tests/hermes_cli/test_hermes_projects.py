@@ -655,12 +655,14 @@ def test_hermes_tools_create_from_chat_runs_as_the_chatting_person(env, tmp_path
             "--chat-summary", "Leo asked for a weekly sales report.", "--json"]
     path = cli.check(argv)
     argv, passed = cli.as_requester(path, argv, ticket, key)
-    session_env, extra = cli.session_args(path, argv, dict(__import__("os").environ))
+    # Agent Home binds the session id only; the CLI finds the chat's profile.
+    monkeypatch.delenv("HERMES_SESSION_PROFILE")
+    session_env = cli.session_args(path, dict(__import__("os").environ))
     assert argv[:2] == ["projects", "--actor=leo"] and passed == ticket
-    assert extra == ["--host-profile=default"] and session_env["HERMES_SESSION_ID"] == "s-chat"
+    assert session_env == {"HERMES_SESSION_ID": "s-chat"}
     monkeypatch.setenv(principal_ticket.ENV_VAR, passed)
     monkeypatch.setattr("sys.stdin", io.StringIO("A weekly sales report."))
-    assert run(*argv[1:], *extra) == 0
+    assert run(*argv[1:]) == 0
     assert seen == ["leo"]
     assert json.loads(capsys.readouterr().out)["quoted_messages"] == 1
     with projects_db.connect_closing() as conn:
@@ -689,3 +691,46 @@ def test_hermes_tools_create_for_someone_elses_chat_is_refused(env, tmp_path, mo
     assert "chat's owner" in capsys.readouterr().err
     with projects_db.connect_closing() as conn:
         assert projects_db.list_projects(conn) == []
+
+
+def test_playbook_draft_step_keys_are_one_path_segment(env, tmp_path, capsys):
+    run, _capsys = env
+    slug = _create(run, capsys, tmp_path)
+    assert run("playbook", slug, "draft", "set", '{"steps": [{"key": "review", "title": "Review"}]}') == 0
+    assert run("playbook", slug, "draft", "patch-step", "review#2", '{"title": "Second review"}') == 0
+    capsys.readouterr()
+    assert run("playbook", slug, "draft", "show", "--json") == 0
+    draft = json.loads(capsys.readouterr().out)["draft"]
+    assert [(s["key"], s["title"]) for s in draft["steps"]] == [
+        ("review", "Review"),
+        ("review#2", "Second review"),
+    ]
+
+
+def test_playbook_draft_in_a_chat_turn_acts_only_as_its_person(env, tmp_path, monkeypatch, capsys):
+    from hermes_cli import principal_ticket
+
+    run, _capsys = env
+    slug = _create(run, capsys, tmp_path)
+    monkeypatch.setenv(principal_ticket.ENV_VAR, principal_ticket.mint("leo"))
+    assert run("--actor", "ada", "playbook", slug, "draft", "set", '{"body": "x"}') == 2
+    assert "--actor must be the person" in capsys.readouterr().err
+    monkeypatch.setenv(principal_ticket.ENV_VAR, "forged")
+    assert run("playbook", slug, "draft", "set", '{"body": "x"}') == 2
+    assert "not valid" in capsys.readouterr().err
+
+
+def test_playbook_save_reads_the_spec_from_stdin(env, tmp_path, monkeypatch, capsys):
+    """The hermes-tools shim turns ``save FILE`` into ``save -`` with the file on stdin."""
+    import io
+
+    run, _capsys = env
+    slug = _create(run, capsys, tmp_path)
+    spec = {"steps": [{"key": "compile", "title": "Compile the report"}]}
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(spec)))
+    assert run("playbook", slug, "save", "-", "--json") == 0
+    saved = json.loads(capsys.readouterr().out)
+    assert saved["active"] is False
+    assert run("playbook", slug, "--json") == 0
+    (rev,) = json.loads(capsys.readouterr().out)["revisions"]
+    assert rev["rev"] == saved["rev"] and [s["key"] for s in rev["steps"]] == ["compile"]

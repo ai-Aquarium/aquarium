@@ -163,21 +163,32 @@ def test_cli_refuses_projects_without_a_valid_ticket_never_running_as_the_owner(
         cli.as_requester(cli.check(argv), argv, pt.sign("mia", KEY, _future()), b"")
 
 
-def test_cli_keeps_the_chat_only_for_projects_create_and_pins_its_host():
+def test_cli_keeps_the_chat_only_for_projects_create():
     env = {"HERMES_SESSION_ID": "20261123_141100_ab12", "HERMES_SESSION_PROFILE": "sales",
            "HERMES_SESSION_USER_ID": "mia"}
-    create = ["projects", "create", "g", "--description", "-", "--output", "o"]
-    kept, extra = cli.session_args(["projects", "create"], create, env)
-    assert kept == {"HERMES_SESSION_ID": "20261123_141100_ab12", "HERMES_SESSION_PROFILE": "sales"}
-    assert extra == ["--host-profile=sales"]
-    assert cli.session_args(["projects", "create"], [*create, "--host-profile", "sales"], env)[1] == []
-    for other in (["--host-profile", "default"], ["--host-profile=default"]):
+    assert cli.session_args(["projects", "create"], env) == {
+        "HERMES_SESSION_ID": "20261123_141100_ab12"}
+    assert cli.session_args(["projects", "playbook"], env) == {}
+    assert cli.session_args(["tool", "new"], env) == {}
+    assert cli.session_args(["projects", "create"], {"HERMES_SESSION_ID": "x;rm -rf /"}) == {}
+
+
+def test_cli_host_profile_is_never_the_agents_choice():
+    for opt in (["--host-profile", "sales"], ["--host-profile=default"]):
         with pytest.raises(cli.Refused):
-            cli.session_args(["projects", "create"], [*create, *other], env)
-    assert cli.session_args(["projects", "playbook"], ["projects", "playbook", "p"], env) == ({}, [])
-    assert cli.session_args(["tool", "new"], ["tool", "new", "x"], env) == ({}, [])
-    bad = {"HERMES_SESSION_ID": "x;rm -rf /", "HERMES_SESSION_PROFILE": "../root"}
-    assert cli.session_args(["projects", "create"], create, bad) == ({}, [])
+            cli.check(["projects", "create", "g", "--description", "-", "--output", "o", *opt])
+
+
+def test_cli_projects_actor_can_only_be_the_ticket_person():
+    ticket = pt.sign("mia", KEY, _future())
+    for argv in (["projects", "--actor", "mia", "playbook", "p", "draft", "show"],
+                 ["projects", "--actor=mia", "playbook", "p", "draft", "show"]):
+        out, _ = cli.as_requester(cli.check(argv), argv, ticket, KEY)
+        assert out == ["projects", "--actor=mia", "playbook", "p", "draft", "show"]
+    for argv in (["projects", "--actor", "root", "playbook", "p", "draft", "show"],
+                 ["projects", "--actor=mia", "--actor=root", "playbook", "p"]):
+        with pytest.raises(cli.Refused):
+            cli.as_requester(cli.check(argv), argv, ticket, KEY)
 
 
 def test_sudoers_keeps_the_ticket_for_the_helper():

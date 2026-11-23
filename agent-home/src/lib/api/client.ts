@@ -131,6 +131,7 @@ import type {
   ProjectLogResponse,
   ProjectLink,
   ProjectOutput,
+  PlaybookDraftsResponse,
   ProjectPlaybookDraftState,
   ProjectPlaybookResponse,
   AssignableProfilesResponse,
@@ -2901,6 +2902,18 @@ export class HermesApiClient {
     );
   }
 
+  /** Make `rev` active and start run 1 in one human act (lead/admin).
+   *  Idempotent: a repeat returns run 1 with `started: false`. */
+  async startProjectFirstRun(
+    slug: string,
+    rev: number,
+  ): Promise<{ rev: number; run: ProjectRun; started: boolean }> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/playbook/${encodeURIComponent(rev)}/first-run`,
+      { method: "POST", json: {} },
+    );
+  }
+
   /** Update a proposal written from an older revision onto the active
    *  one; it stays proposed. `conflicts` names steps (or "body") both
    *  sides changed — the proposal's version was kept. */
@@ -2916,6 +2929,35 @@ export class HermesApiClient {
 
   /** Discard a proposed revision — the paired judgement to activation.
    *  Refused (409) for the active rev or one a run has pinned. */
+  /** Every member's working draft, readable by the whole project. */
+  async listProjectPlaybookDrafts(slug: string): Promise<PlaybookDraftsResponse> {
+    return this.request(`/api/registry/projects/${encodeURIComponent(slug)}/playbook/drafts`);
+  }
+
+  /** Save the caller's own draft as a proposed revision (never active). */
+  async saveMyProjectPlaybookDraft(
+    slug: string,
+    payload: { note?: string; expected_version?: number },
+  ): Promise<{ rev: number; active: false; base_rev: number }> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/playbook/drafts/me/save`,
+      { method: "POST", json: payload },
+    );
+  }
+
+  /** Discard a member's draft: the owner's own, or anyone's for a lead. */
+  async discardProjectPlaybookDraft(
+    slug: string,
+    userId: string,
+    expectedVersion?: number,
+  ): Promise<{ discarded: true }> {
+    const query = expectedVersion == null ? "" : `?expected_version=${expectedVersion}`;
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/playbook/drafts/${encodeURIComponent(userId)}${query}`,
+      { method: "DELETE" },
+    );
+  }
+
   async discardProjectPlaybook(
     slug: string,
     rev: number,

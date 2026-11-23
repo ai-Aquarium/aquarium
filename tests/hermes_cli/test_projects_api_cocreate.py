@@ -76,7 +76,7 @@ def test_each_member_drafts_their_own_and_everyone_sees_both(env):
     # Leo's draft is untouched by Ada's agent.
     with projects_db.connect_closing() as conn:
         mine = projects_db.get_playbook_draft(conn, project["id"], "leo")
-    assert mine["version"] == 1 and len(mine["steps"]) == 2
+    assert mine["version"] > 0 and len(mine["steps"]) == 2
 
 
 def test_viewers_and_strangers_cannot_write_a_draft(env):
@@ -198,3 +198,27 @@ def test_chat_context_tells_the_agent_whose_draft_to_edit(env):
         plain = projects_chat_api.project_context(conn, record)
     assert f"--actor ada playbook {project['slug']} draft" in text
     assert "--actor" not in plain
+
+
+def test_a_new_draft_never_reuses_an_old_drafts_versions(env):
+    client, _state = env
+    project = _project_with_active_plan(env)
+    old = client.put(_url(project, "/me"), json={"body": "one"}).json()["draft"]
+    assert client.delete(_url(project, "/me")).status_code == 200
+    client.put(_url(project, "/me"), json={"body": "fresh"})
+    stale = client.put(_url(project, "/me"), json={"body": "late", "expected_version": old["version"]})
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["current"]["body"] == "fresh"
+
+
+def test_discard_with_a_stale_version_keeps_the_newer_draft(env):
+    client, _state = env
+    project = _project_with_active_plan(env)
+    first = client.put(_url(project, "/me"), json={"body": "one"}).json()["draft"]
+    client.put(_url(project, "/me"), json={"body": "two"})
+    stale = client.delete(_url(project, f"/me?expected_version={first['version']}"))
+    assert stale.status_code == 409
+    current = client.get(_url(project, "/me")).json()["draft"]
+    assert current["body"] == "two"
+    ok = client.delete(_url(project, f"/me?expected_version={current['version']}"))
+    assert ok.status_code == 200

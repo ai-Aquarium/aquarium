@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { UserIcon } from "@/components/ui/icons";
 import { useT } from "@/i18n";
@@ -25,6 +25,7 @@ import {
   type LanesBy,
   type RunLane,
 } from "./stepCards";
+import type { StepChange } from "@/components/projects/playbook/draftDiff";
 
 /* Inline icons for the view switch (no shared equivalents yet). */
 const svg = (children: ReactNode) => (
@@ -158,6 +159,8 @@ export function PlaybookCards({
   canPropose = true,
   rev: shown = null,
   onProposed,
+  draft = null,
+  onAsk,
 }: {
   slug: string;
   playbook: ProjectPlaybookResponse;
@@ -172,6 +175,10 @@ export function PlaybookCards({
   rev?: PlaybookRev | null;
   /** A step edit was saved as this new proposal. */
   onProposed?: (rev: number) => void;
+  /** A working draft is shown: its label, what it changed, and why its cards are read-only. */
+  draft?: { label: string; changes: Map<string, StepChange>; locked: string } | null;
+  /** "Ask about this" from an opened card or node. */
+  onAsk?: (quote: string) => void;
 }) {
   const t = useT("playbookCards");
   const [lanesBy, setLanesBy] = useState<LanesBy>("run");
@@ -199,7 +206,13 @@ export function PlaybookCards({
     Math.max(rev.rev, active?.rev ?? 0, ...(playbook.revisions ?? []).map((r) => r.rev)) + 1;
   // A change from a card is always a new proposal based on the version
   // shown — never blocked by (or folded into) another waiting proposal.
-  const lockedReason = archived ? t("edit.archived") : !canPropose ? t("edit.viewOnly") : null;
+  const lockedReason = draft
+    ? draft.locked
+    : archived
+      ? t("edit.archived")
+      : !canPropose
+        ? t("edit.viewOnly")
+        : null;
 
   const runCaption = () => {
     switch (runState.status) {
@@ -217,17 +230,18 @@ export function PlaybookCards({
   };
 
   return (
+    <StepChangeContext.Provider value={draft?.changes ?? NO_CHANGES}>
     <div data-component="PlaybookCards" data-view={view} className="mt-3 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <span
           data-component="CardsRev"
           className={`rounded-full px-2.5 py-1 text-xs ${
-            proposed
+            proposed || draft
               ? "bg-[var(--color-attention-bg)] text-[var(--color-warn-text)]"
               : "bg-[var(--color-surface-2)] text-[var(--color-muted)]"
           }`}
         >
-          {t(`showing.${state}`, { rev: rev.rev })}
+          {draft ? draft.label : t(`showing.${state}`, { rev: rev.rev })}
         </span>
         {view === "kanban" ? (
           <div className="flex items-center gap-2">
@@ -303,10 +317,35 @@ export function PlaybookCards({
           nextRev={nextRev}
           onClose={() => setEditKey(null)}
           onSaved={onProposed}
+          askWhere={draft ? draft.label : t("chip", { rev: rev.rev })}
+          onAsk={onAsk}
         />
       ) : null}
     </div>
+    </StepChangeContext.Provider>
   );
+}
+
+const NO_CHANGES = new Map<string, StepChange>();
+/** What the shown working draft changed, by step key; empty for a revision. */
+const StepChangeContext = createContext<Map<string, StepChange>>(NO_CHANGES);
+
+function ChangeTag({ stepKey }: { stepKey: string }) {
+  const t = useT("playbook");
+  const change = useContext(StepChangeContext).get(stepKey);
+  if (!change) return null;
+  return (
+    <span
+      data-change={change}
+      className="rounded-full bg-[var(--color-attention-bg)] px-1.5 text-[10px] font-medium text-[var(--color-warn-text)]"
+    >
+      {t(`draft.${change}`)}
+    </span>
+  );
+}
+
+function useChanged(stepKey: string): boolean {
+  return useContext(StepChangeContext).has(stepKey);
 }
 
 function useStepNames(steps: PlaybookStep[]) {
@@ -358,21 +397,24 @@ function StepCard({
   onOpen: (key: string) => void;
 }) {
   const t = useT("playbookCards");
+  const changed = useChanged(step.key);
   return (
     <button
       type="button"
       data-component="StepCard"
+      data-changed={changed ? "true" : undefined}
       data-step={step.key}
       aria-label={t("card.open", { title: step.title })}
       onClick={() => onOpen(step.key)}
       className={`flex min-h-11 w-full flex-col gap-1 rounded-lg border bg-[var(--color-surface)] px-3 py-2 text-left text-sm hover:border-[var(--color-accent)] ${
         step.checkpoint ? "border-dashed border-[var(--color-warn)]" : "border-[var(--color-border)]"
-      }`}
+      } ${changed ? "ring-2 ring-[var(--color-warn)]" : ""}`}
     >
       <span className="font-medium leading-snug">{step.title}</span>
       <span className="flex flex-wrap items-center gap-1.5">
         <Who step={step} hostProfile={hostProfile} />
         {step.checkpoint ? <CheckpointTag /> : null}
+        <ChangeTag stepKey={step.key} />
       </span>
       {after ? <span className="text-[11px] text-[var(--color-muted)]">{after}</span> : null}
     </button>
@@ -546,6 +588,7 @@ function Graph({
               <span className="flex items-center gap-1 text-xs font-medium">
                 <span className={`h-2 w-2 shrink-0 rounded-full ${RUN_DOT[lane]}`} aria-hidden="true" />
                 <span className="truncate">{n.step.title}</span>
+                <ChangeTag stepKey={n.step.key} />
               </span>
               <Who step={n.step} hostProfile={hostProfile} />
             </button>
@@ -594,6 +637,7 @@ function GraphList({
                 <span className="flex flex-wrap items-center gap-1.5">
                   <Who step={s} hostProfile={hostProfile} />
                   {s.checkpoint ? <CheckpointTag /> : null}
+                  <ChangeTag stepKey={s.key} />
                   <span className="text-[11px] text-[var(--color-muted)]">
                     {t(`lane.${lane}`)}
                   </span>

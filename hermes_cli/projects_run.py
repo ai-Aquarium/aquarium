@@ -1183,6 +1183,8 @@ def start_run(
     cost_reader: Optional[Callable] = None,
     auto_approve: bool = False,
     accessible: Optional[Sequence[str]] = None,
+    first_only: bool = False,
+    activate: bool = False,
 ) -> Dict[str, Any]:
     """Open a run and bring up its cards + guidance (§6 pipeline).
 
@@ -1198,12 +1200,17 @@ def start_run(
     releases them as slots free. ``manual`` autonomy ("Every step") still
     asks per card, and checkpoint holds still wait for Continue.
 
+    ``first_only`` opens run 1 or refuses (:class:`projects_db.FirstRunTaken`)
+    before anything reaches the board.
+    ``activate`` (with ``first_only`` and ``playbook_rev``) makes the revision
+    and a ``planning`` project active in run 1's own transaction.
+
     The run pins its ``playbook_rev`` (§7.2), compiles the guidance block
     once (§5.1), instantiates the playbook onto the board, promotes per
     autonomy, and — when the playbook has ``mode: 'inline'`` steps —
     spawns ONE seeded session for them through the shared spawn path.
     """
-    if project.status not in ("active",):
+    if project.status not in (("planning", "active") if activate else ("active",)):
         raise ValueError(
             f"project '{project.slug}' is '{project.status}': only an active "
             "project may run"
@@ -1250,7 +1257,11 @@ def start_run(
         profile=host,
         playbook_rev=playbook["rev"],
         auto_approve=auto_approve and (project.autonomy or "supervised") != "manual",
+        first_only=first_only,
+        activate=activate,
     )
+    if activate:
+        project = projects_db.get_project(pconn, project.id)
 
     # §6 + C8: the run binds a REAL trace so its cost is readable through
     # the ledger (never stored). Without tracing there is no trace id and

@@ -4261,6 +4261,93 @@ async def activate_playbook_route(request: Request, rev: int) -> dict[str, Any]:
     return await asyncio.to_thread(_activate_sync)
 
 
+@router.post("/{slug}/playbook/{rev}/first-run")
+async def first_run_route(request: Request, rev: int) -> dict[str, Any]:
+    """Make *rev* active and start run 1 as one human act (the project card
+    in the chat that started the project). Idempotent: once run 1 of *rev*
+    exists, a repeat (a second click, another tab) returns it with
+    ``started: false`` and changes nothing. A project that has run another
+    way, or is not planning/active, is refused before anything changes.
+    The same gates as activating: lead/admin and a verified session."""
+    project, _role, _profiles, principal = await _require_write(request)
+    _refuse_if_archived(project, "starting run 1")
+    await _require_human(request, "starting run 1")
+    accessible = await _accessible_profiles(principal, project)
+
+    def _done(conn) -> Optional[dict]:
+        first = projects_db.get_project_run(conn, project.id, 1)
+        if first is None:
+            return None
+        if first.get("playbook_rev") != rev:
+            raise HTTPException(
+                status_code=409,
+                detail="this project has already run — start the next run "
+                "from the project",
+            )
+        return {"rev": rev, "run": first, "started": False}
+
+    def _first_run_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            done = _done(conn)
+            if done is not None:
+                return done
+            current = projects_db.get_project(conn, project.id)
+            if current.status not in ("planning", "active"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"project {project.slug} is '{current.status}': only a "
+                    "planning or active project starts its first run",
+                )
+            playbook = projects_db.get_playbook(conn, project.id, rev=rev)
+            if playbook is None or playbook.get("discarded_at"):
+                raise HTTPException(
+                    status_code=404, detail=f"playbook revision {rev} not found"
+                )
+            _attach_plan_profiles_sync(conn, project.id, rev, principal, accessible)
+            with _board_conn(current) as bconn:
+                try:
+                    # Activation, the status change and run 1 land in one
+                    # transaction: a refused start changes none of them.
+                    started = projects_run.start_run(
+                        conn,
+                        bconn,
+                        project=current,
+                        trigger="manual",
+                        triggered_by=principal.user_id,
+                        playbook_rev=rev,
+                        accessible=accessible,
+                        first_only=True,
+                        activate=True,
+                    )
+                except (projects_db.FirstRunTaken, projects_db.RunAlreadyOpen) as exc:
+                    # Another click got there first: its run 1 is the answer.
+                    done = _done(conn)
+                    if done is not None:
+                        return done
+                    raise HTTPException(status_code=409, detail=str(exc))
+                except projects_db.FirstRunRefused as exc:
+                    raise HTTPException(
+                        status_code=404 if exc.not_found else 409, detail=str(exc)
+                    )
+                except projects_run.AssigneeNotAccessible as exc:
+                    raise HTTPException(status_code=403, detail=str(exc))
+                except ValueError as exc:
+                    raise HTTPException(status_code=409, detail=str(exc))
+            if not playbook.get("active"):
+                projects_db.record_project_activity(
+                    conn, project.id, "playbook_activated",
+                    actor=principal.user_id, detail={"rev": rev},
+                )
+            if current.status == "planning":
+                projects_db.record_project_activity(
+                    conn, project.id, "brief_edited",
+                    actor=principal.user_id, detail={"fields": ["status"]},
+                )
+        return {"rev": rev, "run": started["run"], "started": True}
+
+    return await asyncio.to_thread(_first_run_sync)
+
+
 @router.post("/{slug}/playbook/{rev}/rebase")
 async def rebase_playbook_route(request: Request, rev: int) -> dict[str, Any]:
     """Update a proposal written from an older revision onto the active
@@ -4538,7 +4625,11 @@ async def save_my_playbook_draft_route(request: Request) -> dict[str, Any]:
                     user_id=principal.user_id,
                     steps=cleaned,
                     note=body.get("note"),
-                    expected_version=expected,
+                    # The steps checked above are this version's: an edit
+                    # landing meanwhile is a conflict, never half-saved.
+                    expected_version=(
+                        expected if expected is not None else int(draft["version"])
+                    ),
                 )
             except projects_db.DraftConflict as exc:
                 raise _draft_conflict(exc)
@@ -4563,9 +4654,16 @@ async def discard_playbook_draft_route(request: Request, user_id: str) -> dict[s
             detail="members can discard only their own draft; ask a lead",
         )
 
+    expected = _expected_version(dict(request.query_params))
+
     def _discard_sync() -> dict:
         with projects_db.connect_closing() as conn:
-            gone = projects_db.discard_playbook_draft(conn, project.id, owner)
+            try:
+                gone = projects_db.discard_playbook_draft(
+                    conn, project.id, owner, expected_version=expected
+                )
+            except projects_db.DraftConflict as exc:
+                raise _draft_conflict(exc)
         if not gone:
             raise HTTPException(status_code=404, detail="no working draft to discard")
         return {"user_id": owner, "discarded": True}

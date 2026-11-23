@@ -956,6 +956,30 @@ def _print_draft(draft: Optional[dict]) -> None:
         print(f"  - {step.get('key')}: {step.get('title')}{assignee}{after}")
 
 
+def _path_part(value: str) -> str:
+    """One URL path segment: a step key like ``review#2`` stays whole."""
+    from urllib.parse import quote
+
+    return quote(value, safe="")
+
+
+def _draft_actor(actor: Optional[str]) -> Optional[str]:
+    """Whose draft a ``playbook draft`` command touches. Inside a chat turn
+    the gateway's principal ticket names the person who asked; an agent
+    cannot pick someone else with ``--actor``."""
+    from hermes_cli import principal_ticket
+
+    ticket = _session_env(principal_ticket.ENV_VAR)
+    if not ticket:
+        return actor
+    user = _ticket_user(ticket)
+    if not user:
+        raise PermissionError("this turn's principal ticket is not valid")
+    if actor and actor != user:
+        raise PermissionError("--actor must be the person this chat turn runs for")
+    return user
+
+
 def _cmd_playbook_draft(api: _Api, args) -> int:
     """``playbook <slug> draft [show|set|patch-step|remove-step|discard|save]``
     — the acting person's working draft (co-create in the project chat)."""
@@ -992,14 +1016,22 @@ def _cmd_playbook_draft(api: _Api, args) -> int:
             payload["step"] = _read_json_arg(extra[1])
             if args.after:
                 payload["after"] = args.after
-            resp = api.request("PATCH", f"{base}/steps/{extra[0]}", json_body=payload)
+            resp = api.request(
+                "PATCH", f"{base}/steps/{_path_part(extra[0])}", json_body=payload
+            )
         elif verb == "remove-step":
             if not extra:
                 print("projects: draft remove-step needs <key>", file=sys.stderr)
                 return 2
-            resp = api.request("DELETE", f"{base}/steps/{extra[0]}", json_body=payload)
+            resp = api.request(
+                "DELETE", f"{base}/steps/{_path_part(extra[0])}", json_body=payload
+            )
         elif verb == "discard":
-            resp = api.request("DELETE", f"/{slug}/playbook/drafts/me")
+            query = (
+                f"?expected_version={args.expected_version}"
+                if args.expected_version is not None else ""
+            )
+            resp = api.request("DELETE", f"/{slug}/playbook/drafts/me{query}")
         elif verb == "save":
             if args.note:
                 payload["note"] = args.note
@@ -1426,6 +1458,12 @@ async def _dispatch(args: argparse.Namespace) -> int:
             print(f"projects: --from-chat: {exc}", file=sys.stderr)
             return 2
         actor = args.chat["user_id"]
+    if args.projects_command == "playbook" and getattr(args, "playbook_action", None) == "draft":
+        try:
+            actor = _draft_actor(actor)
+        except PermissionError as exc:
+            print(f"projects: playbook draft: {exc}", file=sys.stderr)
+            return 2
     principal = await _resolve_principal(actor)
     api = _Api(principal, as_human=getattr(args, "as_human", False))
     try:

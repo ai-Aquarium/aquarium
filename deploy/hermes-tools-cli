@@ -126,8 +126,8 @@ def _playbook_args(pos):
             raise Refused(f"playbook draft {verb} takes {PLAYBOOK_DRAFT[verb]} argument(s)")
         if extra:
             _json_arg(extra[-1])
-        if verb == "patch-step" and not _NAME.fullmatch(extra[0]):
-            raise Refused("the step key must be a plain name")
+        if verb == "patch-step" and ("/" in extra[0] or extra[0] in (".", "..")):
+            raise Refused("the step key must be one name")
     else:
         raise Refused(f"`hermes projects playbook {action}` is not available")
 
