@@ -675,3 +675,30 @@ def test_cli_json(box, capsys):
         args.func(args)
     capsys.readouterr()
     assert _cli(["remove", f"email:{MAILBOX}", "--as", "john", "--json"], capsys) == {"deleted": True}
+
+
+async def _set_display(home, dsn: str, user_id: str, display: str) -> None:
+    from hermes_cli.console_scope import _scoped_to
+
+    with _scoped_to(home):
+        connection = await get_store("supabase-app", "prod", config=pg_config(dsn)).connect()
+        try:
+            await connection.execute(
+                "UPDATE principals SET display = $2 WHERE user_id = $1", user_id, display
+            )
+        finally:
+            await connection.close()
+
+
+def test_display_name_never_returns_a_login_email(box):
+    """Enrolment stores the login email as the display when none was given."""
+    from hermes_cli.access import invalidate_principal_cache
+
+    for name in ("default", "cfo", "hr"):
+        asyncio.run(_set_display(box["homes"][name], box["dsn"], "mary", "Mary@Example.com"))
+    invalidate_principal_cache()
+    assert asyncio.run(registry.display_name_for("mary")) is None
+
+    asyncio.run(_set_display(box["homes"]["hr"], box["dsn"], "mary", "Mary Chan"))
+    invalidate_principal_cache()
+    assert asyncio.run(registry.display_name_for("mary")) == "Mary Chan"
