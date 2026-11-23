@@ -1116,3 +1116,85 @@ def test_merged_leftover_steers_keep_each_send_time():
     assert source == "steer_leftover"
     assert merged["text"] == "before\nafter"
     assert merged["sent_ats"] == [10.0, 20.0]
+
+
+def _project_session(sid):
+    import hermes_state
+
+    db = hermes_state.SessionDB()
+    try:
+        db.ensure_session(sid, source="project_chat", user_id="root")
+    finally:
+        db.close()
+    return sid
+
+
+def _two_steers_then_finish(base, sid, turns):
+    turns.hold("first")
+
+    async def _scenario():
+        async with _client(base) as ac:
+            primary = asyncio.create_task(_stream(ac, sid, "first"))
+            run_id = await _live_run(ac, sid)
+            for _ in range(200):
+                if turns.agents:
+                    break
+                await asyncio.sleep(0.02)
+            await _send(ac, sid, run_id, "s1", "steer")
+            await _send(ac, sid, run_id, "s2", "steer")
+            turns.release("first")
+            body = await primary
+            await _until_idle(ac, sid)
+            return body
+
+    return asyncio.run(_scenario())
+
+
+def test_merged_steers_in_a_project_chat_record_each_send_time(base, chat, turns):
+    from hermes_cli import projects_db
+
+    sid = _project_session("s-steers")
+    _two_steers_then_finish(base, sid, turns)
+    assert turns.messages == ["first", "s1\ns2"]
+    with projects_db.connect_closing() as conn:
+        rows = projects_db.get_chat_inputs(conn, [sid])
+    assert len(rows) == 2 and rows[0][0] == rows[1][0]
+    assert rows[0][1] < rows[1][1] <= rows[0][0]
+
+
+def test_a_stop_while_recording_starts_nothing_and_keeps_no_record(
+    base, chat, turns, monkeypatch
+):
+    from hermes_cli import projects_db, web_server
+
+    real = web_server._record_project_chat_input
+
+    def _record_then_stop(session_id, sent_ats):
+        ids = real(session_id, sent_ats)
+        for entry in web_server._CHAT_RUNS.values():
+            if not entry["done"]:
+                entry["cancel_requested"] = True
+        return ids
+
+    monkeypatch.setattr(web_server, "_record_project_chat_input", _record_then_stop)
+    sid = _project_session("s-stopped")
+    body = _two_steers_then_finish(base, sid, turns)
+    assert turns.messages == ["first"]
+    assert "run.chained" not in [n for n, _ in _events(body)]
+    assert [n for n, _ in _events(body)].count("input.removed") == 2
+    with projects_db.connect_closing() as conn:
+        assert projects_db.get_chat_inputs(conn, [sid]) == []
+
+
+def test_a_failed_record_hands_the_follow_up_back(base, chat, turns, monkeypatch):
+    from hermes_cli import projects_db
+
+    def _fail(*args, **kwargs):
+        raise RuntimeError("projects db is locked")
+
+    monkeypatch.setattr(projects_db, "record_chat_inputs", _fail)
+    sid = _project_session("s-failed")
+    body = _two_steers_then_finish(base, sid, turns)
+    assert turns.messages == ["first"]
+    removed = [d for n, d in _events(body) if n == "input.removed"]
+    assert {d.get("reason") for d in removed} == {"chain_failed"}

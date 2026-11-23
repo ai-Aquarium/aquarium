@@ -12850,18 +12850,23 @@ def _close_chat_run_inputs(entry: dict, result) -> tuple:
     return chain, leftover, []
 
 
-def _record_project_chat_input(session_id: str, sent_ats: list) -> None:
+def _record_project_chat_input(session_id: str, sent_ats: list) -> list:
     """Note that a project chat turn starts now from input sent at *sent_ats*
-    (its person must have been able to post at each)."""
-    launched_at = time.time()
-    try:
-        from hermes_cli import projects_db
+    (its person must have been able to post at each). All or nothing; raises
+    so a turn that can't be judged is not started."""
+    from hermes_cli import projects_db
 
-        with projects_db.connect_closing() as conn:
-            for sent in sent_ats:
-                projects_db.record_chat_input(conn, session_id, float(sent), launched_at)
-    except Exception:
-        _log.warning("[agent-home] recording a project chat input failed", exc_info=True)
+    with projects_db.connect_closing() as conn:
+        return projects_db.record_chat_inputs(
+            conn, session_id, [float(s) for s in sent_ats], time.time()
+        )
+
+
+def _forget_project_chat_input(ids: list) -> None:
+    from hermes_cli import projects_db
+
+    with projects_db.connect_closing() as conn:
+        projects_db.delete_chat_inputs(conn, ids)
 
 
 def _launch_chat_run(
@@ -13114,11 +13119,18 @@ def _start_chat_run(run_id, run_entry, loop, principal, profile, sid, user_messa
             if project_chat:
                 # Recorded before the turn can write its message, so the group
                 # chat judges it by when it was sent from the start.
-                await asyncio.to_thread(
+                recorded = await asyncio.to_thread(
                     _record_project_chat_input,
                     next_sid,
                     item.get("sent_ats") or [item.get("created_at") or time.time()],
                 )
+                if run_entry["cancel_requested"]:
+                    # Stop landed while recording: nothing more runs.
+                    await asyncio.to_thread(_forget_project_chat_input, recorded)
+                    for owed, _source in chain:
+                        for owed_id in owed.get("item_ids") or [owed["item_id"]]:
+                            _enqueue("input.removed", {"item_id": owed_id, "run_id": run_id})
+                    return
             next_run_id, _ = _launch_chat_run(
                 principal=principal,
                 profile=profile,
