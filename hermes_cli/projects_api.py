@@ -4625,7 +4625,11 @@ async def save_my_playbook_draft_route(request: Request) -> dict[str, Any]:
                     user_id=principal.user_id,
                     steps=cleaned,
                     note=body.get("note"),
-                    expected_version=expected,
+                    # The steps checked above are this version's: an edit
+                    # landing meanwhile is a conflict, never half-saved.
+                    expected_version=(
+                        expected if expected is not None else int(draft["version"])
+                    ),
                 )
             except projects_db.DraftConflict as exc:
                 raise _draft_conflict(exc)
@@ -4650,9 +4654,16 @@ async def discard_playbook_draft_route(request: Request, user_id: str) -> dict[s
             detail="members can discard only their own draft; ask a lead",
         )
 
+    expected = _expected_version(dict(request.query_params))
+
     def _discard_sync() -> dict:
         with projects_db.connect_closing() as conn:
-            gone = projects_db.discard_playbook_draft(conn, project.id, owner)
+            try:
+                gone = projects_db.discard_playbook_draft(
+                    conn, project.id, owner, expected_version=expected
+                )
+            except projects_db.DraftConflict as exc:
+                raise _draft_conflict(exc)
         if not gone:
             raise HTTPException(status_code=404, detail="no working draft to discard")
         return {"user_id": owner, "discarded": True}

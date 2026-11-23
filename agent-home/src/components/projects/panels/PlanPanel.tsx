@@ -21,6 +21,7 @@ import {
 import type {
   AssignableProfile,
   PlaybookAncestor,
+  PlaybookDraft,
   PlaybookRev,
   PlaybookStep,
   ProjectPlaybookDraftState,
@@ -34,6 +35,11 @@ import { PencilIcon, SparklesIcon } from "@/components/ui/icons";
 import { CompareIcon, MakeActiveIcon, RebaseIcon } from "@/components/projects/playbook/icons";
 import { RevisionCompare } from "@/components/projects/playbook/RevisionCompare";
 import { RevisionPicker } from "@/components/projects/playbook/RevisionPicker";
+import { AskAboutButton } from "@/components/projects/playbook/AskAbout";
+import { DraftView, useDraftLabel } from "@/components/projects/playbook/DraftView";
+import { draftChanges } from "@/components/projects/playbook/draftDiff";
+import { paragraphs } from "@/components/projects/playbook/textDiff";
+import { useWorkingDrafts } from "@/components/projects/playbook/useWorkingDrafts";
 import {
   defaultCompareBase,
   defaultRevision,
@@ -215,6 +221,7 @@ export function PlanPanel({
   latestRunNo = null,
   canPropose = true,
   callerUserId = null,
+  onAsk,
 }: {
   slug: string;
   playbook: ProjectPlaybookResponse | null;
@@ -230,6 +237,8 @@ export function PlanPanel({
   canPropose?: boolean;
   /** The signed-in user: a member may discard their own proposals. */
   callerUserId?: string | null;
+  /** "Ask about this": quote a paragraph, step or card into the project chat. */
+  onAsk?: (quote: string) => void;
 }) {
   const t = useT("playbook");
   const { refresh } = useRefresh();
@@ -263,6 +272,7 @@ export function PlanPanel({
   /** The proposal just saved here (editor or a card), for its confirmation. */
   const [savedRev, setSavedRev] = useState<number | null>(null);
   const [view, setView] = useState<CardsView>("text");
+  const [pickedDraft, setPickedDraft] = useState<string | null>(null);
   const byRev = (rev: number | null) => (rev == null ? undefined : revisions.find((r) => r.rev === rev));
   const selected = byRev(picked) ?? byRev(defaultRevision(playbook)) ?? active;
   const compareBase =
@@ -274,6 +284,45 @@ export function PlanPanel({
   const selectedState = selected ? revisionState(selected, activeRev) : null;
 
   const slugPath = `/api/projects/${encodeURIComponent(slug)}`;
+
+  const { drafts, reload: reloadDrafts } = useWorkingDrafts(
+    slug,
+    playbook != null,
+    playbook,
+    (mine: PlaybookDraft) => setPickedDraft(mine.user_id),
+  );
+  const shownDraft = pickedDraft == null ? undefined : drafts.find((d) => d.user_id === pickedDraft);
+  const draftBase = shownDraft ? (byRev(shownDraft.base_rev) ?? null) : null;
+  const nextRev =
+    Math.max(0, activeRev ?? 0, ...revisions.map((r) => r.rev), ...discarded.map((d) => d.rev)) + 1;
+  const draftLabel = useDraftLabel();
+  const draftCards =
+    shownDraft && view !== "text"
+      ? {
+          rev: {
+            ...(draftBase ?? { project_id: shownDraft.project_id, created_by: shownDraft.user_id }),
+            rev: nextRev,
+            body: shownDraft.body,
+            steps: shownDraft.steps,
+            active: 0,
+            created_at: shownDraft.updated_at,
+            activated_at: null,
+            note: shownDraft.note,
+            base_rev: shownDraft.base_rev || null,
+          } as PlaybookRev,
+          draft: {
+            label: draftLabel(shownDraft),
+            changes: draftChanges(draftBase, shownDraft).steps,
+            locked: t("draft.locked"),
+          },
+        }
+      : null;
+  const draftSaved = (rev: number) => {
+    setPickedDraft(null);
+    setPicked(rev);
+    setSavedRev(rev);
+    reloadDrafts();
+  };
 
   const roster = useAssignableProfiles(
     slug,
@@ -387,6 +436,7 @@ export function PlanPanel({
   };
 
   const selectRev = (rev: number) => {
+    setPickedDraft(null);
     setPicked(rev);
     setActivatedRev(null);
   };
@@ -448,7 +498,9 @@ export function PlanPanel({
             {drafting ? "Agent is drafting…" : "Draft with the agent"}
           </ActionButton>
         ) : null}
-        {!archived && !editing ? (
+        {/* Over a draft, Edit would load the saved version hidden behind it;
+            before any version, Write playbook stays (nothing is hidden). */}
+        {!archived && !editing && !(shownDraft && selected != null) ? (
           <button
             type="button"
             data-component="EditPlaybook"
@@ -503,18 +555,25 @@ export function PlanPanel({
             </p>
           ) : null}
 
-          {selected != null && !editing ? (
+          {(selected != null || drafts.length > 0) && !editing ? (
             <RevisionPicker
               revisions={revisions}
               discarded={discarded}
               activeRev={activeRev}
               selected={selected}
               onSelect={selectRev}
+              drafts={drafts}
+              selectedDraft={shownDraft ? shownDraft.user_id : null}
+              onSelectDraft={(userId) => {
+                setPickedDraft(userId);
+                setComparing(false);
+              }}
             />
           ) : null}
 
           {selected != null &&
           !editing &&
+          !shownDraft &&
           selectedState !== "active" &&
           (view === "text" || selectedState === "proposed") ? (
             <RevisionDecision
@@ -547,7 +606,9 @@ export function PlanPanel({
               slug={slug}
               playbook={playbook}
               view={view}
-              rev={selected}
+              rev={draftCards ? draftCards.rev : selected}
+              draft={draftCards?.draft ?? null}
+              onAsk={onAsk}
               latestRunNo={latestRunNo}
               profiles={profiles}
               hostProfile={hostProfile}
@@ -557,7 +618,23 @@ export function PlanPanel({
             />
           ) : null}
 
-          {selected != null && !editing && view === "text" && comparing && compareBase ? (
+          {shownDraft && !editing && view === "text" ? (
+            <DraftView
+              key={shownDraft.user_id}
+              slug={slug}
+              draft={shownDraft}
+              base={draftBase}
+              nextRev={nextRev}
+              onAsk={onAsk}
+              onSaved={draftSaved}
+              onDiscarded={() => {
+                setPickedDraft(null);
+                reloadDrafts();
+              }}
+            />
+          ) : null}
+
+          {selected != null && !editing && !shownDraft && view === "text" && comparing && compareBase ? (
             <RevisionCompare
               revisions={revisions}
               activeRev={activeRev}
@@ -573,8 +650,9 @@ export function PlanPanel({
             />
           ) : null}
 
-          {selected != null && !editing && view === "text" && !(comparing && compareBase) ? (
+          {selected != null && !editing && !shownDraft && view === "text" && !(comparing && compareBase) ? (
             <RevisionBody
+              onAsk={onAsk}
               rev={selected}
               state={selectedState ?? "active"}
               hostProfile={hostProfile}
@@ -787,16 +865,31 @@ function RevisionBody({
   state,
   hostProfile = null,
   cardByName,
+  onAsk,
 }: {
+  onAsk?: (quote: string) => void;
   rev: PlaybookRev;
   state: RevisionState;
   hostProfile?: string | null;
   cardByName: Map<string, AssignableProfile>;
 }) {
+  const t = useT("playbook");
   const steps = rev.steps ?? [];
+  const where = t("chip", { rev: rev.rev });
   return (
     <div data-component="PlaybookRevision" data-rev={rev.rev} data-state={state}>
-      {rev.body ? <p className="mt-2 whitespace-pre-wrap text-sm">{rev.body}</p> : null}
+      {rev.body && onAsk ? (
+        <div className="mt-2 flex flex-col gap-0.5 text-sm">
+          {paragraphs(rev.body).map((text, i) => (
+            <div key={`${i}:${text}`} data-paragraph={i} className="flex items-start gap-1">
+              <p className="min-w-0 flex-1 whitespace-pre-wrap">{text}</p>
+              <AskAboutButton where={`${where} · ¶${i + 1}`} text={text} onAsk={onAsk} />
+            </div>
+          ))}
+        </div>
+      ) : rev.body ? (
+        <p className="mt-2 whitespace-pre-wrap text-sm">{rev.body}</p>
+      ) : null}
       {steps.length > 0 ? <WhoDoesWhat steps={steps} hostProfile={hostProfile} /> : null}
       {steps.length > 0 ? (
         <ol className="mt-2 flex flex-col gap-1">
@@ -826,6 +919,13 @@ function RevisionBody({
                   profile={cardByName.get(step.assignee || hostProfile || "")}
                 />
               </span>
+              {onAsk ? (
+                <AskAboutButton
+                  where={`${where} · ${t("stepN", { n: index + 1 })}`}
+                  text={[step.title, step.body ?? ""].filter(Boolean).join("\n")}
+                  onAsk={onAsk}
+                />
+              ) : null}
             </li>
           ))}
         </ol>

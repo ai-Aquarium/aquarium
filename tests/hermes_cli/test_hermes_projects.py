@@ -617,3 +617,30 @@ def test_playbook_draft_verbs_edit_only_the_actors_draft(env, tmp_path, capsys):
 
     assert run("playbook", slug, "draft", "discard") == 1
     assert "no working draft" in capsys.readouterr().err
+
+
+def test_playbook_draft_step_keys_are_one_path_segment(env, tmp_path, capsys):
+    run, _capsys = env
+    slug = _create(run, capsys, tmp_path)
+    assert run("playbook", slug, "draft", "set", '{"steps": [{"key": "review", "title": "Review"}]}') == 0
+    assert run("playbook", slug, "draft", "patch-step", "review#2", '{"title": "Second review"}') == 0
+    capsys.readouterr()
+    assert run("playbook", slug, "draft", "show", "--json") == 0
+    draft = json.loads(capsys.readouterr().out)["draft"]
+    assert [(s["key"], s["title"]) for s in draft["steps"]] == [
+        ("review", "Review"),
+        ("review#2", "Second review"),
+    ]
+
+
+def test_playbook_draft_in_a_chat_turn_acts_only_as_its_person(env, tmp_path, monkeypatch, capsys):
+    from hermes_cli import principal_ticket
+
+    run, _capsys = env
+    slug = _create(run, capsys, tmp_path)
+    monkeypatch.setenv(principal_ticket.ENV_VAR, principal_ticket.mint("leo"))
+    assert run("--actor", "ada", "playbook", slug, "draft", "set", '{"body": "x"}') == 2
+    assert "--actor must be the person" in capsys.readouterr().err
+    monkeypatch.setenv(principal_ticket.ENV_VAR, "forged")
+    assert run("playbook", slug, "draft", "set", '{"body": "x"}') == 2
+    assert "not valid" in capsys.readouterr().err

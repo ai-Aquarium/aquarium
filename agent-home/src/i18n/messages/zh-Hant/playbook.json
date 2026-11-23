@@ -70,5 +70,43 @@
   "updatedNotice": "v{from} 已更新到 v{active}，存為 v{rev}，仍是建議版本。",
   "updatedConflicts": "v{from} 已更新到 v{active}，存為 v{rev}。雙方都改動了 {what}；已保留 v{from} 的版本。啟用前請先比較。",
   "updatedKept": "v{from} 保持不變，仍在列表中。",
-  "conflictText": "文字說明"
+  "conflictText": "文字說明",
+  "options": {
+    "pick": "選 {label}",
+    "pro": "優點",
+    "con": "缺點",
+    "ownWords": "或者用你自己的話回覆。"
+  },
+  "askAbout": {
+    "label": "問問這個：{where}",
+    "title": "問問這個 — 引用到專案對話"
+  },
+  "draft": {
+    "chip": "草稿 · {who}",
+    "from": "基於 v{rev}",
+    "fromScratch": "從零開始",
+    "label": "草稿 · {who}（{from}）",
+    "bannerMine": "你的工作草稿。你在對話中討論時，你的代理會即時修改它；相對 {base} 的變更會被標示。「問問這個」（對話氣泡按鈕）可把任何段落、步驟或卡片引用到對話。",
+    "bannerOther": "{who} 的工作草稿，唯讀。相對 {base} 的變更會被標示；只有 {who} 或其代理可以修改或儲存。",
+    "base": "v{rev}",
+    "baseNone": "空白的劇本",
+    "changes": "相對 {base} 有 {count} 項變更",
+    "noChanges": "相對 {base} 尚未有變更。",
+    "edited": "由 {who} 修改 · {when}",
+    "agent": "代理",
+    "text": "劇本內容",
+    "steps": "步驟（{count}）",
+    "noSteps": "尚未有步驟",
+    "removed": "已移除：{titles}",
+    "added": "新增",
+    "changed": "已修改",
+    "save": "儲存為 v{rev}",
+    "saving": "儲存中…",
+    "saveHint": "儲存後會成為待審版本；要有人設為使用中才會生效。",
+    "discard": "捨棄草稿",
+    "discarding": "捨棄中…",
+    "saved": "已儲存為 v{rev}（待審）。檢查後再設為使用中。",
+    "locked": "這是工作草稿：請在專案對話中提出修改。"
+  },
+  "stepN": "步驟 {n}"
 }

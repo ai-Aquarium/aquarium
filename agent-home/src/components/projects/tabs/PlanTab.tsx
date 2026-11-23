@@ -3,7 +3,7 @@
 import { PlanPanel } from "@/components/projects/panels/PlanPanel";
 import type { ProjectTabProps } from "@/components/projects/tabs/types";
 
-export function PlanTab({ project, playbook, canLead, callerUserId }: ProjectTabProps) {
+export function PlanTab({ project, playbook, canLead, callerUserId, onDiscussInChat }: ProjectTabProps) {
   const role = project.members.find((m) => m.user_id === callerUserId)?.role ?? null;
   return (
     <div data-component="PlanTab">
@@ -15,6 +15,7 @@ export function PlanTab({ project, playbook, canLead, callerUserId }: ProjectTab
         canActivate={canLead}
         canPropose={canLead || role === "member"}
         callerUserId={callerUserId}
+        onAsk={onDiscussInChat}
         archived={project.archived}
         latestRunNo={
           project.runs.length > 0 ? Math.max(...project.runs.map((r) => r.run_no)) : null

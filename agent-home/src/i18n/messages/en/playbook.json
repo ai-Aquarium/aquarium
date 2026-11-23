@@ -70,5 +70,43 @@
   "updatedNotice": "v{from} was updated onto v{active} as v{rev}, still a proposal.",
   "updatedConflicts": "v{from} was updated onto v{active} as v{rev}. Both changed {what}; v{from}'s version was kept. Compare before making it active.",
   "updatedKept": "v{from} is unchanged and still listed.",
-  "conflictText": "the text"
+  "conflictText": "the text",
+  "options": {
+    "pick": "Pick {label}",
+    "pro": "Pro",
+    "con": "Con",
+    "ownWords": "Or reply in your own words."
+  },
+  "askAbout": {
+    "label": "Ask about this: {where}",
+    "title": "Ask about this — quote it in the project chat"
+  },
+  "draft": {
+    "chip": "Draft · {who}",
+    "from": "from v{rev}",
+    "fromScratch": "from scratch",
+    "label": "Draft · {who} ({from})",
+    "bannerMine": "Your working draft. Your agent edits it live as you talk in chat; changes against {base} are highlighted. Ask about this (the speech-bubble button) quotes any paragraph, step or card into the chat.",
+    "bannerOther": "{who}'s working draft, read-only. Changes against {base} are highlighted; only {who} or their agent can edit or save it.",
+    "base": "v{rev}",
+    "baseNone": "an empty playbook",
+    "changes": "Changes against {base}: {count}",
+    "noChanges": "No changes against {base} yet.",
+    "edited": "edited by {who} · {when}",
+    "agent": "the agent",
+    "text": "Playbook text",
+    "steps": "Steps ({count})",
+    "noSteps": "no steps yet",
+    "removed": "Removed: {titles}",
+    "added": "added",
+    "changed": "changed",
+    "save": "Save as v{rev}",
+    "saving": "Saving…",
+    "saveHint": "Saving makes it a proposed revision; nothing changes until someone makes it active.",
+    "discard": "Discard draft",
+    "discarding": "Discarding…",
+    "saved": "Saved as v{rev}, proposed. Review it and make it active when it looks right.",
+    "locked": "This is a working draft: change it by asking in the project chat."
+  },
+  "stepN": "Step {n}"
 }

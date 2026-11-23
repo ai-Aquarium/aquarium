@@ -3447,11 +3447,11 @@ def _put_draft(
             """INSERT INTO project_playbook_drafts
                (project_id, user_id, base_rev, body, steps, note,
                 updated_by, version, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (project_id, user_id, int(base["rev"]) if base else 0,
              new_body, json.dumps(cleaned),
              None if note is _MISSING else note,
-             updated_by or user_id, now, now),
+             updated_by or user_id, _first_draft_version(), now, now),
         )
     else:
         new_body = current["body"] if body is None else str(body)
@@ -3553,10 +3553,27 @@ def save_playbook_draft(
     return rev
 
 
+def _first_draft_version() -> int:
+    """A new draft's ``version``: the clock in ms, so a draft started after
+    one was saved or discarded never reuses that one's numbers and a stale
+    ``expected_version`` still conflicts."""
+    return time.time_ns() // 1_000_000
+
+
 def discard_playbook_draft(
-    conn: sqlite3.Connection, project_id: str, user_id: str
+    conn: sqlite3.Connection,
+    project_id: str,
+    user_id: str,
+    *,
+    expected_version: Optional[int] = None,
 ) -> bool:
+    """Delete the draft; with ``expected_version``, only that version of it
+    (``DraftConflict`` when it has moved on)."""
     with write_txn(conn):
+        if expected_version is not None:
+            current = get_playbook_draft(conn, project_id, user_id)
+            if current is not None and int(current["version"]) != int(expected_version):
+                raise DraftConflict(current)
         cur = conn.execute(
             "DELETE FROM project_playbook_drafts WHERE project_id = ? AND user_id = ?",
             (project_id, user_id),

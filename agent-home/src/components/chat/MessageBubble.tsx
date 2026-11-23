@@ -5,9 +5,11 @@ import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode }
 import { ChatFile } from "@/components/chat/ChatFile";
 import { ChatMedia } from "@/components/chat/ChatMedia";
 import { DataAnswerFooter } from "@/components/chat/DataAnswerFooter";
+import { OptionCards } from "@/components/chat/OptionCards";
 import { ProjectCard } from "@/components/chat/ProjectCard";
 import { RichText } from "@/components/chat/RichText";
 import { splitDataAnswer } from "@/lib/chat/data-answer";
+import { splitOptionCards } from "@/lib/chat/option-cards";
 import { splitProjectCards } from "@/lib/chat/project-card";
 import { mediaRefPath, unescapeLinkLabel } from "@/lib/chat/media-ref";
 import {
@@ -223,13 +225,15 @@ export const MessageBubble = memo(function MessageBubble({
   const isUser = message.role === "user";
   const split = splitCompactionContent(message.content ?? "");
   const data = isUser ? null : splitDataAnswer(split.display);
-  const reply = isUser ? null : splitProjectCards(data?.text ?? split.display);
+  const cardsSplit = isUser ? null : splitProjectCards(data?.text ?? split.display);
+  const reply = cardsSplit ? splitOptionCards(cardsSplit.text) : null;
   const content = reply ? reply.text : stripRefMentions(stripInjectedContext(split.display));
-  const projectCards = reply?.cards ?? [];
+  const projectCards = cardsSplit?.cards ?? [];
+  const options = reply?.options ?? [];
   const dataAnswer = data?.answer ?? null;
   const reasoning = isUser ? "" : (message.reasoning ?? "").trim();
 
-  if (content === "" && reasoning === "" && !dataAnswer && projectCards.length === 0) {
+  if (content === "" && reasoning === "" && !dataAnswer && projectCards.length === 0 && options.length === 0) {
     // Summary-only row (or a user turn that was just the context line): no
     // bubble at all — at most the compaction divider.
     return split.hadCompaction ? <CompactionDivider /> : null;
@@ -272,6 +276,7 @@ export const MessageBubble = memo(function MessageBubble({
                 </details>
               ) : null}
               {content !== "" ? <RichText content={content} /> : null}
+              {options.length > 0 ? <OptionCards options={options} /> : null}
               {projectCards.map((card) => (
                 <ProjectCard key={card.slug} card={card} />
               ))}

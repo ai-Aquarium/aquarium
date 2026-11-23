@@ -4,6 +4,7 @@ import { MediaProjectContext } from "@/components/chat/MediaProject";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ChatConversationView } from "@/components/chat/ChatConversationView";
+import { ComposerPrefillContext, useComposerPrefill } from "@/components/chat/composerPrefill";
 import type { ComposerDraft } from "@/components/chat/Composer";
 import { useChatConversation } from "@/components/chat/useChatConversation";
 import { ProjectChatDock } from "@/components/projects/chat/ProjectChatDock";
@@ -89,7 +90,7 @@ export function ProjectChatPanel({
   const [seenDraft, setSeenDraft] = useState<number | undefined>(undefined);
   if (composerDraft && composerDraft.seq !== seenDraft) {
     setSeenDraft(composerDraft.seq);
-    setHandoff((prev) => ({ text: composerDraft.text, seq: (prev?.seq ?? 0) + 1 }));
+    setHandoff((prev) => ({ text: composerDraft.text, seq: (prev?.seq ?? 0) + 1, append: true }));
   }
   const unsent = useRef("");
   const onComposerText = useCallback((text: string) => {
@@ -97,8 +98,10 @@ export function ProjectChatPanel({
   }, []);
   const select = (next: string) => {
     if (next === profile) return;
+    // Always hand over (even nothing): the new pane must not replay an old,
+    // already-sent handoff.
     const text = unsent.current;
-    if (text) setHandoff((prev) => ({ text, seq: (prev?.seq ?? 0) + 1 }));
+    setHandoff((prev) => ({ text, seq: (prev?.seq ?? 0) + 1 }));
     setProfile(next);
   };
 
@@ -130,6 +133,11 @@ export function ProjectChatPanel({
     return () => clearInterval(timer);
   }, [polling, refresh]);
 
+  const prefill = useCallback(
+    (text: string) => setHandoff((prev) => ({ text, seq: (prev?.seq ?? 0) + 1, append: true })),
+    [],
+  );
+
   const picker = (id: string) => (
     <ProjectChatProfilePicker
       id={id}
@@ -152,6 +160,7 @@ export function ProjectChatPanel({
         chat && timeline ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="pb-2 lg:hidden">{picker("project-chat-profile-phone")}</div>
+            <ComposerPrefillContext.Provider value={prefill}>
             <ProjectChatPane
               key={profile}
               slug={slug}
@@ -167,6 +176,7 @@ export function ProjectChatPanel({
               askAgent={askAgent}
               onAskAgent={setAskAgent}
             />
+            </ComposerPrefillContext.Provider>
           </div>
         ) : (
           <p className="p-3 text-sm text-[var(--color-muted)]">{t("dock.unavailable")}</p>
@@ -267,6 +277,7 @@ function ProjectChatPane({
   const busy = conv.selBusy;
   const me = timeline.me;
   const canPost = timeline.can_post !== false;
+  const prefill = useComposerPrefill();
   const myName = timeline.people?.find((p) => p.user_id === me)?.name;
   const note = useProjectAction();
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -394,6 +405,7 @@ function ProjectChatPane({
 
   return (
     <MediaProjectContext.Provider value={slug}>
+    <ComposerPrefillContext.Provider value={canPost ? prefill : null}>
     <div data-component="ProjectChatPane" className="flex min-h-0 flex-1 flex-col">
       <ChatConversationView
         conv={view}
@@ -433,6 +445,7 @@ function ProjectChatPane({
         }
       />
     </div>
+    </ComposerPrefillContext.Provider>
     </MediaProjectContext.Provider>
   );
 }
