@@ -1451,6 +1451,31 @@ def record_chat_input(
         )
 
 
+def record_chat_inputs(
+    conn: sqlite3.Connection, session_id: str, sent_ats: List[float], launched_at: float
+) -> List[int]:
+    """One turn's queued parts, all or none; returns their row ids."""
+    with write_txn(conn):
+        return [
+            conn.execute(
+                "INSERT INTO project_chat_inputs (session_id, accepted_at, launched_at) "
+                "VALUES (?, ?, ?)",
+                (session_id, float(sent), float(launched_at)),
+            ).lastrowid
+            for sent in sent_ats
+        ]
+
+
+def delete_chat_inputs(conn: sqlite3.Connection, ids: List[int]) -> None:
+    if not ids:
+        return
+    with write_txn(conn):
+        conn.execute(
+            f"DELETE FROM project_chat_inputs WHERE id IN ({','.join('?' for _ in ids)})",
+            list(ids),
+        )
+
+
 def get_chat_inputs(conn: sqlite3.Connection, session_ids: List[str]) -> List[tuple]:
     """``(when it started, when it was sent)`` for each turn these
     conversations ran from a queued input, oldest first."""
