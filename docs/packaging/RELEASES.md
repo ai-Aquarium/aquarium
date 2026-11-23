@@ -211,8 +211,11 @@ as root after an upgrade. The list is `ROOT_COPIES` in `deploy/aquarium.py`:
   up is not turned on.
 - Release installs take the files from the signature-verified tarball
   (extracted to a root-only directory), never from the unpacked release tree,
-  which the service user owns while it builds. Git-checkout installs take them
-  from the checked-out tag.
+  which the service user owns while it builds. Git-checkout installs also take
+  them from the tag's signed release package (checked with cosign), never from
+  the checkout. If the tag has no signed package, or cosign isn't installed, the
+  helpers are left as they are and the job log lists the exact root commands
+  (`visudo -cf … && install -m 0440 …`, `install -m 0755 …`) to run from the checkout.
 - Everything is staged first; each sudoers rule must pass `visudo -cf` before
   anything is replaced. Then each file is swapped in atomically (`rename`):
   binaries `root:root 0755`, sudoers rules `root:root 0440`. Swapping
@@ -250,7 +253,9 @@ page asks for a tick ("upgrade now anyway") and the API refuses (409) without
 **Post-upgrade checks:** besides every service and page answering, the
 installed root copies must match the release, and if any profile's
 `config.yaml` sets `terminal.run_as: hermes-tools`, the agent terminal must
-run `hermes projects --help` through the restricted path
+run a read-only allowlisted command (`hermes memory status --help`, picked
+with the release's own allowlist parser; `hermes projects` needs a chat's
+requester ticket so it can't be the probe) through the restricted path
 (`sudo -n -u hermes-tools /usr/local/sbin/hermes-tools-exec bash -c …`).
 Any failure rolls back automatically; the job error (shown on the page) names
 the check that failed and the version it went back to.
@@ -260,7 +265,7 @@ previous published stable release, verifies its signature, then runs the
 previous release's *own* `aquarium upgrade start` / `upgrade run` against the
 tarball just built, lets the new command's status poll start the finish job,
 and finally runs `upgrade rollback`; it also rehearses v0.2.7 and the newest
-tag against the tree (`tests/deploy/test_aquarium_upgrade_rehearsal.py`).
+tag older than the one being published against the tree (`tests/deploy/test_aquarium_upgrade_rehearsal.py`).
 Real: both releases' `aquarium` command and helper/sudoers files from the
 tarballs, the previous release's signature, `visudo -cf`, file modes, the job,
 state, backup-of-copies and rollback code. Not covered (faked): systemd,
