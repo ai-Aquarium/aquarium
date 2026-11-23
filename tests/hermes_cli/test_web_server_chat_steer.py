@@ -1059,3 +1059,39 @@ def test_a_chain_that_cannot_start_hands_every_input_back(base, chat, turns, mon
     # The conversation is not left looking busy.
     assert turns.messages == ["first", "fourth"]
     assert "done" in [n for n, _ in _events(after)]
+
+
+def test_a_project_chat_records_when_a_queued_input_was_sent(base, chat, turns):
+    import hermes_state
+
+    from hermes_cli import projects_db
+
+    db = hermes_state.SessionDB()
+    try:
+        db.ensure_session("s-root", source="project_chat", user_id="root")
+        # Compressed earlier: the conversation continues under another source.
+        db.end_session("s-root", "compression")
+        db.ensure_session(
+            "s-project", source="api_server", user_id="root", parent_session_id="s-root"
+        )
+    finally:
+        db.close()
+    turns.hold("first")
+
+    async def _scenario():
+        async with _client(base) as ac:
+            primary = asyncio.create_task(_stream(ac, "s-project", "first"))
+            run_id = await _live_run(ac, "s-project")
+            await _send(ac, "s-project", run_id, "then this", "queue")
+            sent = time.time()
+            turns.release("first")
+            await primary
+            await _until_idle(ac, "s-project")
+            return sent
+
+    sent = asyncio.run(_scenario())
+    with projects_db.connect_closing() as conn:
+        accepted = projects_db.get_chat_inputs(conn, ["s-project"])
+        ordinary = projects_db.get_chat_inputs(conn, [chat])
+    assert len(accepted) == 1 and accepted[0][1] <= sent <= accepted[0][0]
+    assert ordinary == []

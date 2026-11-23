@@ -208,7 +208,7 @@ def _post_spans(project, roles: dict[str, str]) -> Spans:
             spans[user] = _ALWAYS if roles.get(user) in ("lead", "member") else []
             continue
         out: list[tuple[float, float]] = []
-        start: Optional[float] = float("-inf") if events[0][0] is None else None
+        start: Optional[float] = None
         for role, at in events:
             if role in ("lead", "member"):
                 if start is None:
@@ -244,6 +244,7 @@ async def _group(project, role, principal) -> tuple[dict[str, set[str]], dict[st
     ids = {caller}
     if caller in roles or projects_api._instance_admin(principal):
         ids |= set(roles) | set(spans)
+    spans = {u: s for u, s in spans.items() if u in ids}
     people = sorted(ids)
     profiles, names = await asyncio.gather(
         asyncio.gather(*(_chat_profiles(u) for u in people)),
@@ -271,15 +272,20 @@ def _chat_links(
     return sorted(mine, key=lambda r: (r.get("added_at") or 0, r.get("ref") or ""))
 
 
-def _session_rows(db, sid: str) -> list[dict]:
-    """A conversation's visible turns: user/assistant rows and each steer
-    delivered inside a tool result, as the person's own row."""
+def _session_chain(db, sid: str) -> list[str]:
+    """The conversation's id and, once compression forked it, its continuation."""
     chain = [sid]
     tail = db.resolve_resume_session_id(sid)
     if tail and tail != sid:
         chain.append(tail)
+    return chain
+
+
+def _session_rows(db, sid: str) -> list[dict]:
+    """A conversation's visible turns: user/assistant rows and each steer
+    delivered inside a tool result, as the person's own row."""
     rows: list[dict] = []
-    for part in chain:
+    for part in _session_chain(db, sid):
         for m in db.get_messages(part):
             if m.get("role") == "tool":
                 steers = split_steers(_text(m.get("content")))
@@ -333,6 +339,7 @@ def _group_sessions(links: list[dict], enrolled: dict[str, set[str]]) -> list[di
                     "person": person,
                     "session_id": sid,
                     "linked_at": link.get("added_at"),
+                    "parts": _session_chain(db, sid),
                     "messages": _session_rows(db, sid),
                 }
             )
@@ -571,22 +578,41 @@ def proposals_since(conn, project_id: str, since: Optional[float]) -> list[dict]
     return out
 
 
-def _sent_while_posting(rows: list[dict], spans: list[tuple[float, float]]) -> list[dict]:
-    """The turns asked while their person could post, each with its reply."""
+def _sent_while_posting(
+    rows: list[dict], spans: list[tuple[float, float]], queued: list[tuple] = ()
+) -> list[dict]:
+    """The turns asked while their person could post, each with its reply.
+
+    A turn started from a queued input (*queued*: ``(started, sent)``, the
+    start falling between the previous turn and this one) was asked when the
+    input was sent, not when it ran."""
     out: list[dict] = []
     keep = False
+    previous = float("-inf")
     for m in rows:
         if m["role"] == "user":
-            keep = any(a <= m["timestamp"] < b for a, b in spans)
+            at = m["timestamp"]
+            if not m.get("sent_while_working"):
+                sent = [s for launched, s in queued if previous < launched <= at]
+                previous, at = at, (sent[-1] if sent else at)
+            keep = any(a <= at < b for a, b in spans)
         if keep:
             out.append(m)
     return out
 
 
 def _group_sessions_of(project, enrolled: dict[str, set[str]], spans: Spans) -> list[dict]:
+    sessions = _group_sessions(_chat_links(project.id), enrolled)
+    with projects_db.connect_closing() as conn:
+        queued = {
+            s["session_id"]: projects_db.get_chat_inputs(conn, s.get("parts") or [s["session_id"]])
+            for s in sessions
+        }
     out = []
-    for s in _group_sessions(_chat_links(project.id), enrolled):
-        rows = _sent_while_posting(s["messages"], spans.get(s["person"], []))
+    for s in sessions:
+        rows = _sent_while_posting(
+            s["messages"], spans.get(s["person"], []), queued[s["session_id"]]
+        )
         if rows:
             out.append({**s, "messages": rows})
     return out
@@ -832,18 +858,39 @@ def projects_api_refuse_archived(project) -> None:
 
 
 _MEDIA_REF_RE = re.compile(r"/api/chat/media\?path=([^\s)\"'&<>\]]+)")
+_LINK_LINE_RE = re.compile(r"^!?\[[^\]\n]*\]\([^)\s]+\)$")
+
+
+def _attached_refs(content: str) -> list[str]:
+    """The media paths in a turn's trailing block of attachment links (what
+    agent-home appends for each attached file), never ones quoted in the text
+    or in an attached document's inlined contents."""
+    from urllib.parse import unquote
+
+    from hermes_cli.ref_mentions import BLOCK_HEADER
+
+    content = (content or "").rstrip()
+    # The descriptions of short refs (``P12``) the server appends after them.
+    cut = content.rfind(f"\n\n{BLOCK_HEADER}\n")
+    if cut >= 0 and all(
+        line.startswith("- ") for line in content[cut:].split("\n")[3:]
+    ):
+        content = content[:cut]
+    lines = content.split("\n")
+    refs: list[str] = []
+    while lines and _LINK_LINE_RE.match(lines[-1]):
+        refs += [unquote(r) for r in _MEDIA_REF_RE.findall(lines.pop())]
+    return refs
 
 
 def _shares_media_sync(project, enrolled, names, spans: Spans, path: str) -> bool:
-    from urllib.parse import unquote
-
     from hermes_cli.file_registry import agent_home_slug
 
     owner = path.split("/", 1)[0]
     for r in _group_timeline(project, enrolled, names, spans):
         if r["role"] != "user" or not r.get("person") or agent_home_slug(r["person"]) != owner:
             continue
-        if any(unquote(ref) == path for ref in _MEDIA_REF_RE.findall(r.get("content") or "")):
+        if path in _attached_refs(r.get("content") or ""):
             return True
     return False
 

@@ -207,6 +207,19 @@ CREATE TABLE IF NOT EXISTS project_member_changes (
 CREATE INDEX IF NOT EXISTS idx_project_member_changes
     ON project_member_changes(project_id, changed_at);
 
+-- A project chat turn started from a queued or interrupting input: when it
+-- started and when the input was sent. Who could post is judged at the time
+-- it was sent.
+CREATE TABLE IF NOT EXISTS project_chat_inputs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  TEXT NOT NULL,
+    accepted_at REAL NOT NULL,
+    launched_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_chat_inputs
+    ON project_chat_inputs(session_id, launched_at);
+
 CREATE INDEX IF NOT EXISTS idx_project_chat_prepares
     ON project_chat_prepares(project_id, session_id, snapshot_at);
 
@@ -1411,13 +1424,47 @@ def add_project_member(
 
 
 def _record_member_change(
-    conn: sqlite3.Connection, project_id: str, user_id: str, role: Optional[str]
+    conn: sqlite3.Connection,
+    project_id: str,
+    user_id: str,
+    role: Optional[str],
+    at: Optional[float] = None,
 ) -> None:
     conn.execute(
         "INSERT INTO project_member_changes (project_id, user_id, role, changed_at) "
         "VALUES (?, ?, ?, ?)",
-        (project_id, user_id, role, time.time()),
+        (project_id, user_id, role, time.time() if at is None else at),
     )
+
+
+def record_chat_input(
+    conn: sqlite3.Connection,
+    session_id: str,
+    accepted_at: float,
+    launched_at: Optional[float] = None,
+) -> None:
+    with write_txn(conn):
+        conn.execute(
+            "INSERT INTO project_chat_inputs (session_id, accepted_at, launched_at) "
+            "VALUES (?, ?, ?)",
+            (session_id, float(accepted_at), time.time() if launched_at is None else launched_at),
+        )
+
+
+def get_chat_inputs(conn: sqlite3.Connection, session_ids: List[str]) -> List[tuple]:
+    """``(when it started, when it was sent)`` for each turn these
+    conversations ran from a queued input, oldest first."""
+    if not session_ids:
+        return []
+    marks = ",".join("?" for _ in session_ids)
+    return [
+        (float(r[0]), float(r[1]))
+        for r in conn.execute(
+            f"SELECT launched_at, accepted_at FROM project_chat_inputs "
+            f"WHERE session_id IN ({marks}) ORDER BY launched_at, id",
+            list(session_ids),
+        ).fetchall()
+    ]
 
 
 def get_member_changes(conn: sqlite3.Connection, project_id: str) -> List[tuple]:
@@ -1450,6 +1497,18 @@ def remove_project_member(
     conn: sqlite3.Connection, project_id: str, user_id: str
 ) -> bool:
     with write_txn(conn):
+        row = conn.execute(
+            "SELECT role, added_at FROM project_members WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id),
+        ).fetchone()
+        known = conn.execute(
+            "SELECT 1 FROM project_member_changes WHERE project_id = ? AND user_id = ? LIMIT 1",
+            (project_id, user_id),
+        ).fetchone()
+        if row is not None and known is None:
+            # On the project from before changes were recorded: keep the role
+            # they had, so a viewer's past is not read as a member's.
+            _record_member_change(conn, project_id, user_id, row[0], float(row[1] or 0))
         cur = conn.execute(
             "DELETE FROM project_members WHERE project_id = ? AND user_id = ?",
             (project_id, user_id),

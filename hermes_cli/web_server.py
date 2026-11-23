@@ -13086,6 +13086,12 @@ def _start_chat_run(run_id, run_entry, loop, principal, profile, sid, user_messa
             try:
                 next_sid = db.resolve_resume_session_id(eff_sid) or eff_sid
                 next_history = db.get_messages_as_conversation(next_sid)
+                # A compressed conversation continues under another source.
+                touched = {sid, eff_sid, next_sid}
+                project_chat = any(
+                    (db.get_session(s) or {}).get("source") == "project_chat"
+                    for s in touched | {db.get_compression_root(s) for s in touched}
+                )
             finally:
                 db.close()
             next_run_id, _ = _launch_chat_run(
@@ -13123,6 +13129,17 @@ def _start_chat_run(run_id, run_entry, loop, principal, profile, sid, user_messa
             )
             return
         run_entry["next_run_id"] = next_run_id
+        if project_chat:
+            # The group chat judges who could post when this was sent.
+            try:
+                from hermes_cli import projects_db
+
+                with projects_db.connect_closing() as conn:
+                    projects_db.record_chat_input(
+                        conn, next_sid, float(item.get("created_at") or time.time())
+                    )
+            except Exception:
+                _log.warning("[agent-home] recording a project chat input failed", exc_info=True)
         payload = {
             "next_run_id": next_run_id,
             "item_id": item["item_id"],
