@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import re
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
@@ -374,7 +375,8 @@ class _InitRegistry(_Registry):
         super().__init__()
         self.fail = fail
         self.initialized = 0
-        self._store = SimpleNamespace(dsn=f"fake-{id(self)}", schema="app_test")
+        # id() is reused once a registry is freed; a reused key would skip init.
+        self._store = SimpleNamespace(dsn=f"fake-{uuid.uuid4()}", schema="app_test")
         self.role_reads = False
 
     async def initialize(self):
