@@ -54,6 +54,15 @@ describe("Composer handed-over draft", () => {
     rerender(<Composer {...props} draft={{ text: "compare runs 8, 9", seq: 2 }} />);
     expect(box.value).toBe("compare runs 8, 9");
   });
+
+  it("adds an append draft (a quote, a picked option) below the unsent text", () => {
+    const props = { sending: false, storageEnabled: false, sessionId: "s1", onSend: () => undefined };
+    const { getByPlaceholderText, rerender } = render(<Composer {...props} />);
+    const box = getByPlaceholderText(/Message your agent/) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "How late can it be?" } });
+    rerender(<Composer {...props} draft={{ text: "> **Step 1**\n> Wait", seq: 1, append: true }} />);
+    expect(box.value).toBe("How late can it be?\n\n> **Step 1**\n> Wait");
+  });
 });
 
 describe("Composer draft restore", () => {

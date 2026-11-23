@@ -20,6 +20,8 @@ import type { ChatAttachment, ChatInputMode, ChatSendResult, PendingChatInput } 
 export interface ComposerDraft {
   text: string;
   seq: number;
+  /** Add below what is already typed (a quote, a picked option) instead of replacing it. */
+  append?: boolean;
 }
 
 /** Smallest limit Settings → Uploads allows: smaller files skip the lookup. */
@@ -222,7 +224,7 @@ export function Composer({
   const [draftSeen, setDraftSeen] = useState<number | undefined>(undefined);
   if (draft && draft.seq !== draftSeen) {
     setDraftSeen(draft.seq);
-    setText(draft.text);
+    setText(draft.append && text.trim() ? `${text.trimEnd()}\n\n${draft.text}` : draft.text);
   }
   useEffect(() => {
     onTextChange?.(text);

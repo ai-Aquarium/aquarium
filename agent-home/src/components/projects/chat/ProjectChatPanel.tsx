@@ -90,7 +90,7 @@ export function ProjectChatPanel({
   const [seenDraft, setSeenDraft] = useState<number | undefined>(undefined);
   if (composerDraft && composerDraft.seq !== seenDraft) {
     setSeenDraft(composerDraft.seq);
-    setHandoff((prev) => ({ text: composerDraft.text, seq: (prev?.seq ?? 0) + 1 }));
+    setHandoff((prev) => ({ text: composerDraft.text, seq: (prev?.seq ?? 0) + 1, append: true }));
   }
   const unsent = useRef("");
   const onComposerText = useCallback((text: string) => {
@@ -98,8 +98,10 @@ export function ProjectChatPanel({
   }, []);
   const select = (next: string) => {
     if (next === profile) return;
+    // Always hand over (even nothing): the new pane must not replay an old,
+    // already-sent handoff.
     const text = unsent.current;
-    if (text) setHandoff((prev) => ({ text, seq: (prev?.seq ?? 0) + 1 }));
+    setHandoff((prev) => ({ text, seq: (prev?.seq ?? 0) + 1 }));
     setProfile(next);
   };
 
@@ -132,7 +134,7 @@ export function ProjectChatPanel({
   }, [polling, refresh]);
 
   const prefill = useCallback(
-    (text: string) => setHandoff((prev) => ({ text, seq: (prev?.seq ?? 0) + 1 })),
+    (text: string) => setHandoff((prev) => ({ text, seq: (prev?.seq ?? 0) + 1, append: true })),
     [],
   );
 
