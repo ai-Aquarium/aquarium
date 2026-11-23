@@ -45,13 +45,14 @@ function readings(status: Status) {
   };
 }
 
+/** Fixed width + even digits: the label ticks every second, and a changing width made the top bar's auto-fit hide and re-show it. */
 function Freshness({ status, prefix = "Updated " }: { status: Status; prefix?: string }) {
   if (status.fetchedAt === null) return null;
   return (
     <span
       data-testid="health-freshness"
       title="How old these numbers are — re-read every 30s"
-      className={`whitespace-nowrap ${status.stale ? "text-[var(--color-warn-text)]" : "text-[var(--color-muted)]"}`}
+      className={`inline-block min-w-[15ch] whitespace-nowrap tabular-nums ${status.stale ? "text-[var(--color-warn-text)]" : "text-[var(--color-muted)]"}`}
     >
       {prefix}
       {fmtAge(status.now - status.fetchedAt)}
