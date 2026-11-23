@@ -37,6 +37,25 @@ afterEach(() => {
 });
 
 describe("ProjectChatDock", () => {
+  it.each([true, false])(
+    "never sets the saved desktop width inline, so a phone gets full width (desktop=%s)",
+    (desktop) => {
+      window.matchMedia = ((query: string) => ({
+        matches: desktop,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      })) as unknown as typeof window.matchMedia;
+      window.localStorage.setItem(dockStorageKey("leo"), JSON.stringify({ mode: "open", width: 640 }));
+      const el = dock(render(<Harness phoneOpen />));
+      expect(el.style.width).toBe("");
+      expect(el.style.getPropertyValue("--dock-w")).toBe("640px");
+      const classes = el.className.split(/\s+/);
+      expect(classes).toContain("max-lg:w-full");
+      expect(classes).toContain("lg:w-[var(--dock-w)]");
+    },
+  );
+
   it("maximizes, restores and minimizes from the header, and remembers the mode per person", () => {
     const r = render(<Harness />);
     expect(dock(r).dataset.mode).toBe("open");
