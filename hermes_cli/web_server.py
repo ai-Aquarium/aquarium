@@ -13677,9 +13677,23 @@ async def needs_you(request: Request):
     try:
         from tools.approval import list_pending_gateway_approvals
 
+        scope = _chat_scope_for(principal)
+
+        def _may_open(approval: dict) -> bool:
+            # Another person's approval shows only if the caller may open its chat.
+            if approval.get("requester_user_id") in (None, me) or scope is None:
+                return True
+            run = runs.get(approval["session_key"])
+            try:
+                _require_chat_access_by_id(run["session_id"], run.get("profile"), scope)
+            except (HTTPException, KeyError, TypeError):
+                return False
+            return True
+
+        approvals = list_pending_gateway_approvals(runs.keys())
         items.extend(ny.chat_approval_entries(
-            list_pending_gateway_approvals(runs.keys()), runs, principal, admin=admin,
-            requesters=others,
+            [a for a in approvals if _may_open(a)] if others else approvals,
+            runs, principal, admin=admin, requesters=others,
         ))
     except Exception:
         _log.warning("needs-you: chat approvals source failed", exc_info=True)
