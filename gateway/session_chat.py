@@ -37,6 +37,7 @@ def build_session_agent(
     platform: str = "api_server",
     principal: Any = None,
     trusted_local: bool = False,
+    prompt_platform: Optional[str] = None,
 ) -> Any:
     """Create an :class:`AIAgent` for a persisted session.
 
@@ -94,7 +95,7 @@ def build_session_agent(
 
     principal_ticket.mint(getattr(principal, "user_id", None))
 
-    return AIAgent(
+    agent = AIAgent(
         model=model,
         **runtime_kwargs,
         max_iterations=max_iterations,
@@ -116,6 +117,10 @@ def build_session_agent(
         trusted_local=trusted_local,
         **identity,
     )
+    if prompt_platform:
+        # Only the platform hint differs; toolsets stay those of *platform*.
+        agent._platform_hint_key = prompt_platform
+    return agent
 
 
 def run_session_turn_sync(
@@ -136,6 +141,7 @@ def run_session_turn_sync(
     principal: Any = None,
     trusted_local: bool = False,
     auto_title_db_factory: Optional[Callable[[], Any]] = None,
+    prompt_platform: Optional[str] = None,
 ) -> Tuple[dict, dict]:
     """Run one synchronous one-brain turn for a persisted session.
 
@@ -150,6 +156,10 @@ def run_session_turn_sync(
 
     *auto_title_db_factory* opts the turn into auto-titling: it opens a fresh
     ``SessionDB`` for the background title thread (see :func:`schedule_auto_title`).
+
+    *prompt_platform* picks the system-prompt platform hint (e.g.
+    ``"agent_home"``) when the surface renders differently from *platform*;
+    toolsets are still resolved for *platform*.
     """
     t0 = time.monotonic()
     agent = build_session_agent(
@@ -165,6 +175,7 @@ def run_session_turn_sync(
         platform=platform,
         principal=principal,
         trusted_local=trusted_local,
+        prompt_platform=prompt_platform,
     )
     t1 = time.monotonic()
     if on_agent_ready is not None:

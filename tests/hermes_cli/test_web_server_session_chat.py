@@ -572,3 +572,17 @@ def test_active_run_and_attach_replay_the_turn(monkeypatch):
     finally:
         server.should_exit = True
         thread.join(5)
+
+
+@pytest.mark.parametrize("path", ["chat", "chat/stream"])
+def test_agent_home_turns_select_the_agent_home_prompt_hint(client, capture_turn, path):
+    import hermes_state
+
+    db = hermes_state.SessionDB()
+    try:
+        db.ensure_session("s-hint", source="agent_home")
+    finally:
+        db.close()
+    resp = client.post(f"/api/sessions/s-hint/{path}", json={"message": "hi"})
+    assert resp.status_code == 200
+    assert capture_turn["kwargs"]["prompt_platform"] == "agent_home"

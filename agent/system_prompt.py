@@ -400,7 +400,12 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             f"after explicit direction."
         )
 
-    platform_key = (agent.platform or "").lower().strip()
+    # A surface can share a platform's toolsets/delivery yet render
+    # differently (agent-home chat runs as api_server); _platform_hint_key
+    # selects its hint without touching the platform itself.
+    platform_key = (
+        getattr(agent, "_platform_hint_key", None) or agent.platform or ""
+    ).lower().strip()
     # Resolve the built-in/plugin default hint for this platform, then apply
     # any per-platform override from config (platform_hints.<platform>).
     _default_hint = ""

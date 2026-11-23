@@ -859,6 +859,19 @@ PLATFORM_HINTS = {
         "![alt](/path) for local files; local paths are not served that way. "
         "Use MEDIA:/absolute/path instead."
     ),
+    # agent-home chat runs on the api_server platform (same toolsets) but
+    # renders Markdown and delivers MEDIA: tags into the user's Files — see
+    # hermes_cli/agent_home_media.py. Selected via AIAgent._platform_hint_key.
+    "agent_home": (
+        "You're chatting in the Hermes app. Your reply renders as Markdown — "
+        "headings, lists, bold, tables and code blocks all display. To show the "
+        "user a file you created (a chart, image, PDF, spreadsheet, document), "
+        "put MEDIA:/absolute/path/to/file on its own line in your reply; the app "
+        "uploads it to the user's Files and shows it inline (images) or as a "
+        "link. The path must be absolute. Never link to /api/files/download, the "
+        "dashboard, localhost, or any other hostname or file:// URL for files "
+        "you made — the user cannot open those. Use MEDIA: instead."
+    ),
 }
 
 # ---------------------------------------------------------------------------

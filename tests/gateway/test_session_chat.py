@@ -165,6 +165,43 @@ def test_api_server_create_agent_delegates_to_shared_builder(monkeypatch):
     assert calls["gateway_session_key"] == "k"
     assert calls["session_db"] is adapter._session_db
     assert calls["trusted_local"] is True
+    # The OpenAI-compatible adapter keeps the plain api_server prompt hint.
+    assert calls.get("prompt_platform") is None
+
+
+def test_prompt_platform_changes_only_the_hint_key(stub_runtime, monkeypatch):
+    import hermes_cli.tools_config as tools_config
+    from gateway.session_chat import build_session_agent
+
+    seen = []
+    monkeypatch.setattr(
+        tools_config, "_get_platform_tools", lambda cfg, platform: seen.append(platform) or {"t"}
+    )
+    agent = build_session_agent(session_db=object(), prompt_platform="agent_home")
+    assert agent._platform_hint_key == "agent_home"
+    # Toolsets still resolve for (and the agent still runs as) api_server.
+    assert seen == ["api_server"]
+    assert stub_runtime["_kwargs"]["platform"] == "api_server"
+
+    plain = build_session_agent(session_db=object())
+    assert getattr(plain, "_platform_hint_key", None) is None
+
+
+def test_run_session_turn_forwards_prompt_platform(stub_runtime, monkeypatch):
+    import gateway.session_chat as session_chat
+
+    built = []
+    real_build = session_chat.build_session_agent
+    monkeypatch.setattr(
+        session_chat,
+        "build_session_agent",
+        lambda **kw: built.append(kw.get("prompt_platform")) or real_build(**kw),
+    )
+    session_chat.run_session_turn_sync(
+        session_db=object(), user_message="hi", conversation_history=[],
+        prompt_platform="agent_home",
+    )
+    assert built == ["agent_home"]
 
 
 def test_build_session_agent_runs_as_the_logged_in_principal(stub_runtime):
