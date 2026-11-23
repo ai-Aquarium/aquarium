@@ -1,13 +1,40 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SoftwareUpgradeView, tookLabel } from "@/components/settings/SoftwareUpgradeView";
-import type { SoftwareUpgradeJob, SoftwareUpgradeStatus } from "@/types";
+import type { SoftwareUpgradeJob, SoftwareUpgradePreflight, SoftwareUpgradeStatus } from "@/types";
+
+const PASS = (version: string, busy: string[] = []): SoftwareUpgradePreflight => ({
+  version,
+  ok: true,
+  busy,
+  checks: (["disk", "backup", "services", "release"] as const).map((key) => ({ key, ok: true, message: `${key} fine` })),
+});
+
+/** fetch by path; `/check` answers with the pre-flight for the version it is sent. */
+function serve(answers: Record<string, (init?: RequestInit) => unknown>) {
+  const fn = vi.fn(async (url: string, init?: RequestInit) => {
+    const answer = answers[url];
+    if (answer) return new Response(JSON.stringify(answer(init)), { status: 202 });
+    if (url === "/api/software-upgrade/check") {
+      const version = JSON.parse(String(init?.body ?? "{}")).version as string;
+      return new Response(JSON.stringify({ preflight: PASS(version) }), { status: 200 });
+    }
+    return new Response("{}", { status: 404 });
+  });
+  vi.stubGlobal("fetch", fn);
+  return fn;
+}
+
+beforeEach(() => {
+  serve({});
+});
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const rel = (tag: string, published_at: string) => ({
@@ -77,21 +104,75 @@ describe("SoftwareUpgradeView", () => {
   });
 
   it("asks for the password and sends only the chosen version", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ started: true, status: { ...STATUS, job: JOB } }), { status: 202 }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = serve({ "/api/software-upgrade/start": () => ({ started: true, status: { ...STATUS, job: JOB } }) });
     render(<SoftwareUpgradeView initial={STATUS} />);
+    await waitFor(() => expect((screen.getByTestId("upgrade-button") as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId("upgrade-button"));
     expect(screen.getByText("Upgrade to v1.3.0?")).toBeTruthy();
     expect((screen.getByTestId("upgrade-confirm") as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("Confirm with your password"), { target: { value: "pw" } });
     fireEvent.click(screen.getByTestId("upgrade-confirm"));
     await waitFor(() => expect(screen.getByText("Upgrading v1.1.0 → v1.3.0")).toBeTruthy());
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls.find((c) => c[0] === "/api/software-upgrade/start") as unknown as [
+      string,
+      RequestInit,
+    ];
     expect(url).toBe("/api/software-upgrade/start");
     expect(JSON.parse(String(init.body))).toEqual({ version: "v1.3.0", password: "pw" });
-    vi.unstubAllGlobals();
+  });
+
+  it("keeps Upgrade off while a pre-flight check fails and says why", async () => {
+    const failing: SoftwareUpgradePreflight = {
+      ...PASS("v1.3.0"),
+      ok: false,
+      checks: PASS("v1.3.0").checks.map((c) =>
+        c.key === "disk" ? { ...c, ok: false, message: "Only 2 GB of disk space is free; at least 5 GB is needed." } : c,
+      ),
+    };
+    serve({ "/api/software-upgrade/check": () => ({ preflight: failing }) });
+    render(<SoftwareUpgradeView initial={STATUS} />);
+    await waitFor(() => expect(screen.getByText(/Only 2 GB of disk space/)).toBeTruthy());
+    expect((screen.getByTestId("upgrade-button") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId("upgrade-preflight-failed")).toBeTruthy();
+    expect(screen.getByTestId("upgrade-preflight").querySelector('[data-check="disk"]')?.getAttribute("data-ok")).toBe("0");
+  });
+
+  it("warns about work in progress and needs a tick to upgrade anyway", async () => {
+    const fetchMock = serve({
+      "/api/software-upgrade/check": () => ({ preflight: PASS("v1.3.0", ["1 project run is in progress"]) }),
+      "/api/software-upgrade/start": () => ({ started: true, status: { ...STATUS, job: JOB } }),
+    });
+    render(<SoftwareUpgradeView initial={STATUS} />);
+    await waitFor(() => expect(screen.getByTestId("upgrade-preflight-busy").textContent).toContain("1 project run"));
+    fireEvent.click(screen.getByTestId("upgrade-button"));
+    expect(screen.getByTestId("upgrade-busy").textContent).toContain("1 project run is in progress");
+    fireEvent.change(screen.getByLabelText("Confirm with your password"), { target: { value: "pw" } });
+    expect((screen.getByTestId("upgrade-confirm") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId("upgrade-busy-confirm"));
+    fireEvent.click(screen.getByTestId("upgrade-confirm"));
+    await waitFor(() => expect(screen.getByText("Upgrading v1.1.0 → v1.3.0")).toBeTruthy());
+    const start = fetchMock.mock.calls.find((c) => c[0] === "/api/software-upgrade/start") as unknown as [string, RequestInit];
+    expect(JSON.parse(String(start[1].body))).toEqual({ version: "v1.3.0", password: "pw", confirm_busy: true });
+  });
+
+  it("shows a failed finish with its reason and a Try again", async () => {
+    const fetchMock = serve({
+      "/api/software-upgrade/finish": () => ({
+        started: true,
+        status: { ...STATUS, finish: null, job: { ...JOB, kind: "finish", from: "v1.1.0", to: "v1.1.0" } },
+      }),
+    });
+    render(
+      <SoftwareUpgradeView
+        initial={{ ...STATUS, finish: { failed: true, error: "sudoers rule hermes-tools did not pass visudo", at: null } }}
+      />,
+    );
+    const banner = screen.getByTestId("upgrade-finish-failed");
+    expect(banner.textContent).toContain("Finishing the upgrade to v1.1.0 failed.");
+    expect(banner.textContent).toContain("did not pass visudo");
+    fireEvent.click(screen.getByTestId("upgrade-finish-retry"));
+    await waitFor(() => expect(screen.getByText("Finishing the upgrade to v1.1.0: updating system helpers")).toBeTruthy());
+    expect(fetchMock.mock.calls.some((c) => c[0] === "/api/software-upgrade/finish")).toBe(true);
   });
 
   it("is read only without can_upgrade", () => {

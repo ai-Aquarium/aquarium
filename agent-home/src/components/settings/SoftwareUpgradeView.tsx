@@ -12,6 +12,7 @@ import { useAction } from "@/lib/use-action";
 import { useHydrated } from "@/lib/use-hydrated";
 import type {
   SoftwareUpgradeJob,
+  SoftwareUpgradePreflight,
   SoftwareUpgradeRelease,
   SoftwareUpgradeStatus,
   SoftwareUpgradeStep,
@@ -61,10 +62,43 @@ export function SoftwareUpgradeView({ initial }: { initial: SoftwareUpgradeStatu
   const [checkError, setCheckError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
   const [watching, setWatching] = useState<string | null>(initial.job?.running ? initial.job.id : null);
+  const [preflightRun, setPreflightRun] = useState(0);
+  const [checked, setChecked] = useState<{ key: string; result?: SoftwareUpgradePreflight; error?: string } | null>(
+    null,
+  );
 
   const job = status.job ?? null;
   const running = Boolean(job?.running);
   const canUpgrade = Boolean(status.can_upgrade);
+  const upgradeTarget =
+    canUpgrade && !running && selected && status.releases?.newer.some((r) => r.tag === selected) ? selected : null;
+  const preflightKey = upgradeTarget ? `${upgradeTarget}#${preflightRun}` : null;
+  const current = checked && checked.key === preflightKey ? checked : null;
+  const preflight = current?.result ?? null;
+  const preflightError = current?.error ?? null;
+
+  // Pre-flight for the chosen release: the Upgrade button waits until it passes.
+  useEffect(() => {
+    if (!upgradeTarget || !preflightKey) return;
+    let stopped = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/software-upgrade/check", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ version: upgradeTarget }),
+        });
+        const body = (await res.json().catch(() => ({}))) as SoftwareUpgradeStatus & { detail?: string };
+        if (!res.ok || !body.preflight) throw new Error(body.detail ?? String(res.status));
+        if (!stopped) setChecked({ key: preflightKey, result: body.preflight });
+      } catch (err) {
+        if (!stopped) setChecked({ key: preflightKey, error: err instanceof Error ? err.message : String(err) });
+      }
+    })();
+    return () => {
+      stopped = true;
+    };
+  }, [upgradeTarget, preflightKey]);
 
   const reload = useCallback(async () => {
     const res = await fetch("/api/software-upgrade", { cache: "no-store" });
@@ -151,6 +185,9 @@ export function SoftwareUpgradeView({ initial }: { initial: SoftwareUpgradeStatu
         />
       ) : (
         <>
+          {status.finish?.failed ? (
+            <FinishFailedBanner status={status} canUpgrade={canUpgrade} onStarted={started} />
+          ) : null}
           <InstalledCard status={status} checking={checking} checkError={checkError} onCheck={checkNow} />
           {status.installed?.kind === "checkout" && status.checkout ? <CheckoutCard checkout={status.checkout} /> : null}
           <ReleasePicker
@@ -165,6 +202,8 @@ export function SoftwareUpgradeView({ initial }: { initial: SoftwareUpgradeStatu
             }}
             onShowOlder={setShowOlder}
             onUpgrade={(tag) => setConfirm({ kind: "upgrade", tag })}
+            preflight={upgradeTarget ? { result: preflight, error: preflightError } : null}
+            onRecheck={() => setPreflightRun((n) => n + 1)}
           />
           <HistoryCard status={status} />
         </>
@@ -173,6 +212,7 @@ export function SoftwareUpgradeView({ initial }: { initial: SoftwareUpgradeStatu
         <ConfirmDialog
           confirm={confirm}
           older={Boolean(status.releases?.older.some((r) => r.tag === confirm.tag))}
+          busyWork={confirm.kind === "upgrade" && preflight?.version === confirm.tag ? preflight.busy : []}
           onCancel={() => setConfirm(null)}
           onStarted={started}
         />
@@ -298,6 +338,8 @@ function ReleasePicker({
   onSelect,
   onShowOlder,
   onUpgrade,
+  preflight,
+  onRecheck,
 }: {
   status: SoftwareUpgradeStatus;
   selected: string | null;
@@ -307,6 +349,9 @@ function ReleasePicker({
   onSelect: (tag: string) => void;
   onShowOlder: (on: boolean) => void;
   onUpgrade: (tag: string) => void;
+  /** Null when the selection isn't an upgrade (a roll back, or read-only). */
+  preflight: { result: SoftwareUpgradePreflight | null; error: string | null } | null;
+  onRecheck: () => void;
 }) {
   const t = useT("upgrade");
   const time = useTimeLabel();
@@ -382,6 +427,7 @@ function ReleasePicker({
             )}
           </div>
         ) : null}
+        {preflight && selected ? <PreflightList tag={selected} {...preflight} onRecheck={onRecheck} /> : null}
         <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-[var(--color-border)] pt-4">
           <p className="min-w-0 flex-1 text-xs text-[var(--color-muted)]">{t("footer")}</p>
           {canUpgrade && selected ? (
@@ -389,6 +435,7 @@ function ReleasePicker({
               type="button"
               className={BTN_PRIMARY}
               onClick={() => onUpgrade(selected)}
+              disabled={preflight ? !(preflight.result?.version === selected && preflight.result.ok) : false}
               data-testid="upgrade-button"
             >
               {isOlder ? t("rollBackTo", { tag: selected }) : t("upgradeTo", { tag: selected })}
@@ -397,6 +444,113 @@ function ReleasePicker({
         </div>
       </section>
     </>
+  );
+}
+
+function CheckIcon({ ok }: { ok: boolean | null }) {
+  const cls = `mt-0.5 h-4 w-4 shrink-0 ${ok == null ? "animate-pulse text-[var(--color-muted)]" : ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`;
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" className={cls} aria-hidden="true">
+      {ok == null ? <circle cx="8" cy="8" r="5" /> : ok ? <path d="M3.5 8.5l3 3 6-7" /> : <path d="M4 4l8 8M12 4l-8 8" />}
+    </svg>
+  );
+}
+
+const PREFLIGHT_KEYS = ["disk", "backup", "services", "release"] as const;
+
+function PreflightList({
+  tag,
+  result,
+  error,
+  onRecheck,
+}: {
+  tag: string;
+  result: SoftwareUpgradePreflight | null;
+  error: string | null;
+  onRecheck: () => void;
+}) {
+  const t = useT("upgrade");
+  const current = result?.version === tag ? result : null;
+  const failed = current ? current.checks.filter((c) => !c.ok) : [];
+  return (
+    <div data-testid="upgrade-preflight" className="mt-4 rounded-xl border border-[var(--color-border)] p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <b className="text-xs">{t("preflightTitle", { tag })}</b>
+        <span className="flex-1" />
+        {current || error ? (
+          <button type="button" className="text-xs underline" onClick={onRecheck} data-testid="upgrade-preflight-recheck">
+            {t("preflightRecheck")}
+          </button>
+        ) : null}
+      </div>
+      {error ? (
+        <p className="mt-2 text-xs text-[var(--color-danger)]" role="alert">{t("preflightError", { detail: error })}</p>
+      ) : (
+        <ul className="mt-2">
+          {PREFLIGHT_KEYS.map((key) => {
+            const c = current?.checks.find((x) => x.key === key);
+            return (
+              <li key={key} data-check={key} data-ok={c ? (c.ok ? "1" : "0") : ""} className="my-1 flex gap-2 text-xs">
+                <CheckIcon ok={c ? c.ok : null} />
+                <span>
+                  <b>{t(`check.${key}`)}</b>{" "}
+                  <span className={c && !c.ok ? "text-[var(--color-danger)]" : "text-[var(--color-muted)]"}>
+                    {c ? c.message : t("preflightChecking")}
+                  </span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {failed.length ? (
+        <p data-testid="upgrade-preflight-failed" className="mt-2 text-xs text-[var(--color-danger)]">{t("preflightFailed")}</p>
+      ) : null}
+      {current?.busy.length ? (
+        <p data-testid="upgrade-preflight-busy" className="mt-2 rounded-lg bg-[var(--color-warn)] p-2 text-xs text-[var(--color-warn-text)]">
+          <b>{t("busyTitle")}</b> {current.busy.join("; ")}. {t("busyHint")}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function FinishFailedBanner({
+  status,
+  canUpgrade,
+  onStarted,
+}: {
+  status: SoftwareUpgradeStatus;
+  canUpgrade: boolean;
+  onStarted: (status: SoftwareUpgradeStatus) => void;
+}) {
+  const t = useT("upgrade");
+  const [error, setError] = useState<string | null>(null);
+  const tag = status.installed?.version ?? "?";
+  const { run: retry, pending } = useAction(async () => {
+    setError(null);
+    try {
+      const res = await fetch("/api/software-upgrade/finish", { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as { status?: SoftwareUpgradeStatus; detail?: string };
+      if (!res.ok || !body.status) throw new Error(body.detail ?? String(res.status));
+      onStarted(body.status);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  });
+  return (
+    <div data-testid="upgrade-finish-failed" className="mb-4 rounded-xl bg-[var(--color-danger)]/10 p-3 text-sm text-[var(--color-danger)]">
+      <b>{t("finishFailedTitle", { tag })}</b> {t("finishFailedBody", { tag })}
+      {status.finish?.error ? <div className="mt-1 text-xs">{status.finish.error}</div> : null}
+      {error ? <div className="mt-1 text-xs" role="alert">{error}</div> : null}
+      {canUpgrade ? (
+        <div className="mt-2">
+          <ActionButton type="button" className={BTN} busy={pending} busyLabel={t("starting")} onAction={() => retry()} data-testid="upgrade-finish-retry">
+            {t("tryAgain")}
+          </ActionButton>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -613,22 +767,25 @@ function JobPanel({
   const startedAt = epoch(job.started);
   const ago = hydrated && startedAt != null ? time(startedAt, "ago") : "";
   const rollback = job.kind === "rollback";
+  const finishing = job.kind === "finish";
   return (
     <div data-component="UpgradeJobPanel" data-running={job.running ? "1" : "0"}>
       {!job.running && ok ? (
         <div data-testid="upgrade-done-banner" className="mb-4 rounded-xl bg-[var(--color-success)]/10 p-3 text-sm text-[var(--color-success)]">
-          <b>{rollback ? t("rolledBackTo", { tag }) : t("upgradedTo", { tag })}</b>{" "}
+          <b>{rollback ? t("rolledBackTo", { tag }) : finishing ? t("finishedHelpers", { tag }) : t("upgradedTo", { tag })}</b>{" "}
           {t("tookTotal", { took: tookLabel(between(job.started, job.finished)) })}
         </div>
       ) : null}
       {!job.running && !ok ? (
         <div data-testid="upgrade-failed-banner" className="mb-4 rounded-xl bg-[var(--color-danger)]/10 p-3 text-sm text-[var(--color-danger)]">
-          <b>{t("failedTitle", { tag })}</b>{" "}
+          <b>{finishing ? t("finishFailedTitle", { tag }) : t("failedTitle", { tag })}</b>{" "}
           {job.result === "interrupted"
             ? t("interrupted")
-            : job.result === "rolled back"
-              ? t("failedRolledBack")
-              : t("failedNotRestored")}
+            : finishing
+              ? t("finishFailedBody", { tag })
+              : job.result === "rolled back"
+                ? t("failedRolledBack")
+                : t("failedNotRestored")}
           {failed ? <div className="mt-1 text-xs">{t("failedAt", { step: t(`step.${failed.key}`, { tag }) })}</div> : null}
           {job.error ? <div className="mt-1 text-xs">{job.error}</div> : null}
         </div>
@@ -642,7 +799,9 @@ function JobPanel({
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold">
             {job.running
-              ? t(rollback ? "rollingBack" : "upgrading", { from: job.from ?? "?", to: tag })
+              ? finishing
+                ? t("finishing", { tag })
+                : t(rollback ? "rollingBack" : "upgrading", { from: job.from ?? "?", to: tag })
               : t(rollback ? "finishedRollback" : "finished")}
           </h2>
           <span className="flex-1" />
@@ -716,17 +875,21 @@ function JobPanel({
 function ConfirmDialog({
   confirm,
   older,
+  busyWork,
   onCancel,
   onStarted,
 }: {
   confirm: NonNullable<Confirm>;
   older: boolean;
+  /** Work a restart interrupts; the upgrade needs a tick before it starts. */
+  busyWork: string[];
   onCancel: () => void;
   onStarted: (status: SoftwareUpgradeStatus) => void;
 }) {
   const t = useT("upgrade");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busyOk, setBusyOk] = useState(false);
   const rollback = confirm.kind === "rollback";
   const bullets = useMemo(
     () => [
@@ -743,7 +906,9 @@ function ConfirmDialog({
       const res = await fetch(rollback ? "/api/software-upgrade/rollback" : "/api/software-upgrade/start", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(rollback ? { password } : { version: confirm.tag, password }),
+        body: JSON.stringify(
+          rollback ? { password } : { version: confirm.tag, password, confirm_busy: busyOk || undefined },
+        ),
       });
       const body = (await res.json().catch(() => ({}))) as { status?: SoftwareUpgradeStatus; detail?: string };
       if (!res.ok || !body.status) throw new Error(body.detail ?? String(res.status));
@@ -768,6 +933,15 @@ function ConfirmDialog({
             <li key={b} className="my-1">{b}</li>
           ))}
         </ul>
+        {busyWork.length ? (
+          <div data-testid="upgrade-busy" className="my-3 rounded-xl bg-[var(--color-warn)] p-3 text-xs text-[var(--color-warn-text)]">
+            <b>{t("busyTitle")}</b> {busyWork.join("; ")}. {t("busyHint")}
+            <label className="mt-2 flex items-center gap-2">
+              <input type="checkbox" checked={busyOk} onChange={(e) => setBusyOk(e.target.checked)} data-testid="upgrade-busy-confirm" />
+              {t("busyConfirm")}
+            </label>
+          </div>
+        ) : null}
         <label className="mb-1 mt-3 block text-xs font-medium text-[var(--color-muted)]" htmlFor="upgrade-password">
           {t("password")}
         </label>
@@ -790,7 +964,7 @@ function ConfirmDialog({
             className={BTN_PRIMARY}
             busy={busy}
             busyLabel={t("starting")}
-            disabled={!password}
+            disabled={!password || (busyWork.length > 0 && !busyOk)}
             data-testid="upgrade-confirm"
           >
             <SubmitLabel>{rollback ? t("startRollback") : t("startUpgrade")}</SubmitLabel>
