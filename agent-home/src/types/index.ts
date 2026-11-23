@@ -4525,7 +4525,8 @@ export interface SoftwareUpgradeStep {
 
 export interface SoftwareUpgradeJob {
   id: string;
-  kind: "upgrade" | "rollback";
+  /** `finish`: the box installs the system helpers an older upgrade job left undone. */
+  kind: "upgrade" | "rollback" | "finish";
   from: string | null;
   to: string | null;
   by: string | null;
@@ -4540,7 +4541,7 @@ export interface SoftwareUpgradeJob {
 
 export interface SoftwareUpgradeHistoryRow {
   id: string;
-  kind: "upgrade" | "rollback";
+  kind: "upgrade" | "rollback" | "finish";
   from: string | null;
   to: string | null;
   by: string | null;
@@ -4549,6 +4550,15 @@ export interface SoftwareUpgradeHistoryRow {
   seconds: number | null;
   result: string | null;
   error: string | null;
+}
+
+export interface SoftwareUpgradePreflight {
+  version: string | null;
+  /** Every server check passed (disk, backup folder, services, release signature). */
+  ok: boolean;
+  checks: { key: "disk" | "backup" | "services" | "release"; ok: boolean; message: string }[];
+  /** Work a restart interrupts; the upgrade then needs an explicit confirm. */
+  busy: string[];
 }
 
 export interface SoftwareUpgradeStatus {
@@ -4567,6 +4577,10 @@ export interface SoftwareUpgradeStatus {
   history?: SoftwareUpgradeHistoryRow[];
   checked_at?: string | null;
   rollback_to?: string | null;
+  /** The automatic "finish upgrade" step failed; it is not retried until someone asks. */
+  finish?: { failed: true; error: string | null; at: string | null } | null;
+  /** Pre-flight checks for one release (from `POST /api/software-upgrade/check {version}`). */
+  preflight?: SoftwareUpgradePreflight;
   releases?: {
     newer: SoftwareUpgradeRelease[];
     older: SoftwareUpgradeRelease[];

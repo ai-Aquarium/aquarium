@@ -20,7 +20,8 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (!VERSION.test(version)) return badRequest("Pick a release like v1.2.3.");
   if (!password) return badRequest("Enter your password to confirm.");
   try {
-    return NextResponse.json(await gate.client.startSoftwareUpgrade({ version, password }), {
+    const confirm_busy = body.confirm_busy === true;
+    return NextResponse.json(await gate.client.startSoftwareUpgrade({ version, password, confirm_busy }), {
       status: 202,
     });
   } catch (err) {

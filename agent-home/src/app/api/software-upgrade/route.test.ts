@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST as checkPOST } from "@/app/api/software-upgrade/check/route";
+import { POST as finishPOST } from "@/app/api/software-upgrade/finish/route";
 import { GET as jobGET } from "@/app/api/software-upgrade/job/route";
 import { POST as rollbackPOST } from "@/app/api/software-upgrade/rollback/route";
 import { GET } from "@/app/api/software-upgrade/route";
@@ -18,6 +19,7 @@ const softwareUpgradeJob = vi.fn();
 const checkSoftwareUpgrade = vi.fn();
 const startSoftwareUpgrade = vi.fn();
 const rollbackSoftwareUpgrade = vi.fn();
+const finishSoftwareUpgrade = vi.fn();
 
 vi.mock("@/lib/auth/principal", () => ({
   getPrincipal: () => getPrincipal(),
@@ -27,6 +29,7 @@ vi.mock("@/lib/auth/principal", () => ({
     checkSoftwareUpgrade,
     startSoftwareUpgrade,
     rollbackSoftwareUpgrade,
+    finishSoftwareUpgrade,
   }),
 }));
 
@@ -46,6 +49,7 @@ const allCalls = () => [
   checkSoftwareUpgrade,
   startSoftwareUpgrade,
   rollbackSoftwareUpgrade,
+  finishSoftwareUpgrade,
 ];
 
 beforeEach(() => {
@@ -54,6 +58,7 @@ beforeEach(() => {
   for (const fn of [softwareUpgrade, softwareUpgradeJob, checkSoftwareUpgrade]) fn.mockResolvedValue(STATUS);
   startSoftwareUpgrade.mockResolvedValue({ started: true, status: STATUS });
   rollbackSoftwareUpgrade.mockResolvedValue({ started: true, status: STATUS });
+  finishSoftwareUpgrade.mockResolvedValue({ started: true, status: STATUS });
 });
 
 describe("/api/software-upgrade", () => {
@@ -65,6 +70,7 @@ describe("/api/software-upgrade", () => {
       await checkPOST(),
       await startPOST(post({ version: "v1.1.0", password: "pw" })),
       await rollbackPOST(post({ password: "pw" })),
+      await finishPOST(),
     ]) {
       expect(res.status).toBe(403);
     }
@@ -79,6 +85,7 @@ describe("/api/software-upgrade", () => {
       await checkPOST(),
       await startPOST(post({ version: "v1.1.0", password: "pw" })),
       await rollbackPOST(post({ password: "pw" })),
+      await finishPOST(),
     ]) {
       expect(res.status).toBe(401);
     }
@@ -92,9 +99,20 @@ describe("/api/software-upgrade", () => {
     expect(await (await checkPOST()).json()).toEqual({ ...STATUS, can_upgrade: true });
     const res = await startPOST(post({ version: "v1.1.0", password: "pw" }));
     expect(res.status).toBe(202);
-    expect(startSoftwareUpgrade).toHaveBeenCalledWith({ version: "v1.1.0", password: "pw" });
+    expect(startSoftwareUpgrade).toHaveBeenCalledWith({ version: "v1.1.0", password: "pw", confirm_busy: false });
     expect((await rollbackPOST(post({ password: "pw" }))).status).toBe(202);
     expect(rollbackSoftwareUpgrade).toHaveBeenCalledWith({ password: "pw" });
+    expect((await finishPOST()).status).toBe(202);
+    expect(finishSoftwareUpgrade).toHaveBeenCalledWith();
+  });
+
+  it("runs the pre-flight for a version and passes the busy confirm on", async () => {
+    await checkPOST(post({ version: "v1.1.0" }));
+    expect(checkSoftwareUpgrade).toHaveBeenCalledWith("v1.1.0");
+    expect((await checkPOST(post({ version: "main; id" }))).status).toBe(400);
+    expect(checkSoftwareUpgrade).toHaveBeenCalledTimes(1);
+    await startPOST(post({ version: "v1.1.0", password: "pw", confirm_busy: true }));
+    expect(startSoftwareUpgrade).toHaveBeenCalledWith({ version: "v1.1.0", password: "pw", confirm_busy: true });
   });
 
   it("checks the request before calling Python", async () => {

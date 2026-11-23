@@ -198,6 +198,76 @@ dashboard restarts. It restarts the Aquarium services, never the machine.
   (fetch the tag, install packages, build, migrate, restart, verify); on
   failure it deploys the previous commit again and restores the backup.
 
+**Root-owned copies (helpers, sudoers rules, the admin command):** after the
+new code is switched in and before the restart, the job installs the box's
+root-owned copies from the new release itself, so nobody has to run anything
+as root after an upgrade. The list is `ROOT_COPIES` in `deploy/aquarium.py`:
+`/usr/local/sbin/aquarium`, `hermes-vpn-helper`, `hermes-wa-bridge-add`,
+`hermes-security-check`, `hermes-tools-exec`, `hermes-tools-cli`,
+`/usr/local/lib/hermes-tools/bin/hermes` (from `deploy/hermes-tools-shim`) and
+`/etc/sudoers.d/{hermes-tools,hermes-vpn,hermes-wa-bridge,hermes-security-check,hermes-backup,aquarium-apps,aquarium-upgrade}`.
+
+- Only copies the box already has are replaced; a feature that was never set
+  up is not turned on.
+- Release installs take the files from the signature-verified tarball
+  (extracted to a root-only directory), never from the unpacked release tree,
+  which the service user owns while it builds. Git-checkout installs take them
+  from the checked-out tag.
+- Everything is staged first; each sudoers rule must pass `visudo -cf` before
+  anything is replaced. Then each file is swapped in atomically (`rename`):
+  binaries `root:root 0755`, sudoers rules `root:root 0440`. Swapping
+  `/usr/local/sbin/aquarium` or `aquarium-upgrade` does not disturb the
+  running job (it already runs as root from the old inode) or its rollback.
+- The old copies (bytes, owner, mode) go into
+  `/var/backups/aquarium/root-copies/<job>-<version>/` (root-only, as many
+  kept as `BACKUP_KEEP`, at least 2) and are put back by the automatic rollback and by `upgrade rollback`.
+
+**The first upgrade into this release (finish step):** the job that runs is
+the box's *installed* command, so an upgrade from a release without this
+feature (e.g. HSD's v0.2.7) still runs the old job code: it switches the
+release and refreshes `/usr/local/sbin/aquarium`, but leaves the other copies
+stale. The next `aquarium upgrade status` (the page polls it) sees that the
+running release's verified copies differ from the box's and starts a short
+**finish** job by itself (`download` = re-verify the cached package, `install`
+= the copies above, `checks` = the post-upgrade checks below). It is
+single-flight (a lock, and never while another job is alive), logged in the
+same progress and history, and runs once per version: if it fails, the old
+copies are put back, the failure is recorded and the page shows the reason
+with **Try again** (`upgrade start` with `{"finish": true}`; nothing else
+retries it). Git checkouts are deployed by hand, so `hermes-deploy.sh` keeps
+reporting stale copies with the exact commands instead.
+
+**Pre-flight (before the Upgrade button is enabled):** `aquarium upgrade
+check` with `{"version": "vX.Y.Z"}` on stdin answers, in plain words, whether
+there is at least 5 GB free, the backup folder can be written, the services
+are up and answer, and the release's `SHA256SUMS` downloads and its cosign
+signature is valid. `upgrade start` refuses when any of them fails. The
+Python API adds the work a restart interrupts (chat replies being written,
+messaging conversations mid-turn, project runs `running`/`waiting`); then the
+page asks for a tick ("upgrade now anyway") and the API refuses (409) without
+`confirm_busy`.
+
+**Post-upgrade checks:** besides every service and page answering, the
+installed root copies must match the release, and if any profile's
+`config.yaml` sets `terminal.run_as: hermes-tools`, the agent terminal must
+run `hermes projects --help` through the restricted path
+(`sudo -n -u hermes-tools /usr/local/sbin/hermes-tools-exec bash -c …`).
+Any failure rolls back automatically; the job error (shown on the page) names
+the check that failed and the version it went back to.
+
+**CI rehearsal (`release.yml` → `rehearse`, blocks `publish`):** downloads the
+previous published stable release, verifies its signature, then runs the
+previous release's *own* `aquarium upgrade start` / `upgrade run` against the
+tarball just built, lets the new command's status poll start the finish job,
+and finally runs `upgrade rollback`; it also rehearses v0.2.7 and the newest
+tag against the tree (`tests/deploy/test_aquarium_upgrade_rehearsal.py`).
+Real: both releases' `aquarium` command and helper/sudoers files from the
+tarballs, the previous release's signature, `visudo -cf`, file modes, the job,
+state, backup-of-copies and rollback code. Not covered (faked): systemd,
+Docker/Postgres/Supabase, the GitHub API for the new tag, cosign for the new
+tag, `sudo` to `hermes-tools`, and the Python/Node build. A full install needs
+a box with Supabase; HSD's real upgrade is the first full run.
+
 Progress (7 steps), the log tail and the history live in
 `/var/lib/aquarium/upgrade-status.json` and `/var/log/aquarium-upgrade/`;
 the API returns them without filesystem paths, backup locations or process

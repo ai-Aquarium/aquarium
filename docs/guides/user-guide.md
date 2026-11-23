@@ -499,6 +499,34 @@ Set up nightly encrypted offsite backups and run restore tests in **Get ready �
 Backups**. **Security basics → Test** runs read-only security checks. See the
 Installation Guide for details.
 
+## 11.7 Software upgrade (owner and admins)
+
+**Settings → Software upgrade** installs a newer Aquarium release. Pick the
+release (the latest is chosen for you) and wait for the checks under the list:
+
+- **Disk space**: at least 5 GB free;
+- **Backup folder**: the upgrade can save its backup;
+- **Services**: everything is running now;
+- **Release download**: the release can be downloaded and its signature is valid.
+
+**Upgrade** stays off until every check passes; a failed check says what to fix
+(press *check again* afterwards). If chats are being answered or project runs
+are going, the page lists them: the upgrade restarts the services, so tick
+*upgrade now anyway* to go ahead, or wait.
+
+Confirm with your password. The upgrade takes about 4–6 minutes and carries on
+if you close the tab. It also updates the server's system helpers (the agent's
+restricted terminal, its allowed commands and permission rules) by itself.
+Upgrading from an older release, the page shows a short second step,
+*Finishing the upgrade … updating system helpers*, right after the first: keep
+the page open or come back later, nothing needs to be run on the server.
+
+After the upgrade the server checks that everything works, including the
+agent's terminal. If a check fails, it **rolls back automatically** and the page
+says so and which check failed. If only the helper step fails, the new release
+keeps running, the old helpers are put back, and the page shows the reason with
+**Try again**.
+
 # 12. FAQ
 
 **I did not get an activation link.** Ask the person who invited you; they can

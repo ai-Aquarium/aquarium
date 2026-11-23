@@ -408,8 +408,11 @@ def test_update_installs_verified_stable_release(box, capsys):
     assert state["current"] == "v1.1.0" and state["previous"] == "v1.0.0"
     assert state["history"][-1]["result"] == "ok"
     out = capsys.readouterr().out
-    assert "VPN HELPER STALE" in out  # reported, never auto-installed (it runs as root via sudo)
-    assert box.p("/usr/local/sbin/hermes-vpn-helper").read_text() == "# helper from long ago\n"
+    # the installed root helper is replaced from the verified tarball; the old copy is kept
+    assert box.p("/usr/local/sbin/hermes-vpn-helper").read_text() == "#!/usr/bin/python3\n# helper v1.1.0\n"
+    assert "installed VPN helper" in out
+    saved = list(box.p("/var/backups/aquarium/root-copies").glob("*-v1.1.0/*-hermes-vpn-helper"))
+    assert [f.read_text() for f in saved] == ["# helper from long ago\n"]
     assert "TOPSECRETPW" not in out
 
 

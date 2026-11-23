@@ -113,5 +113,24 @@
     "restart": "The page disconnects for about a minute here and reconnects by itself",
     "restore": "Database and settings from before the upgrade",
     "checks": "Services up, pages load"
-  }
+  },
+  "preflightTitle": "Checks before upgrading to {tag}",
+  "preflightChecking": "checking…",
+  "preflightRecheck": "check again",
+  "preflightError": "The checks couldn't run: {detail}",
+  "preflightFailed": "Fix what's marked above, then check again. The upgrade can't start until every check passes.",
+  "check": {
+    "disk": "Disk space",
+    "backup": "Backup folder",
+    "services": "Services",
+    "release": "Release download"
+  },
+  "busyTitle": "Work in progress:",
+  "busyHint": "The upgrade restarts the services, which interrupts this work. It picks up again afterwards, but a reply being written may need asking again.",
+  "busyConfirm": "I understand: upgrade now anyway",
+  "finishing": "Finishing the upgrade to {tag}: updating system helpers",
+  "finishedHelpers": "System helpers updated for {tag}.",
+  "finishFailedTitle": "Finishing the upgrade to {tag} failed.",
+  "finishFailedBody": "{tag} is running, but its system helpers couldn't be installed, so the previous ones were put back. The agent's terminal may be missing new commands until this succeeds.",
+  "tryAgain": "Try again"
 }

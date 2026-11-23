@@ -113,5 +113,24 @@
     "restart": "頁面會在此中斷約一分鐘，然後自動重新連接",
     "restore": "升級前的資料庫及設定",
     "checks": "服務運行、頁面載入"
-  }
+  },
+  "preflightTitle": "升級至 {tag} 前的檢查",
+  "preflightChecking": "檢查中…",
+  "preflightRecheck": "重新檢查",
+  "preflightError": "無法執行檢查：{detail}",
+  "preflightFailed": "請先處理上面標示的項目，然後重新檢查。所有檢查通過前無法開始升級。",
+  "check": {
+    "disk": "磁碟空間",
+    "backup": "備份資料夾",
+    "services": "服務",
+    "release": "版本下載"
+  },
+  "busyTitle": "有工作正在進行：",
+  "busyHint": "升級會重新啟動服務，這些工作會被中斷。之後會自動繼續，但正在撰寫的回覆可能需要重新詢問。",
+  "busyConfirm": "我明白，仍然立即升級",
+  "finishing": "正在完成升級至 {tag}：更新系統輔助程式",
+  "finishedHelpers": "已為 {tag} 更新系統輔助程式。",
+  "finishFailedTitle": "完成升級至 {tag} 失敗。",
+  "finishFailedBody": "{tag} 正在運行，但無法安裝其系統輔助程式，已放回先前的版本。在成功之前，代理的終端機可能缺少新指令。",
+  "tryAgain": "再試一次"
 }

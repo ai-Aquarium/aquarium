@@ -42,6 +42,12 @@ _HIGHLIGHTS_PER_SECTION = 6
 class StartBody(BaseModel):
     version: str = Field(min_length=2, max_length=60)
     password: str = Field(min_length=1, max_length=512)
+    #: The caller saw the "work in progress" warning and goes ahead anyway.
+    confirm_busy: bool = False
+
+
+class CheckBody(BaseModel):
+    version: Optional[str] = Field(default=None, max_length=60)
 
 
 class RollbackBody(BaseModel):
@@ -183,7 +189,7 @@ def _job_view(job: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     phase = str(job.get("phase") or "")
     return {
         "id": str(job.get("id") or ""),
-        "kind": "rollback" if job.get("kind") == "rollback" else "upgrade",
+        "kind": _kind(job.get("kind")),
         "from": job.get("from") or None,
         "to": job.get("to") or None,
         "by": scrub(job.get("by"), 80) or None,
@@ -195,6 +201,69 @@ def _job_view(job: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         "steps": steps,
         "log": [scrub(line, 300) for line in (job.get("log") or [])][-200:],
     }
+
+
+def _kind(value: Any) -> str:
+    return value if value in ("rollback", "finish") else "upgrade"
+
+
+def _finish_view(raw: Any) -> Optional[Dict[str, Any]]:
+    """The system-helper step an older upgrade job left undone failed: why, and when."""
+    if not isinstance(raw, dict) or not raw.get("failed"):
+        return None
+    return {"failed": True, "error": scrub(raw.get("error")) or None, "at": str(raw.get("at") or "")[:40] or None}
+
+
+_PREFLIGHT_KEYS = ("disk", "backup", "services", "release")
+
+
+def preflight_view(raw: Any, busy: List[str]) -> Dict[str, Any]:
+    """Checks before an upgrade: the box's (disk, backup, services, release) and the work in
+    progress here. ``ok`` only when every box check passed; ``busy`` needs a confirm."""
+    checks = []
+    for c in (raw or {}).get("checks") or []:
+        if isinstance(c, dict) and c.get("key") in _PREFLIGHT_KEYS:
+            checks.append({"key": c["key"], "ok": c.get("status") == "ok", "message": scrub(c.get("message"))})
+    seen = {c["key"] for c in checks}
+    complete = all(k in seen for k in _PREFLIGHT_KEYS)
+    return {"version": scrub((raw or {}).get("version"), 60) or None,
+            "ok": complete and all(c["ok"] for c in checks),
+            "checks": checks, "busy": busy}
+
+
+def work_in_progress() -> List[str]:
+    """Plain-language list of work a restart would interrupt: agent turns (chat here and the
+    messaging gateway) and project runs. Best effort: a source that can't be read is skipped."""
+    found: List[str] = []
+    try:
+        from hermes_cli import web_server as ws
+
+        chats = sum(1 for e in list(ws._CHAT_RUNS.values()) if ws._chat_run_is_live(e))
+        if chats:
+            found.append(f"{chats} chat {'reply is' if chats == 1 else 'replies are'} being written")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from gateway.status import derive_gateway_busy, get_running_pid, parse_active_agents, read_runtime_status
+
+        rt = read_runtime_status() or {}
+        agents = parse_active_agents(rt.get("active_agents"))
+        if derive_gateway_busy(gateway_running=get_running_pid() is not None,
+                               gateway_state=rt.get("gateway_state"), active_agents=agents):
+            found.append(f"{agents} messaging {'conversation is' if agents == 1 else 'conversations are'} mid-turn")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from hermes_cli import projects_db
+
+        with projects_db.connect_closing() as conn:
+            runs = conn.execute(
+                "SELECT COUNT(*) FROM project_runs WHERE status IN ('running', 'waiting')").fetchone()[0]
+        if runs:
+            found.append(f"{runs} project {'run is' if runs == 1 else 'runs are'} in progress")
+    except Exception:  # noqa: BLE001
+        pass
+    return found
 
 
 def _sha(value: Any) -> Optional[str]:
@@ -238,7 +307,7 @@ def status_view(raw: Dict[str, Any], rel: Optional[Dict[str, Any]] = None) -> Di
         "job": _job_view(raw.get("job")),
         "history": [{
             "id": str(h.get("id") or ""),
-            "kind": "rollback" if h.get("kind") == "rollback" else "upgrade",
+            "kind": _kind(h.get("kind")),
             "from": h.get("from") or None, "to": h.get("to") or None,
             "by": scrub(h.get("by"), 80) or None,
             "started": h.get("started") or None, "finished": h.get("finished") or None,
@@ -247,6 +316,7 @@ def status_view(raw: Dict[str, Any], rel: Optional[Dict[str, Any]] = None) -> Di
         } for h in raw.get("history") or [] if isinstance(h, dict)],
         "checked_at": raw.get("releases_checked_at") or None,
         "rollback_to": (raw.get("rollback") or {}).get("to") or None,
+        "finish": _finish_view(raw.get("finish")),
     }
     if rel is not None:
         packaged_only = installed["kind"] == "release"
@@ -324,13 +394,21 @@ async def upgrade_job():
 
 
 @router.post("/check", dependencies=ADMIN)
-async def upgrade_check():
-    """Ask GitHub for releases now (read-only: it only refreshes the cached list)."""
-    rel = await asyncio.to_thread(_call, "check", None, 90)
+async def upgrade_check(body: Optional[CheckBody] = None):
+    """Ask GitHub for releases now; with a ``version``, also run the pre-flight checks for
+    it (read-only: disk, backup folder, services, the release's signature; work in progress)."""
+    version = (body.version if body else None) or None
+    if version is not None and version_key(version) is None:
+        raise HTTPException(400, "Pick a release like v1.2.3.")
+    rel = await asyncio.to_thread(_call, "check", {"version": version} if version else None, 240)
     if rel.get("unavailable"):
         raise _fail(rel)
     raw = await asyncio.to_thread(_call, "status")
-    return status_view(raw, rel if rel.get("ok") else {"releases": [], "error": rel.get("error")})
+    out = status_view(raw, rel if rel.get("ok") else {"releases": [], "error": rel.get("error")})
+    if version:
+        out["preflight"] = preflight_view(rel.get("preflight") or {"version": version},
+                                          await asyncio.to_thread(work_in_progress))
+    return out
 
 
 @router.post("/start", status_code=202, dependencies=ADMIN)
@@ -344,6 +422,9 @@ async def upgrade_start(request: Request, body: StartBody):
         checkout_base_version(inst) if inst.get("layout") != "release" else None) or "")
     if here is None or version_key(body.version) <= here:
         raise HTTPException(400, "Only a release newer than what runs now can be installed.")
+    busy = await asyncio.to_thread(work_in_progress)
+    if busy and not body.confirm_busy:
+        raise HTTPException(409, "Work is in progress (" + "; ".join(busy) + "). Confirm to upgrade anyway.")
     answer = await asyncio.to_thread(_call, "start", {"version": body.version, "by": by})
     if not answer.get("ok"):
         raise _fail(answer)
@@ -354,6 +435,23 @@ async def upgrade_start(request: Request, body: StartBody):
 async def upgrade_rollback(request: Request, body: RollbackBody):
     by = await _confirm_password(request, body.password)
     answer = await asyncio.to_thread(_call, "rollback", {"by": by})
+    if not answer.get("ok"):
+        raise _fail(answer)
+    return {"started": True, "status": status_view(answer.get("status") or {})}
+
+
+@router.post("/finish", status_code=202, dependencies=ADMIN)
+async def upgrade_finish(request: Request):
+    """"Try again" after the system-helper step failed. Installs nothing new: the files of the
+    release that already runs, from its verified package (the box starts this by itself once)."""
+    by = ""
+    try:
+        from hermes_cli import web_server as ws
+
+        by = str(getattr(await ws._comms_resolve_principal(request), "display", "") or "")[:80]
+    except Exception:  # noqa: BLE001 — the name is only a label for the history
+        pass
+    answer = await asyncio.to_thread(_call, "start", {"finish": True, "by": by})
     if not answer.get("ok"):
         raise _fail(answer)
     return {"started": True, "status": status_view(answer.get("status") or {})}

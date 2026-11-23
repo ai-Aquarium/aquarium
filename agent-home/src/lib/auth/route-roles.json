@@ -422,6 +422,7 @@
   "POST /api/software-upgrade/check": "admin",
   "POST /api/software-upgrade/start": "admin",
   "POST /api/software-upgrade/rollback": "admin",
+  "POST /api/software-upgrade/finish": "admin",
   "POST /api/chat/pin-suggestions/dismiss": "signed-in",
   "GET /api/chat/pin-suggestions": "signed-in",
   "POST /api/chat/sessions/pin": "signed-in",
