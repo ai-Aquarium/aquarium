@@ -18,6 +18,7 @@ export function timelineMessages(timeline: ProjectChatTimeline | null): ChatMess
     if (m.id != null) row.id = m.id;
     if (m.catch_up) row.catchUp = m.catch_up;
     if (m.seeded) row.seeded = true;
+    if (m.sent_while_working) row.sentWhileWorking = true;
     return row;
   });
 }

@@ -12,7 +12,7 @@
  */
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
-import { profileFromBody } from "@/lib/chat/profile";
+import { profileFromBody, targetProfileFromBody } from "@/lib/chat/profile";
 import { mediaRef } from "@/lib/chat/media-ref";
 import { withUiContext } from "@/lib/chat/ui-context";
 import { canReadMediaPath, createMediaSignedUrl } from "@/lib/supabase/storage";
@@ -153,7 +153,10 @@ export async function POST(request: Request): Promise<Response> {
   const message = withUiContext(withAttachments(rawMessage, attachments), body.uiContext);
 
   try {
-    const profile = profileFromBody(body);
+    const projectSlug =
+      typeof body.projectSlug === "string" && body.projectSlug ? body.projectSlug : null;
+    // A project turn names its answering profile explicitly, `default` included.
+    const profile = projectSlug ? targetProfileFromBody(body) : profileFromBody(body);
     const client = await apiClientForRequest({ profile });
     let sessionId =
       typeof body.sessionId === "string" && body.sessionId ? body.sessionId : "";
@@ -162,13 +165,16 @@ export async function POST(request: Request): Promise<Response> {
       sessionId = created.session_id;
     }
     let turn = message;
-    if (typeof body.projectSlug === "string" && body.projectSlug) {
+    if (projectSlug) {
       const registry = await apiClientForRequest();
-      const prepared = await registry.prepareProjectChat(body.projectSlug, {
-        profile: profile ?? "default",
+      const prepared = await registry.prepareProjectChat(projectSlug, {
+        profile: client.boundProfile() ?? "default",
         session_id: sessionId,
         message,
       });
+      // The profile's canonical project conversation (a second page's fresh
+      // session is not where the chat continues).
+      sessionId = prepared.session_id;
       turn = prepared.message;
     }
     const agentAttachments = await signAttachments(attachments);

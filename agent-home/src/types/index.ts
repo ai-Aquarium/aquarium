@@ -3749,6 +3749,8 @@ export interface ProjectChatTurn {
   session_id: string;
   catch_up?: number;
   seeded?: boolean;
+  /** A steer delivered mid-turn, shown as the person's own row. */
+  sent_while_working?: boolean;
 }
 
 /** A playbook revision saved while the project chat ran. */

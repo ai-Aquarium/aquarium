@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
-import { profileFromBody } from "@/lib/chat/profile";
+import { targetProfileFromBody } from "@/lib/chat/profile";
 
 interface CancelBody {
   sessionId?: unknown;
@@ -43,7 +43,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
   try {
-    const client = await apiClientForRequest({ profile: profileFromBody(body) });
+    const client = await apiClientForRequest({ profile: targetProfileFromBody(body) });
     const resp = await client.cancelChatRun(sessionId, runId);
     return NextResponse.json(resp);
   } catch (err) {
