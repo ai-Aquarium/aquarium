@@ -1257,15 +1257,25 @@ def _is_hermes_state_db(resolved: Path) -> bool:
     return False
 
 
-def _member_workspace_root() -> Path:
-    """Folder holding each person's own files (tools/access_policy.files_root)."""
+def _member_workspace_roots() -> list[Path]:
+    """Folders holding each person's own files (tools/access_policy.files_root).
+
+    With no confined person bound, every person's folder counts — under this
+    process's home and, inside a per-turn profile scope, under that profile's.
+    """
     try:
         from tools.access_policy import current_files_root
 
         own = current_files_root()
     except Exception:
         own = None
-    return Path(own) if own is not None else _HERMES_HOME / "workspaces"
+    if own is not None:
+        return [Path(own)]
+    roots = [_HERMES_HOME / "workspaces"]
+    scoped = Path(get_hermes_home()) / "workspaces"
+    if scoped != roots[0]:
+        roots.append(scoped)
+    return roots
 
 
 def _in_media_workspace(resolved: Path) -> bool:
@@ -1288,12 +1298,12 @@ def _in_media_workspace(resolved: Path) -> bool:
             return False
         return bool(rel.parts) and not any(part.startswith(".") for part in rel.parts)
 
-    try:
-        member_root = _member_workspace_root().resolve(strict=False)
-    except (OSError, RuntimeError, ValueError):
-        member_root = None
-    if member_root is not None and _plain_file_under(member_root):
-        return True
+    for member_root in _member_workspace_roots():
+        try:
+            if _plain_file_under(member_root.resolve(strict=False)):
+                return True
+        except (OSError, RuntimeError, ValueError):
+            continue
 
     raw = os.environ.get("TERMINAL_CWD", "").strip()
     if not raw:
