@@ -342,6 +342,49 @@ describe("ChatsDrawer", () => {
   });
 });
 
+describe("All chats on a page that already is /chat", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("calls onAllChats from a button instead of linking back to the same page", async () => {
+    install({
+      "GET /api/chat/sessions": () => json({ sessions }),
+      "GET /api/chat/pin-suggestions": () => json({ items: [], generated_at: 1 }),
+    });
+    const onAllChats = vi.fn();
+    render(<ChatsSidebar profiles={profiles} onAllChats={onAllChats} />);
+    await screen.findByRole("region", { name: "Pinned chats" });
+    expect(screen.queryByRole("link", { name: /All chats/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /All chats/ }));
+    expect(onAllChats).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists every chat past the recent cap and drops the All chats button with showAll", async () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({
+      ...withoutPins(sessions)[0],
+      id: `s-many-${i}`,
+      title: `Chat ${i}`,
+      archived: false,
+      last_active: NOW / 1000 - i * 60,
+    }));
+    install({
+      "GET /api/chat/sessions": () => json({ sessions: many }),
+      "GET /api/chat/pin-suggestions": () => json({ items: [], generated_at: 1 }),
+    });
+    const { unmount } = render(<ChatsSidebar profiles={profiles} />);
+    await screen.findByRole("region", { name: "Recent chats" });
+    expect(rowNames("Recent chats")).toHaveLength(30);
+    unmount();
+
+    render(<ChatsDrawer open onClose={() => {}} profiles={profiles} showAll />);
+    await screen.findByRole("region", { name: "Recent chats" });
+    expect(rowNames("Recent chats")).toHaveLength(40);
+    expect(screen.queryByText("All chats")).toBeNull();
+  });
+});
+
 describe("pin suggestions review", () => {
   afterEach(() => {
     cleanup();

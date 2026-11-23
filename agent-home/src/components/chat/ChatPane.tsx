@@ -514,6 +514,7 @@ export function ChatPane({
           searchShortcut="hint"
           messageSearch={crossSessionSearch}
           onOpenMessageHit={jumpToSearchResult}
+          onAllChats={() => setDrawerOpen(true)}
         />
       </aside>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -601,6 +602,7 @@ export function ChatPane({
         activeSessionId={sessionId}
         initialSessions={sessions}
         categoryFilter
+        showAll
         messageSearch={crossSessionSearch}
         onOpenMessageHit={jumpToSearchResult}
       />
