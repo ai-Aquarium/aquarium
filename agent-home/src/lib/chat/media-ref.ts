@@ -21,13 +21,21 @@ export const MEDIA_ROUTE = "/api/chat/media";
 export const MEDIA_CONTENT_ROUTE = "/api/chat/media/content";
 
 /** The in-transcript reference for one object path. */
-export function mediaRef(path: string): string {
-  return `${MEDIA_ROUTE}?path=${encodeURIComponent(path)}`;
+export function mediaRef(path: string, project?: string): string {
+  return `${MEDIA_ROUTE}?path=${encodeURIComponent(path)}${projectParam(project)}`;
 }
 
 /** The loadable URL for one object path. */
-export function mediaContentRef(path: string): string {
-  return `${MEDIA_CONTENT_ROUTE}?path=${encodeURIComponent(path)}`;
+export function mediaContentRef(path: string, project?: string): string {
+  return `${MEDIA_CONTENT_ROUTE}?path=${encodeURIComponent(path)}${projectParam(project)}`;
+}
+
+/**
+ * `&project=<slug>`: the file was attached in that project's group chat, so
+ * anyone on the project may open it, not only its sender.
+ */
+function projectParam(project?: string): string {
+  return project ? `&project=${encodeURIComponent(project)}` : "";
 }
 
 /**
@@ -42,8 +50,8 @@ export function mediaRefPath(value: string): string | null {
 }
 
 /** The content URL that always downloads (`Content-Disposition: attachment`). */
-export function mediaDownloadRef(path: string): string {
-  return `${mediaContentRef(path)}&download=1`;
+export function mediaDownloadRef(path: string, project?: string): string {
+  return `${mediaContentRef(path, project)}&download=1`;
 }
 
 /**

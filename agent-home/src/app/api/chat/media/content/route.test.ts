@@ -14,7 +14,11 @@ const createSignedUrl = vi.fn(async (path: string, ttl: number) => ({
   error: null as { message: string } | null,
 }));
 
-vi.mock("@/lib/auth/principal", () => ({ getPrincipal: () => getPrincipal() }));
+const projectChatMedia = vi.fn<(slug: string, path: string) => Promise<{ shared: boolean }>>();
+vi.mock("@/lib/auth/principal", () => ({
+  getPrincipal: () => getPrincipal(),
+  apiClientForRequest: async () => ({ projectChatMedia }),
+}));
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ storage: { from: () => ({ createSignedUrl }) } }),
 }));
@@ -135,6 +139,14 @@ describe("GET /api/chat/media/content", () => {
       error: { message: "Object not found" },
     });
     expect((await get(OWN)).status).toBe(404);
+  });
+
+  it("streams another member's project-chat file only when Python confirms it", async () => {
+    projectChatMedia.mockRejectedValue(new Error("403 not permitted"));
+    expect((await get(OTHER, "&project=sales")).status).toBe(403);
+    projectChatMedia.mockResolvedValue({ shared: true });
+    expect((await get(OTHER, "&project=sales")).status).not.toBe(403);
+    expect(projectChatMedia).toHaveBeenCalledWith("sales", OTHER);
   });
 
   it("501s when Storage is unconfigured on the box", async () => {

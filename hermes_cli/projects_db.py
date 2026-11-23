@@ -194,6 +194,19 @@ CREATE TABLE IF NOT EXISTS project_chat_prepares (
     digest_size INTEGER NOT NULL DEFAULT 0
 );
 
+-- Each time a person joins, changes role on or leaves a project (role NULL =
+-- removed): the group chat keeps what they posted while they could post.
+CREATE TABLE IF NOT EXISTS project_member_changes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL,
+    role        TEXT,
+    changed_at  REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_member_changes
+    ON project_member_changes(project_id, changed_at);
+
 CREATE INDEX IF NOT EXISTS idx_project_chat_prepares
     ON project_chat_prepares(project_id, session_id, snapshot_at);
 
@@ -1392,7 +1405,32 @@ def add_project_member(
             "VALUES (?, ?, ?, ?, ?)",
             (project_id, user_id, role, added_by, now),
         )
+        if cur.rowcount > 0:
+            _record_member_change(conn, project_id, user_id, role)
     return cur.rowcount > 0
+
+
+def _record_member_change(
+    conn: sqlite3.Connection, project_id: str, user_id: str, role: Optional[str]
+) -> None:
+    conn.execute(
+        "INSERT INTO project_member_changes (project_id, user_id, role, changed_at) "
+        "VALUES (?, ?, ?, ?)",
+        (project_id, user_id, role, time.time()),
+    )
+
+
+def get_member_changes(conn: sqlite3.Connection, project_id: str) -> List[tuple]:
+    """``(user_id, role or None when removed, when)`` for each join, role
+    change and removal on the project, oldest first."""
+    return [
+        (r[0], r[1], float(r[2]))
+        for r in conn.execute(
+            "SELECT user_id, role, changed_at FROM project_member_changes "
+            "WHERE project_id = ? ORDER BY changed_at, id",
+            (project_id,),
+        ).fetchall()
+    ]
 
 
 def get_project_members(
@@ -1416,6 +1454,8 @@ def remove_project_member(
             "DELETE FROM project_members WHERE project_id = ? AND user_id = ?",
             (project_id, user_id),
         )
+        if cur.rowcount > 0:
+            _record_member_change(conn, project_id, user_id, None)
     return cur.rowcount > 0
 
 

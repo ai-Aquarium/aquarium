@@ -15,8 +15,8 @@ import { NextResponse } from "next/server";
 
 import { getPrincipal } from "@/lib/auth/principal";
 import { proxyBytes } from "@/lib/http/proxy-bytes";
+import { canReadChatMedia } from "@/lib/chat/project-media";
 import {
-  canReadMediaPath,
   createMediaSignedUrl,
   storageAvailable,
 } from "@/lib/supabase/storage";
@@ -31,13 +31,14 @@ export async function GET(request: Request): Promise<Response> {
 
   const url = new URL(request.url);
   const path = url.searchParams.get("path") ?? "";
+  const project = url.searchParams.get("project");
   if (!path) {
     return NextResponse.json(
       { error: "missing_path", detail: "A path query parameter is required." },
       { status: 400 },
     );
   }
-  if (!canReadMediaPath(principal, path)) {
+  if (!(await canReadChatMedia(principal, path, project))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   if (!storageAvailable()) {

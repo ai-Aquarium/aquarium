@@ -172,6 +172,11 @@ const SAFE_SEGMENT = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
  * another principal's media is simply not visible).
  */
 export function canReadMediaPath(principal: Principal, path: string): boolean {
+  return isMediaObjectPath(path) && path.split("/")[0] === slug(principal.user_id);
+}
+
+/** Whether `path` is a well-formed object key, whoever's prefix it is under. */
+export function isMediaObjectPath(path: string): boolean {
   if (!path || path.length > 512) return false;
   if (path.includes("\\") || path.includes("\0") || path.includes("%")) return false;
   if (path.startsWith("/") || path.includes("//")) return false;
@@ -185,7 +190,7 @@ export function canReadMediaPath(principal: Principal, path: string): boolean {
     // output; a segment of only dots (`.`, `..`) or a leading dot is refused.
     if (!SAFE_SEGMENT.test(segment)) return false;
   }
-  return segments[0] === slug(principal.user_id);
+  return true;
 }
 
 /**

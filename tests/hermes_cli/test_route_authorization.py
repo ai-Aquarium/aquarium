@@ -419,6 +419,9 @@ SIGNED_IN = {
     "GET /api/registry/projects/{slug}/chat/timeline",
     "POST /api/registry/projects/{slug}/chat/prepare",
     "POST /api/registry/projects/{slug}/chat/messages",
+    # only a file its sender attached in the group chat, for people on the
+    # project (viewers included) or an instance admin
+    "GET /api/registry/projects/{slug}/chat/media",
     # projects_clarify_api: project membership checked per project
     "GET /api/registry/projects/{slug}/clarify",
     "POST /api/registry/projects/{slug}/clarify/questions",

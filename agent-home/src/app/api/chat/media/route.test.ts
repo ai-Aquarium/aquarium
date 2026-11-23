@@ -22,7 +22,11 @@ const createSignedUrl = vi.fn(
   }),
 );
 
-vi.mock("@/lib/auth/principal", () => ({ getPrincipal: () => getPrincipal() }));
+const projectChatMedia = vi.fn<(slug: string, path: string) => Promise<{ shared: boolean }>>();
+vi.mock("@/lib/auth/principal", () => ({
+  getPrincipal: () => getPrincipal(),
+  apiClientForRequest: async () => ({ projectChatMedia }),
+}));
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ storage: { from: () => ({ createSignedUrl }) } }),
 }));
@@ -37,9 +41,10 @@ function principal(user_id: string, role: Principal["role"]): Principal {
   };
 }
 
-function get(path: string | null): Promise<Response> {
+function get(path: string | null, project?: string): Promise<Response> {
   const url = new URL("http://home.test/api/chat/media");
   if (path !== null) url.searchParams.set("path", path);
+  if (project) url.searchParams.set("project", project);
   return GET(new Request(url)) as unknown as Promise<Response>;
 }
 
@@ -91,6 +96,34 @@ describe("GET /api/chat/media", () => {
     const res = await get(OTHER);
     expect(res.status).toBe(403);
     expect(createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("signs another member's file attached in a project chat the caller is on", async () => {
+    projectChatMedia.mockResolvedValue({ shared: true });
+    const res = await get(OTHER, "sales");
+    expect(res.status).toBe(200);
+    expect(projectChatMedia).toHaveBeenCalledWith("sales", OTHER);
+    const body = (await res.json()) as { url: string };
+    expect(body.url).toBe(
+      `/api/chat/media/content?path=${encodeURIComponent(OTHER)}&project=sales`,
+    );
+  });
+
+  it("403s another member's file when Python says it was not shared with the caller", async () => {
+    projectChatMedia.mockRejectedValue(new Error("403 not permitted"));
+    const res = await get(OTHER, "sales");
+    expect(res.status).toBe(403);
+    expect(createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("never asks Python about another member's file without a project", async () => {
+    expect((await get(OTHER)).status).toBe(403);
+    expect(projectChatMedia).not.toHaveBeenCalled();
+  });
+
+  it("refuses a crafted path before asking about the project", async () => {
+    expect((await get("leo_owner/../mia_member/x.png", "sales")).status).toBe(403);
+    expect(projectChatMedia).not.toHaveBeenCalled();
   });
 
   it("403s an owner asking for a member's object (fail-closed default)", async () => {

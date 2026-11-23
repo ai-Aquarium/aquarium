@@ -2,7 +2,9 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ChatFile } from "@/components/chat/ChatFile";
 import { ChatMedia } from "@/components/chat/ChatMedia";
+import { MediaProjectContext } from "@/components/chat/MediaProject";
 
 type IOCallback = (entries: Array<{ isIntersecting: boolean }>) => void;
 let observers: Array<{ cb: IOCallback; options?: IntersectionObserverInit }> = [];
@@ -49,6 +51,18 @@ describe("ChatMedia", () => {
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toContain("/api/chat/media?path=");
+  });
+
+  it("asks as the project inside a project chat, for images and files", async () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    render(
+      <MediaProjectContext.Provider value="sales">
+        <ChatMedia path="leo_owner/home_1/u1-a.png" alt="shot" />
+        <ChatFile path="leo_owner/home_1/u2-b.pdf" name="b.pdf" />
+      </MediaProjectContext.Provider>,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    for (const [url] of fetchMock.mock.calls) expect(String(url)).toContain("&project=sales");
   });
 
   it("loads immediately when IntersectionObserver is unavailable", async () => {

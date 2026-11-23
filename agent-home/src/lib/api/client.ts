@@ -4148,6 +4148,17 @@ export class HermesApiClient {
     );
   }
 
+  /** Whether a file at `path` was attached in this project's group chat and
+   * the caller may open it (403 otherwise). */
+  async projectChatMedia(
+    slug: string,
+    path: string,
+  ): Promise<{ path: string; shared: boolean }> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/chat/media?path=${encodeURIComponent(path)}`,
+    );
+  }
+
   /** A members-only project chat message ("Ask agent" off): no model call. */
   async postProjectChatMessage(
     slug: string,
