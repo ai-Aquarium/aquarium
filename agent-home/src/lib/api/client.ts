@@ -2937,9 +2937,11 @@ export class HermesApiClient {
   async discardProjectPlaybookDraft(
     slug: string,
     userId: string,
+    expectedVersion?: number,
   ): Promise<{ discarded: true }> {
+    const query = expectedVersion == null ? "" : `?expected_version=${expectedVersion}`;
     return this.request(
-      `/api/registry/projects/${encodeURIComponent(slug)}/playbook/drafts/${encodeURIComponent(userId)}`,
+      `/api/registry/projects/${encodeURIComponent(slug)}/playbook/drafts/${encodeURIComponent(userId)}${query}`,
       { method: "DELETE" },
     );
   }

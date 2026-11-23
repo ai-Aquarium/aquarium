@@ -101,10 +101,13 @@ export function DraftView({
                 disabled={busy}
                 pendingLabel={t("draft.discarding")}
                 onClick={() =>
-                  void discard.run(`${path}/${draft.mine ? "me" : encodeURIComponent(draft.user_id)}`, {
-                    method: "DELETE",
-                    onSuccess: onDiscarded,
-                  })
+                  void discard.run(
+                    `${path}/${draft.mine ? "me" : encodeURIComponent(draft.user_id)}?expected_version=${draft.version}`,
+                    {
+                      method: "DELETE",
+                      onSuccess: onDiscarded,
+                    },
+                  )
                 }
                 className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-border)] px-3 text-sm disabled:opacity-50"
               >

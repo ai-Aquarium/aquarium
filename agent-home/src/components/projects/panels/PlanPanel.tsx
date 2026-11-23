@@ -498,7 +498,7 @@ export function PlanPanel({
             {drafting ? "Agent is drafting…" : "Draft with the agent"}
           </ActionButton>
         ) : null}
-        {!archived && !editing ? (
+        {!archived && !editing && !shownDraft ? (
           <button
             type="button"
             data-component="EditPlaybook"

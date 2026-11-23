@@ -127,6 +127,21 @@ describe("working drafts in Planning", () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ expected_version: 3 });
   });
 
+  it("discards only the version on screen and offers no revision editor over a draft", async () => {
+    const fetchMock = server([draft()]);
+    vi.stubGlobal("fetch", fetchMock);
+    mount();
+    const discard = await screen.findByRole("button", { name: "Discard draft" });
+    expect(document.querySelector('[data-component="EditPlaybook"]')).toBeNull();
+    fireEvent.click(discard);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/projects/weekly/playbook/drafts/me?expected_version=3",
+        expect.objectContaining({ method: "DELETE" }),
+      ),
+    );
+  });
+
   it("shows another member's draft read-only", async () => {
     vi.stubGlobal(
       "fetch",

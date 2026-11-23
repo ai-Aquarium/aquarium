@@ -7,9 +7,11 @@ import { NextResponse } from "next/server";
 import { withPrincipal } from "../../../../hermes-bridge";
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ slug: string; userId: string }> },
 ): Promise<NextResponse> {
   const { slug, userId } = await params;
-  return withPrincipal((client) => client.discardProjectPlaybookDraft(slug, userId));
+  const raw = new URL(req.url).searchParams.get("expected_version");
+  const expected = raw != null && /^\d+$/.test(raw) ? Number(raw) : undefined;
+  return withPrincipal((client) => client.discardProjectPlaybookDraft(slug, userId, expected));
 }
