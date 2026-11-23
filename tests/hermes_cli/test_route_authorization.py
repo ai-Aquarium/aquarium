@@ -52,6 +52,8 @@ PUBLIC = {
     "GET /auth/callback",
     "POST /auth/password-login",
     "POST /auth/logout",
+    # rotates a session from its own refresh-token cookie; 401 without one
+    "POST /auth/refresh",
     "GET /{full_path:path}",
     # first_run: one-time owner setup link; refuses everything without a token file
     "POST /api/setup/check",
