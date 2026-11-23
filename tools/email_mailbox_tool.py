@@ -14,6 +14,8 @@ import email
 import email.utils
 import imaplib
 import json
+import mimetypes
+import os
 import re
 import smtplib
 from email.message import EmailMessage
@@ -23,6 +25,8 @@ from tools.registry import registry
 
 MAX_RESULTS = 50
 MAX_BODY_CHARS = 20000
+MAX_ATTACHMENTS = 10
+MAX_ATTACHMENT_TOTAL_BYTES = 20 * 1024 * 1024
 ACTIONS = ("list_mailboxes", "search", "read", "send", "reply", "folders", "modify")
 
 SCHEMA = {
@@ -33,7 +37,11 @@ SCHEMA = {
         "search (IMAP search in a folder, newest first); read (one message by uid); "
         "send (new email via SMTP); reply (answer a message by uid, keeps the thread); "
         "folders; modify (mark read/unread, flag/unflag, move to a folder). "
-        "Confirm recipients and content with the person before sending."
+        "Confirm recipients and content with the person before sending. "
+        "To email the person something (a link, chart, file or summary), use "
+        "send to their own mailbox address; put files in attachments as absolute "
+        "paths and links like /view/<id> in the body (they are made full links). "
+        "Never paste base64 or image data into the body."
     ),
     "parameters": {
         "type": "object",
@@ -56,6 +64,14 @@ SCHEMA = {
             "subject": {"type": "string"},
             "body": {"type": "string", "description": "send/reply: plain-text body."},
             "html": {"type": "string", "description": "send/reply: optional HTML body."},
+            "attachments": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    f"send/reply: absolute paths of files to attach (<= {MAX_ATTACHMENTS}, "
+                    f"{MAX_ATTACHMENT_TOTAL_BYTES // (1024 * 1024)} MB in total)."
+                ),
+            },
             "seen": {"type": "boolean", "description": "modify: mark read (true) or unread (false)."},
             "flagged": {"type": "boolean", "description": "modify: star (true) or unstar (false)."},
             "move_to": {"type": "string", "description": "modify: move the message to this folder."},
@@ -216,6 +232,51 @@ def _addresses(value: Any) -> List[str]:
     return [str(v).strip() for v in (value or []) if str(v).strip()]
 
 
+# A relative agent-home link (``/view/<id>``, ``/api/files/...``, ``/api/chat/media?...``)
+# at the start of the text or after whitespace, a bracket, a quote or ``=``.
+_APP_LINK = re.compile(r"(?<![^\s(\[<>\"'=])/(?:view/|api/files/|api/chat/media)[^\s)\]<>\"']*")
+
+
+def _absolute_links(text: str) -> str:
+    """Prefix agent-home's relative links with ``agent_home.public_url``.
+
+    Chat replies link files as ``/view/<id>``; that only opens inside the app,
+    so an email gets ``<public_url>/view/<id>``. Left as-is when no https
+    public URL is configured.
+    """
+    if not text:
+        return text
+    from gateway.secret_links import public_base_url
+
+    base = public_base_url()
+    if not base:
+        return text
+    return _APP_LINK.sub(lambda m: base + m.group(0), text)
+
+
+def _attach(msg: EmailMessage, paths: Any) -> None:
+    from hermes_cli.agent_home_media import read_shareable_file
+
+    paths = _addresses(paths)
+    if len(paths) > MAX_ATTACHMENTS:
+        raise MailboxToolError(f"at most {MAX_ATTACHMENTS} attachments")
+    total = 0
+    for path in paths:
+        data = read_shareable_file(path)
+        if isinstance(data, str):
+            raise MailboxToolError(data)
+        total += len(data)
+        if total > MAX_ATTACHMENT_TOTAL_BYTES:
+            raise MailboxToolError(
+                f"attachments exceed {MAX_ATTACHMENT_TOTAL_BYTES // (1024 * 1024)} MB in total"
+            )
+        name = os.path.basename(os.path.expanduser(path).rstrip("/")) or "file"
+        maintype, _, subtype = (
+            mimetypes.guess_type(name)[0] or "application/octet-stream"
+        ).partition("/")
+        msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=name)
+
+
 def _compose(sender: str, args: Mapping[str, Any]) -> EmailMessage:
     to = _addresses(args.get("to"))
     if not to:
@@ -230,9 +291,11 @@ def _compose(sender: str, args: Mapping[str, Any]) -> EmailMessage:
     msg["Subject"] = str(args.get("subject") or "")
     msg["Date"] = email.utils.formatdate(localtime=True)
     msg["Message-ID"] = email.utils.make_msgid(domain=sender.split("@")[-1])
-    msg.set_content(str(args.get("body") or ""))
+    msg.set_content(_absolute_links(str(args.get("body") or "")))
     if args.get("html"):
-        msg.add_alternative(str(args["html"]), subtype="html")
+        msg.add_alternative(_absolute_links(str(args["html"])), subtype="html")
+    if args.get("attachments"):
+        _attach(msg, args["attachments"])
     return msg
 
 
@@ -364,7 +427,10 @@ async def email_mailbox_tool(args: Mapping[str, Any], **_kw: Any) -> str:
         if action == "send":
             msg = _compose(entry.name, args)
             _smtp_send(entry.payload, msg)
-            return _result(mailbox=entry.name, sent=True, to=msg["To"], subject=msg["Subject"])
+            return _result(
+                mailbox=entry.name, sent=True, to=msg["To"], subject=msg["Subject"],
+                attachments=[p.get_filename() for p in msg.iter_attachments()],
+            )
         if action == "reply":
             return _result(mailbox=entry.name, **_reply(entry, args))
         if action == "folders":

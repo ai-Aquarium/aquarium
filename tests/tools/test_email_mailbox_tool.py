@@ -69,8 +69,8 @@ def smtp(monkeypatch):
     return conn
 
 
-def _call(**args):
-    with acting_as("u1", "member"):
+def _call(_role="member", **args):
+    with acting_as("u1", _role):
         return json.loads(asyncio.run(tool.email_mailbox_tool(args)))
 
 
@@ -163,3 +163,62 @@ def test_login_failure_is_plain_and_hides_password(entries, monkeypatch):
     out = _call(action="search")
     assert out["success"] is False
     assert "s3cret-pw" not in out["error"]
+
+
+def test_send_attaches_files(entries, smtp, tmp_path):
+    page = tmp_path / "chart.html"
+    page.write_text("<html>chart</html>")
+    out = _call(_role="admin", action="send", to=["bob@example.com"], subject="Chart",
+                body="see attached", attachments=[str(page)])
+    assert out["attachments"] == ["chart.html"]
+    msg = smtp.send_message.call_args.args[0]
+    (part,) = list(msg.iter_attachments())
+    assert part.get_filename() == "chart.html"
+    assert part.get_content_type() == "text/html"
+    assert b"chart" in part.get_payload(decode=True)
+
+
+def test_unshareable_attachment_is_refused(entries, smtp, tmp_path):
+    out = _call(_role="admin", action="send", to=["bob@example.com"],
+                attachments=[str(tmp_path / "gone.pdf")])
+    assert out["success"] is False and "gone.pdf" in out["error"]
+    smtp.send_message.assert_not_called()
+
+
+def test_member_cannot_attach_outside_own_folder(entries, smtp, tmp_path):
+    other = tmp_path / "someone-else.pdf"
+    other.write_bytes(b"%PDF-1.4")
+    out = _call(action="send", to=["bob@example.com"], attachments=[str(other)])
+    assert out["success"] is False and "own folder" in out["error"]
+    smtp.send_message.assert_not_called()
+
+
+def test_too_many_attachments_are_refused(entries, smtp, tmp_path):
+    out = _call(action="send", to=["bob@example.com"],
+                attachments=[str(tmp_path / f"f{i}.txt") for i in range(tool.MAX_ATTACHMENTS + 1)])
+    assert out["success"] is False
+    smtp.send_message.assert_not_called()
+
+
+def test_app_links_become_full_links(entries, smtp, monkeypatch):
+    import gateway.secret_links as links
+
+    monkeypatch.setattr(links, "public_base_url", lambda config=None: "https://home.example.com")
+    _call(action="send", to=["bob@example.com"],
+          body="Open [chart](/view/abc-1) or /api/files/9/content?download=1. Keep https://x.io/view/2.",
+          html='<a href="/view/abc-1">chart</a>')
+    msg = smtp.send_message.call_args.args[0]
+    text = msg.get_body(("plain",)).get_content()
+    assert "[chart](https://home.example.com/view/abc-1)" in text
+    assert "https://home.example.com/api/files/9/content?download=1" in text
+    assert "https://x.io/view/2" in text
+    assert 'href="https://home.example.com/view/abc-1"' in msg.get_body(("html",)).get_content()
+
+
+def test_app_links_unchanged_without_public_url(entries, smtp, monkeypatch):
+    import gateway.secret_links as links
+
+    monkeypatch.setattr(links, "public_base_url", lambda config=None: None)
+    _call(action="send", to=["bob@example.com"], body="Open /view/abc-1")
+    msg = smtp.send_message.call_args.args[0]
+    assert msg.get_body(("plain",)).get_content().strip() == "Open /view/abc-1"

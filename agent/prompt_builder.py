@@ -874,7 +874,9 @@ PLATFORM_HINTS = {
         "opens in the app's page viewer. The path must be absolute. Never link "
         "to /api/files/download, the "
         "dashboard, localhost, or any other hostname or file:// URL for files "
-        "you made — the user cannot open those. Use MEDIA: instead."
+        "you made — the user cannot open those. Use MEDIA: instead. To email "
+        "the user a file or link, call email_mailbox action=send with the file's "
+        "absolute path in attachments; never paste image or base64 data."
     ),
 }
 

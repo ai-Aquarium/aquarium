@@ -385,3 +385,15 @@ def persist_rewrite(
             return db.update_message_content(message["id"], stored)
         return False
     return False
+
+
+def read_shareable_file(raw_path: str) -> Union[str, bytes]:
+    """The bytes of a file the bound person may share, or a note saying why not.
+
+    The same checks as a ``MEDIA:`` tag in a reply (absolute, no symlink, a
+    folder the app shares, the person's own folder, size cap), for tools that
+    send a file somewhere else, such as an email attachment.
+    """
+    from tools.access_policy import check_file_access
+
+    return _Uploader._check_and_read(raw_path, check_file_access)
