@@ -70,6 +70,10 @@ export interface AgentHomeSession {
   principal: Principal;
   /** Unix seconds when this session was minted. */
   issuedAt: number;
+  /** The upstream refresh token, when the provider issues one (`lib/auth/renew.ts`). */
+  refreshToken?: string;
+  /** Unix seconds when `hermesToken` lapses, when the provider said. */
+  expiresAt?: number;
 }
 
 function b64url(input: Buffer | string): string {
@@ -152,6 +156,14 @@ function expireLegacyCookie(store: Awaited<ReturnType<typeof cookies>>): void {
 export async function readSession(): Promise<AgentHomeSession | null> {
   const store = await cookies();
   return deserializeSession(sessionCookieValue(store));
+}
+
+/**
+ * Cookie attributes for re-signing a renewed session: it keeps the expiry
+ * fixed at login, so renewing the token never stretches the 12 h session.
+ */
+export function renewedCookieOptions(session: AgentHomeSession, nowSeconds = Math.floor(Date.now() / 1000)) {
+  return { ...COOKIE_OPTIONS, maxAge: Math.max(0, session.issuedAt + MAX_AGE_SECONDS - nowSeconds) };
 }
 
 /** Set the signed session cookie on the response (via `next/headers`). */

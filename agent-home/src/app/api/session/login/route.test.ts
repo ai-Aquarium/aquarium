@@ -62,6 +62,25 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+describe("POST /api/session/login keeps what renewal needs", () => {
+  it("stores the refresh token and when the access token lapses", async () => {
+    upstream = new Response(JSON.stringify({ ok: true, next: "/" }), {
+      headers: [
+        ["content-type", "application/json"],
+        ["set-cookie", "hermes_session_at=tok; HttpOnly; Max-Age=3600; Path=/"],
+        ["set-cookie", "hermes_session_rt=rt-1; HttpOnly; Max-Age=2592000; Path=/"],
+      ],
+    });
+    const before = Math.floor(Date.now() / 1000);
+    const res = await POST(req(creds));
+    expect(res.status).toBe(200);
+    const session = writeSession.mock.calls[0][0];
+    expect(session).toMatchObject({ hermesToken: "tok", refreshToken: "rt-1" });
+    expect(session.expiresAt).toBeGreaterThanOrEqual(before + 3600);
+    expect(session.expiresAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 3600);
+  });
+});
+
 describe("POST /api/session/login with two-factor", () => {
   it("asks for a code without creating a session", async () => {
     upstream = Response.json({ ok: false, two_factor_required: true });

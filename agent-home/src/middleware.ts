@@ -8,6 +8,10 @@
  * (mapping: `lib/nav/menu-access.ts`). A session in a non-default profile
  * sees only the pages that honour it (`lib/nav/profile-gate.ts`, FG-28).
  *
+ * A session whose upstream access token is about to lapse is renewed here
+ * first (`lib/auth/renew.ts`): the handler sees the new cookie, and the
+ * browser gets it on the response.
+ *
  * Upload routes (`BODY_ROUTES` in `lib/http/body-route-guard.ts`) are not
  * matched: running middleware on a streaming request body corrupts it in
  * Next 15.5, so those handlers call `guardBodyRoute` for the same checks.
@@ -20,12 +24,37 @@ import { notAvailableForRole, roleBlockedApp } from "@/lib/http/body-route-guard
 import { NOT_AVAILABLE_PATH } from "@/lib/nav/menu-access";
 import { DEFAULT_PROFILE_ONLY_PATH, gatedToDefaultProfile } from "@/lib/nav/profile-gate";
 
-async function roleGate(request: NextRequest): Promise<NextResponse | null> {
+type Forward = { request: { headers: Headers } } | undefined;
+
+type RenewedCookie = { name: string; value: string; options: Record<string, unknown> };
+
+/** The re-signed session cookie when its upstream token was just renewed. */
+async function renewedSessionCookie(request: NextRequest): Promise<RenewedCookie | null> {
+  const session = await import("@/lib/auth/session");
+  let current;
+  try {
+    current = session.deserializeSession(session.sessionCookieValue(request.cookies));
+  } catch {
+    return null;
+  }
+  if (!current) return null;
+  const { renewSession } = await import("@/lib/auth/renew");
+  const renewed = await renewSession(current);
+  if (!renewed) return null;
+  return {
+    name: session.SESSION_COOKIE,
+    value: session.serializeSession(renewed),
+    options: session.renewedCookieOptions(renewed),
+  };
+}
+
+async function roleGate(request: NextRequest, forward: Forward): Promise<NextResponse | null> {
   const blocked = await roleBlockedApp(request.nextUrl.pathname, request.cookies);
   if (!blocked) return null;
   if (blocked.kind === "api") return notAvailableForRole(blocked.app);
   return NextResponse.rewrite(
     new URL(`${NOT_AVAILABLE_PATH}?app=${encodeURIComponent(blocked.app)}`, request.url),
+    forward,
   );
 }
 
@@ -33,7 +62,7 @@ async function roleGate(request: NextRequest): Promise<NextResponse | null> {
  * FG-28 B3: a session working in a non-default profile gets the "default
  * profile only" notice in place of a whole-box page (`lib/nav/profile-gate.ts`).
  */
-async function profileGate(request: NextRequest): Promise<NextResponse | null> {
+async function profileGate(request: NextRequest, forward: Forward): Promise<NextResponse | null> {
   const { pathname } = request.nextUrl;
   if (!gatedToDefaultProfile(pathname, "any")) return null;
   const { deserializeSession, sessionCookieValue } = await import("@/lib/auth/session");
@@ -46,6 +75,7 @@ async function profileGate(request: NextRequest): Promise<NextResponse | null> {
   if (!session || !gatedToDefaultProfile(pathname, session.profile)) return null;
   return NextResponse.rewrite(
     new URL(`${DEFAULT_PROFILE_ONLY_PATH}?from=${encodeURIComponent(pathname)}`, request.url),
+    forward,
   );
 }
 
@@ -71,7 +101,16 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   if (!verdict.ok) {
     return NextResponse.json({ error: "forbidden", detail: verdict.reason }, { status: 403 });
   }
-  return (await profileGate(request)) ?? (await roleGate(request)) ?? NextResponse.next();
+  const renewed = await renewedSessionCookie(request);
+  let forward: Forward;
+  if (renewed) {
+    request.cookies.set(renewed.name, renewed.value);
+    forward = { request: { headers: request.headers } };
+  }
+  const response =
+    (await profileGate(request, forward)) ?? (await roleGate(request, forward)) ?? NextResponse.next(forward);
+  if (renewed) response.cookies.set(renewed.name, renewed.value, renewed.options);
+  return response;
 }
 
 export const config = {
