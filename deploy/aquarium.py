@@ -90,11 +90,24 @@ LOCK = "/run/aquarium.lock"
 AUDIT_LOG = "/var/log/aquarium.log"
 UV_PYTHON_DIR = "/usr/local/share/uv/python"
 TOOLS_DIR = "/usr/local/lib/aquarium"  # the installer's pinned cosign lives here
-ROOT_HELPERS = [  # root-run copies that must match the release (reported, never auto-installed)
+ROOT_HELPERS = [  # root-run helpers `aquarium doctor` lists by name
     ("/usr/local/sbin/hermes-vpn-helper", "deploy/hermes-vpn-helper", "VPN helper"),
     ("/usr/local/sbin/hermes-wa-bridge-add", "deploy/hermes-wa-bridge-add", "WhatsApp bridge helper"),
     ("/usr/local/sbin/hermes-security-check", "deploy/hermes-security-check", "security check helper"),
 ]
+#: Root-owned copies of files a release ships: (installed, source in the release, label, kind).
+#: An upgrade replaces each one this box already has and never installs a missing one (that
+#: would turn on a feature nobody set up). See root_copies() for the app runtime and self.
+ROOT_COPIES = [
+    *[(inst, source, label, "bin") for inst, source, label in ROOT_HELPERS],
+    ("/usr/local/sbin/hermes-tools-exec", "deploy/hermes-tools-exec", "terminal helper", "bin"),
+    ("/usr/local/sbin/hermes-tools-cli", "deploy/hermes-tools-cli", "terminal hermes allowlist", "bin"),
+    ("/usr/local/lib/hermes-tools/bin/hermes", "deploy/hermes-tools-shim", "terminal hermes command", "bin"),
+    *[(f"/etc/sudoers.d/{name}", f"deploy/sudoers.d/{name}", f"sudoers rule {name}", "sudoers") for name in (
+        "hermes-tools", "hermes-vpn", "hermes-wa-bridge", "hermes-security-check", "hermes-backup",
+        "aquarium-apps", "aquarium-upgrade")],
+]
+ROOT_COPY_MODE = {"bin": 0o755, "sudoers": 0o440, "unit": 0o644}
 BUILD_CACHE = "/var/cache/aquarium"
 
 VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]{0,40})?$")
@@ -641,6 +654,17 @@ def find_cosign() -> Optional[str]:
 
 def verify_release(cfg: Dict[str, str], folder: Path, version: str) -> Path:
     """cosign keyless signature on SHA256SUMS, then the tarball's checksum. Fails closed."""
+    expected = verify_sums(cfg, folder, version)
+    name = TARBALL.format(version=version)
+    tarball = folder / name
+    if not tarball.is_file() or sha256_file(tarball) != expected:
+        raise Fail(f"{name} does not match its checksum (corrupt or tampered download)",
+                   "Nothing was installed. Run the update again to download it fresh.")
+    return tarball
+
+
+def verify_sums(cfg: Dict[str, str], folder: Path, version: str) -> str:
+    """cosign keyless signature on SHA256SUMS; returns the tarball's expected sha256."""
     sums, sig, pem = folder / "SHA256SUMS", folder / "SHA256SUMS.sig", folder / "SHA256SUMS.pem"
     cosign = find_cosign()
     if not cosign:
@@ -662,11 +686,7 @@ def verify_release(cfg: Dict[str, str], folder: Path, version: str) -> Path:
             expected = parts[0].lower()
     if not expected:
         raise Fail(f"{name} is not listed in SHA256SUMS")
-    tarball = folder / name
-    if sha256_file(tarball) != expected:
-        raise Fail(f"{name} does not match its checksum (corrupt or tampered download)",
-                   "Nothing was installed. Run the update again to download it fresh.")
-    return tarball
+    return expected
 
 
 def unpack(tarball: Path, dest: Path) -> None:
@@ -839,6 +859,229 @@ def stale_helpers(rel: Path) -> List[Tuple[str, str]]:
     return stale
 
 
+def _root_copy_items(cfg: Dict[str, str], src: Path) -> List[Tuple[str, Path, str, str]]:
+    items = [(inst, src / source, label, kind) for inst, source, label, kind in ROOT_COPIES]
+    for f in sorted((src / "deploy").glob("aquarium*")):
+        if f.name.endswith((".service", ".timer", ".slice")):
+            items.append((f"{SYSTEMD}/{f.name}", f, f"app runtime unit {f.name}", "unit"))
+        elif f.name.startswith("aquarium-app-"):
+            items.append((f"/usr/local/sbin/{f.name}", f, f"app runtime helper {f.name}", "bin"))
+    items.append((f"{cfg['DATA_ROOT']}/deploy-hermes.sh", src / "deploy/hermes-deploy.sh", "deploy script", "bin"))
+    # Last: the job replacing this command keeps running the copy it loaded.
+    items.append((SELF_INSTALL, src / "deploy/aquarium.py", "admin command", "bin"))
+    return items
+
+
+def root_copies(cfg: Dict[str, str], src: Path) -> List[Tuple[str, Path, str, str]]:
+    """(installed, source, label, kind) for each root copy ``src`` ships that this box has installed."""
+    return [it for it in _root_copy_items(cfg, src) if it[1].is_file() and P(it[0]).exists()]
+
+
+def root_sources(cfg: Dict[str, str], tarball: Path, dest: Path) -> Path:
+    """The release's deploy/ files, unpacked from the verified tarball into a root-only folder.
+
+    Never from the release tree on disk: that tree belongs to the service user while it builds."""
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True, mode=0o700)
+    os.chmod(dest, 0o700)
+    try:
+        with tarfile.open(tarball, "r:gz") as tar:
+            members = [m for m in tar.getmembers() if m.isfile() and "deploy" in m.name.split("/")[:2]]
+            tar.extractall(dest, members=members, filter="data")
+    except (tarfile.TarError, OSError) as error:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise Fail(f"the release tarball is unsafe or damaged ({error.__class__.__name__}: {error})")
+    inner = [p for p in dest.iterdir() if p.is_dir() and p.name != "deploy"]
+    if len(inner) == 1 and not (dest / "deploy").exists():
+        os.rename(inner[0] / "deploy", dest / "deploy")
+        shutil.rmtree(inner[0])
+    return dest
+
+
+def _stage_copy(data: bytes, dest: Path, kind: str, label: str, *, mode: Optional[int] = None,
+                owner: Tuple[int, int] = (0, 0)) -> Path:
+    """Write ``data`` next to ``dest`` (a dotted name sudo and systemd ignore), owner and mode
+    set, sudoers checked by visudo; ``os.replace`` then swaps it in atomically."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(f".{dest.name}.aquarium-new")
+    with contextlib.suppress(FileNotFoundError):
+        tmp.unlink()
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+        fh.flush()
+        os.fsync(fh.fileno())
+    if os.geteuid() == 0:  # windows-footgun: ok — POSIX-only root admin tooling
+        os.chown(tmp, *owner)
+    os.chmod(tmp, ROOT_COPY_MODE[kind] if mode is None else mode)
+    if kind == "sudoers" and run(["visudo", "-cf", str(tmp)], check=False, timeout=60).returncode != 0:
+        tmp.unlink()
+        raise Fail(f"the {label} of this release did not pass `visudo -c`, so no system file was replaced",
+                   "Report this release; the version you run now was kept.")
+    return tmp
+
+
+def install_root_copies(cfg: Dict[str, str], src: Path, save: Path) -> List[str]:
+    """Replace each installed root copy that differs from ``src``; the old ones go to ``save``.
+
+    Every new copy is staged and checked before the first one is swapped in."""
+    todo = [(P(inst), source, label, kind) for inst, source, label, kind in root_copies(cfg, src)
+            if P(inst).read_bytes() != source.read_bytes()]
+    if not todo:
+        return []
+    staged: List[Path] = []
+    try:
+        for dest, source, label, kind in todo:
+            staged.append(_stage_copy(source.read_bytes(), dest, kind, label))
+        save.mkdir(parents=True, exist_ok=True)
+        os.chmod(save.parent, 0o700)
+        os.chmod(save, 0o700)
+        manifest = []
+        for n, (dest, _source, label, kind) in enumerate(todo):
+            st = dest.stat()
+            keep = save / f"{n:02d}-{dest.name}"
+            write_private(keep, dest.read_bytes())
+            manifest.append({"path": real(dest), "file": keep.name, "mode": stat.S_IMODE(st.st_mode),
+                             "uid": st.st_uid, "gid": st.st_gid, "kind": kind, "label": label})
+        write_private(save / "manifest.json", json.dumps(manifest, indent=1).encode())
+    except BaseException:
+        for tmp in staged:
+            with contextlib.suppress(OSError):
+                tmp.unlink()
+        raise
+    step("Installing the system helpers of this release")
+    try:
+        for (dest, _source, label, _kind), tmp in zip(todo, staged):
+            os.replace(tmp, dest)
+            say(f"  installed {label} ({real(dest)})")
+    except OSError as error:
+        for tmp in staged:
+            with contextlib.suppress(OSError):
+                tmp.unlink()
+        restore_root_copies(save)
+        raise Fail(f"could not install the system helpers ({error}); the old ones were put back")
+    if any(kind == "unit" for *_x, kind in todo):
+        systemctl("daemon-reload", check=False)
+    return [label for _d, _s, label, _k in todo]
+
+
+def restore_root_copies(save: Optional[str]) -> List[str]:
+    """Put back the root copies an update saved (same bytes, owner and mode)."""
+    if not save:
+        return []
+    folder = Path(save)
+    try:
+        manifest = json.loads((folder / "manifest.json").read_text())
+    except (OSError, ValueError):
+        return []
+    restored = []
+    for entry in manifest if isinstance(manifest, list) else []:
+        dest = P(str(entry.get("path", "")))
+        try:
+            data = (folder / str(entry["file"])).read_bytes()
+            if dest.exists() and dest.read_bytes() == data:
+                continue
+            tmp = _stage_copy(data, dest, entry["kind"], entry["label"], mode=int(entry["mode"]),
+                              owner=(int(entry["uid"]), int(entry["gid"])))
+            os.replace(tmp, dest)
+        except (OSError, KeyError, ValueError, Fail) as error:
+            say(f"  WARNING: could not put back {real(dest)}: {error}")
+            continue
+        say(f"  put back {entry['label']} ({real(dest)})")
+        restored.append(entry["kind"])
+    if "unit" in restored:
+        systemctl("daemon-reload", check=False)
+    return restored
+
+
+def root_copies_save_dir(cfg: Dict[str, str], version: str) -> Path:
+    return P(cfg["BACKUP_DIR"]) / "root-copies" / f"{utcnow()}-{re.sub(r'[^A-Za-z0-9.-]', '_', version)}"
+
+
+def prune_root_copies(cfg: Dict[str, str]) -> None:
+    keep = max(int(cfg["BACKUP_KEEP"]), 2)
+    base = P(cfg["BACKUP_DIR"]) / "root-copies"
+    dirs = sorted(d for d in base.iterdir() if d.is_dir()) if base.is_dir() else []
+    for old in dirs[:-keep]:
+        shutil.rmtree(old, ignore_errors=True)
+
+
+def root_copy_problems(cfg: Dict[str, str], src: Path) -> List[str]:
+    """Installed root copies that do not match the release in ``src`` (bytes, root owner, mode)."""
+    problems = []
+    for inst, source, label, _kind in root_copies(cfg, src):
+        dest = P(inst)
+        if dest.read_bytes() != source.read_bytes():
+            problems.append(f"{label} does not match the release")
+        elif not test_mode() and (dest.stat().st_uid != 0 or dest.stat().st_mode & 0o022):
+            problems.append(f"{label} is not owned and writable only by root")
+    return problems
+
+
+_RUN_AS_RE = re.compile(r"^\s+run_as:\s*['\"]?([A-Za-z0-9_.-]*)['\"]?\s*(?:#.*)?$")
+
+
+def terminal_users(cfg: Dict[str, str]) -> List[str]:
+    """Users the agent terminal runs as (``terminal.run_as``) in any profile's config.yaml."""
+    users: List[str] = []
+    configs = []
+    for home in hermes_homes(cfg):
+        configs.append(P(home) / "config.yaml")
+        configs.extend(sorted((P(home) / "profiles").glob("*/config.yaml")))
+    for path in configs:
+        try:
+            lines = path.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        inside = False
+        for line in lines:
+            if line and not line[0].isspace() and not line.startswith("#"):
+                inside = line.split("#", 1)[0].strip() == "terminal:"
+                continue
+            m = _RUN_AS_RE.match(line) if inside else None
+            if m and m.group(1) and m.group(1) != cfg["SERVICE_USER"] and m.group(1) not in users:
+                users.append(m.group(1))
+    return users
+
+
+def terminal_probe(cfg: Dict[str, str], src: Path) -> List[str]:
+    """Run an allowlisted ``hermes`` command the way the agent's terminal does when it runs as
+    another user: hermes → sudo → hermes-tools-exec → the hermes shim → hermes-tools-cli."""
+    users = terminal_users(cfg)
+    if not users:
+        return []
+    allowlist = src / "deploy/hermes-tools-cli"
+    words = ["projects", "--help"]
+    if allowlist.is_file() and '"projects":' not in allowlist.read_text(errors="replace"):
+        words = ["memory", "status", "--help"]
+    command = "hermes " + " ".join(words)
+    failed = []
+    for user in users:
+        proc = run([shutil.which("sudo") or "/usr/bin/sudo", "-n", "-u", user, "/usr/local/sbin/hermes-tools-exec",
+                    "bash", "-c", command], check=False, timeout=180, as_service=cfg["SERVICE_USER"],
+                   env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/bin:/bin", "HOME": "/tmp", "LANG": "C.UTF-8",
+                        **{k: v for k, v in os.environ.items() if k.startswith("FAKE_") and test_mode()}})
+        say(f"  {'ok  ' if proc.returncode == 0 else 'FAIL'}  agent terminal ({user}) runs `{command}`")
+        if proc.returncode != 0:
+            tail = (proc.stderr or proc.stdout or b"").decode(errors="replace").strip().splitlines()[-3:]
+            for line in tail:
+                say(f"        {line[:300]}")
+            failed.append(f"the agent's terminal ({user}) cannot run `{command}`")
+    return failed
+
+
+def post_upgrade_problems(cfg: Dict[str, str], src: Optional[Path]) -> List[str]:
+    """Beyond the services: the system helpers match the release and the restricted terminal works."""
+    if src is None:
+        return []
+    step("Checking the system helpers and the agent's terminal")
+    problems = root_copy_problems(cfg, src)
+    for p in problems:
+        say(f"  FAIL  {p}")
+    return problems + terminal_probe(cfg, src)
+
+
 def carry_forward(old: Path, new: Path) -> List[str]:
     """Env files the units read from inside the code tree (agent-home.env, app-mcp.env on a
     fresh install) are not part of a release; copy them into the new one, same owner and mode."""
@@ -951,6 +1194,7 @@ def cmd_update(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
         step("Checking signature and checksum")
         tarball = verify_release(cfg, folder, version)
         say("  signature ok, checksum ok")
+        src = root_sources(cfg, tarball, folder / "root-sources")
 
         if not args.no_backup:
             mark("backup")
@@ -985,6 +1229,12 @@ def cmd_update(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
             raise Fail("the migration step failed; the running version was not changed",
                        f"Nothing was switched. Details: journal above; the backup is in {cfg['BACKUP_DIR']}.")
         lock_pg_net(cfg, rel)
+        saved = root_copies_save_dir(cfg, version)
+        try:
+            args.root_copies = str(saved) if install_root_copies(cfg, src, saved) else None
+        except Fail:
+            restore_configs(config_copies)
+            raise
 
         mark("restart")
         step(f"Switching to {version} and restarting")
@@ -997,29 +1247,30 @@ def cmd_update(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
         restart_services(units)
         mark("checks")
         step("Health check")
-        failed = wait_healthy(cfg, required)
+        failed = wait_healthy(cfg, required) or post_upgrade_problems(cfg, src)
         if failed:
             step(f"Health check failed ({', '.join(failed)}) — rolling back to {before}")
             symlink_swap(P(f"{AQ}/current"), f"releases/{before}")
             restore_configs(config_copies)
+            restore_root_copies(getattr(args, "root_copies", None))
             restart_services(units)
             back = wait_healthy(cfg, required)
             state.update(current=before, previous=previous_before, failed=version)
             state["history"][-1]["result"] = "rolled back"
             save_state(state)
             audit(f"update {before} -> {version}: rolled back ({', '.join(failed)})")
-            raise Fail(f"{version} did not pass the health check; rolled back to {before}"
+            raise Fail(f"{version} did not pass the health check ({'; '.join(failed)}); rolled back to {before}"
                        + ("" if not back else f", but {', '.join(back)} still fail"),
                        f"Look at `aquarium logs` for the failing service. {version} stays in /opt/aquarium/releases for inspection.")
         read_role_refresh(cfg, rel)
         state["history"][-1]["result"] = "ok"
+        state["root_copies_for"] = version
+        state.pop("finish_failed", None)
         save_state(state)
-        refresh_self(rel)
         prune_releases(cfg, state)
+        prune_root_copies(cfg)
         audit(f"update {before} -> {version}: ok")
         say(f"\nUpdated to {version}. Previous version {before} is kept for rollback.")
-        for label, hint in stale_helpers(rel):
-            say(f"{label.upper()} STALE: the root-run copy differs from this release. Install it with:\n    {hint}")
         return 0
 
 
@@ -2892,12 +3143,17 @@ UPGRADE_REQUEST = "/var/lib/aquarium/upgrade-request.json"
 UPGRADE_RELEASES = "/var/lib/aquarium/upgrade-releases.json"
 UPGRADE_BEHIND_SHOWN = 20
 UPGRADE_LOG_DIR = "/var/log/aquarium-upgrade"
+UPGRADE_DOWNLOADS = "/var/lib/aquarium/upgrade-downloads"
 UPGRADE_UNIT = "aquarium-upgrade"
 UPGRADE_FLOW = {
     # `aquarium update` downloads and verifies before it spends time on a backup.
     "release": ("download", "backup", "install", "build", "database", "restart", "checks"),
     "git": ("backup", "download", "install", "build", "database", "restart", "checks"),
 }
+#: After an older job installed this release: put its system helpers in place.
+FINISH_FLOW = ("download", "install", "checks")
+UPGRADE_START_LOCK = "/var/lib/aquarium/upgrade-start.lock"
+UPGRADE_MIN_FREE_GB = 5
 ROLLBACK_FLOW = ("backup", "download", "install", "build", "database", "restart", "restore", "checks")
 UPGRADE_RELEASES_MAX_AGE = 6 * 3600
 UPGRADE_NOTES_MAX = 20000
@@ -3095,13 +3351,19 @@ def rollback_target(cfg: Dict[str, str], info: Optional[Dict] = None) -> Optiona
     """The newest finished change, if it was an upgrade to what runs now and its backup is still here."""
     info = info or installed_info(cfg)
     here = {info["version"], info["commit"]} - {None}
+    saved: List[str] = []  # newest first: a finish's saved copies, then the upgrade's own
     for rec in reversed(load_state().get("upgrades", [])):
+        if rec.get("kind") == "finish":
+            if rec.get("result") == "ok" and rec.get("root_copies"):
+                saved.append(rec["root_copies"])
+            continue
         if rec.get("result") not in ("ok", "rolled back"):
             continue
         if (rec.get("result") == "ok" and rec.get("kind") == "upgrade"
                 and ({rec.get("to"), rec.get("to_commit")} & here) and rec.get("from_ref")
                 and rec.get("backup") and Path(rec["backup"]).is_file()):
-            return {"to": rec.get("from"), "ref": rec["from_ref"], "backup": rec["backup"], "id": rec.get("id")}
+            return {"to": rec.get("from"), "ref": rec["from_ref"], "backup": rec["backup"], "id": rec.get("id"),
+                    "root_copies": saved + ([rec["root_copies"]] if rec.get("root_copies") else [])}
         return None
     return None
 
@@ -3114,7 +3376,7 @@ def upgrade_public_status(cfg: Dict[str, str]) -> Dict:
         if job.get("phase") in ("starting", "running") and not alive:
             job = {**job, "phase": "finished", "result": "interrupted",
                    "error": job.get("error") or "the upgrade job stopped without finishing"}
-        job = {k: v for k, v in job.items() if k not in ("backup", "pid")}
+        job = {k: v for k, v in job.items() if k not in ("backup", "pid", "root_copies")}
         job["alive"] = alive
         job["log"] = _log_tail(str(job.get("id", "")))
     try:
@@ -3122,11 +3384,16 @@ def upgrade_public_status(cfg: Dict[str, str]) -> Dict:
     except (OSError, ValueError, AttributeError):
         checked = ""
     rb = rollback_target(cfg, info)
-    upgrades = load_state().get("upgrades", [])
+    state = load_state()
+    upgrades = state.get("upgrades", [])
+    failed = state.get("finish_failed") or {}
+    finish = None
+    if failed.get("version") and failed.get("version") == info.get("version") and finish_needed(cfg, retry=True):
+        finish = {"failed": True, "error": str(failed.get("error") or ""), "at": str(failed.get("at") or "")}
     return {"ok": True, "installed": {**info, "label": installed_label(info)}, "job": job or None,
             "history": [_public_record(r) for r in reversed(upgrades[-UPGRADE_HISTORY_SHOWN:])],
             "releases_checked_at": checked,
-            "rollback": {"to": rb["to"]} if rb else None}
+            "rollback": {"to": rb["to"]} if rb else None, "finish": finish}
 
 
 def _read_request() -> Dict:
@@ -3168,6 +3435,16 @@ def upgrade_start(cfg: Dict[str, str], kind: str) -> int:
     if lay not in ("release", "git"):
         return refuse("no Aquarium installation found")
     info = installed_info(cfg)
+    if kind == "upgrade" and req.get("finish") is True:
+        if not finish_needed(cfg, retry=True):
+            return refuse("the system helpers already match the version that runs now")
+        with _start_lock() as mine:
+            if not mine or _job_alive(load_upgrade_status()):
+                return refuse("an upgrade is already running")
+            problem = _launch_job(cfg, "finish", lay, info, info["version"], info["version"], by, FINISH_FLOW)
+        if problem:
+            return refuse(problem)
+        return _offsite_answer({"ok": True, "started": True, "status": upgrade_public_status(cfg)})
     if kind == "upgrade":
         version = str(req.get("version") or "")
         if not VERSION_RE.match(version):
@@ -3197,22 +3474,17 @@ def upgrade_start(cfg: Dict[str, str], kind: str) -> int:
             deploy_script(cfg)
         except Fail as error:
             return refuse(str(error))
-    job_id = utcnow()
-    flow = ROLLBACK_FLOW if kind == "rollback" else UPGRADE_FLOW[lay]
-    job = {"id": job_id, "kind": kind, "layout": lay, "from": installed_label(info),
-           "from_ref": info["commit"] if lay == "git" else info["version"], "to": target, "to_ref": target_ref,
-           "by": by, "started": now_iso(), "finished": "", "phase": "starting", "result": "", "error": "",
-           "pid": None, "steps": [{"key": k, "state": "pending"} for k in flow]}
-    save_upgrade_status(job)
-    write_private(P(UPGRADE_REQUEST), json.dumps({"id": job_id}).encode())
-    proc = run(["systemd-run", f"--unit={UPGRADE_UNIT}-{job_id.lower()}", "--collect", "--no-block",
-                "--quiet", "--description=Aquarium software upgrade", "--property=Type=exec",
-                SELF_INSTALL, "upgrade", "run"], check=False)
-    if proc.returncode != 0:
-        save_upgrade_status({**job, "phase": "finished", "result": "failed",
-                             "error": "could not start the upgrade job on this server", "finished": now_iso()})
-        return refuse("could not start the upgrade job on this server")
-    audit(f"upgrade {kind} {job['from']} -> {target} requested by {by or '?'}")
+    if kind == "upgrade":
+        blocked = [r["message"] for r in upgrade_preflight(cfg) if r["status"] != "ok"]
+        if blocked:
+            return refuse(blocked[0])
+    with _start_lock() as mine:
+        if not mine or _job_alive(load_upgrade_status()):
+            return refuse("an upgrade is already running")
+        flow = ROLLBACK_FLOW if kind == "rollback" else UPGRADE_FLOW[lay]
+        problem = _launch_job(cfg, kind, lay, info, target, target_ref, by, flow)
+    if problem:
+        return refuse(problem)
     return _offsite_answer({"ok": True, "started": True, "status": upgrade_public_status(cfg)})
 
 
@@ -3294,7 +3566,47 @@ def _upgrade_release(cfg: Dict[str, str], tracker: UpgradeJob, ref: str, force: 
     finally:
         if getattr(args, "backup_path", None):
             tracker.job["backup"] = args.backup_path
-            tracker._save()
+        if getattr(args, "root_copies", None):
+            tracker.job["root_copies"] = args.root_copies
+        tracker._save()
+
+
+def git_root_sources(cfg: Dict[str, str], ref: str) -> Optional[Path]:
+    """The signed release package of tag ``ref``, verified, its deploy/ files unpacked root-only.
+
+    A checkout is the service user's to write, so root copies never come from it. None when
+    ``ref`` is not a release with a server package (the root copies then stay as they are)."""
+    if not VERSION_RE.match(ref):
+        return None
+    folder = P(f"{UPGRADE_DOWNLOADS}/{ref}")
+    tarball = verified_package(cfg, ref, folder)
+    if tarball is None:
+        say(f"  note: {ref} has no signed server package, so the system helpers are left as they are")
+        return None
+    src = root_sources(cfg, tarball, folder / "root-sources")
+    tarball.unlink()
+    return src
+
+
+def verified_package(cfg: Dict[str, str], version: str, folder: Path) -> Optional[Path]:
+    """The release's tarball in ``folder``, signature and checksum checked (downloaded when
+    missing or not matching). None when the release has no signed server package."""
+    try:
+        return verify_release(cfg, folder, version)
+    except (Fail, OSError):
+        pass
+    release = pick_release(cfg, version, None)
+    assets = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
+    names = [TARBALL.format(version=version), "SHA256SUMS", "SHA256SUMS.sig", "SHA256SUMS.pem"]
+    if any(n not in assets for n in names):
+        return None
+    folder.mkdir(parents=True, exist_ok=True)
+    os.chmod(folder.parent, 0o700)
+    for n in names:
+        download(assets[n], folder / n)
+    tarball = verify_release(cfg, folder, version)
+    say("  signature ok, checksum ok")
+    return tarball
 
 
 def _upgrade_git(cfg: Dict[str, str], tracker: UpgradeJob, ref: str, label: str) -> None:
@@ -3303,15 +3615,24 @@ def _upgrade_git(cfg: Dict[str, str], tracker: UpgradeJob, ref: str, label: str)
         step("Backup before the upgrade")
         tracker.job["backup"] = str(make_backup(cfg, label=label))
         tracker._save()
+    tracker.mark("download")
+    step(f"Downloading the signed package of {ref} (for the system helpers)")
+    src = git_root_sources(cfg, ref)
     required = running_units(service_units())
     _run_deploy(cfg, ref, tracker.mark)
+    if src is not None:
+        saved = root_copies_save_dir(cfg, ref)
+        if install_root_copies(cfg, src, saved):
+            tracker.job["root_copies"] = str(saved)
+            tracker._save()
     if not tracker.reached("restart"):
         tracker.mark("restart")
     tracker.mark("checks")
     step("Health check")
-    failed = wait_healthy(cfg, required)
+    failed = wait_healthy(cfg, required) or post_upgrade_problems(cfg, src)
     if failed:
         raise Fail(f"the new version did not pass the health check ({', '.join(failed)})")
+    prune_root_copies(cfg)
 
 
 def upgrade_run(cfg: Dict[str, str]) -> int:
@@ -3342,6 +3663,8 @@ def upgrade_run(cfg: Dict[str, str]) -> int:
             _upgrade_release(cfg, tracker, ref, force=False)
         elif kind == "upgrade":
             _upgrade_git(cfg, tracker, ref, label=f"pre-upgrade-{ref}")
+        elif kind == "finish":
+            _finish_upgrade(cfg, tracker, ref)
         else:
             rb = rollback_target(cfg)
             if not rb or rb["ref"] != ref:
@@ -3352,6 +3675,8 @@ def upgrade_run(cfg: Dict[str, str]) -> int:
                 _upgrade_git(cfg, tracker, ref, label=f"pre-rollback-{job['from']}")
             tracker.mark("restore")
             _restore_backup(cfg, rb["backup"])
+            for saved in rb.get("root_copies") or []:
+                restore_root_copies(saved)
             tracker.mark("checks")
             failed = wait_healthy(cfg, running_units(service_units()))
             if failed:
@@ -3367,19 +3692,192 @@ def upgrade_run(cfg: Dict[str, str]) -> int:
             except Fail as undo:
                 result, error = "failed", f"{failure}; putting the old version back also failed: {undo}"
                 say(f"\nERROR: {undo}")
+        elif kind == "finish":
+            if restore_root_copies(tracker.job.get("root_copies")):
+                result = "rolled back"
+            state = load_state()
+            state["finish_failed"] = {"version": ref, "error": error, "at": now_iso()}
+            save_state(state)
     tracker.finish(result, error)
     if result == "ok" and lay == "git":
         job["to_commit"] = _git_out(cfg, "rev-parse", "--short", "HEAD") or None
     state = load_state()
     upgrades = state.setdefault("upgrades", [])
     upgrades.append({k: job.get(k) for k in ("id", "kind", "from", "from_ref", "to", "to_ref", "to_commit", "by",
-                                             "started", "finished", "seconds", "result", "error", "backup")})
+                                             "started", "finished", "seconds", "result", "error", "backup",
+                                             "root_copies")})
     del upgrades[:-UPGRADE_HISTORY_KEEP]
     save_state(state)
     tracker._save()
     audit(f"upgrade {kind} {job['from']} -> {job['to']}: {result}" + (f" ({error})" if error else ""))
     say(f"\n{kind} finished: {result}")
     return 0 if result == "ok" else 1
+
+
+def _finish_upgrade(cfg: Dict[str, str], tracker: UpgradeJob, version: str) -> None:
+    """Install the system helpers of the release that runs now (an older job put it in place
+    but did not install them), from its verified package; then check them."""
+    if current_release() != version:
+        raise Fail(f"{version} is no longer the version that runs here")
+    tracker.mark("download")
+    step(f"Checking the signed package of {version}")
+    folder = P(f"{AQ}/downloads/{version}")
+    tarball = verified_package(cfg, version, folder)
+    if tarball is None:
+        raise Fail(f"{version} has no signed server package to take the system helpers from")
+    src = root_sources(cfg, tarball, folder / "root-sources")
+    tracker.mark("install")
+    saved = root_copies_save_dir(cfg, version)
+    if install_root_copies(cfg, src, saved):
+        tracker.job["root_copies"] = str(saved)
+        tracker._save()
+    else:
+        say("  the system helpers already match this release")
+    tracker.mark("checks")
+    problems = post_upgrade_problems(cfg, src)
+    if problems:
+        raise Fail(f"the system helpers of {version} did not pass the check ({'; '.join(problems)})")
+    state = load_state()
+    state["root_copies_for"] = version
+    state.pop("finish_failed", None)
+    save_state(state)
+    prune_root_copies(cfg)
+
+
+def finish_needed(cfg: Dict[str, str], *, retry: bool = False) -> bool:
+    """A release install whose system helpers an older upgrade job left behind.
+
+    Cheap (status polls call it): the release tree only decides whether to look; the job
+    installs from the verified package. A failed try is not repeated until asked."""
+    if layout(cfg) != "release":
+        return False
+    version = current_release()
+    if not version or not VERSION_RE.match(version):
+        return False
+    state = load_state()
+    if state.get("root_copies_for") == version:
+        return False
+    if not retry and (state.get("finish_failed") or {}).get("version") == version:
+        return False
+    rel = P(f"{AQ}/releases/{version}")
+    try:
+        return any(P(inst).read_bytes() != src.read_bytes() for inst, src, _l, _k in root_copies(cfg, rel))
+    except OSError:
+        return False
+
+
+@contextlib.contextmanager
+def _start_lock() -> Iterator[bool]:
+    """Single flight for starting jobs: True when this caller holds the lock."""
+    path = P(UPGRADE_START_LOCK)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        yield True
+
+
+def maybe_start_finish(cfg: Dict[str, str]) -> None:
+    """From `upgrade status`: start the finish job by itself when it is needed (no click)."""
+    try:
+        if _job_alive(load_upgrade_status()) or not finish_needed(cfg):
+            return
+        with _start_lock() as mine:
+            if mine and not _job_alive(load_upgrade_status()) and finish_needed(cfg):
+                _launch_job(cfg, "finish", "release", installed_info(cfg), current_release() or "",
+                            current_release() or "", "", FINISH_FLOW)
+    except (Fail, OSError, ValueError):
+        pass  # status must still answer; the next poll tries again
+
+
+def _launch_job(cfg: Dict[str, str], kind: str, lay: str, info: Dict, target: str, target_ref: str,
+                by: str, flow: Sequence[str]) -> Optional[str]:
+    """Record the job and hand it to a transient systemd unit; None on success, else the reason."""
+    job_id = utcnow()
+    job = {"id": job_id, "kind": kind, "layout": lay, "from": installed_label(info),
+           "from_ref": info["commit"] if lay == "git" else info["version"], "to": target, "to_ref": target_ref,
+           "by": by, "started": now_iso(), "finished": "", "phase": "starting", "result": "", "error": "",
+           "pid": None, "steps": [{"key": k, "state": "pending"} for k in flow]}
+    save_upgrade_status(job)
+    write_private(P(UPGRADE_REQUEST), json.dumps({"id": job_id}).encode())
+    proc = run(["systemd-run", f"--unit={UPGRADE_UNIT}-{job_id.lower()}", "--collect", "--no-block",
+                "--quiet", "--description=Aquarium software upgrade", "--property=Type=exec",
+                SELF_INSTALL, "upgrade", "run"], check=False)
+    if proc.returncode != 0:
+        save_upgrade_status({**job, "phase": "finished", "result": "failed",
+                             "error": "could not start the upgrade job on this server", "finished": now_iso()})
+        return "could not start the upgrade job on this server"
+    audit(f"upgrade {kind} {job['from']} -> {target} requested by {by or '?'}")
+    return None
+
+
+def upgrade_preflight(cfg: Dict[str, str], version: Optional[str] = None) -> List[Dict[str, str]]:
+    """Checks before an upgrade may start: [{key, status ok|fail, message}] in plain words."""
+    rows: List[Dict[str, str]] = []
+
+    def add(key: str, ok: bool, message: str) -> None:
+        rows.append({"key": key, "status": "ok" if ok else "fail", "message": message})
+
+    where = P(AQ) if layout(cfg) == "release" else P(cfg["DATA_ROOT"])
+    try:
+        free = shutil.disk_usage(where if where.exists() else P("/")).free / 2**30
+        add("disk", free >= UPGRADE_MIN_FREE_GB,
+            f"{free:.0f} GB of disk space is free." if free >= UPGRADE_MIN_FREE_GB else
+            f"Only {free:.1f} GB of disk space is free; an upgrade needs at least {UPGRADE_MIN_FREE_GB} GB. "
+            "Delete old backups or give the server a bigger disk, then check again.")
+    except OSError:
+        add("disk", False, "The free disk space could not be read.")
+    backups = P(cfg["BACKUP_DIR"])
+    try:
+        backups.mkdir(parents=True, exist_ok=True)
+        probe = backups / f".upgrade-check-{os.getpid()}"
+        probe.write_bytes(b"ok")
+        probe.unlink()
+        add("backup", True, "The backup folder can be written to.")
+    except OSError:
+        add("backup", False, "The backup folder can't be written to, so no backup could be taken first. "
+            "Ask whoever manages the server to fix the backup folder.")
+    units = service_units()
+    failed = [name for name, fn in health_checks(cfg, units) if not _safe(fn)]
+    add("services", not failed, "All services are running and answer." if not failed else
+        f"Not healthy now: {', '.join(failed)}. Fix that first, so the check after the upgrade can be trusted.")
+    if version:
+        add("release", *_release_verifiable(cfg, version))
+    return rows
+
+
+def _safe(fn: Callable[[], bool]) -> bool:
+    try:
+        return bool(fn())
+    except Exception:  # noqa: BLE001 — a crashing check counts as failed
+        return False
+
+
+def _release_verifiable(cfg: Dict[str, str], version: str) -> Tuple[bool, str]:
+    """The release is downloadable and its signed checksum list checks out (not the tarball)."""
+    if not VERSION_RE.match(version):
+        return False, "Pick a release like v1.2.3."
+    try:
+        release = pick_release(cfg, version, None)
+        assets = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
+        names = ["SHA256SUMS", "SHA256SUMS.sig", "SHA256SUMS.pem"]
+        if TARBALL.format(version=version) not in assets or any(n not in assets for n in names):
+            if layout(cfg) == "git":
+                return True, f"{version} is published (it has no server package; the checkout is updated from git)."
+            return False, f"{version} has no signed server package, so it can't be installed here."
+        folder = P(f"{UPGRADE_DOWNLOADS}/check-{version}")
+        folder.mkdir(parents=True, exist_ok=True)
+        os.chmod(folder.parent, 0o700)
+        for n in names:
+            download(assets[n], folder / n)
+        verify_sums(cfg, folder, version)
+        shutil.rmtree(folder, ignore_errors=True)
+    except Fail as error:
+        return False, f"{version} can't be checked right now: {error}."
+    return True, f"{version} can be downloaded and its signature is valid."
 
 
 def _undo_upgrade(cfg: Dict[str, str], tracker: UpgradeJob, job: Dict) -> None:
@@ -3390,6 +3888,8 @@ def _undo_upgrade(cfg: Dict[str, str], tracker: UpgradeJob, job: Dict) -> None:
         step(f"Putting back {job['from']}")
         _run_deploy(cfg, job["from_ref"], lambda key: None)
     # (release installs: `aquarium update` already switched back to the old release)
+    if restore_root_copies(tracker.job.get("root_copies")):
+        tracker.mark("restore")
     if touched and job.get("backup"):
         tracker.mark("restore")
         _restore_backup(cfg, job["backup"])
@@ -3404,9 +3904,19 @@ def cmd_upgrade(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
     if verb == "run":
         return upgrade_run(cfg)
     if verb == "status":
+        maybe_start_finish(cfg)
         return _offsite_answer(upgrade_public_status(cfg))
-    if verb in ("releases", "check"):
-        return _offsite_answer({"ok": True, **cached_releases(cfg, refresh=verb == "check")})
+    if verb == "releases":
+        return _offsite_answer({"ok": True, **cached_releases(cfg)})
+    if verb == "check":
+        try:
+            version = str(_read_request().get("version") or "")
+        except ValueError:
+            version = ""
+        answer = {"ok": True, **cached_releases(cfg, refresh=True)}
+        if version:
+            answer["preflight"] = {"version": version, "checks": upgrade_preflight(cfg, version)}
+        return _offsite_answer(answer)
     return upgrade_start(cfg, "upgrade" if verb == "start" else "rollback")
 
 
