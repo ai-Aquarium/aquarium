@@ -24,7 +24,8 @@ export function RevisionPicker({
   revisions: PlaybookRev[];
   discarded?: PlaybookAncestor[];
   activeRev: number | null;
-  selected: PlaybookRev;
+  /** Null before the first version exists: only drafts are listed. */
+  selected: PlaybookRev | null;
   onSelect: (rev: number) => void;
   /** Members' working drafts, shown after the versions (no number yet). */
   drafts?: PlaybookDraft[];
@@ -38,7 +39,7 @@ export function RevisionPicker({
       <div role="group" aria-label={t("versions")} className="flex flex-wrap items-center gap-1.5">
         {revisions.map((rev) => {
           const state = revisionState(rev, activeRev);
-          const picked = selectedDraft == null && rev.rev === selected.rev;
+          const picked = selectedDraft == null && rev.rev === selected?.rev;
           const { outdated } = proposalBase(rev, revisions, activeRev, discarded);
           return (
             <button
@@ -96,7 +97,7 @@ export function RevisionPicker({
           );
         })}
       </div>
-      {selectedDraft == null ? <RevisionMeta rev={selected} /> : null}
+      {selectedDraft == null && selected ? <RevisionMeta rev={selected} /> : null}
     </div>
   );
 }

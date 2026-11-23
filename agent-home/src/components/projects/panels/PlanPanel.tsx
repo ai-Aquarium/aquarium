@@ -553,7 +553,7 @@ export function PlanPanel({
             </p>
           ) : null}
 
-          {selected != null && !editing ? (
+          {(selected != null || drafts.length > 0) && !editing ? (
             <RevisionPicker
               revisions={revisions}
               discarded={discarded}

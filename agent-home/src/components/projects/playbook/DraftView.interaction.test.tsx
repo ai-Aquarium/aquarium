@@ -68,11 +68,14 @@ function server(drafts: PlaybookDraft[]) {
   });
 }
 
-function mount(onAsk = vi.fn(), extra: { canPropose?: boolean; callerUserId?: string } = {}) {
+function mount(
+  onAsk = vi.fn(),
+  extra: { canPropose?: boolean; callerUserId?: string; playbook?: ProjectPlaybookResponse } = {},
+) {
   render(
     <PlanPanel
       slug="weekly"
-      playbook={PLAYBOOK}
+      playbook={extra.playbook ?? PLAYBOOK}
       profiles={["ops"]}
       hostProfile="ops"
       canActivate={false}
@@ -136,6 +139,20 @@ describe("working drafts in Planning", () => {
     expect(within(draftView).queryByRole("button", { name: /Save as/ })).toBeNull();
     expect(within(draftView).queryByRole("button", { name: "Discard draft" })).toBeNull();
     expect(within(draftView).getByText(/read-only/)).toBeTruthy();
+  });
+
+  it("lists another member's first draft before any version exists", async () => {
+    vi.stubGlobal(
+      "fetch",
+      server([draft({ user_id: "ada", base_rev: 0, mine: false, can_edit: false, can_discard: false })]),
+    );
+    mount(vi.fn(), {
+      canPropose: false,
+      callerUserId: "viewer",
+      playbook: { active: null, revisions: [] },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Draft · ada/ }));
+    expect(document.querySelector('[data-component="PlaybookDraft"]')).not.toBeNull();
   });
 
   it("quotes a step into the chat with Ask about this", async () => {
