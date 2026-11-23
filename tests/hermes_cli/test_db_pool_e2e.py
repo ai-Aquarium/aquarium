@@ -326,7 +326,7 @@ def test_cached_lookups_never_cross_principals_or_profiles(pooled: str, monkeypa
     assert access._principal_cache
     for dsn, schema, profile, home, kind, value in access._principal_cache:
         assert all(digest.fullmatch(d) for d in (dsn, home, value))
-        assert schema in {"app_prod", "app_prod_alt"}
+        assert schema in {prod.schema, alt.schema}
         assert profile == slug
         assert kind in {"get", "alias", "owner"}
 
