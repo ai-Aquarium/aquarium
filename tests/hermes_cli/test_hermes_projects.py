@@ -422,3 +422,112 @@ def test_delete_is_a_human_act_with_a_typed_slug(env, tmp_path, capsys):
     assert json.loads(capsys.readouterr().out) == {"deleted": slug}
     # The record is gone, not shelved.
     assert run("show", slug) == 1
+
+
+# ---------------------------------------------------------------------------
+# create --from-chat — a project started in a private chat
+# ---------------------------------------------------------------------------
+
+
+def _chat_env(tmp_path, monkeypatch, owner="leo"):
+    from hermes_cli import projects_chat_api
+    from hermes_state import SessionDB
+
+    def _db(profile):
+        (tmp_path / profile).mkdir(exist_ok=True)
+        return SessionDB(db_path=tmp_path / profile / "state.db")
+
+    db = _db("default")
+    db.create_session("s-chat", "web", user_id=owner)
+    db.append_message("s-chat", "user", "Hi there")
+    db.append_message("s-chat", "assistant", "Hello.")
+    db.append_message("s-chat", "user", "Every Monday, send the sales report.")
+    db.close()
+    monkeypatch.setattr(projects_chat_api, "_session_db", _db)
+
+    async def _name(user_id):
+        return {"leo": "Leo"}.get(user_id)
+
+    monkeypatch.setattr(projects_chat_api, "_display_name", _name)
+    monkeypatch.setenv("HERMES_SESSION_ID", "s-chat")
+    monkeypatch.setenv("HERMES_SESSION_PROFILE", "default")
+    monkeypatch.delenv("HERMES_PRINCIPAL_TICKET", raising=False)
+    seen = []
+
+    async def _resolve(actor):
+        seen.append(actor)
+        return OWNER
+
+    monkeypatch.setattr(projects_cli, "_resolve_principal", _resolve)
+    return seen
+
+
+def _create_from_chat(run, tmp_path, *extra):
+    brief = tmp_path / "brief.md"
+    brief.write_text("A weekly sales report.")
+    return run(
+        "create", "Send the weekly sales report",
+        "--description", str(brief),
+        "--output", "The report email",
+        "--host-profile", "default",
+        "--name", "Weekly sales report",
+        "--from-chat", "1",
+        "--chat-summary", "Leo asked for a weekly sales report.",
+        *extra,
+    )
+
+
+def test_create_from_chat_seeds_the_project_chat_as_the_chats_owner(env, tmp_path, monkeypatch, capsys):
+    from hermes_cli import projects_db
+
+    run, _capsys = env
+    seen = _chat_env(tmp_path, monkeypatch)
+    assert _create_from_chat(run, tmp_path, "--json") == 0
+    out = json.loads(capsys.readouterr().out)
+    assert seen == ["leo"]
+    assert out["quoted_messages"] == 1
+    assert out["card"].startswith(f"[project card: {out['slug']}")
+    assert out["card"].endswith(" quoted]")
+    with projects_db.connect_closing() as conn:
+        (row,) = projects_db.get_chat_messages(conn, out["id"])
+    assert row["kind"] == "seed" and row["user_id"] == "leo"
+    meta = json.loads(row["meta"])
+    assert [q["text"] for q in meta["quotes"]] == ["Every Monday, send the sales report."]
+    assert "Hello." not in row["content"]
+
+
+def test_create_from_chat_says_the_quote_is_shared(env, tmp_path, monkeypatch, capsys):
+    run, _capsys = env
+    _chat_env(tmp_path, monkeypatch)
+    assert _create_from_chat(run, tmp_path) == 0
+    out = capsys.readouterr().out
+    assert "every project member can read them" in out
+    assert out.strip().splitlines()[-1].startswith("[project card: weekly-sales-report")
+
+
+def test_create_from_chat_refuses_another_actor(env, tmp_path, monkeypatch, capsys):
+    from hermes_cli import projects_db
+
+    run, _capsys = env
+    _chat_env(tmp_path, monkeypatch)
+    brief = tmp_path / "brief.md"
+    brief.write_text("x")
+    assert run(
+        "--actor", "ada", "create", "Another", "--description", str(brief),
+        "--output", "x", "--host-profile", "default", "--from-chat", "1",
+    ) == 2
+    assert "--actor must be the chat's owner" in capsys.readouterr().err
+    with projects_db.connect_closing() as conn:
+        assert projects_db.list_projects(conn) == []
+
+
+def test_create_from_chat_outside_a_chat_creates_nothing(env, tmp_path, monkeypatch, capsys):
+    from hermes_cli import projects_db
+
+    run, _capsys = env
+    _chat_env(tmp_path, monkeypatch)
+    monkeypatch.delenv("HERMES_SESSION_ID")
+    assert _create_from_chat(run, tmp_path) == 2
+    assert "no chat" in capsys.readouterr().err
+    with projects_db.connect_closing() as conn:
+        assert projects_db.list_projects(conn) == []

@@ -24,6 +24,7 @@ import type {
   ChatSendResult,
   ProfileSummary,
   ProjectChatProposal,
+  ProjectChatSeed,
   ProjectChatTimeline,
 } from "@/types";
 
@@ -361,7 +362,11 @@ function ProjectChatPane({
     } else if (m.role === "user" && m.seeded) {
       before.push(<Note key="seed">{t("dock.chat.seeded", { profile: who })}</Note>);
     }
-    before.push(
+    if (m.seedNote) {
+      before.push(
+        <SeedNote key="seed-note" person={personOf(m) ?? t("dock.chat.you")} seed={m.seedNote} />,
+      );
+    } else before.push(
       <TurnLabel
         key="label"
         role={m.role}
@@ -550,6 +555,55 @@ function TurnLabel({
         </span>
       ) : null}
     </p>
+  );
+}
+
+/**
+ * How a project started from a private chat opens: the agent's summary and
+ * the creator's own request, quoted as typed. Only the creator gets the link
+ * back to the private chat (the API sends it to nobody else).
+ */
+export function SeedNote({ person, seed }: { person: string; seed: ProjectChatSeed }) {
+  const t = useT("projects");
+  return (
+    <section
+      data-component="ProjectChatSeedNote"
+      className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm"
+    >
+      <p className="text-xs font-semibold text-[var(--color-fg)]">
+        {t("dock.chat.seed.title", { person })}
+      </p>
+      {seed.summary ? (
+        <p className="mt-1 text-xs text-[var(--color-muted)]">{seed.summary}</p>
+      ) : null}
+      <p className="mt-2 text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
+        {t("dock.chat.seed.request", { person })}
+      </p>
+      <div className="mt-1 space-y-1.5">
+        {seed.quotes.map((q, i) => (
+          <blockquote
+            key={i}
+            data-component="ProjectChatSeedQuote"
+            className="whitespace-pre-wrap break-words border-l-2 border-[var(--color-accent)] pl-2 text-[var(--color-fg)]"
+          >
+            {q.text}
+          </blockquote>
+        ))}
+      </div>
+      {seed.origin ? (
+        <p className="mt-2 text-xs text-[var(--color-muted)]">
+          <a
+            href={seed.origin.url}
+            data-action="open-original-chat"
+            className="inline-flex min-h-[44px] items-center font-medium text-[var(--color-accent)] underline-offset-2 hover:underline"
+          >
+            {t("dock.chat.seed.openOriginal")}
+            {seed.origin.ref ? ` (${seed.origin.ref})` : ""}
+          </a>
+          <span> · {t("dock.chat.seed.onlyYou")}</span>
+        </p>
+      ) : null}
+    </section>
   );
 }
 

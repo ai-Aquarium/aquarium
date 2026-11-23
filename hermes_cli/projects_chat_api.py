@@ -32,15 +32,17 @@ becomes where the chat's turns go.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
 from typing import Any, Iterable, Optional
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request
 
 from agent.prompt_builder import STEER_MARKER_CLOSE, STEER_MARKER_OPEN
-from hermes_cli import projects_api, projects_db
+from hermes_cli import projects_api, projects_db, ref_mentions
 from hermes_cli.projects_api import _require_read, _require_write
 
 logger = logging.getLogger(__name__)
@@ -64,6 +66,13 @@ CATCH_UP_TURN_CHARS = 280
 CONTEXT_FIELD_CHARS = 600
 CONTEXT_MAX_STEPS = 20
 MESSAGE_MAX_CHARS = 20_000
+#: A project started from a private chat opens its group chat with a seed
+#: note: the agent's summary and the creator's own request, quoted as typed.
+SEED_KIND = "seed"
+SEED_MAX_TURNS = 5
+SEED_QUOTE_CHARS = 4000
+SEED_SUMMARY_CHARS = 600
+SEED_DIGEST_CHARS = 1200
 
 # At the top of the turn, or right after the attachment notes the web server
 # prepends (each note ends in a blank line).
@@ -363,13 +372,40 @@ def _private_sessions(project_id: str, user_id: str, enrolled: set[str]) -> list
     return [{**s, "private": True} for s in _owned_sessions(old, user_id, enrolled)]
 
 
-def _member_notes(project_id: str, spans: Spans) -> list[dict]:
+def _seed_view(r: dict, viewer: Optional[str]) -> Optional[dict]:
+    """A seed note's summary and quotes; the link back to the private chat
+    it came from only for its creator (whose chat it is)."""
+    if r.get("kind") != SEED_KIND:
+        return None
+    try:
+        meta = json.loads(r.get("meta") or "{}")
+    except (TypeError, ValueError):
+        meta = {}
+    seed = {
+        "summary": str(meta.get("summary") or ""),
+        "quotes": [
+            {"text": str(q.get("text") or ""), "timestamp": q.get("timestamp")}
+            for q in meta.get("quotes") or []
+            if isinstance(q, dict)
+        ],
+    }
+    origin = meta.get("origin") or {}
+    if viewer and viewer == r["user_id"] and origin.get("session_id"):
+        query = urlencode({"session": origin["session_id"], "profile": origin.get("profile") or ""})
+        seed["origin"] = {"ref": origin.get("ref"), "url": f"/chat?{query}"}
+    return seed
+
+
+def _member_notes(project_id: str, spans: Spans, viewer: Optional[str] = None) -> list[dict]:
     """The members-only messages ("Ask agent" off) sent while their sender
-    could post."""
+    could post, and the seed note of a project started from a chat."""
     with projects_db.connect_closing() as conn:
         rows = projects_db.get_chat_messages(conn, project_id)
-    return [
-        {
+    out = []
+    for r in rows:
+        if not _could_post(spans, r["user_id"], float(r["created_at"])):
+            continue
+        note = {
             "id": f"m{r['id']}",
             "role": "user",
             "content": r["content"],
@@ -377,9 +413,101 @@ def _member_notes(project_id: str, spans: Spans) -> list[dict]:
             "person": r["user_id"],
             "member_only": True,
         }
-        for r in rows
-        if _could_post(spans, r["user_id"], float(r["created_at"]))
-    ]
+        seed = _seed_view(r, viewer)
+        if seed is not None:
+            note["seed"] = seed
+        out.append(note)
+    return out
+
+
+def _quote(text: str) -> str:
+    """Verbatim (line breaks kept), only capped."""
+    text = text.strip()
+    return text if len(text) <= SEED_QUOTE_CHARS else text[: SEED_QUOTE_CHARS - 1].rstrip() + "…"
+
+
+def _without_ref_block(text: str) -> str:
+    """Drop the ``[Referenced items]`` block appended to a typed turn."""
+    at = text.rfind("\n\n" + ref_mentions.BLOCK_HEADER + "\n")
+    if at < 0:
+        return text
+    tail = text[at + 2 :].splitlines()[1:]
+    return text[:at] if all(line.startswith("- ") for line in tail if line) else text
+
+
+def request_turns(db, sid: str, count: int) -> list[dict]:
+    """The conversation owner's own last *count* messages, as typed: never
+    an agent reply, an attachment's text or injected context."""
+    turns = []
+    for r in _session_rows(db, sid):
+        if r["role"] != "user":
+            continue
+        text = r["content"] if r.get("sent_while_working") else typed_text(r["content"])
+        text = _without_ref_block(text).strip()
+        if text:
+            turns.append({"text": _quote(text), "timestamp": r["timestamp"]})
+    return turns[-count:] if count > 0 else []
+
+
+def seed_text(name: str, summary: str, quotes: list[dict]) -> str:
+    """The seed note as plain text: what the catch-up digest quotes."""
+    lines = [f"Started from {name}'s private chat. {summary}".rstrip()]
+    lines.append(f"{name}'s original request:")
+    for q in quotes:
+        lines.extend(f"> {line}" for line in q["text"].splitlines() or [""])
+    return "\n".join(lines)
+
+
+def chat_request(*, profile: str, session_id: str, user_id: str, count: int) -> dict:
+    """What a project started in chat *session_id* quotes: its owner's last
+    *count* messages. Refused unless *user_id* owns that chat, and for a
+    chat that is already a project's chat (its turns belong to that project)."""
+    if not 1 <= count <= SEED_MAX_TURNS:
+        raise ValueError(f"quote 1 to {SEED_MAX_TURNS} of your messages")
+    db = _session_db(profile)
+    if db is None:
+        raise ValueError(f"no chats on profile {profile!r}")
+    try:
+        if db.get_session(session_id) is None:
+            raise ValueError("this chat is not stored yet")
+        if db.session_owner_user_id(session_id) != user_id:
+            raise PermissionError("only the chat's owner can quote it")
+        with projects_db.connect_closing() as conn:
+            chain = _session_chain(db, session_id)
+            if any(projects_db.conversation_in_project_chat(conn, sid) for sid in chain):
+                raise ValueError("this chat is a project chat")
+        quotes = request_turns(db, session_id, count)
+        ref = None
+        try:
+            from hermes_cli import chat_refs
+
+            ref = chat_refs.ref_for_session(db, session_id, profile)
+        except Exception:  # noqa: BLE001 - the ref is only a label
+            logger.debug("project seed: no chat ref", exc_info=True)
+    finally:
+        db.close()
+    if not quotes:
+        raise ValueError("no messages of yours to quote in this chat")
+    return {
+        "quotes": quotes,
+        "origin": {"profile": profile, "session_id": session_id, "ref": ref},
+    }
+
+
+def write_seed(project, *, user_id: str, name: str, summary: str, request: dict) -> dict:
+    """Open *project*'s group chat with the seed note (before any proposal,
+    so the v1 card lands under it)."""
+    summary = _short(summary, SEED_SUMMARY_CHARS)
+    with projects_db.connect_closing() as conn:
+        row = projects_db.add_chat_message(
+            conn,
+            project_id=project.id,
+            user_id=user_id,
+            content=seed_text(name, summary, request["quotes"]),
+            kind=SEED_KIND,
+            meta={"summary": summary, **request},
+        )
+    return row
 
 
 def merge_timeline(
@@ -472,7 +600,8 @@ def catch_up_digest(missed: list[dict]) -> str:
     ]
     for r in shown:
         said = r.get("typed", r["content"]) if r["role"] == "user" else r["content"]
-        lines.append(f"- {_who(r)}: {_short(said, CATCH_UP_TURN_CHARS) or '(attachments)'}")
+        limit = SEED_DIGEST_CHARS if r.get("seed") else CATCH_UP_TURN_CHARS
+        lines.append(f"- {_who(r)}: {_short(said, limit) or '(attachments)'}")
     return "\n".join(lines)
 
 
@@ -498,6 +627,15 @@ def project_context(conn, project) -> str:
             lines.append(f"  … {len(steps) - CONTEXT_MAX_STEPS} more steps")
     else:
         lines.append("No active playbook yet.")
+    proposed = [
+        r for r in projects_db.list_playbook_revs(conn, project.id)
+        if not r.get("active") and (not pb or r["rev"] > pb["rev"])
+    ]
+    if proposed:
+        lines.append(
+            "Proposed, not active yet: "
+            + ", ".join(f"v{r['rev']} ({len(r.get('steps') or [])} steps)" for r in proposed[:3])
+        )
     runs = projects_db.list_project_runs(conn, project.id, limit=1)
     if runs:
         run = runs[0]
@@ -635,7 +773,7 @@ def _timeline_sync(
 ) -> dict:
     sessions = _group_sessions_of(project, enrolled, spans)
     sessions += _private_sessions(project.id, user_id, enrolled.get(user_id, set()))
-    timeline = merge_timeline(sessions, _member_notes(project.id, spans), names)
+    timeline = merge_timeline(sessions, _member_notes(project.id, spans, user_id), names)
     since = timeline[0]["timestamp"] if timeline else None
     with projects_db.connect_closing() as conn:
         proposals = proposals_since(conn, project.id, since)

@@ -1789,9 +1789,13 @@ async def get_project_detail(request: Request) -> dict[str, Any]:
     include_address = _can_write(project, role, principal) or role in (
         "lead", "editor",
     )
-    return await asyncio.to_thread(
+    out = await asyncio.to_thread(
         _detail_sync, project, principal, include_address=include_address
     )
+    # What the caller may do here: the chat's project card offers "Make
+    # active & run 1" only to someone who can (the routes still decide).
+    out["can_write"] = _can_write(project, role, principal)
+    return out
 
 
 # ---------------------------------------------------------------------------

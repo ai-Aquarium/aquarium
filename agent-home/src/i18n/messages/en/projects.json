@@ -234,7 +234,13 @@
       "viewerReadOnly": "You can read this chat. Viewers can't post.",
       "memberSendFailed": "Couldn't send. Try again.",
       "memberNoFiles": "Files go to the agent only. Turn on Ask agent to send them.",
-      "privateTo": "To {profile} · your earlier private chat, only you can see it"
+      "privateTo": "To {profile} · your earlier private chat, only you can see it",
+      "seed": {
+        "title": "Started from {person}'s private chat",
+        "request": "{person}'s original request",
+        "openOriginal": "Open original chat",
+        "onlyYou": "only you can open it"
+      }
     }
   },
   "log": {
@@ -298,5 +304,17 @@
       "replan_held": "held re-plan v{rev} for your review",
       "replan_failed": "could not re-plan after “{card}” got stuck"
     }
+  },
+  "chatCard": {
+    "proposed": "Playbook v{rev} proposed",
+    "active": "Playbook v{rev} active",
+    "noPlaybook": "No playbook yet",
+    "running": "Run {run} started",
+    "quoted": "Your request is quoted in the project chat: project members can read it.",
+    "open": "Open project",
+    "start": "Make v{rev} active & run 1",
+    "starting": "Starting…",
+    "failed": "Couldn't start it.",
+    "unavailable": "This project isn't available to you."
   }
 }

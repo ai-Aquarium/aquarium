@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 
 import type { ComposerDraft } from "@/components/chat/Composer";
 import { useChatDock, useIsDesktop } from "@/components/projects/chat/ProjectChatDock";
@@ -263,6 +263,23 @@ export function ProjectDetailView({
     .filter(Boolean)
     .join(" · ");
   const desktop = useIsDesktop();
+  // "Open project" on a chat's project card (`?chat=open`): carry on in the
+  // docked chat. After hydration, once the saved dock state has loaded.
+  const dockModeRef = useRef(dock.mode);
+  useEffect(() => {
+    dockModeRef.current = dock.mode;
+  });
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("chat") !== "open") return;
+      url.searchParams.delete("chat");
+      window.history.replaceState(null, "", url.toString());
+      const wide = window.matchMedia?.("(min-width: 1024px)").matches;
+      if (wide && dockModeRef.current === "min") dockDispatch({ type: "restore" });
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [dockDispatch]);
   const discussInChat = (text: string) => {
     setComposerDraft((prev) => ({ text, seq: (prev?.seq ?? 0) + 1 }));
     if (desktop) {

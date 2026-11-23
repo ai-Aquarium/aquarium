@@ -234,7 +234,13 @@
       "viewerReadOnly": "你可以閱讀此聊天，但檢視者不能發言。",
       "memberSendFailed": "傳送失敗，請再試一次。",
       "memberNoFiles": "檔案只會傳給代理。請開啟「詢問代理」再傳送。",
-      "privateTo": "給 {profile} · 你之前的私人對話，只有你看得到"
+      "privateTo": "給 {profile} · 你之前的私人對話，只有你看得到",
+      "seed": {
+        "title": "從 {person} 的私人聊天開始",
+        "request": "{person} 的原始請求",
+        "openOriginal": "開啟原始聊天",
+        "onlyYou": "只有你能開啟"
+      }
     }
   },
   "log": {
@@ -298,5 +304,17 @@
       "replan_held": "把重新規劃 v{rev} 留待你審閱",
       "replan_failed": "「{card}」卡住後未能重新規劃"
     }
+  },
+  "chatCard": {
+    "proposed": "已提議劇本 v{rev}",
+    "active": "劇本 v{rev} 已啟用",
+    "noPlaybook": "尚無劇本",
+    "running": "第 {run} 次執行已開始",
+    "quoted": "你的請求已引用到專案聊天：專案成員都能看到。",
+    "open": "開啟專案",
+    "start": "啟用 v{rev} 並執行第 1 次",
+    "starting": "開始中…",
+    "failed": "無法開始。",
+    "unavailable": "你無法存取這個專案。"
   }
 }

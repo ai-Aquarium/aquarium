@@ -23,6 +23,11 @@ export function timelineMessages(timeline: ProjectChatTimeline | null): ChatMess
     if (m.private) row.privateHistory = true;
     if (m.catch_up) row.catchUp = m.catch_up;
     if (m.seeded) row.seeded = true;
+    if (m.seed) {
+      // Drawn as the seed note, not as a bubble.
+      row.seedNote = m.seed;
+      row.content = "";
+    }
     if (m.sent_while_working) row.sentWhileWorking = true;
     return row;
   });
