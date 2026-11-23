@@ -239,7 +239,9 @@ export function TodoDetailView({
         {/* The draft, when work produced one — the whole point of `review`.
           Rendered whenever work_result exists, not only in review stage, so a
           to-do knocked back to `working` still shows what exists so far. */}
-        {current.work_result ? <TodoDraftPanel todoId={current.id} /> : null}
+        {current.work_result ? (
+          <TodoDraftPanel todoId={current.id} readOnly={theirs} />
+        ) : null}
 
         {source ? (
           <div
@@ -438,7 +440,7 @@ export function TodoDetailView({
         </aside>
       )}
 
-      {current.stage !== "done" && current.stage !== "dismissed" ? (
+      {!theirs && current.stage !== "done" && current.stage !== "dismissed" ? (
         <div
           data-component="TodoDock"
           className="sticky bottom-[calc(var(--coral-clearance)+var(--safe-bottom))] z-10 flex min-w-0 flex-col gap-2 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-lg lg:hidden"

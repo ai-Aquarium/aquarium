@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TodoDetailView } from "@/components/todos/TodoDetailView";
@@ -61,7 +67,11 @@ describe("TodoDetailView snooze + Undo", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
-        reply({ ...TODO, snoozed_until: "2026-08-12T12:00:00+00:00", notified_at: null }),
+        reply({
+          ...TODO,
+          snoozed_until: "2026-08-12T12:00:00+00:00",
+          notified_at: null,
+        }),
       )
       .mockResolvedValueOnce(reply({ ...TODO }));
     vi.stubGlobal("fetch", fetchMock);
@@ -75,20 +85,31 @@ describe("TodoDetailView snooze + Undo", () => {
     const [url, init] = fetchMock.mock.calls[1];
     expect(url).toBe("/api/todos/tsk_1/unsnooze");
     expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body)).toEqual({ until: null, notified_at: NOTIFIED });
+    expect(JSON.parse(init.body)).toEqual({
+      until: null,
+      notified_at: NOTIFIED,
+    });
     expect(screen.queryByText("Snoozed until")).toBeNull();
     // Never "snooze until now" — the old workaround.
-    expect(fetchMock.mock.calls.filter(([u]) => String(u).endsWith("/snooze"))).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(([u]) => String(u).endsWith("/snooze")),
+    ).toHaveLength(1);
   });
 
   it("Undo puts an earlier snooze back instead of clearing it", async () => {
     const earlier = "2026-08-12T09:00:00+00:00";
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(reply({ ...TODO, snoozed_until: "2026-08-19T09:00:00+00:00" }))
+      .mockResolvedValueOnce(
+        reply({ ...TODO, snoozed_until: "2026-08-19T09:00:00+00:00" }),
+      )
       .mockResolvedValueOnce(reply({ ...TODO, snoozed_until: earlier }));
     vi.stubGlobal("fetch", fetchMock);
-    render(<TodoDetailView todo={{ ...TODO, snoozed_until: earlier, notified_at: null }} />);
+    render(
+      <TodoDetailView
+        todo={{ ...TODO, snoozed_until: earlier, notified_at: null }}
+      />,
+    );
 
     await press(screen.getAllByRole("button", { name: "Next week" })[0]);
     await press(screen.getByRole("button", { name: /undo/i }));
@@ -102,16 +123,22 @@ describe("TodoDetailView snooze + Undo", () => {
   it("the phone More sheet's snooze offers the same Undo", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(reply({ ...TODO, snoozed_until: "2026-08-12T12:00:00+00:00" }))
+      .mockResolvedValueOnce(
+        reply({ ...TODO, snoozed_until: "2026-08-12T12:00:00+00:00" }),
+      )
       .mockResolvedValueOnce(reply({ ...TODO }));
     vi.stubGlobal("fetch", fetchMock);
     const { container } = render(<TodoDetailView todo={TODO} />);
 
-    await press(container.querySelector<HTMLElement>('[data-action="more-actions"]')!);
-    const sheet = document.querySelector<HTMLElement>('[data-component="TodoMoreSheet"]')!;
-    const tomorrow = Array.from(sheet.querySelectorAll<HTMLElement>("button")).find(
-      (b) => b.textContent === "Tomorrow",
+    await press(
+      container.querySelector<HTMLElement>('[data-action="more-actions"]')!,
+    );
+    const sheet = document.querySelector<HTMLElement>(
+      '[data-component="TodoMoreSheet"]',
     )!;
+    const tomorrow = Array.from(
+      sheet.querySelectorAll<HTMLElement>("button"),
+    ).find((b) => b.textContent === "Tomorrow")!;
     await press(tomorrow);
     await press(screen.getByRole("button", { name: /undo/i }));
 
@@ -119,12 +146,34 @@ describe("TodoDetailView snooze + Undo", () => {
   });
 
   it("a snooze that failed offers nothing to undo", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply({ detail: "nope" }, 500)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(reply({ detail: "nope" }, 500)),
+    );
     render(<TodoDetailView todo={TODO} />);
 
     await press(screen.getAllByRole("button", { name: "3 hours" })[0]);
 
     expect(screen.getByText("nope")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /undo/i })).toBeNull();
+  });
+});
+
+describe("TodoDetailView for someone else's to-do", () => {
+  it("is view-only: no actions, no mobile dock", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => {})),
+    );
+    const { container } = render(
+      <TodoDetailView
+        todo={{ ...TODO, owner_user_id: "ada", editable: false }}
+      />,
+    );
+    expect(screen.getByText(/View only/)).toBeTruthy();
+    expect(container.querySelector('[data-component="TodoDock"]')).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /snooze|dismiss|work on this/i }),
+    ).toBeNull();
   });
 });
