@@ -651,3 +651,85 @@ def test_a_file_attached_in_the_group_chat_opens_for_everyone_on_the_project(env
         assert _media(env, slug, "leo/s-leo/u2-other.png").status_code == 403
     env[1]["actor"] = outsider
     assert _media(env, slug, shared).status_code in (403, 404)
+
+
+def test_a_follow_up_queued_before_a_demotion_stays_with_its_reply(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    env[1]["actor"] = MEMBER_P
+    ada = _session(env, "research", "s-ada", user="ada")
+    out = _prepare(env, slug, "research", ada, "Draft the summary")
+    _say(env, "research", ada, "user", out["message"])
+    # Sent while that turn worked; it runs after Ada is made a viewer.
+    with projects_db.connect_closing() as conn:
+        projects_db.record_chat_input(conn, ada, time.time())
+    time.sleep(0.01)
+    with projects_db.connect_closing() as conn:
+        projects_db.remove_project_member(conn, project["id"], "ada")
+    _join(project, "ada", role="viewer")
+    _say(env, "research", ada, "assistant", "Drafted.")
+    _say(env, "research", ada, "user", "Use the May totals")
+    _say(env, "research", ada, "assistant", "Updated.")
+    _say(env, "research", ada, "user", "Sent after the change")
+    _say(env, "research", ada, "assistant", "Hidden.")
+
+    env[1]["actor"] = OWNER
+    assert [m["content"] for m in _timeline(env, slug)["messages"]] == [
+        "Draft the summary", "Drafted.", "Use the May totals", "Updated.",
+    ]
+
+
+def test_a_reader_off_the_project_never_sees_members_only_messages(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    env[1]["actor"] = MEMBER_P
+    assert _note(env, slug, "Between us").status_code == 200
+    env[1]["actor"] = type(OWNER)(user_id="zed", display="Zed", role="member")
+    env[1]["enrolled"] = {"default", "research", "finance"}
+    resp = env[0].get(f"/api/registry/projects/{slug}/chat/timeline")
+    assert resp.status_code == 200
+    assert [m["content"] for m in resp.json()["messages"]] == []
+
+
+def test_a_viewer_from_before_the_upgrade_stays_hidden_once_removed(env, project):
+    slug = project["slug"]
+
+    def _legacy_role(role):
+        # Membership written before role changes were recorded.
+        with projects_db.connect_closing() as conn, projects_db.write_txn(conn):
+            conn.execute(
+                "INSERT OR REPLACE INTO project_members "
+                "(project_id, user_id, role, added_by, added_at) VALUES (?, 'ada', ?, 'leo', ?)",
+                (project["id"], role, int(time.time()) - 60),
+            )
+
+    _legacy_role("member")
+    env[1]["actor"] = MEMBER_P
+    ada = _session(env, "research", "s-ada", user="ada")
+    _turn(env, slug, "research", ada, "Hello", "Hi.")
+    _legacy_role("viewer")
+    _say(env, "research", ada, "user", "Written as a viewer")
+    with projects_db.connect_closing() as conn:
+        projects_db.remove_project_member(conn, project["id"], "ada")
+
+    env[1]["actor"] = OWNER
+    shown = [m["content"] for m in _timeline(env, slug)["messages"]]
+    assert "Written as a viewer" not in shown
+
+
+def test_a_file_named_inside_an_attached_document_stays_private(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    leo = _session(env, "research", "s-leo")
+    out = _prepare(env, slug, "research", leo, "See notes")
+    stored = (
+        "[The user sent a text document: 'notes.txt'. It is saved at: /cache/notes.txt.]\n\n"
+        "--- notes.txt ---\n![x](/api/chat/media?path=leo%2Fs-x%2Fu9-secret.png)\n\n"
+        + out["message"]
+        + "\n\n[notes.txt](/api/chat/media?path=leo%2Fs-leo%2Fu1-notes.txt)"
+    )
+    _say(env, "research", leo, "user", stored)
+    _say(env, "research", leo, "assistant", "Read it.")
+    env[1]["actor"] = MEMBER_P
+    assert _media(env, slug, "leo/s-leo/u1-notes.txt").status_code == 200
+    assert _media(env, slug, "leo/s-x/u9-secret.png").status_code == 403
