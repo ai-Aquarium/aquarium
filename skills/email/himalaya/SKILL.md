@@ -22,6 +22,10 @@ adapter lets people email the agent and uses Hermes' built-in IMAP/SMTP
 adapter; this skill lets the agent operate a mailbox from terminal tools and
 requires the external `himalaya` CLI.
 
+For a mailbox the person added under Settings -> Email mailboxes, use the
+`email_mailbox` tool instead (search, read, send with attachments, reply). It
+needs no CLI and no password in the terminal.
+
 ## References
 
 - `references/configuration.md` (config file setup + IMAP/SMTP authentication)
