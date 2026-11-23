@@ -55,3 +55,16 @@ describe("chat profile plumbing", () => {
     });
   });
 });
+
+describe("explicit default (project chat)", () => {
+  it("keeps default where the plain readers fall back to the console profile", async () => {
+    const { targetProfileFromBody, withTargetProfileQuery } = await import("./profile");
+    expect(targetProfileFromBody({ profile: "default" })).toBe("default");
+    expect(targetProfileFromBody({ profile: "finance" })).toBe("finance");
+    expect(targetProfileFromBody({})).toBeUndefined();
+    expect(withTargetProfileQuery("/api/chat/active?sessionId=s", "default")).toBe(
+      "/api/chat/active?sessionId=s&profile=default",
+    );
+    expect(withTargetProfileQuery("/x", "finance")).toBe(withProfileQuery("/x", "finance"));
+  });
+});

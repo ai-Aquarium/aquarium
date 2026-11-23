@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
-import { profileFromUrl } from "@/lib/chat/profile";
+import { targetProfileFromUrl } from "@/lib/chat/profile";
 
 const MAX_LIMIT = 500;
 
@@ -49,7 +49,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     );
   }
   try {
-    const client = await apiClientForRequest({ profile: profileFromUrl(request.url) });
+    const client = await apiClientForRequest({ profile: targetProfileFromUrl(request.url) });
     const data = await client.sessionMessages(sessionId, pageOptions(params));
     return NextResponse.json(data);
   } catch (err) {

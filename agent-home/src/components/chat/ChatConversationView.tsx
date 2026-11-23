@@ -32,7 +32,10 @@ export function ChatConversationView({
   aboveComposer,
   renderAround,
   emptyState,
+  onComposerTextChange,
 }: {
+  /** The composer's text changed. */
+  onComposerTextChange?: (text: string) => void;
   /** Rows shown before / after a message (the project chat's labels and cards). */
   renderAround?: (
     message: ChatMessage,
@@ -187,6 +190,7 @@ export function ChatConversationView({
         sessionId={sessionId}
         initialText={composerInitialText}
         draft={composerDraft}
+        onTextChange={onComposerTextChange}
         onSend={conv.send}
         onStop={() => void conv.stopTurn()}
         stopping={selTurn?.stopping ?? false}

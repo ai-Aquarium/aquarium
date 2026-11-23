@@ -31,6 +31,8 @@ vi.mock("@/lib/auth/principal", () => ({
     return {
       openChatStream,
       prepareProjectChat,
+      boundProfile: () =>
+        opts?.profile && opts.profile !== "default" ? opts.profile : undefined,
       createSession: async () => ({ session_id: `new_${opts?.profile ?? "default"}` }),
     };
   },
@@ -73,6 +75,20 @@ describe("POST /api/chat/stream projectSlug", () => {
     expect(message.startsWith("[project chat:")).toBe(true);
     expect(message.endsWith("\n\nCost it out")).toBe(true);
     expect(openChatStream).toHaveBeenCalledTimes(1);
+  });
+
+  it("honours an explicit default and streams into the canonical conversation", async () => {
+    prepareProjectChat.mockImplementationOnce(async (_slug, body) => ({
+      session_id: "canonical_default",
+      message: body.message,
+      seeded: false,
+      catch_up: 0,
+    }));
+    const res = await post({ message: "hi", profile: "default", projectSlug: "digest" });
+    expect(clientProfiles[0]).toBe("default");
+    expect(prepareProjectChat.mock.calls[0][1].profile).toBe("default");
+    expect(openChatStream.mock.calls[0][0]).toBe("canonical_default");
+    expect(res.headers.get("x-hermes-session-id")).toBe("canonical_default");
   });
 
   it("keeps an existing conversation and never asks the project API for a plain turn", async () => {

@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
-import { profileFromUrl } from "@/lib/chat/profile";
+import { targetProfileFromUrl } from "@/lib/chat/profile";
 import { pendingFromActive } from "@/lib/chat/pending-inputs";
 
 export async function GET(request: Request): Promise<NextResponse> {
@@ -25,7 +25,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     );
   }
   try {
-    const client = await apiClientForRequest({ profile: profileFromUrl(request.url) });
+    const client = await apiClientForRequest({ profile: targetProfileFromUrl(request.url) });
     const data = await client.activeChatRun(sessionId);
     const pending = pendingFromActive(
       (data.pending ?? []).map((p) => ({ itemId: p?.item_id, mode: p?.mode, text: p?.text })),

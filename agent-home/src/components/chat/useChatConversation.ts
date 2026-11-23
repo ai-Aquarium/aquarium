@@ -22,7 +22,7 @@ import {
   pendingFromActive,
   upsertPending,
 } from "@/lib/chat/pending-inputs";
-import { withProfileQuery } from "@/lib/chat/profile";
+import { withProfileQuery, withTargetProfileQuery } from "@/lib/chat/profile";
 import {
   attachChatStream,
   cancelChatTurn,
@@ -126,7 +126,8 @@ export function useChatConversation({
   onSessionsStale,
   projectSlug,
 }: ChatConversationOptions) {
-  const path = (p: string) => withProfileQuery(p, profile);
+  const path = (p: string) =>
+    projectSlug ? withTargetProfileQuery(p, profile) : withProfileQuery(p, profile);
   const sessionsStale = () => {
     onSessionsStale();
     notifySessionsChanged({ profile });
