@@ -3939,6 +3939,7 @@ async def fill_playbook_toolsets_route(request: Request) -> dict[str, Any]:
                 steps=new_steps,
                 created_by=principal.user_id,
                 note=f"tool lists added to rev {active.get('rev')} by the agent",
+                base_rev=active.get("rev"),
             )
         return {
             "rev": rev,
@@ -4249,12 +4250,18 @@ async def rebase_playbook_route(request: Request, rev: int) -> dict[str, Any]:
 
     def _rebase_sync() -> dict:
         with projects_db.connect_closing() as conn:
-            result = projects_db.rebase_playbook_rev(conn, project.id, rev)
+            result = projects_db.rebase_playbook_rev(
+                conn, project.id, rev, created_by=principal.user_id
+            )
             if "refused" not in result:
                 projects_db.record_project_activity(
                     conn, project.id, "playbook_rebased",
                     actor=principal.user_id,
-                    detail={"rev": rev, "base_rev": result["base_rev"]},
+                    detail={
+                        "rev": result["rev"],
+                        "from_rev": rev,
+                        "base_rev": result["base_rev"],
+                    },
                 )
         refusal = result.get("refused")
         if refusal == "not_found":
@@ -4279,11 +4286,6 @@ async def rebase_playbook_route(request: Request, rev: int) -> dict[str, Any]:
             raise HTTPException(
                 status_code=409,
                 detail=f"revision {rev} doesn't record the revision it was written from",
-            )
-        if refusal and refusal.startswith("pinned:"):
-            raise HTTPException(
-                status_code=409,
-                detail=f"revision {rev} is pinned by run {refusal.split(':', 1)[1]}",
             )
         if refusal and refusal.startswith("invalid:"):
             raise HTTPException(status_code=422, detail=refusal.split(":", 1)[1])
@@ -5241,6 +5243,7 @@ async def run_retro_route(request: Request, run_no: int) -> dict[str, Any]:
                                 f"{sorted(profile_names)}"
                             ),
                         )
+                pinned = projects_db.get_project_run(conn, project.id, run_no)
                 rev = projects_db.save_playbook_rev(
                     conn,
                     project_id=project.id,
@@ -5248,6 +5251,7 @@ async def run_retro_route(request: Request, run_no: int) -> dict[str, Any]:
                     steps=cleaned,
                     created_by=principal.user_id,
                     note=f"proposed by run {run_no}",
+                    base_rev=(pinned or {}).get("playbook_rev"),
                 )
                 landed.append({"kind": "playbook", "rev": rev, "active": False})
             elif p["kind"] == "directive":

@@ -544,3 +544,30 @@ def test_change_prompt_shows_each_current_steps_assignee():
     assert "1. [gather] Collect (assignee: researcher)" in prompt
     assert "2. [send] Send (assignee" not in prompt
     assert "- researcher: Finds sources." in prompt
+
+
+def test_a_change_draft_records_the_plan_it_was_written_from(cenv, monkeypatch):
+    """A lead may activate another revision while the model drafts; the
+    draft still builds on the plan its prompt showed, so it reads as based
+    on an older version instead of silently undoing the newer one."""
+    client, _ = cenv
+    project = _active_project(cenv)
+    v1 = _save_and_activate_playbook(cenv, project)
+
+    def fake_model(prompt):
+        with projects_db.connect_closing() as conn:
+            pid = projects_db.get_project(conn, project["slug"]).id
+            newer = projects_db.save_playbook_rev(
+                conn, project_id=pid, steps=[*STEPS[:2], {**STEPS[2], "title": "Send it"}]
+            )
+            projects_db.activate_playbook_rev(conn, pid, newer)
+        return json.dumps({"body": "b", "steps": NEW_STEPS, "reading": {"changes": ["x"]}})
+
+    monkeypatch.setattr(projects_api, "_call_plan_model", fake_model)
+    assert _change(client, project, "next").status_code == 200
+    state = _wait_draft(client, project)
+    assert state["status"] == "done", state
+    playbook = client.get(_url(project, "/playbook")).json()
+    drafted = next(r for r in playbook["revisions"] if r["rev"] == state["rev"])
+    assert playbook["active"]["rev"] != v1
+    assert drafted["base_rev"] == v1

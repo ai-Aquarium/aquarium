@@ -62,9 +62,11 @@
   "chipOutdated": "older base",
   "outdated": "Based on an older version: v{base}, while v{active} is active now. Making it active as it is would undo what changed in between; update it onto v{active} to keep both.",
   "outdatedNoBase": "Based on an older version: v{base}, which no longer exists. Compare it with v{active} before making it active.",
+  "outdatedRoot": "Written from scratch while no version was active; v{active} is active now. Compare it with v{active} before making it active.",
   "updateOntoActive": "Update onto active",
   "updating": "Updating…",
-  "updatedNotice": "v{rev} now builds on v{active} and is still proposed.",
-  "updatedConflicts": "v{rev} now builds on v{active}. Both changed {what}; v{rev}'s version was kept. Compare before making it active.",
+  "updatedNotice": "v{from} was updated onto v{active} as v{rev}, still a proposal.",
+  "updatedConflicts": "v{from} was updated onto v{active} as v{rev}. Both changed {what}; v{from}'s version was kept. Compare before making it active.",
+  "updatedKept": "v{from} stays, because other proposals build on it.",
   "conflictText": "the text"
 }
