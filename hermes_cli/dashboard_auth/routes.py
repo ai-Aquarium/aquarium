@@ -622,6 +622,51 @@ async def auth_logout(request: Request):
     return resp
 
 
+@router.post("/auth/refresh", name="auth_refresh")
+async def auth_refresh(request: Request):
+    """Rotate a session from its refresh-token cookie, without a page request.
+
+    The gate already refreshes transparently when a browser request arrives
+    with an expired access token. A server-side client that holds the tokens
+    itself (agent-home keeps them in its own session cookie) has no such
+    request to piggy-back on, so it asks here before the access token lapses.
+    Success answers ``{"ok": true, "expires_in": <s>}`` with the rotated
+    cookies, the same Set-Cookie shape as ``/auth/password-login``; a dead or
+    missing refresh token answers 401 and clears them.
+    """
+    from hermes_cli.dashboard_auth.middleware import _attempt_refresh, _expires_in_seconds
+
+    _at, rt = read_session_cookies(request)
+    refreshed = (
+        await asyncio.to_thread(functools.partial(_attempt_refresh, request, refresh_token=rt))
+        if rt
+        else None
+    )
+    prefix = _prefix(request)
+    if refreshed is None:
+        resp = JSONResponse({"detail": "Session expired"}, status_code=401)
+        clear_session_cookies(resp, prefix=prefix)
+        return resp
+    session, provider = refreshed
+    audit_log(
+        AuditEvent.REFRESH_SUCCESS,
+        provider=provider,
+        user_id=session.user_id,
+        ip=_client_ip(request),
+    )
+    expires_in = _expires_in_seconds(session)
+    resp = JSONResponse({"ok": True, "expires_in": expires_in})
+    set_session_cookies(
+        resp,
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        access_token_expires_in=expires_in,
+        use_https=detect_https(request),
+        prefix=prefix,
+    )
+    return resp
+
+
 # ---------------------------------------------------------------------------
 # Auth-required: identity probe for the SPA
 # ---------------------------------------------------------------------------

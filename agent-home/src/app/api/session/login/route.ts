@@ -7,7 +7,8 @@
  *      `provider` (or `"auto"`) the route picks one from `/api/auth/providers`:
  *      an `@` prefers the email provider, else the username one; a wrong
  *      password or unknown provider tries the other password provider once.
- *   2. Capture the upstream `hermes_session_at` token from its `Set-Cookie`.
+ *   2. Capture the upstream `hermes_session_at` token (and the refresh token
+ *      and expiry, for `lib/auth/renew.ts`) from its `Set-Cookie`.
  *   3. Choose the landing profile among the account's active enrolments
  *      (`/api/auth/my-profiles`, FG-28 D1): `?profile=` from the login URL,
  *      then this browser's signed last-profile hint, then `default`, then the
@@ -29,6 +30,7 @@ import { readLastProfileHint, writeLastProfileHint, writeSession } from "@/lib/a
 import { syncLanguageAtLogin } from "@/i18n/sync";
 import { HermesApiClient } from "@/lib/api/client";
 import { passwordProviderOrder } from "@/lib/auth/password-providers";
+import { readUpstreamTokens } from "@/lib/auth/upstream-tokens";
 
 interface LoginBody {
   /** A provider name, or missing / `"auto"` to choose from the identifier. */
@@ -65,18 +67,6 @@ function unreachable(): NextResponse {
     { error: "api_unreachable", detail: "The AI layer could not be reached." },
     { status: 502 },
   );
-}
-
-/** Pull the upstream `hermes_session_at` value out of Set-Cookie headers. */
-function extractHermesToken(setCookies: string[]): string | null {
-  for (const raw of setCookies) {
-    // Cookie name may be bare or carry a `__Host-` / `__Secure-` prefix.
-    const match = raw.match(/(?:^|;\s*)(?:__Host-|__Secure-)?hermes_session_at=([^;]+)/);
-    if (match) {
-      return decodeURIComponent(match[1]);
-    }
-  }
-  return null;
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -174,14 +164,15 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, two_factor_required: true, provider });
   }
 
-  const token = extractHermesToken(upstream.headers.getSetCookie());
-  if (!token) {
+  const tokens = readUpstreamTokens(upstream.headers.getSetCookie());
+  if (!tokens) {
     return NextResponse.json(
       { error: "no_session", detail: "Upstream login returned no session token." },
       { status: 502 },
     );
   }
 
+  const token = tokens.hermesToken;
   const landing = await landingFor(token, requestedProfile);
   // The credentials were right: the account is shared box-wide and it is the
   // enrolment that is missing or switched off, so saying "invalid password"
@@ -204,7 +195,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const principal = resolved.principal;
 
   await writeSession({
-    hermesToken: token,
+    ...tokens,
     profile,
     principal,
     issuedAt: Math.floor(Date.now() / 1000),

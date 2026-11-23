@@ -27,6 +27,7 @@ import {
   serializeProfileHint,
   writeLastProfileHint,
   readSession,
+  renewedCookieOptions,
   serializeSession,
   SESSION_COOKIE,
   writeSession,
@@ -58,6 +59,21 @@ describe("agent-home session cookie", () => {
     const cookie = serializeSession(SESSION);
     const parsed = deserializeSession(cookie);
     expect(parsed).toEqual(SESSION);
+  });
+
+  it("round-trips the refresh token and expiry kept for renewal", () => {
+    const renewable = { ...SESSION, refreshToken: "rt-1", expiresAt: 1_700_003_600 };
+    expect(deserializeSession(serializeSession(renewable))).toEqual(renewable);
+  });
+
+  it("re-signs a renewed session without stretching its 12 h lifetime", () => {
+    expect(renewedCookieOptions(SESSION, SESSION.issuedAt + 3_600)).toMatchObject({
+      httpOnly: true,
+      secure: true,
+      path: "/",
+      maxAge: 11 * 3_600,
+    });
+    expect(renewedCookieOptions(SESSION, SESSION.issuedAt + 13 * 3_600).maxAge).toBe(0);
   });
 
   it("rejects a tampered payload", () => {
