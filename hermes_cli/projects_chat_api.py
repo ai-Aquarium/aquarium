@@ -118,7 +118,9 @@ def typed_text(content: str) -> str:
     if m:
         return content[m.end():]
     if _ATTACHMENT_NOTE_RE.match(content):
-        ctx = content.find("\n\n[app context:")
+        # The last one: inlined file text comes before the typed turn, so a
+        # file that holds an ``[app context:`` line cannot end the file early.
+        ctx = content.rfind("\n\n[app context:")
         if ctx < 0:
             # Nothing marks where inlined file text ends: say nothing rather
             # than quote the file.
@@ -391,9 +393,27 @@ def _seed_view(r: dict, viewer: Optional[str]) -> Optional[dict]:
     }
     origin = meta.get("origin") or {}
     if viewer and viewer == r["user_id"] and origin.get("session_id"):
-        query = urlencode({"session": origin["session_id"], "profile": origin.get("profile") or ""})
+        sid = _current_chat_id(origin.get("profile") or "", origin["session_id"])
+        query = urlencode({"session": sid, "profile": origin.get("profile") or ""})
         seed["origin"] = {"ref": origin.get("ref"), "url": f"/chat?{query}"}
     return seed
+
+
+def _current_chat_id(profile: str, sid: str) -> str:
+    """*sid*'s conversation as the chat list shows it: once compression
+    continued it, the continuation's id."""
+    try:
+        db = _session_db(profile)
+    except Exception:  # noqa: BLE001 - the stored id still names it
+        return sid
+    if db is None:
+        return sid
+    try:
+        return db.get_compression_tip(sid) or sid
+    except Exception:  # noqa: BLE001
+        return sid
+    finally:
+        db.close()
 
 
 def _member_notes(project_id: str, spans: Spans, viewer: Optional[str] = None) -> list[dict]:
@@ -435,6 +455,18 @@ def _without_ref_block(text: str) -> str:
     return text[:at] if all(line.startswith("- ") for line in tail if line) else text
 
 
+def _without_attachment_links(text: str) -> str:
+    """Drop the trailing links agent-home appends for each uploaded file."""
+    lines = text.rstrip().split("\n")
+    cut = len(lines)
+    while cut:
+        link = _LINK_LINE_RE.match(lines[cut - 1]) or _OLD_LINK_LINE_RE.match(lines[cut - 1])
+        if not link or not _MEDIA_REF_RE.fullmatch(link.group(1)):
+            break
+        cut -= 1
+    return text if cut == len(lines) else "\n".join(lines[:cut])
+
+
 def request_turns(db, sid: str, count: int) -> list[dict]:
     """The conversation owner's own last *count* messages, as typed: never
     an agent reply, an attachment's text or injected context."""
@@ -443,7 +475,7 @@ def request_turns(db, sid: str, count: int) -> list[dict]:
         if r["role"] != "user":
             continue
         text = r["content"] if r.get("sent_while_working") else typed_text(r["content"])
-        text = _without_ref_block(text).strip()
+        text = _without_attachment_links(_without_ref_block(text)).strip()
         if text:
             turns.append({"text": _quote(text), "timestamp": r["timestamp"]})
     return turns[-count:] if count > 0 else []
@@ -473,7 +505,12 @@ def chat_request(*, profile: str, session_id: str, user_id: str, count: int) -> 
         if db.session_owner_user_id(session_id) != user_id:
             raise PermissionError("only the chat's owner can quote it")
         with projects_db.connect_closing() as conn:
-            chain = _session_chain(db, session_id)
+            # Every segment, back to before compression: any one may be the
+            # id a project chat was published under.
+            chain = {
+                *db._session_lineage_root_to_tip(session_id),  # noqa: SLF001
+                *_session_chain(db, session_id),
+            }
             if any(projects_db.conversation_in_project_chat(conn, sid) for sid in chain):
                 raise ValueError("this chat is a project chat")
         quotes = request_turns(db, session_id, count)

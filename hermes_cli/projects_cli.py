@@ -513,6 +513,18 @@ def _session_env(name: str) -> str:
     return (value or os.environ.get(name, "")).strip()
 
 
+def _ticket_user(ticket: str):
+    """The ticket's person. The gateway signs with its own home's key; a chat
+    on another profile runs this terminal under that profile's home, so the
+    installation root's key is tried too (both are keys only hermes reads)."""
+    from hermes_cli import principal_ticket
+    from hermes_constants import get_default_hermes_root
+
+    return principal_ticket.verify(ticket) or principal_ticket.verify(
+        ticket, home=get_default_hermes_root()
+    )
+
+
 async def _from_chat(args) -> dict:
     """The chat this command runs in, its owner and the owner's last
     ``--from-chat`` messages. The project is created as that owner (the
@@ -533,7 +545,7 @@ async def _from_chat(args) -> dict:
     if not owner:
         raise ValueError("this chat has no owner to quote")
     ticket = os.environ.get(principal_ticket.ENV_VAR, "").strip()
-    if ticket and principal_ticket.verify(ticket) != owner:
+    if ticket and _ticket_user(ticket) != owner:
         raise PermissionError("this turn does not run for the chat's owner")
     if args.actor and args.actor != owner:
         raise PermissionError("--actor must be the chat's owner")

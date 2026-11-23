@@ -531,3 +531,38 @@ def test_create_from_chat_outside_a_chat_creates_nothing(env, tmp_path, monkeypa
     assert "no chat" in capsys.readouterr().err
     with projects_db.connect_closing() as conn:
         assert projects_db.list_projects(conn) == []
+
+
+def _ticket_from_root_for_profile_terminal(tmp_path, monkeypatch, user):
+    """The gateway mints under the installation root; a chat on another
+    profile runs the terminal with that profile's HERMES_HOME."""
+    from hermes_cli import principal_ticket
+
+    root = tmp_path / "root"
+    (root / "profiles" / "research").mkdir(parents=True)
+    monkeypatch.setenv("HERMES_HOME", str(root))
+    ticket = principal_ticket.mint(user)
+    assert ticket
+    monkeypatch.setenv("HERMES_HOME", str(root / "profiles" / "research"))
+    monkeypatch.setenv(principal_ticket.ENV_VAR, ticket)
+
+
+def test_create_from_chat_accepts_the_owners_ticket_on_another_profile(env, tmp_path, monkeypatch, capsys):
+    run, _capsys = env
+    seen = _chat_env(tmp_path, monkeypatch)
+    _ticket_from_root_for_profile_terminal(tmp_path, monkeypatch, "leo")
+    assert _create_from_chat(run, tmp_path, "--json") == 0
+    assert json.loads(capsys.readouterr().out)["quoted_messages"] == 1
+    assert seen == ["leo"]
+
+
+def test_create_from_chat_refuses_a_ticket_for_someone_else(env, tmp_path, monkeypatch, capsys):
+    from hermes_cli import projects_db
+
+    run, _capsys = env
+    _chat_env(tmp_path, monkeypatch)
+    _ticket_from_root_for_profile_terminal(tmp_path, monkeypatch, "ada")
+    assert _create_from_chat(run, tmp_path) == 2
+    assert "does not run for the chat's owner" in capsys.readouterr().err
+    with projects_db.connect_closing() as conn:
+        assert projects_db.list_projects(conn) == []

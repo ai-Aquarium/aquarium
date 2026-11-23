@@ -11,7 +11,7 @@ import type { ProjectCardRef } from "@/lib/chat/project-card";
 import type { ProjectDetail, ProjectPlaybookResponse } from "@/types";
 
 type Loaded = {
-  project: Pick<ProjectDetail, "name" | "ref" | "status" | "can_write">;
+  project: Pick<ProjectDetail, "name" | "ref" | "status" | "can_write" | "runs">;
   /** The newest revision still waiting for a Make active. */
   proposed: number | null;
   activeRev: number | null;
@@ -77,8 +77,13 @@ export function ProjectCard({ card }: { card: ProjectCardRef }) {
   const title = loaded?.project.name ?? card.slug;
   const ref = loaded?.project.ref ?? card.ref;
   const rev = loaded?.proposed ?? null;
+  // Only the project's first run, from planning or active: reopened later
+  // (runs done, paused, a newer proposal), the card only opens the project.
   const canStart =
-    Boolean(loaded?.project.can_write) && rev != null && loaded?.project.status !== "archived";
+    Boolean(loaded?.project.can_write) &&
+    rev != null &&
+    (loaded?.project.status === "planning" || loaded?.project.status === "active") &&
+    (loaded?.project.runs ?? []).length === 0;
 
   const start = async () => {
     if (!loaded || rev == null || busy) return;

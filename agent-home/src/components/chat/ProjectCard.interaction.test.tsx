@@ -25,7 +25,7 @@ function api(project: Record<string, unknown>, revisions = [{ rev: 1, active: fa
   return calls;
 }
 
-const lead = { name: "Weekly sales report", ref: "P12", status: "planning", can_write: true };
+const lead = { name: "Weekly sales report", ref: "P12", status: "planning", can_write: true, runs: [] };
 const card = { slug: "weekly-sales", ref: "P12", quoted: true };
 
 afterEach(() => {
@@ -70,6 +70,17 @@ describe("ProjectCard", () => {
     await waitFor(() => expect(r.getByText("Playbook v1 proposed")).toBeTruthy());
     expect(r.queryByRole("button")).toBeNull();
     expect(r.container.textContent).not.toContain("project members can read it");
+  });
+
+  it.each([
+    ["after a run", { ...lead, status: "active", runs: [{ run_no: 1 }] }],
+    ["when paused", { ...lead, status: "paused" }],
+  ])("only opens the project %s", async (_when, project) => {
+    api(project, [{ rev: 1, active: true }, { rev: 2, active: false }] as never);
+    const r = render(<ProjectCard card={card} />);
+    await waitFor(() => expect(r.getByText("Playbook v2 proposed")).toBeTruthy());
+    expect(r.queryByRole("button")).toBeNull();
+    expect(r.getByRole("link", { name: "Open project" })).toBeTruthy();
   });
 
   it("stops at the first refused step", async () => {
