@@ -1,5 +1,6 @@
 "use client";
 
+import { MediaProjectContext } from "@/components/chat/MediaProject";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ChatConversationView } from "@/components/chat/ChatConversationView";
@@ -387,6 +388,7 @@ function ProjectChatPane({
   ) : null;
 
   return (
+    <MediaProjectContext.Provider value={slug}>
     <div data-component="ProjectChatPane" className="flex min-h-0 flex-1 flex-col">
       <ChatConversationView
         conv={view}
@@ -426,6 +428,7 @@ function ProjectChatPane({
         }
       />
     </div>
+    </MediaProjectContext.Provider>
   );
 }
 

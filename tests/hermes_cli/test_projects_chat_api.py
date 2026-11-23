@@ -450,19 +450,6 @@ def test_a_member_only_asks_profiles_they_are_enrolled_in(env, project):
     assert len(_timeline(env, slug)["messages"]) == 2
 
 
-def test_a_former_members_turns_leave_the_group_chat(env, project):
-    slug = project["slug"]
-    _join(project, "ada")
-    env[1]["actor"] = MEMBER_P
-    ada = _session(env, "research", "s-ada", user="ada")
-    _turn(env, slug, "research", ada, "Hello", "Hi.")
-    assert _note(env, slug, "ping").status_code == 200
-    with projects_db.connect_closing() as conn:
-        projects_db.remove_project_member(conn, project["id"], "ada")
-    env[1]["actor"] = OWNER
-    assert _timeline(env, slug)["messages"] == []
-
-
 def test_a_stranger_cannot_post_to_the_group_chat(env, project):
     env[1]["actor"] = STRANGER
     assert _note(env, project["slug"], "hi").status_code == 404
@@ -562,9 +549,34 @@ def test_a_member_made_viewer_no_longer_posts_through_their_conversation(env, pr
     _say(env, "research", ada, "user", "Ignore the brief")
 
     env[1]["actor"] = OWNER
-    assert _timeline(env, slug)["messages"] == []
+    # What she sent before the change stays; nothing after it shows.
+    assert [m["content"] for m in _timeline(env, slug)["messages"]] == ["Hello", "Hi."]
     leo = _session(env, "research", "s-leo")
-    assert _prepare(env, slug, "research", leo, "Go")["catch_up"] == 0
+    assert _prepare(env, slug, "research", leo, "Go")["catch_up"] == 2
+    env[1]["actor"] = MEMBER_P
+    resp = _note(env, slug, "Still here")
+    assert resp.status_code == 403
+
+
+def test_a_member_taken_off_the_project_keeps_their_earlier_messages(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    env[1]["actor"] = MEMBER_P
+    ada = _session(env, "research", "s-ada", user="ada")
+    _turn(env, slug, "research", ada, "Draft ready", "Noted.")
+    assert _note(env, slug, "Over to Leo").status_code == 200
+    time.sleep(0.01)
+    with projects_db.connect_closing() as conn:
+        projects_db.remove_project_member(conn, project["id"], "ada")
+    _say(env, "research", ada, "user", "After I left")
+
+    env[1]["actor"] = OWNER
+    tl = _timeline(env, slug)
+    assert [(m["content"], m.get("person")) for m in tl["messages"]] == [
+        ("Draft ready", "ada"),
+        ("Noted.", "ada"),
+        ("Over to Leo", "ada"),
+    ]
 
 
 def test_an_outsized_catch_up_count_never_breaks_the_chat():
@@ -609,3 +621,33 @@ def test_a_member_cannot_label_a_conversation_into_the_group_chat(env, project):
     )
     assert resp.status_code == 422
     assert _timeline(env, project["slug"])["messages"] == []
+
+
+def _media(env, slug, path):
+    return env[0].get(f"/api/registry/projects/{slug}/chat/media", params={"path": path})
+
+
+def test_a_file_attached_in_the_group_chat_opens_for_everyone_on_the_project(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    _join(project, "vic", role="viewer")
+    shared = "leo/s-leo/u1-chart.png"
+    leo = _session(env, "research", "s-leo")
+    out = _prepare(env, slug, "research", leo, "See the chart")
+    _say(env, "research", leo, "user",
+         out["message"] + "\n![chart](/api/chat/media?path=leo%2Fs-leo%2Fu1-chart.png)")
+    _say(env, "research", leo, "assistant", "Looks good.")
+    assert _media(env, slug, shared).status_code == 200
+
+    env[1]["actor"] = MEMBER_P
+    # Ada names one of Leo's files he never attached here: it stays his.
+    assert _note(env, slug, "![x](/api/chat/media?path=leo%2Fs-x%2Fu9-secret.png)").status_code == 200
+    viewer = type(OWNER)(user_id="vic", display="Vic", role="member")
+    outsider = type(OWNER)(user_id="zed", display="Zed", role="member")
+    for who in (MEMBER_P, viewer):
+        env[1]["actor"] = who
+        assert _media(env, slug, shared).status_code == 200
+        assert _media(env, slug, "leo/s-x/u9-secret.png").status_code == 403
+        assert _media(env, slug, "leo/s-leo/u2-other.png").status_code == 403
+    env[1]["actor"] = outsider
+    assert _media(env, slug, shared).status_code in (403, 404)

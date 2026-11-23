@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { useT } from "@/i18n";
+import { useMediaProject } from "@/components/chat/MediaProject";
 import { mediaDownloadRef, mediaFileName, mediaRef } from "@/lib/chat/media-ref";
 import { inlineTypeForName } from "@/lib/http/file-headers";
 import { newTabRel } from "@/lib/http/link-rel";
@@ -19,6 +20,7 @@ import type { ChatMediaUrlResponse } from "@/types";
  * after the file rather than its storage key.
  */
 export function ChatFile({ path, name }: { path: string; name: string }) {
+  const project = useMediaProject();
   const t = useT("fileViewer");
   const [resolved, setResolved] = useState<{
     path: string;
@@ -32,7 +34,7 @@ export function ChatFile({ path, name }: { path: string; name: string }) {
     let active = true;
     (async () => {
       try {
-        const res = await fetch(mediaRef(path), { cache: "no-store" });
+        const res = await fetch(mediaRef(path, project), { cache: "no-store" });
         const body = (await res.json()) as Partial<ChatMediaUrlResponse>;
         if (!active) return;
         setResolved({
@@ -47,7 +49,7 @@ export function ChatFile({ path, name }: { path: string; name: string }) {
     return () => {
       active = false;
     };
-  }, [path]);
+  }, [path, project]);
 
   const chip =
     "mt-1 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs";
@@ -55,7 +57,7 @@ export function ChatFile({ path, name }: { path: string; name: string }) {
   if (url) {
     const fileName = mediaFileName(path);
     const opensInline = inlineTypeForName(fileName) !== null;
-    const downloadUrl = mediaDownloadRef(path);
+    const downloadUrl = mediaDownloadRef(path, project);
     return (
       <span data-component="ChatFile" className="inline-flex max-w-full flex-wrap items-center gap-2 align-middle">
         <a

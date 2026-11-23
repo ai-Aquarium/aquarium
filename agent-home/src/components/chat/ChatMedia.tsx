@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useT } from "@/i18n";
+import { useMediaProject } from "@/components/chat/MediaProject";
 import { mediaDownloadRef, mediaFileName, mediaRef } from "@/lib/chat/media-ref";
 import { newTabRel } from "@/lib/http/link-rel";
 import type { ChatMediaUrlResponse } from "@/types";
@@ -27,6 +28,7 @@ function scrollParent(el: Element): Element | null {
 }
 
 export function ChatMedia({ path, alt }: { path: string; alt: string }) {
+  const project = useMediaProject();
   const t = useT("fileViewer");
   const ref = useRef<HTMLSpanElement>(null);
   // No IntersectionObserver (old browsers, SSR) → load straight away.
@@ -64,7 +66,7 @@ export function ChatMedia({ path, alt }: { path: string; alt: string }) {
     let active = true;
     (async () => {
       try {
-        const res = await fetch(mediaRef(path), { cache: "no-store" });
+        const res = await fetch(mediaRef(path, project), { cache: "no-store" });
         const body = (await res.json()) as Partial<ChatMediaUrlResponse>;
         if (!active) return;
         setResolved({
@@ -79,7 +81,7 @@ export function ChatMedia({ path, alt }: { path: string; alt: string }) {
     return () => {
       active = false;
     };
-  }, [path, near]);
+  }, [path, project, near]);
 
   return (
     <span ref={ref} data-component="ChatMedia" className="mt-1 block">
@@ -107,7 +109,7 @@ export function ChatMedia({ path, alt }: { path: string; alt: string }) {
               {t("openNewTab")}
             </a>
             <a
-              href={mediaDownloadRef(path)}
+              href={mediaDownloadRef(path, project)}
               rel={newTabRel(url)}
               download={mediaFileName(path)}
               data-action="download"

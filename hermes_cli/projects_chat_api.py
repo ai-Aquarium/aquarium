@@ -184,19 +184,66 @@ def _can_post(project, role, principal) -> bool:
     return role in ("lead", "member") or project.owner_user_id == principal.user_id
 
 
-async def _group(project, role, principal) -> tuple[dict[str, set[str]], dict[str, str], set[str]]:
+Spans = dict[str, list[tuple[float, float]]]
+_ALWAYS = [(float("-inf"), float("inf"))]
+
+
+def _post_spans(project, roles: dict[str, str]) -> Spans:
+    """When each person could post in the group chat: as a lead or member
+    (the project's creator always). Someone made a viewer or taken off the
+    project keeps what they posted before; nothing after it shows."""
+    with projects_db.connect_closing() as conn:
+        changes = projects_db.get_member_changes(conn, project.id)
+    history: dict[str, list[tuple[Optional[str], float]]] = {}
+    for user, role, at in changes:
+        history.setdefault(user, []).append((role, at))
+    spans: Spans = {}
+    for user in set(roles) | set(history):
+        events = history.get(user)
+        if user == project.owner_user_id:
+            spans[user] = _ALWAYS
+            continue
+        if not events:
+            # On the project from before changes were recorded.
+            spans[user] = _ALWAYS if roles.get(user) in ("lead", "member") else []
+            continue
+        out: list[tuple[float, float]] = []
+        start: Optional[float] = float("-inf") if events[0][0] is None else None
+        for role, at in events:
+            if role in ("lead", "member"):
+                if start is None:
+                    start = at
+            elif start is not None:
+                out.append((start, at))
+                start = None
+        if start is not None:
+            out.append((start, float("inf")))
+        spans[user] = out
+    return spans
+
+
+def _could_post(spans: Spans, user: Optional[str], at: float) -> bool:
+    return any(a <= at < b for a, b in spans.get(user or "", ()))
+
+
+def _members_and_spans(project) -> tuple[dict[str, str], Spans]:
+    roles = _member_roles(project)
+    return roles, _post_spans(project, roles)
+
+
+async def _group(project, role, principal) -> tuple[dict[str, set[str]], dict[str, str], Spans]:
     """Who the group chat spans: each person's active profiles, their names,
-    and the people whose turns and messages appear (everyone but viewers).
+    and when each could post (what they sent then is shown).
 
     Members (any role, viewers included), the project's creator and instance
-    admins see everyone's turns; anybody else who can read the project sees
-    only their own.
+    admins see everyone's turns, former members' earlier ones included;
+    anybody else who can read the project sees only their own.
     """
     caller = principal.user_id
-    roles = await asyncio.to_thread(_member_roles, project)
+    roles, spans = await asyncio.to_thread(_members_and_spans, project)
     ids = {caller}
     if caller in roles or projects_api._instance_admin(principal):
-        ids |= set(roles)
+        ids |= set(roles) | set(spans)
     people = sorted(ids)
     profiles, names = await asyncio.gather(
         asyncio.gather(*(_chat_profiles(u) for u in people)),
@@ -206,8 +253,7 @@ async def _group(project, role, principal) -> tuple[dict[str, set[str]], dict[st
     shown = {u: (n or u) for u, n in zip(people, names)}
     if getattr(principal, "display", None):
         shown[caller] = str(principal.display)
-    posters = {u for u in people if roles.get(u) != "viewer"}
-    return enrolled, {u: _short(n, 60) for u, n in shown.items()}, posters
+    return enrolled, {u: _short(n, 60) for u, n in shown.items()}, spans
 
 
 def _chat_links(
@@ -310,8 +356,9 @@ def _private_sessions(project_id: str, user_id: str, enrolled: set[str]) -> list
     return [{**s, "private": True} for s in _owned_sessions(old, user_id, enrolled)]
 
 
-def _member_notes(project_id: str, people: set[str]) -> list[dict]:
-    """The members-only messages ("Ask agent" off) of people still in the group."""
+def _member_notes(project_id: str, spans: Spans) -> list[dict]:
+    """The members-only messages ("Ask agent" off) sent while their sender
+    could post."""
     with projects_db.connect_closing() as conn:
         rows = projects_db.get_chat_messages(conn, project_id)
     return [
@@ -324,7 +371,7 @@ def _member_notes(project_id: str, people: set[str]) -> list[dict]:
             "member_only": True,
         }
         for r in rows
-        if r["user_id"] in people
+        if _could_post(spans, r["user_id"], float(r["created_at"]))
     ]
 
 
@@ -524,16 +571,32 @@ def proposals_since(conn, project_id: str, since: Optional[float]) -> list[dict]
     return out
 
 
-def _group_sessions_of(project, enrolled: dict[str, set[str]], posters: set[str]) -> list[dict]:
-    shown = {u: p for u, p in enrolled.items() if u in posters}
-    return _group_sessions(_chat_links(project.id), shown)
+def _sent_while_posting(rows: list[dict], spans: list[tuple[float, float]]) -> list[dict]:
+    """The turns asked while their person could post, each with its reply."""
+    out: list[dict] = []
+    keep = False
+    for m in rows:
+        if m["role"] == "user":
+            keep = any(a <= m["timestamp"] < b for a, b in spans)
+        if keep:
+            out.append(m)
+    return out
+
+
+def _group_sessions_of(project, enrolled: dict[str, set[str]], spans: Spans) -> list[dict]:
+    out = []
+    for s in _group_sessions(_chat_links(project.id), enrolled):
+        rows = _sent_while_posting(s["messages"], spans.get(s["person"], []))
+        if rows:
+            out.append({**s, "messages": rows})
+    return out
 
 
 def _group_timeline(
-    project, enrolled: dict[str, set[str]], names: dict[str, str], posters: set[str]
+    project, enrolled: dict[str, set[str]], names: dict[str, str], spans: Spans
 ) -> list[dict]:
-    sessions = _group_sessions_of(project, enrolled, posters)
-    return merge_timeline(sessions, _member_notes(project.id, posters & set(enrolled)), names)
+    sessions = _group_sessions_of(project, enrolled, spans)
+    return merge_timeline(sessions, _member_notes(project.id, spans), names)
 
 
 def _timeline_sync(
@@ -541,13 +604,11 @@ def _timeline_sync(
     user_id: str,
     enrolled: dict[str, set[str]],
     names: dict[str, str],
-    posters: set[str],
+    spans: Spans,
 ) -> dict:
-    sessions = _group_sessions_of(project, enrolled, posters)
+    sessions = _group_sessions_of(project, enrolled, spans)
     sessions += _private_sessions(project.id, user_id, enrolled.get(user_id, set()))
-    timeline = merge_timeline(
-        sessions, _member_notes(project.id, posters & set(enrolled)), names
-    )
+    timeline = merge_timeline(sessions, _member_notes(project.id, spans), names)
     since = timeline[0]["timestamp"] if timeline else None
     with projects_db.connect_closing() as conn:
         proposals = proposals_since(conn, project.id, since)
@@ -576,9 +637,9 @@ def _timeline_sync(
 @router.get("/{slug}/chat/timeline")
 async def chat_timeline(request: Request) -> dict[str, Any]:
     project, role, _profiles, principal = await _require_read(request)
-    enrolled, names, posters = await _group(project, role, principal)
+    enrolled, names, spans = await _group(project, role, principal)
     out = await asyncio.to_thread(
-        _timeline_sync, project, principal.user_id, enrolled, names, posters
+        _timeline_sync, project, principal.user_id, enrolled, names, spans
     )
     out["can_post"] = _can_post(project, role, principal)
     return out
@@ -619,7 +680,7 @@ def _prepare_sync(
     user_id: str,
     enrolled: dict[str, set[str]],
     names: dict[str, str],
-    posters: set[str],
+    spans: Spans,
     profile: str,
     session_id: str,
     message: str,
@@ -662,7 +723,7 @@ def _prepare_sync(
     snapshot = time.time()
     with projects_db.connect_closing() as conn:
         prepares = projects_db.get_chat_prepares(conn, project.id, sid)
-    missed = missed_turns(_group_timeline(project, enrolled, names, posters), sid, prepares)
+    missed = missed_turns(_group_timeline(project, enrolled, names, spans), sid, prepares)
     with projects_db.connect_closing() as conn:
         projects_db.add_chat_prepare(
             conn,
@@ -705,14 +766,14 @@ async def chat_prepare(request: Request) -> dict[str, Any]:
     if len(message) > MESSAGE_MAX_CHARS * 5:
         raise HTTPException(status_code=413, detail="message is too long")
     _refuse_unless_poster(project, role, principal)
-    enrolled, names, posters = await _group(project, role, principal)
+    enrolled, names, spans = await _group(project, role, principal)
     return await asyncio.to_thread(
         _prepare_sync,
         project,
         principal.user_id,
         enrolled,
         names,
-        posters,
+        spans,
         profile,
         session_id,
         message,
@@ -768,3 +829,38 @@ def projects_api_refuse_archived(project) -> None:
     from hermes_cli.projects_api import _refuse_if_archived
 
     _refuse_if_archived(project, "chatting in it")
+
+
+_MEDIA_REF_RE = re.compile(r"/api/chat/media\?path=([^\s)\"'&<>\]]+)")
+
+
+def _shares_media_sync(project, enrolled, names, spans: Spans, path: str) -> bool:
+    from urllib.parse import unquote
+
+    from hermes_cli.file_registry import agent_home_slug
+
+    owner = path.split("/", 1)[0]
+    for r in _group_timeline(project, enrolled, names, spans):
+        if r["role"] != "user" or not r.get("person") or agent_home_slug(r["person"]) != owner:
+            continue
+        if any(unquote(ref) == path for ref in _MEDIA_REF_RE.findall(r.get("content") or "")):
+            return True
+    return False
+
+
+@router.get("/{slug}/chat/media")
+async def chat_media(request: Request) -> dict[str, Any]:
+    """Whether the caller may open the file at ``path``: one its sender
+    attached in this project's group chat, for anyone on the project
+    (viewers included) or an instance admin."""
+    project, role, _profiles, principal = await _require_read(request)
+    path = str(request.query_params.get("path") or "")
+    if not path:
+        raise HTTPException(status_code=422, detail="path is required")
+    on_project = role in ("lead", "member", "viewer") or project.owner_user_id == principal.user_id
+    if not (on_project or projects_api._instance_admin(principal)):
+        raise HTTPException(status_code=403, detail="not permitted")
+    enrolled, names, spans = await _group(project, role, principal)
+    if not await asyncio.to_thread(_shares_media_sync, project, enrolled, names, spans, path):
+        raise HTTPException(status_code=403, detail="not permitted")
+    return {"path": path, "shared": True}

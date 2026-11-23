@@ -8,7 +8,9 @@
  * under that principal's own prefix (`canReadMediaPath`) and only then signs. A
  * crafted path (traversal, another member's prefix) is rejected before anything
  * is signed — the ownership check is the isolation, and it is never delegated to
- * the client.
+ * the client. With `&project=<slug>`, another person's file also opens when
+ * they attached it in that project's group chat and the caller is on the
+ * project or an instance admin (`canReadChatMedia`; Python decides).
  *
  * The signed URL is used to confirm the object exists and then **stays on the
  * server**: it addresses Supabase as the server reaches it (loopback on the
@@ -22,8 +24,8 @@
 import { NextResponse } from "next/server";
 
 import { getPrincipal } from "@/lib/auth/principal";
+import { canReadChatMedia } from "@/lib/chat/project-media";
 import {
-  canReadMediaPath,
   createMediaSignedUrl,
   storageAvailable,
 } from "@/lib/supabase/storage";
@@ -36,14 +38,16 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
 
-  const path = new URL(request.url).searchParams.get("path") ?? "";
+  const params = new URL(request.url).searchParams;
+  const path = params.get("path") ?? "";
+  const project = params.get("project");
   if (!path) {
     return NextResponse.json(
       { error: "missing_path", detail: "A path query parameter is required." },
       { status: 400 },
     );
   }
-  if (!canReadMediaPath(principal, path)) {
+  if (!(await canReadChatMedia(principal, path, project))) {
     // Deliberately terse: never disclose whether another principal's object
     // exists.
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -61,7 +65,11 @@ export async function GET(request: Request): Promise<NextResponse> {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
     return NextResponse.json(
-      { path, url: mediaContentRef(path), expires_in: signed.expires_in },
+      {
+        path,
+        url: mediaContentRef(path, project ?? undefined),
+        expires_in: signed.expires_in,
+      },
       { headers: { "cache-control": "no-store" } },
     );
   } catch (err) {
