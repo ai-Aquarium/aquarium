@@ -168,6 +168,7 @@ describe("working drafts in Planning", () => {
     });
     fireEvent.click(await screen.findByRole("button", { name: /Draft · ada/ }));
     expect(document.querySelector('[data-component="PlaybookDraft"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Write playbook" })).toBeTruthy();
   });
 
   it("quotes a step into the chat with Ask about this", async () => {

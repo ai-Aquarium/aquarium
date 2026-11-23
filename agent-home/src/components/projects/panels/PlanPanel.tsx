@@ -498,7 +498,9 @@ export function PlanPanel({
             {drafting ? "Agent is drafting…" : "Draft with the agent"}
           </ActionButton>
         ) : null}
-        {!archived && !editing && !shownDraft ? (
+        {/* Over a draft, Edit would load the saved version hidden behind it;
+            before any version, Write playbook stays (nothing is hidden). */}
+        {!archived && !editing && !(shownDraft && selected != null) ? (
           <button
             type="button"
             data-component="EditPlaybook"
