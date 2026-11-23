@@ -34,7 +34,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Any, Optional
+import time
+from typing import Any, Iterable, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -47,6 +48,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/registry/projects")
 
 LINK_KIND = "conversation"
+# A person's conversation in the group chat. Links labelled CHAT_LABEL come
+# from before the group chat, when only their owner could read them: they
+# stay private and read-only.
+GROUP_LABEL = "project group chat"
 CHAT_LABEL = "project chat"
 BLOCK_OPEN = "[project chat:"
 BLOCK_CLOSE = "[/project chat]"
@@ -74,7 +79,7 @@ _APP_CONTEXT_RE = re.compile(r"^\[app context:[^\n]*\][ \t]*\r?\n?")
 _ATTACHMENT_NOTE_RE = re.compile(
     r"^\[The user (?:sent (?:a text document|a document|an image): '|attached ')"
 )
-_CATCH_UP_COUNT_RE = re.compile(r"^" + re.escape(CATCH_UP_HEADER) + r" (\d+) ", re.MULTILINE)
+_CATCH_UP_COUNT_RE = re.compile(r"^" + re.escape(CATCH_UP_HEADER) + r" (\d{1,6}) ", re.MULTILINE)
 
 
 def _short(text: Any, limit: int) -> str:
@@ -161,29 +166,37 @@ async def _display_name(user_id: str) -> Optional[str]:
         return None
 
 
-def _member_ids(project) -> set[str]:
+def _member_roles(project) -> dict[str, str]:
     with projects_db.connect_closing() as conn:
-        ids = {m["user_id"] for m in projects_db.get_project_members(conn, project.id)}
+        roles = {
+            m["user_id"]: m.get("role") or "member"
+            for m in projects_db.get_project_members(conn, project.id)
+        }
     if project.owner_user_id:
-        ids.add(project.owner_user_id)
-    return ids
+        roles[project.owner_user_id] = "lead"
+    return roles
 
 
-async def _group(project, role, principal) -> tuple[dict[str, set[str]], dict[str, str]]:
-    """Who the group chat spans: each person's active profiles and name.
+def _can_post(project, role, principal) -> bool:
+    """Who may add to the group chat: its leads and members (the project's
+    creator included). Viewers only read; an instance admin who is not on
+    the project has no turns the other members could see, so no post either."""
+    return role in ("lead", "member") or project.owner_user_id == principal.user_id
+
+
+async def _group(project, role, principal) -> tuple[dict[str, set[str]], dict[str, str], set[str]]:
+    """Who the group chat spans: each person's active profiles, their names,
+    and the people whose turns and messages appear (everyone but viewers).
 
     Members (any role, viewers included), the project's creator and instance
     admins see everyone's turns; anybody else who can read the project sees
     only their own.
     """
     caller = principal.user_id
+    roles = await asyncio.to_thread(_member_roles, project)
     ids = {caller}
-    if (
-        role is not None
-        or project.owner_user_id == caller
-        or projects_api._instance_admin(principal)
-    ):
-        ids |= await asyncio.to_thread(_member_ids, project)
+    if caller in roles or projects_api._instance_admin(principal):
+        ids |= set(roles)
     people = sorted(ids)
     profiles, names = await asyncio.gather(
         asyncio.gather(*(_chat_profiles(u) for u in people)),
@@ -193,18 +206,21 @@ async def _group(project, role, principal) -> tuple[dict[str, set[str]], dict[st
     shown = {u: (n or u) for u, n in zip(people, names)}
     if getattr(principal, "display", None):
         shown[caller] = str(principal.display)
-    return enrolled, {u: _short(n, 60) for u, n in shown.items()}
+    posters = {u for u in people if roles.get(u) != "viewer"}
+    return enrolled, {u: _short(n, 60) for u, n in shown.items()}, posters
 
 
-def _chat_links(project_id: str, user_id: Optional[str] = None) -> list[dict]:
-    """Project-chat links, oldest first (each person's canonical one leads);
-    only *user_id*'s when given."""
+def _chat_links(
+    project_id: str, user_id: Optional[str] = None, label: str = GROUP_LABEL
+) -> list[dict]:
+    """Group-chat links (or *label*'s), oldest first (each person's canonical
+    one leads); only *user_id*'s when given."""
     with projects_db.connect_closing() as conn:
         rows = projects_db.get_project_links(conn, project_id, kind=LINK_KIND)
     mine = [
         r
         for r in rows
-        if r.get("label") == CHAT_LABEL and (user_id is None or r.get("added_by") == user_id)
+        if r.get("label") == label and (user_id is None or r.get("added_by") == user_id)
     ]
     return sorted(mine, key=lambda r: (r.get("added_at") or 0, r.get("ref") or ""))
 
@@ -286,6 +302,14 @@ def _owned_sessions(links: list[dict], user_id: str, enrolled: set[str]) -> list
     return _group_sessions(links, {user_id: enrolled})
 
 
+def _private_sessions(project_id: str, user_id: str, enrolled: set[str]) -> list[dict]:
+    """*user_id*'s project chats from before the group chat: shown to them
+    only, read-only, never in anyone's catch-up."""
+    group = {link["ref"] for link in _chat_links(project_id, user_id)}
+    old = [link for link in _chat_links(project_id, user_id, CHAT_LABEL) if link["ref"] not in group]
+    return [{**s, "private": True} for s in _owned_sessions(old, user_id, enrolled)]
+
+
 def _member_notes(project_id: str, people: set[str]) -> list[dict]:
     """The members-only messages ("Ask agent" off) of people still in the group."""
     with projects_db.connect_closing() as conn:
@@ -316,6 +340,8 @@ def merge_timeline(
             row = {**m, "profile": s["profile"], "session_id": s["session_id"]}
             if s.get("person"):
                 row["person"] = s["person"]
+            if s.get("private"):
+                row["private"] = True
             if m["role"] == "user":
                 shown, meta = split_block(m["content"])
                 row["content"] = shown
@@ -332,16 +358,41 @@ def merge_timeline(
     return merged
 
 
-def missed_turns(timeline: list[dict], session_id: str) -> list[dict]:
-    """Everything in the group chat after *session_id*'s own last turn:
-    other members' messages and other conversations' replies."""
-    last = max(
-        (r["timestamp"] for r in timeline if r["session_id"] == session_id), default=None
+def missed_turns(
+    timeline: list[dict], session_id: str, prepares: Iterable[tuple[float, int]] = ()
+) -> list[dict]:
+    """Everything in the group chat that *session_id* has not been sent yet:
+    other members' messages and other conversations' replies after the
+    catch-up of its last sent turn.
+
+    *prepares* are ``(snapshot time, digest size)`` of its prepared turns. A
+    sent turn's digest covers the chat up to the snapshot of the prepare just
+    before it, so anything posted while that turn ran still reaches the next
+    one. A prepared digest the turn does not carry (the send became a steer
+    or was dropped) delivered nothing. With no prepare on record, the turn's
+    own time stands in.
+    """
+    sent = sorted(
+        (r["timestamp"], int(r.get("catch_up") or 0))
+        for r in timeline
+        if r["session_id"] == session_id and r["role"] == "user" and not r.get("sent_while_working")
     )
+    marks = sorted(prepares)
+    cutoff = None
+    previous = float("-inf")
+    for at, carried in sent:
+        mark = next((m for m in reversed(marks) if previous < m[0] <= at), None)
+        if mark is None:
+            cutoff = at
+        elif carried or not mark[1]:
+            cutoff = mark[0]
+        previous = at
     return [
         r
         for r in timeline
-        if r["session_id"] != session_id and (last is None or r["timestamp"] > last)
+        if r["session_id"] != session_id
+        and not r.get("private")
+        and (cutoff is None or r["timestamp"] > cutoff)
     ]
 
 
@@ -473,13 +524,30 @@ def proposals_since(conn, project_id: str, since: Optional[float]) -> list[dict]
     return out
 
 
-def _group_timeline(project, enrolled: dict[str, set[str]], names: dict[str, str]) -> list[dict]:
-    sessions = _group_sessions(_chat_links(project.id), enrolled)
-    return merge_timeline(sessions, _member_notes(project.id, set(enrolled)), names)
+def _group_sessions_of(project, enrolled: dict[str, set[str]], posters: set[str]) -> list[dict]:
+    shown = {u: p for u, p in enrolled.items() if u in posters}
+    return _group_sessions(_chat_links(project.id), shown)
 
 
-def _timeline_sync(project, user_id: str, enrolled: dict[str, set[str]], names: dict[str, str]) -> dict:
-    timeline = _group_timeline(project, enrolled, names)
+def _group_timeline(
+    project, enrolled: dict[str, set[str]], names: dict[str, str], posters: set[str]
+) -> list[dict]:
+    sessions = _group_sessions_of(project, enrolled, posters)
+    return merge_timeline(sessions, _member_notes(project.id, posters & set(enrolled)), names)
+
+
+def _timeline_sync(
+    project,
+    user_id: str,
+    enrolled: dict[str, set[str]],
+    names: dict[str, str],
+    posters: set[str],
+) -> dict:
+    sessions = _group_sessions_of(project, enrolled, posters)
+    sessions += _private_sessions(project.id, user_id, enrolled.get(user_id, set()))
+    timeline = merge_timeline(
+        sessions, _member_notes(project.id, posters & set(enrolled)), names
+    )
     since = timeline[0]["timestamp"] if timeline else None
     with projects_db.connect_closing() as conn:
         proposals = proposals_since(conn, project.id, since)
@@ -508,9 +576,11 @@ def _timeline_sync(project, user_id: str, enrolled: dict[str, set[str]], names: 
 @router.get("/{slug}/chat/timeline")
 async def chat_timeline(request: Request) -> dict[str, Any]:
     project, role, _profiles, principal = await _require_read(request)
-    enrolled, names = await _group(project, role, principal)
-    out = await asyncio.to_thread(_timeline_sync, project, principal.user_id, enrolled, names)
-    out["can_post"] = projects_api._can_member_act(project, role, principal)
+    enrolled, names, posters = await _group(project, role, principal)
+    out = await asyncio.to_thread(
+        _timeline_sync, project, principal.user_id, enrolled, names, posters
+    )
+    out["can_post"] = _can_post(project, role, principal)
     return out
 
 
@@ -537,11 +607,19 @@ def _canonical_sid(db, links: list[dict], profile: str, user_id: str) -> Optiona
     return None
 
 
+def _visible_turns(db, sid: str) -> bool:
+    return any(
+        m.get("role") in ("user", "assistant")
+        for m in db.get_messages(db.resolve_resume_session_id(sid) or sid)
+    )
+
+
 def _prepare_sync(
     project,
     user_id: str,
     enrolled: dict[str, set[str]],
     names: dict[str, str],
+    posters: set[str],
     profile: str,
     session_id: str,
     message: str,
@@ -557,26 +635,42 @@ def _prepare_sync(
         links = _chat_links(project.id, user_id)
         sid = _canonical_sid(db, links, profile, user_id)
         if sid is None:
+            # Joining the group chat must not publish an existing transcript:
+            # an earlier private project chat or any other conversation.
+            ref = db.resolve_session_id(session_id)
+            private = {link["ref"] for link in _chat_links(project.id, user_id, CHAT_LABEL)}
+            if ref in private or _visible_turns(db, ref):
+                raise HTTPException(
+                    status_code=409, detail="Start a new conversation for the group chat"
+                )
             with projects_db.connect_closing() as conn:
                 projects_db.add_project_link(
                     conn,
                     project_id=project.id,
                     kind=LINK_KIND,
                     profile=profile,
-                    ref=db.resolve_session_id(session_id),
-                    label=CHAT_LABEL,
+                    ref=ref,
+                    label=GROUP_LABEL,
                     added_by=user_id,
                 )
             links = _chat_links(project.id, user_id)
             # Two pages racing both link; the oldest link wins for both.
             sid = _canonical_sid(db, links, profile, user_id)
-        empty = not any(
-            m.get("role") in ("user", "assistant")
-            for m in db.get_messages(db.resolve_resume_session_id(sid) or sid)
-        )
+        empty = not _visible_turns(db, sid)
     finally:
         db.close()
-    missed = missed_turns(_group_timeline(project, enrolled, names), sid)
+    snapshot = time.time()
+    with projects_db.connect_closing() as conn:
+        prepares = projects_db.get_chat_prepares(conn, project.id, sid)
+    missed = missed_turns(_group_timeline(project, enrolled, names, posters), sid, prepares)
+    with projects_db.connect_closing() as conn:
+        projects_db.add_chat_prepare(
+            conn,
+            project_id=project.id,
+            session_id=sid,
+            snapshot_at=snapshot,
+            digest_size=len(missed),
+        )
     digest = catch_up_digest(missed)
     context = ""
     if empty:
@@ -610,9 +704,18 @@ async def chat_prepare(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="session_id and message are required")
     if len(message) > MESSAGE_MAX_CHARS * 5:
         raise HTTPException(status_code=413, detail="message is too long")
-    enrolled, names = await _group(project, role, principal)
+    _refuse_unless_poster(project, role, principal)
+    enrolled, names, posters = await _group(project, role, principal)
     return await asyncio.to_thread(
-        _prepare_sync, project, principal.user_id, enrolled, names, profile, session_id, message
+        _prepare_sync,
+        project,
+        principal.user_id,
+        enrolled,
+        names,
+        posters,
+        profile,
+        session_id,
+        message,
     )
 
 
@@ -641,6 +744,7 @@ async def chat_post_message(request: Request) -> dict[str, Any]:
     catch-up."""
     project, role, _profiles, principal = await _require_write(request, judgement=True)
     projects_api_refuse_archived(project)
+    _refuse_unless_poster(project, role, principal)
     content = str((await _body(request)).get("content") or "").strip()
     if not content:
         raise HTTPException(status_code=422, detail="content is required")
@@ -653,6 +757,11 @@ async def chat_post_message(request: Request) -> dict[str, Any]:
         60,
     )
     return await asyncio.to_thread(_post_note_sync, project, principal.user_id, person, content)
+
+
+def _refuse_unless_poster(project, role, principal) -> None:
+    if not _can_post(project, role, principal):
+        raise HTTPException(status_code=403, detail="Join the project to post in its chat")
 
 
 def projects_api_refuse_archived(project) -> None:

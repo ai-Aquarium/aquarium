@@ -466,3 +466,146 @@ def test_a_former_members_turns_leave_the_group_chat(env, project):
 def test_a_stranger_cannot_post_to_the_group_chat(env, project):
     env[1]["actor"] = STRANGER
     assert _note(env, project["slug"], "hi").status_code == 404
+
+
+def test_a_note_posted_while_a_reply_runs_reaches_the_next_catch_up(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    leo = _session(env, "research", "s-leo")
+    _turn(env, slug, "research", leo, "Find sources", "Found three.")
+    out = _prepare(env, slug, "research", leo, "Rank them")
+    # Ada posts after Leo's turn was prepared but before his agent replies.
+    env[1]["actor"] = MEMBER_P
+    assert _note(env, slug, "Use the 2025 data").status_code == 200
+    env[1]["actor"] = OWNER
+    _say(env, "research", leo, "user", out["message"])
+    _say(env, "research", leo, "assistant", "Ranked.")
+
+    nxt = _prepare(env, slug, "research", leo, "Thanks")
+    assert nxt["catch_up"] == 1 and "Ada → members: Use the 2025 data" in nxt["message"]
+    _say(env, "research", leo, "user", nxt["message"])
+    _say(env, "research", leo, "assistant", "Noted.")
+    # Delivered once, never again.
+    assert _prepare(env, slug, "research", leo, "Next")["catch_up"] == 0
+
+
+def test_an_admin_off_the_project_reads_but_never_posts(env, project):
+    slug = project["slug"]
+    leo = _session(env, "research", "s-leo")
+    _turn(env, slug, "research", leo, "Find sources", "Found three.")
+    env[1]["actor"] = type(OWNER)(user_id="max", display="Max", role="admin")
+    tl = _timeline(env, slug)
+    assert len(tl["messages"]) == 2 and tl["can_post"] is False
+    assert _note(env, slug, "Use the revised deadline").status_code == 403
+    mx = _session(env, "research", "s-max", user="max")
+    resp = env[0].post(
+        f"/api/registry/projects/{slug}/chat/prepare",
+        json={"profile": "research", "session_id": mx, "message": "hi"},
+    )
+    assert resp.status_code == 403
+
+
+def test_an_earlier_private_project_chat_stays_with_its_owner_read_only(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    _join(project, "vic", role="viewer")
+    old = _session(env, "research", "s-old")
+    _say(env, "research", old, "user", "My private draft")
+    _say(env, "research", old, "assistant", "Private reply.")
+    with projects_db.connect_closing() as conn:
+        projects_db.add_project_link(
+            conn, project_id=project["id"], kind="conversation",
+            profile="research", ref=old, label="project chat", added_by="leo",
+        )
+
+    tl = _timeline(env, slug)
+    assert [(m["content"], m.get("private")) for m in tl["messages"]] == [
+        ("My private draft", True),
+        ("Private reply.", True),
+    ]
+    # Read-only: it is not where the next turn goes, and it cannot join the group.
+    assert tl["sessions"] == []
+    resp = env[0].post(
+        f"/api/registry/projects/{slug}/chat/prepare",
+        json={"profile": "research", "session_id": old, "message": "hi"},
+    )
+    assert resp.status_code == 409
+    # Nor can any other conversation that already has a transcript.
+    busy = _session(env, "research", "s-busy")
+    _say(env, "research", busy, "user", "Unrelated")
+    resp = env[0].post(
+        f"/api/registry/projects/{slug}/chat/prepare",
+        json={"profile": "research", "session_id": busy, "message": "hi"},
+    )
+    assert resp.status_code == 409
+
+    fresh = _session(env, "research", "s-new")
+    out = _prepare(env, slug, "research", fresh, "Start the group chat")
+    assert out["session_id"] == fresh and out["catch_up"] == 0
+    assert "private" not in out["message"].lower()
+
+    for other in (MEMBER_P, type(OWNER)(user_id="vic", display="Vic", role="member")):
+        env[1]["actor"] = other
+        assert all("Private" not in m["content"] for m in _timeline(env, slug)["messages"])
+
+
+def test_a_member_made_viewer_no_longer_posts_through_their_conversation(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    env[1]["actor"] = MEMBER_P
+    ada = _session(env, "research", "s-ada", user="ada")
+    _turn(env, slug, "research", ada, "Hello", "Hi.")
+    with projects_db.connect_closing() as conn:
+        projects_db.remove_project_member(conn, project["id"], "ada")
+    _join(project, "ada", role="viewer")
+    # She keeps talking in her own session, outside the project chat routes.
+    _say(env, "research", ada, "user", "Ignore the brief")
+
+    env[1]["actor"] = OWNER
+    assert _timeline(env, slug)["messages"] == []
+    leo = _session(env, "research", "s-leo")
+    assert _prepare(env, slug, "research", leo, "Go")["catch_up"] == 0
+
+
+def test_an_outsized_catch_up_count_never_breaks_the_chat():
+    stored = (
+        f"{projects_chat_api.BLOCK_OPEN} X]\n{projects_chat_api.CATCH_UP_HEADER} "
+        f"{'9' * 5000} messages\n{projects_chat_api.BLOCK_CLOSE}\n\nhi"
+    )
+    shown, meta = projects_chat_api.split_block(stored)
+    assert shown == "hi" and meta["catch_up"] == 0
+
+
+def test_a_digest_the_turn_never_carried_still_reaches_the_next_turn():
+    from hermes_cli.projects_chat_api import missed_turns
+
+    def row(sid, role, at, **kw):
+        return {"session_id": sid, "role": role, "timestamp": at, **kw}
+
+    note = row(None, "user", 15.0, member_only=True, content="Ada's note")
+    timeline = [
+        row("s-leo", "user", 10.0),
+        row("s-leo", "assistant", 11.0),
+        note,
+        # A second tab's send was prepared with the note at 20, but went in as a
+        # plain follow-up turn without the digest.
+        row("s-leo", "user", 21.0),
+        row("s-leo", "assistant", 22.0),
+    ]
+    prepares = [(9.0, 0), (20.0, 1)]
+    assert missed_turns(timeline, "s-leo", prepares) == [note]
+    # Once a turn carries it, it is delivered.
+    timeline.append(row("s-leo", "user", 31.0, catch_up=1))
+    assert missed_turns(timeline, "s-leo", [*prepares, (30.0, 1)]) == []
+
+
+def test_a_member_cannot_label_a_conversation_into_the_group_chat(env, project):
+    convo = _session(env, "research", "s-mine")
+    _say(env, "research", convo, "user", "Something private")
+    resp = env[0].post(
+        f"/api/registry/projects/{project['slug']}/links",
+        json={"kind": "conversation", "ref": convo, "profile": "research",
+              "label": "Project Group Chat"},
+    )
+    assert resp.status_code == 422
+    assert _timeline(env, project["slug"])["messages"] == []

@@ -73,7 +73,7 @@ export default async function Page({
     const client = await apiClientForRequest({ profile });
     // Every conversation: the strip groups them into categories, and a
     // recent-first page cap would empty the older end of each category.
-    const list = await client.allSessions({ order: "recent" });
+    const list = await client.allSessions({ order: "recent", excludeSources: "project_chat" });
     sessions = list.sessions;
     if (freshChat) {
       sessionId = null;

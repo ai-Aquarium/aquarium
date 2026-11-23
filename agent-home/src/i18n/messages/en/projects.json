@@ -232,7 +232,9 @@
       "askAgentOn": "{profile} answers your message",
       "askAgentOff": "Only the members see it; agents read it next time they answer",
       "viewerReadOnly": "You can read this chat. Viewers can't post.",
-      "memberSendFailed": "Couldn't send. Try again."
+      "memberSendFailed": "Couldn't send. Try again.",
+      "memberNoFiles": "Files go to the agent only. Turn on Ask agent to send them.",
+      "privateTo": "To {profile} · your earlier private chat, only you can see it"
     }
   },
   "log": {

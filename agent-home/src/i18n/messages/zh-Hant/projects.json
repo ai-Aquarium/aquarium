@@ -232,7 +232,9 @@
       "askAgentOn": "{profile} 會回覆你的訊息",
       "askAgentOff": "只有成員看得到；代理下次回覆時會讀到",
       "viewerReadOnly": "你可以閱讀此聊天，但檢視者不能發言。",
-      "memberSendFailed": "傳送失敗，請再試一次。"
+      "memberSendFailed": "傳送失敗，請再試一次。",
+      "memberNoFiles": "檔案只會傳給代理。請開啟「詢問代理」再傳送。",
+      "privateTo": "給 {profile} · 你之前的私人對話，只有你看得到"
     }
   },
   "log": {

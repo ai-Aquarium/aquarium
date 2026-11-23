@@ -183,6 +183,20 @@ CREATE TABLE IF NOT EXISTS project_chat_messages (
 CREATE INDEX IF NOT EXISTS idx_project_chat_messages
     ON project_chat_messages(project_id, created_at);
 
+-- Each project-chat turn prepared for a member's conversation, with the
+-- moment its catch-up digest was read. The next digest starts from the
+-- snapshot of the last turn that was actually sent, not from the reply.
+CREATE TABLE IF NOT EXISTS project_chat_prepares (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    session_id  TEXT NOT NULL,
+    snapshot_at REAL NOT NULL,
+    digest_size INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_chat_prepares
+    ON project_chat_prepares(project_id, session_id, snapshot_at);
+
 -- ── Projects feature (design §2.2) ───────────────────────────────────────────────
 
 -- People. A member is a *person* (box-wide user id); a participant profile is
@@ -2024,6 +2038,39 @@ def add_chat_message(
             "SELECT * FROM project_chat_messages WHERE id = ?", (cur.lastrowid,)
         ).fetchone()
     )
+
+
+def add_chat_prepare(
+    conn: sqlite3.Connection,
+    *,
+    project_id: str,
+    session_id: str,
+    snapshot_at: float,
+    digest_size: int = 0,
+) -> None:
+    """Record that a turn for *session_id* was prepared with a catch-up read at
+    *snapshot_at*."""
+    with write_txn(conn):
+        conn.execute(
+            "INSERT INTO project_chat_prepares "
+            "(project_id, session_id, snapshot_at, digest_size) VALUES (?, ?, ?, ?)",
+            (project_id, session_id, snapshot_at, digest_size),
+        )
+
+
+def get_chat_prepares(
+    conn: sqlite3.Connection, project_id: str, session_id: str
+) -> List[tuple]:
+    """``(snapshot time, messages in its digest)`` of *session_id*'s prepared
+    turns, oldest first."""
+    return [
+        (float(r[0]), int(r[1] or 0))
+        for r in conn.execute(
+            "SELECT snapshot_at, digest_size FROM project_chat_prepares "
+            "WHERE project_id = ? AND session_id = ? ORDER BY snapshot_at",
+            (project_id, session_id),
+        ).fetchall()
+    ]
 
 
 def get_chat_messages(conn: sqlite3.Connection, project_id: str) -> List[dict]:

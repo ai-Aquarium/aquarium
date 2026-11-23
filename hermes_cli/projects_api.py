@@ -2651,6 +2651,12 @@ async def add_link(request: Request) -> dict[str, Any]:
     profile = str(body.get("profile") or "default").strip()
     if not kind or not ref:
         raise HTTPException(status_code=422, detail="kind and ref are required")
+    from hermes_cli.projects_chat_api import GROUP_LABEL
+
+    if str(body.get("label") or "").strip().lower() == GROUP_LABEL:
+        # Only the chat itself links a conversation to the group, after
+        # checking it has no transcript to publish.
+        raise HTTPException(status_code=422, detail="That label is reserved for the project chat")
 
     def _add_sync() -> dict:
         with projects_db.connect_closing() as conn:
