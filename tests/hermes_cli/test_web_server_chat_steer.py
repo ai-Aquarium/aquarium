@@ -522,6 +522,26 @@ def turns(monkeypatch):
     return t
 
 
+def test_a_run_ending_while_its_buffer_replays_still_streams_its_last_events():
+    """Re-attaching replays the buffer, yielding between frames; a run that
+    ends meanwhile must still deliver what it published after the snapshot."""
+    from hermes_cli.web_server import _chat_run_frames, _chat_run_publish
+
+    entry = {"buffer": [("run.accepted", {"run_id": "r"})], "subs": [], "done": False}
+
+    async def _scenario():
+        frames = _chat_run_frames(entry)
+        first = await frames.__anext__()
+        _chat_run_publish(entry, ("assistant.completed", {"content": "hi"}))
+        _chat_run_publish(entry, ("done", {"run_id": "r"}))
+        _chat_run_publish(entry, None)
+        return [first] + [f async for f in frames]
+
+    body = b"".join(asyncio.run(_scenario())).decode()
+    assert [n for n, _ in _events(body)] == ["run.accepted", "assistant.completed", "done"]
+    assert entry["subs"] == []
+
+
 def test_queue_runs_each_message_as_its_own_turn_in_order(base, chat, turns):
     turns.hold("first")
 

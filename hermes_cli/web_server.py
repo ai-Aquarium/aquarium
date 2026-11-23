@@ -13595,36 +13595,46 @@ async def session_chat_stream_attach(session_id: str, request: Request):
     if entry is None:
         raise HTTPException(status_code=404, detail="no re-attachable run")
 
-    queue: "asyncio.Queue" = asyncio.Queue()
-
-    async def _events():
-        entry["subs"].append(queue)
-        try:
-            snapshot = list(entry["buffer"])
-            for name, payload in snapshot:
-                data = json.dumps(payload, ensure_ascii=False)
-                yield f"event: {name}\ndata: {data}\n\n".encode("utf-8")
-            if entry["done"]:
-                return
-            while True:
-                item = await queue.get()
-                if item is None:
-                    break
-                name, payload = item
-                data = json.dumps(payload, ensure_ascii=False)
-                yield f"event: {name}\ndata: {data}\n\n".encode("utf-8")
-        finally:
-            try:
-                entry["subs"].remove(queue)
-            except ValueError:
-                pass
-
     headers = {
         "Cache-Control": "no-cache, no-transform",
         "X-Accel-Buffering": "no",
         "X-Hermes-Session-Id": session_id,
     }
-    return StreamingResponse(_events(), media_type="text/event-stream", headers=headers)
+    return StreamingResponse(
+        _chat_run_frames(entry), media_type="text/event-stream", headers=headers
+    )
+
+
+async def _chat_run_frames(entry: dict):
+    """A run's SSE frames for one subscriber: its buffered events, then live
+    ones until it ends.
+
+    Whether the run had ended is read together with the snapshot: the replay
+    yields, and a run that finishes meanwhile has put its last events and the
+    end marker on this subscriber's queue, which must still be drained.
+    """
+    queue: "asyncio.Queue" = asyncio.Queue()
+    entry["subs"].append(queue)
+    try:
+        snapshot = list(entry["buffer"])
+        finished = entry["done"]
+        for name, payload in snapshot:
+            data = json.dumps(payload, ensure_ascii=False)
+            yield f"event: {name}\ndata: {data}\n\n".encode("utf-8")
+        if finished:
+            return
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            name, payload = item
+            data = json.dumps(payload, ensure_ascii=False)
+            yield f"event: {name}\ndata: {data}\n\n".encode("utf-8")
+    finally:
+        try:
+            entry["subs"].remove(queue)
+        except ValueError:
+            pass
 
 
 @app.post("/api/sessions/{session_id}/chat/stream/cancel")

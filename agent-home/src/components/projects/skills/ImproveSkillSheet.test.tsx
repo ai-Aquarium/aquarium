@@ -48,10 +48,14 @@ const onClose = vi.fn();
 const sheet = (profile = "coder") =>
   render(<ImproveSkillSheet project={{ slug: "site-relaunch", name: "Site relaunch" }} skill={{ name: "pdf-tidy", profile }} onClose={onClose} />);
 
-describe("ImproveSkillSheet", () => {
+// Each step waits on several mocked fetches and re-renders; a loaded CI
+// runner can take longer than findBy's 1s default.
+const SLOW = { timeout: 5_000 };
+
+describe("ImproveSkillSheet", { timeout: 20_000 }, () => {
   it("shows only this project's runs as evidence, scoped to the skill's profile", async () => {
     sheet();
-    expect(await screen.findByText("Hero banner PDF")).toBeTruthy();
+    expect(await screen.findByText("Hero banner PDF", {}, SLOW)).toBeTruthy();
     expect(screen.queryByText("Acme merger memo")).toBeNull();
     expect(screen.getByRole("dialog", { name: "Improve pdf-tidy with AI" })).toBeTruthy();
     expect(screen.getByText("Evidence: project Site relaunch")).toBeTruthy();
@@ -65,18 +69,18 @@ describe("ImproveSkillSheet", () => {
 
   it("starts a project-scoped improve chat, proposes a draft and saves it credited to the chat", async () => {
     sheet();
-    fireEvent.click(await screen.findByText("Hero banner PDF"));
+    fireEvent.click(await screen.findByText("Hero banner PDF", {}, SLOW));
     const box = screen.getByLabelText("Message to the agent") as HTMLTextAreaElement;
     expect(box.value).toContain("run #1");
     fireEvent.change(box, { target: { value: "Why did this fail?" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    await screen.findByRole("region", { name: "Proposed SKILL.md" });
+    await screen.findByRole("region", { name: "Proposed SKILL.md" }, SLOW);
     expect(bodyOf(callsTo("/api/skills/improve/start")[0])).toEqual({ name: "pdf-tidy", project: "site-relaunch", profile: "coder" });
     expect(bodyOf(callsTo("/api/skills/improve/message")[0])).toEqual({ session_id: "imp-1", text: "Why did this fail?", profile: "coder" });
 
     fireEvent.click(screen.getByRole("button", { name: /Save as draft v3/ }));
-    await screen.findByText(/Saved as draft v3/);
+    await screen.findByText(/Saved as draft v3/, {}, SLOW);
     expect(bodyOf(callsTo("/api/skills/versions/draft")[0])).toMatchObject({
       name: "pdf-tidy",
       session_id: "imp-1",
