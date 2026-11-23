@@ -111,6 +111,26 @@ describe("working drafts in Planning", () => {
     expect(draftView.querySelector('[data-step="send"]')?.getAttribute("data-change")).toBeNull();
   });
 
+  it("labels drafts by the owner's display name, else their user id", async () => {
+    vi.stubGlobal(
+      "fetch",
+      server([
+        draft({ display_name: "Leo Lau" }),
+        draft({ user_id: "ada", display_name: null, mine: false, can_edit: false, can_discard: false }),
+      ]),
+    );
+    mount();
+    const chip = await waitFor(() => {
+      const el = document.querySelector('[data-draft="leo"]');
+      expect(el?.getAttribute("aria-pressed")).toBe("true");
+      return el as HTMLElement;
+    });
+    expect(chip.textContent).toContain("Draft · Leo Lau");
+    expect(document.querySelector('[data-draft="ada"]')?.textContent).toContain("Draft · ada");
+    const draftView = document.querySelector('[data-component="PlaybookDraft"]') as HTMLElement;
+    expect(within(draftView).getAllByText(/Draft · Leo Lau \(from v5\)/).length).toBeGreaterThan(0);
+  });
+
   it("saves the owner's draft as the next proposed version", async () => {
     const fetchMock = server([draft()]);
     vi.stubGlobal("fetch", fetchMock);

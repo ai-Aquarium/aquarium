@@ -2723,6 +2723,8 @@ export interface PlaybookRev {
 export interface PlaybookDraft {
   project_id: string;
   user_id: string;
+  /** The owner's display name; null when they have none (show `user_id`). */
+  display_name?: string | null;
   /** The revision it was started from; 0 when started from scratch. */
   base_rev: number;
   body: string;

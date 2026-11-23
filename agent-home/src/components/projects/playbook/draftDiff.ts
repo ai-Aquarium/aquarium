@@ -48,6 +48,11 @@ export function draftChanges(
 }
 
 /** The quote "Ask about this" puts in the project chat's composer. */
+/** Who a draft belongs to, as people read it: their display name, else their id. */
+export function draftOwner(draft: { user_id: string; display_name?: string | null }): string {
+  return draft.display_name?.trim() || draft.user_id;
+}
+
 export function quoteForChat(where: string, text: string): string {
   const lines = text.trim().split(/\r?\n/).map((line) => `> ${line}`);
   return `> **${where}**\n${lines.join("\n")}\n\n`;

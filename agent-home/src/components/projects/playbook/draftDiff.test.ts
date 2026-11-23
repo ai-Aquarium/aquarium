@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PlaybookStep } from "@/types";
 
-import { draftChanges, quoteForChat } from "./draftDiff";
+import { draftChanges, draftOwner, quoteForChat } from "./draftDiff";
 
 const step = (key: string, extra: Partial<PlaybookStep> = {}): PlaybookStep => ({
   key,
@@ -49,5 +49,14 @@ describe("quoteForChat", () => {
     expect(quoteForChat("v5 · step 2", "Pull the export\nfrom the CRM")).toBe(
       "> **v5 · step 2**\n> Pull the export\n> from the CRM\n\n",
     );
+  });
+});
+
+describe("draftOwner", () => {
+  it("names the owner by display name, falling back to the user id", () => {
+    expect(draftOwner({ user_id: "u-1", display_name: "Leo" })).toBe("Leo");
+    expect(draftOwner({ user_id: "u-1", display_name: null })).toBe("u-1");
+    expect(draftOwner({ user_id: "u-1", display_name: "  " })).toBe("u-1");
+    expect(draftOwner({ user_id: "u-1" })).toBe("u-1");
   });
 });

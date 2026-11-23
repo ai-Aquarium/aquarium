@@ -8,14 +8,14 @@ import { useT } from "@/i18n";
 import type { PlaybookDraft, PlaybookRev } from "@/types";
 
 import { AskAboutButton } from "./AskAbout";
-import { draftChanges } from "./draftDiff";
+import { draftChanges, draftOwner } from "./draftDiff";
 
 /** `Draft · Leo (from v5)`: a draft has no number until it is saved. */
 export function useDraftLabel(): (draft: PlaybookDraft) => string {
   const t = useT("playbook");
   return (draft) =>
     t("draft.label", {
-      who: draft.user_id,
+      who: draftOwner(draft),
       from: draft.base_rev > 0 ? t("draft.from", { rev: draft.base_rev }) : t("draft.fromScratch"),
     });
 }
@@ -61,7 +61,7 @@ export function DraftView({
           <b>{label}</b> ·{" "}
           {draft.mine && draft.can_edit
             ? t("draft.bannerMine", { base: baseName })
-            : t("draft.bannerOther", { who: draft.user_id, base: baseName })}
+            : t("draft.bannerOther", { who: draftOwner(draft), base: baseName })}
         </p>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
           {changes.count > 0
@@ -69,7 +69,7 @@ export function DraftView({
             : t("draft.noChanges", { base: baseName })}
           {" · "}
           {t("draft.edited", {
-            who: draft.updated_by === "agent" ? t("draft.agent") : (draft.updated_by ?? draft.user_id),
+            who: draft.updated_by === "agent" ? t("draft.agent") : draft.updated_by && draft.updated_by !== draft.user_id ? draft.updated_by : draftOwner(draft),
             when: timeLabel(draft.updated_at),
           })}
         </p>

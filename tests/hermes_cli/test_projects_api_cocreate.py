@@ -222,3 +222,22 @@ def test_discard_with_a_stale_version_keeps_the_newer_draft(env):
     assert current["body"] == "two"
     ok = client.delete(_url(project, f"/me?expected_version={current['version']}"))
     assert ok.status_code == 200
+
+
+def test_drafts_carry_the_owners_display_name(env, monkeypatch):
+    client, state = env
+    project = _project_with_active_plan(env)
+
+    async def _name(user_id):
+        return {"leo": "Leo Lau"}.get(user_id)
+
+    monkeypatch.setattr(projects_chat_api, "_display_name", _name)
+    client.put(_url(project, "/me"), json={"body": "Leo's idea"})
+    state["actor"] = MEMBER_P
+    client.put(_url(project, "/me"), json={"body": "Ada's idea"})
+
+    names = {d["user_id"]: d["display_name"] for d in client.get(_url(project)).json()["drafts"]}
+    assert names == {"leo": "Leo Lau", "ada": None}
+    assert client.get(_url(project, "/me")).json()["draft"]["display_name"] is None
+    state["actor"] = OWNER
+    assert client.get(_url(project, "/me")).json()["draft"]["display_name"] == "Leo Lau"

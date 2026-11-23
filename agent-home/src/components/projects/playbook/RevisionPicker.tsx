@@ -4,6 +4,7 @@ import { useT } from "@/i18n";
 import type { PlaybookAncestor, PlaybookDraft, PlaybookRev } from "@/types";
 import { useTimeLabel } from "@/components/projects/useTimeLabel";
 import { proposalBase, revisionState } from "@/components/projects/playbook/revisions";
+import { draftOwner } from "@/components/projects/playbook/draftDiff";
 
 /**
  * The playbook's versions as a row of chips, oldest first (v1 v2 … v5
@@ -89,7 +90,7 @@ export function RevisionPicker({
                   : "border-[var(--color-warn)] text-[var(--color-warn-text)]"
               }`}
             >
-              {t("draft.chip", { who: draft.user_id })}
+              {t("draft.chip", { who: draftOwner(draft) })}
               <span className="font-normal">
                 {draft.base_rev > 0 ? t("draft.from", { rev: draft.base_rev }) : t("draft.fromScratch")}
               </span>

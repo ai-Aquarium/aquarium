@@ -945,7 +945,7 @@ def _print_draft(draft: Optional[dict]) -> None:
               "from the active revision.")
         return
     base = draft.get("base_rev") or 0
-    print(f"Draft · {draft.get('user_id')} (from "
+    print(f"Draft · {draft.get('display_name') or draft.get('user_id')} (from "
           f"{'v' + str(base) if base else 'scratch'}) · version {draft.get('version')}")
     if draft.get("body"):
         print(draft["body"])
