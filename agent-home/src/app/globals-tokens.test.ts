@@ -70,6 +70,7 @@ describe("globals.css tokens", () => {
     );
     // Set from component style props at runtime.
     defined.add("--coral-delay");
+    defined.add("--dock-w"); // ProjectChatDock: the saved desktop width
     // Set on <html> from window.visualViewport (useKeyboardViewport).
     defined.add("--vv-height");
     defined.add("--vv-top");
