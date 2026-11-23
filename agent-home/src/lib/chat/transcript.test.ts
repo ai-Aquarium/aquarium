@@ -340,3 +340,16 @@ describe("stripInjectedContext (attachment notes the backend prepends)", () => {
     expect(stripInjectedContext(`${CTX}\nhi`)).toBe("hi");
   });
 });
+
+describe("stripInjectedContext (project chat block)", () => {
+  it("shows only what the person typed, with or without the app-context line", () => {
+    const block = "[project chat: P12 · Digest]\nProject context:\nGoal: x\n\nCatch-up: 2 messages …\n- finance: hi\n[/project chat]\n\n";
+    expect(stripInjectedContext(`${block}What next?`)).toBe("What next?");
+    expect(stripInjectedContext(`[app context: page /projects/digest]\n${block}What next?`)).toBe("What next?");
+  });
+
+  it("leaves a turn that only mentions the marker alone", () => {
+    const text = "Why does [project chat: x] appear?";
+    expect(stripInjectedContext(text)).toBe(text);
+  });
+});

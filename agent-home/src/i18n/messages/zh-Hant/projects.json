@@ -198,7 +198,33 @@
     "openHint": "開啟對話（Ctrl/⌘+.）",
     "openUnread": "開啟對話，{count} 則未讀",
     "resize": "調整對話寬度",
-    "unavailable": "暫時無法載入對話。"
+    "unavailable": "暫時無法載入對話。",
+    "chat": {
+      "picker": "回答者",
+      "pickerAria": "回答下一則訊息的設定檔",
+      "to": "給 {profile}",
+      "caughtUp": "已向 {profile} 補上 {count} 則訊息",
+      "seeded": "已向 {profile} 提供項目背景",
+      "catchUpNext": "正在為 {profile} 補上 {count} 則訊息：摘要會放在你下一則訊息的開頭。",
+      "seedNext": "{profile} 會先收到項目簡介、生效中的流程及上次執行的回顧。",
+      "empty": "與你的代理一起規劃這個項目。選擇回答者；所有人的對話會按順序顯示在這裡。",
+      "olderHidden": "較早的訊息未顯示。",
+      "switchBusy": "請等回覆完成後再切換設定檔。",
+      "proposal": {
+        "title": "流程 v{rev}",
+        "proposed": "建議",
+        "active": "生效中",
+        "added": "新增 {count} 個步驟",
+        "changed": "{count} 個已更改",
+        "removed": "{count} 個已移除",
+        "noChange": "步驟相同",
+        "by": "由 {who} 提出",
+        "review": "檢視",
+        "activate": "設為生效",
+        "activating": "設定中…",
+        "failed": "無法設為生效。"
+      }
+    }
   },
   "log": {
     "filterAria": "按執行者顯示",

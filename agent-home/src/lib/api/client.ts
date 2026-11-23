@@ -4122,6 +4122,27 @@ export class HermesApiClient {
     );
   }
 
+  // ── Projects redesign: project chat ──
+
+  async projectChatTimeline(
+    slug: string,
+  ): Promise<import("@/types").ProjectChatTimeline> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/chat/timeline`,
+    );
+  }
+
+  /** Link `session_id` to the project chat and get the user turn to send. */
+  async prepareProjectChat(
+    slug: string,
+    body: { profile: string; session_id: string; message: string },
+  ): Promise<import("@/types").ProjectChatPrepared> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/chat/prepare`,
+      { method: "POST", json: body },
+    );
+  }
+
   // ── Projects redesign: outputs ──
 
   /** Every file the project's runs and cards produced, newest first. */

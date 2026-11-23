@@ -104,6 +104,8 @@ export interface ChatConversationOptions {
   onSessionsStale: () => void;
   /** Mounted but off screen (a minimized dock): don't mark anything read. */
   hidden?: boolean;
+  /** Project chat: every turn joins this project's chat timeline. */
+  projectSlug?: string;
 }
 
 /**
@@ -122,6 +124,7 @@ export function useChatConversation({
   findSession,
   hidden = false,
   onSessionsStale,
+  projectSlug,
 }: ChatConversationOptions) {
   const path = (p: string) => withProfileQuery(p, profile);
   const sessionsStale = () => {
@@ -708,6 +711,7 @@ export function useChatConversation({
           attachments,
           signal: controller.signal,
           profile,
+          projectSlug,
         },
         withSessionNotice(makeTurnHandlers(turnKey, setLive), text),
       );

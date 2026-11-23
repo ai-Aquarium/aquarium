@@ -9,7 +9,10 @@ import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, requirePrincipal } from "@/lib/auth/principal";
 import { readSession } from "@/lib/auth/session";
 import { storageConfigured } from "@/lib/env";
+import { activeEnrolments } from "@/lib/api/my-profiles";
 import type {
+  ProfileSummary,
+  ProjectChatTimeline,
   ProjectBoardView,
   ProjectDetail,
   ProjectDirectivesResponse,
@@ -73,7 +76,7 @@ export default async function Page({
       (): ProjectDirectivesResponse | null => null,
     ),
     client.projectDoctor(slug).catch((): ProjectDoctorDetail | null => null),
-    projectChat(),
+    projectChat(slug, (project.profiles ?? []).map((p) => p.profile)),
   ]);
   const isInstanceAdmin = principal.role === "owner" || principal.role === "admin";
 
@@ -108,28 +111,25 @@ export default async function Page({
 }
 
 /**
- * The docked project chat: the same conversations `/chat` shows (the
- * session's profile, newest first, the latest one open). Best-effort — a
- * failed read leaves the dock on a fresh conversation.
+ * The docked project chat (stage 2): the caller's per-profile conversations
+ * in this project merged into one timeline, and the profiles they may pick.
+ * Best-effort — a failed read leaves the dock saying chat is unavailable.
  */
-async function projectChat(): Promise<ProjectChat> {
-  const profile = (await readSession())?.profile ?? "default";
-  const chat: ProjectChat = {
-    profile,
+async function projectChat(slug: string, projectProfiles: string[]): Promise<ProjectChat> {
+  const sessionProfile = (await readSession())?.profile ?? "default";
+  const client = await apiClientForRequest();
+  const [timeline, profiles] = await Promise.all([
+    client.projectChatTimeline(slug).catch((): ProjectChatTimeline | null => null),
+    client
+      .myProfiles()
+      .then(activeEnrolments)
+      .catch((): ProfileSummary[] => []),
+  ]);
+  return {
+    profile: timeline?.last_profile ?? sessionProfile,
     storageEnabled: storageConfigured(),
-    sessions: [],
-    sessionId: null,
-    messages: [],
+    profiles,
+    projectProfiles,
+    timeline,
   };
-  try {
-    const client = await apiClientForRequest({ profile });
-    const list = await client.allSessions({ order: "recent" });
-    chat.sessions = list.sessions;
-    chat.sessionId = list.sessions[0]?.id ?? null;
-    if (chat.sessionId) chat.messages = (await client.sessionMessages(chat.sessionId)).messages;
-  } catch {
-    chat.sessionId = null;
-    chat.messages = [];
-  }
-  return chat;
 }

@@ -28,6 +28,20 @@ vi.mock("@/lib/auth/principal", () => ({
     projectPlaybook: fanOut,
     projectDirectives: fanOut,
     projectDoctor: fanOut,
+    projectChatTimeline: async () => ({
+      sessions: [{ profile: "finance", session_id: "s-finance" }],
+      messages: [],
+      truncated: false,
+      proposals: [],
+      last_profile: "finance",
+    }),
+    myProfiles: async () => ({
+      profiles: [
+        { name: "default", role: "owner", active: true, is_default: true },
+        { name: "finance", role: "owner", active: true, is_default: false },
+        { name: "old", role: "owner", active: false, is_default: false },
+      ],
+    }),
   }),
 }));
 
@@ -75,13 +89,19 @@ describe("the project page", () => {
     expect(getByTestId("detail")).toBeTruthy();
   });
 
-  it("opens a one-off on the same project page, with the chat", async () => {
-    projectMock.mockResolvedValue({ name: "Quote", cadence: "one_off" });
+  it("opens a one-off on the same project page, with the project chat", async () => {
+    projectMock.mockResolvedValue({
+      name: "Quote",
+      cadence: "one_off",
+      profiles: [{ profile: "finance" }],
+    });
     const { getByTestId } = render(await Page({ params: PARAMS }));
     expect(getByTestId("detail")).toBeTruthy();
-    expect(detailProps.mock.calls.at(-1)?.[0]).toMatchObject({
-      chat: { profile: "default", sessionId: null, messages: [] },
-    });
+    const chat = detailProps.mock.calls.at(-1)?.[0].chat;
+    // The picker opens on whoever answered last, over the caller's live enrolments.
+    expect(chat).toMatchObject({ profile: "finance", projectProfiles: ["finance"] });
+    expect(chat.profiles.map((p: { name: string }) => p.name)).toEqual(["default", "finance"]);
+    expect(chat.timeline.sessions[0].session_id).toBe("s-finance");
   });
 
   it.each([

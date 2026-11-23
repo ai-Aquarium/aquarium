@@ -198,7 +198,33 @@
     "openHint": "Open chat (Ctrl/⌘+.)",
     "openUnread": "Open chat, {count} unread",
     "resize": "Resize chat",
-    "unavailable": "The chat couldn't load right now."
+    "unavailable": "The chat couldn't load right now.",
+    "chat": {
+      "picker": "Answering",
+      "pickerAria": "Profile that answers the next message",
+      "to": "to {profile}",
+      "caughtUp": "{profile} was caught up on {count} messages",
+      "seeded": "{profile} got the project context",
+      "catchUpNext": "Catching up {profile} on {count} messages: a summary goes at the top of your next message.",
+      "seedNext": "{profile} starts with the project brief, active playbook and last run's retro.",
+      "empty": "Plan this project with your agents. Pick who answers; everyone's turns show here in order.",
+      "olderHidden": "Older messages are not shown.",
+      "switchBusy": "Wait for the reply before switching profile.",
+      "proposal": {
+        "title": "Playbook v{rev}",
+        "proposed": "Proposed",
+        "active": "Active",
+        "added": "+{count} steps",
+        "changed": "{count} changed",
+        "removed": "{count} removed",
+        "noChange": "Same steps",
+        "by": "by {who}",
+        "review": "Review",
+        "activate": "Make active",
+        "activating": "Activating…",
+        "failed": "Couldn't make it active."
+      }
+    }
   },
   "log": {
     "filterAria": "Show entries by",

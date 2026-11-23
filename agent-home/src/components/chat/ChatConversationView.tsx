@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { SecretRequestPrompt } from "@/components/chat/SecretRequestPrompt";
 import { ApprovalCard } from "@/components/chat/thread/ApprovalCard";
@@ -9,6 +9,7 @@ import { LiveActivity } from "@/components/chat/LiveActivity";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { StatusIndicator } from "@/components/chat/StatusIndicator";
 import { RefBadge } from "@/components/refs/RefBadge";
+import type { ChatMessage } from "@/types";
 import { chatTranscriptText, copyText } from "@/lib/chat/copy-chat";
 import {
   assistantIsEmpty,
@@ -29,7 +30,16 @@ export function ChatConversationView({
   sessionRef,
   compactOnPhone = false,
   aboveComposer,
+  renderAround,
+  emptyState,
 }: {
+  /** Rows shown before / after a message (the project chat's labels and cards). */
+  renderAround?: (
+    message: ChatMessage,
+    index: number,
+  ) => { before?: ReactNode; after?: ReactNode } | null;
+  /** Replaces the default empty-transcript copy. */
+  emptyState?: ReactNode;
   /** Shown right above the composer (the chat page's "Ask about" picker). */
   aboveComposer?: ReactNode;
   conv: ChatConversation;
@@ -95,6 +105,8 @@ export function ChatConversationView({
           <p className="py-8 text-center text-sm text-[var(--color-muted)]">
             Loading conversation…
           </p>
+        ) : messages.length === 0 && emptyState ? (
+          emptyState
         ) : messages.length === 0 ? (
           <p className="py-8 text-center text-sm text-[var(--color-muted)]">
             {sessionId
@@ -104,14 +116,25 @@ export function ChatConversationView({
         ) : (
           messages
             .filter((m) => m.role !== "assistant" || m.content !== "")
-            .map((m, i) => (
-              <MessageBubble
-                key={m.id ?? i}
-                message={m}
-                msgIndex={i}
-                highlightTerm={highlightTerm}
-              />
-            ))
+            .map((m, i) => {
+              const bubble = (
+                <MessageBubble
+                  key={m.id ?? i}
+                  message={m}
+                  msgIndex={i}
+                  highlightTerm={highlightTerm}
+                />
+              );
+              const around = renderAround?.(m, i);
+              if (!around) return bubble;
+              return (
+                <Fragment key={m.id ?? m.clientKey ?? i}>
+                  {around.before}
+                  {bubble}
+                  {around.after}
+                </Fragment>
+              );
+            })
         )}
         {selDecision ? (
           <div

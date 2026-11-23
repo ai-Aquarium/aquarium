@@ -121,8 +121,11 @@ export function ProjectChatDock({
   dispatch,
   profile,
   phoneOpen,
+  controls,
   children,
 }: {
+  /** Header controls replacing the "Answering: …" line (the profile picker). */
+  controls?: ReactNode;
   state: DockState;
   dispatch: (action: DockAction) => void;
   profile: string;
@@ -289,9 +292,11 @@ export function ProjectChatDock({
               <p className="truncate text-sm font-semibold">
                 {t("dock.title")}
               </p>
-              <p className="truncate text-xs text-[var(--color-muted)]">
-                {t("dock.profile", { profile })}
-              </p>
+              {controls ?? (
+                <p className="truncate text-xs text-[var(--color-muted)]">
+                  {t("dock.profile", { profile })}
+                </p>
+              )}
             </div>
             {mode === "max" ? (
               <button

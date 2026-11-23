@@ -2,13 +2,12 @@
 
 import { useCallback, useEffect, useState, type ComponentType } from "react";
 
-import { ChatPane } from "@/components/chat/ChatPane";
 import type { ComposerDraft } from "@/components/chat/Composer";
+import { useChatDock, useIsDesktop } from "@/components/projects/chat/ProjectChatDock";
 import {
-  ProjectChatDock,
-  useChatDock,
-  useIsDesktop,
-} from "@/components/projects/chat/ProjectChatDock";
+  ProjectChatPanel,
+  type ProjectChatData,
+} from "@/components/projects/chat/ProjectChatPanel";
 import { ProjectLog } from "@/components/projects/log/ProjectLog";
 import { ChevronDownIcon, MoreIcon } from "@/components/ui/icons";
 import { Sheet } from "@/components/ui/Sheet";
@@ -68,7 +67,6 @@ import {
   type ProjectTabProps,
 } from "@/components/projects/tabs/types";
 import type {
-  ChatMessage,
   ProjectBoardView,
   ProjectDetail,
   ProjectDirectivesResponse,
@@ -76,7 +74,6 @@ import type {
   ProjectHealth,
   ProjectPlaybookResponse,
   ProjectUsage,
-  SessionSummary,
 } from "@/types";
 import { useTimeLabel } from "@/components/projects/useTimeLabel";
 
@@ -102,14 +99,8 @@ const TAB_COMPONENT: Record<ProjectTab, ComponentType<ProjectTabProps>> = {
   skills: SkillsTab,
 };
 
-/** What the docked project chat opens with (loaded by the page, like `/chat`). */
-export interface ProjectChat {
-  profile: string;
-  storageEnabled: boolean;
-  sessions: SessionSummary[];
-  sessionId: string | null;
-  messages: ChatMessage[];
-}
+/** What the docked project chat opens with (loaded by the page). */
+export type ProjectChat = ProjectChatData;
 
 /**
  * `/projects/[slug]` — the one place (§13): a slim header, then a sticky
@@ -575,32 +566,15 @@ export function ProjectDetailView({
         </div>
       </div>
 
-      <ProjectChatDock
+      <ProjectChatPanel
+        slug={project.slug}
+        chat={chat ?? null}
         state={dock}
         dispatch={dockDispatch}
-        profile={chat?.profile ?? "default"}
         phoneOpen={section === "chat"}
-      >
-        {(onMessageCount) =>
-          chat ? (
-            <ChatPane
-              compact={dock.mode !== "max"}
-              initialSessions={chat.sessions}
-              initialSessionId={chat.sessionId}
-              initialMessages={chat.messages}
-              storageEnabled={chat.storageEnabled}
-              profile={chat.profile}
-              hidden={desktop ? dock.mode === "min" : section !== "chat"}
-              onMessageCount={onMessageCount}
-              composerDraft={composerDraft}
-            />
-          ) : (
-            <p className="p-3 text-sm text-[var(--color-muted)]">
-              {t("dock.unavailable")}
-            </p>
-          )
-        }
-      </ProjectChatDock>
+        hidden={desktop ? dock.mode === "min" : section !== "chat"}
+        composerDraft={composerDraft}
+      />
 
       {sheet ? (
         <Sheet
