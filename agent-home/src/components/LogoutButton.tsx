@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useT } from "@/i18n";
 import { replaceLocation } from "@/lib/replace-location";
 import { useAction } from "@/lib/use-action";
+import { clearViewing } from "@/lib/viewing";
 
 /** Clears the `agent-home` session then returns to the login page. */
 export function LogoutButton() {
@@ -19,6 +20,7 @@ export function LogoutButton() {
     setConfirming(false);
     setBusy(true);
     try {
+      clearViewing();
       await fetch("/api/session/logout", { method: "POST" });
     } finally {
       // A full page load, so the old page's pollers stop instead of

@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
+import { ownersParam } from "@/lib/whose-data";
 
 export async function GET(req: Request): Promise<NextResponse> {
   const principal = await getPrincipal();
@@ -30,6 +31,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         include_snoozed: params.get("include_snoozed") === "true",
         limit: params.get("limit") ? Number(params.get("limit")) : undefined,
         cursor: params.get("cursor") ?? undefined,
+        owners: ownersParam(params),
       }),
     );
   } catch (err) {

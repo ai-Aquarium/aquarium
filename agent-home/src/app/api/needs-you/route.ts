@@ -20,6 +20,7 @@ import { isUpstreamUnauthenticated } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
 import { canAdminister } from "@/lib/auth/roles";
 import { readSession } from "@/lib/auth/session";
+import { ownersParam } from "@/lib/whose-data";
 import type { NeedsYouResponse, NeedsYouSeverity } from "@/types/landing";
 
 const CACHE_SECONDS = 5;
@@ -43,11 +44,18 @@ export async function GET(req: Request): Promise<NextResponse> {
   if (!principal) {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
-  const countOnly = new URL(req.url).searchParams.get("include") === "count";
+  const params = new URL(req.url).searchParams;
+  const countOnly = params.get("include") === "count";
+  // The bell counts only the caller's own; the list may show others' (view-only).
+  const owners = countOnly ? undefined : ownersParam(params);
   const client = await apiClientForRequest();
   const read = () =>
     client.request<NeedsYouResponse>(
-      countOnly ? "/api/needs-you?include=count" : "/api/needs-you",
+      countOnly
+        ? "/api/needs-you?include=count"
+        : owners
+          ? `/api/needs-you?owners=${encodeURIComponent(owners)}`
+          : "/api/needs-you",
     );
   const token = (await readSession())?.hermesToken;
   try {
@@ -59,6 +67,7 @@ export async function GET(req: Request): Promise<NextResponse> {
             createHash("sha256").update(token).digest("hex"),
             canAdminister(principal) ? "admin" : "member",
             countOnly ? "count" : "items",
+            owners ?? "",
           ],
           { revalidate: CACHE_SECONDS },
         )()

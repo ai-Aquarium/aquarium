@@ -374,6 +374,7 @@ def test_route_lists_live_turns_scoped_by_role(route):
     assert body == [{
         "kind": "chat", "id": "s-ada", "name": "Plan the launch", "started_at": 50.0,
         "href": "/chat?session=s-ada", "profile": None, "status": "running",
+        "owner_user_id": "ada",
     }]
 
 
@@ -447,3 +448,14 @@ def test_scheduled_route_counts_nothing_without_the_multi_user_datastore(route, 
     assert res.json() == {
         "total": 0, "projects": 0, "cards": 0, "cron_jobs": 0, "next_run_at": None,
     }
+
+
+def test_route_signed_in_owner_opens_on_just_me(route, monkeypatch):
+    """"Whose data" (FG-38): the owner sees others' running chats only by option."""
+    from hermes_cli import web_server
+
+    client, _state = route
+    monkeypatch.setattr(web_server, "_comms_session_subject", lambda request: "leo")
+    assert client.get("/api/activity/running").json() == []
+    body = client.get("/api/activity/running?owners=leo,eve").json()
+    assert [(i["id"], i["owner_user_id"]) for i in body] == [("s-eve", "eve")]

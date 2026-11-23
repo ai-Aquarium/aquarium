@@ -59,7 +59,7 @@ function principal(role: Principal["role"]): Principal {
 }
 
 function get(): Promise<Response> {
-  return GET() as unknown as Promise<Response>;
+  return GET(new Request("http://localhost/api/activity/running")) as unknown as Promise<Response>;
 }
 
 describe("GET /api/activity/running", () => {
@@ -122,7 +122,7 @@ describe("GET /api/activity/running", () => {
     await get();
     const [, keyParts, opts] = unstableCache.mock.calls[0];
     const hash = createHash("sha256").update("secret-token").digest("hex");
-    expect(keyParts).toEqual(["activity-running", hash, "admin"]);
+    expect(keyParts).toEqual(["activity-running", hash, "admin", ""]);
     expect(keyParts?.join("|")).not.toContain("secret-token");
     expect(opts).toEqual({ revalidate: 10 });
   });

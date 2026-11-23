@@ -1174,16 +1174,26 @@ class TodoStore:
         limit: int = DEFAULT_PAGE_SIZE,
         cursor: Optional[str] = None,
         connection: Optional["asyncpg.Connection"] = None,
+        personal: bool = False,
+        owners: Sequence[str] = (),
     ) -> tuple[List[Todo], Optional[str]]:
-        """A page of to-dos, newest first, plus the cursor for the next one."""
+        """A page of to-dos, newest first, plus the cursor for the next one.
+
+        ``personal`` / ``owners`` are the "Whose data" view (FG-38): just the
+        caller's own (as for a member), or only rows owned by those people.
+        """
         predicate = scope_filter(
             principal,
             start_index=1,
             grant_item_kind=GRANT_ITEM_KIND,
             id_column=GRANT_ID_COLUMN,
+            personal=personal,
         )
         clauses = [predicate.sql]
         params: list[object] = list(predicate.params)
+        if owners:
+            params.append(list(owners))
+            clauses.append(f"owner_user_id = ANY(${len(params)}::text[])")
 
         def add(sql_template: str, *values: object) -> None:
             nonlocal params
@@ -1249,6 +1259,8 @@ class TodoStore:
         principal: Principal,
         *,
         connection: Optional["asyncpg.Connection"] = None,
+        personal: bool = False,
+        owners: Sequence[str] = (),
     ) -> dict[str, List[dict[str, Any]]]:
         """Counts per stage / priority / source, for the filter chips.
 
@@ -1261,7 +1273,13 @@ class TodoStore:
             start_index=1,
             grant_item_kind=GRANT_ITEM_KIND,
             id_column=GRANT_ID_COLUMN,
+            personal=personal,
         )
+        where = predicate.sql
+        params: list[object] = list(predicate.params)
+        if owners:
+            params.append(list(owners))
+            where = f"{where} AND owner_user_id = ANY(${len(params)}::text[])"
         own = connection is None
         conn = connection or await self._connect()
         try:
@@ -1278,14 +1296,14 @@ class TodoStore:
                 f"""
                 SELECT '{facet}' AS facet, {column}::text AS value, COUNT(*) AS count
                 FROM {TASKS_TABLE}
-                WHERE {predicate.sql} AND {column} IS NOT NULL
+                WHERE {where} AND {column} IS NOT NULL
                 GROUP BY {column}
                 """
                 for facet, column in facet_columns.items()
             ]
             rows = await conn.fetch(
                 " UNION ALL ".join(branches) + " ORDER BY facet, count DESC",
-                *predicate.params,
+                *params,
             )
             result: dict[str, List[dict[str, Any]]] = {
                 facet: [] for facet in facet_columns

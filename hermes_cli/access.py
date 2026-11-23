@@ -39,7 +39,8 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from dataclasses import dataclass, field
+import copy
+from dataclasses import dataclass, field, is_dataclass, replace
 from datetime import datetime, timezone
 from typing import (
     TYPE_CHECKING,
@@ -431,6 +432,7 @@ def scope_filter(
     id_column: str = "id",
     role_elevation: bool = False,
     owner_column: str = "owner_user_id",
+    personal: bool = False,
 ) -> ScopePredicate:
     """Return the read-visibility predicate for ``principal`` (contract C2).
 
@@ -453,10 +455,14 @@ def scope_filter(
     rows by role rather than by their own act, so it is enabled deliberately,
     per table, by a caller that also audits the read. Like the grant clause it
     binds the principal's user id as one extra param.
+
+    ``personal`` is the "Whose data" default view (FG-38): the reader's own
+    rows, shared rows and rows granted to them, as for a member, with neither
+    the owner bypass nor role elevation. It only ever narrows.
     """
     if not _VALID_COLUMN.fullmatch(column):
         raise ValueError(f"Invalid column name for scope_filter: {column!r}")
-    if principal.is_owner:
+    if principal.is_owner and not personal:
         return ScopePredicate("TRUE", ())
     placeholder = f"${start_index}"
     clauses = [f"{column} = 'shared'", f"{column} = {placeholder}"]
@@ -478,7 +484,7 @@ def scope_filter(
             _grant_exists_sql(grant_item_kind, id_column, grant_placeholder)
         )
         params = (principal.private_visibility, principal.user_id)
-    if role_elevation and principal.role in ELEVATED_READER_ROLES:
+    if role_elevation and not personal and principal.role in ELEVATED_READER_ROLES:
         if not _VALID_COLUMN.fullmatch(owner_column):
             raise ValueError(f"Invalid owner_column for scope_filter: {owner_column!r}")
         id_placeholder = f"${start_index + len(params)}"
@@ -492,6 +498,22 @@ def scope_filter(
         params = (*params, principal.user_id)
     sql = "(" + " OR ".join(clauses) + ")"
     return ScopePredicate(sql, params)
+
+
+def personal_view(principal: Principal) -> Principal:
+    """``principal`` reading as a member: the "Whose data" default (FG-38).
+
+    For *listing* what is the caller's own on surfaces that bypass scoping
+    for the owner/admin (projects, boards, activity). Never use it to
+    authorize a write: it only drops authority, for the length of one read.
+    """
+    if getattr(principal, "role", None) not in ("owner", "admin"):
+        return principal
+    if is_dataclass(principal):
+        return replace(principal, role="member")
+    view = copy.copy(principal)  # a duck-typed principal (e.g. a service stub)
+    view.role, view.is_owner = "member", False
+    return view
 
 
 def reads_by_elevation(

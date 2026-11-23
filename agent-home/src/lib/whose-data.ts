@@ -37,6 +37,17 @@ export async function loadWhoseData(client: HermesApiClient, me: string): Promis
   }
 }
 
+const OWNERS_PARAM = /^[A-Za-z0-9][A-Za-z0-9._:,-]*$/;
+
+/**
+ * The `owners=` a BFF route forwards upstream, or `undefined` for none. Only
+ * a well-formed id list passes; the server validates and authorizes it again.
+ */
+export function ownersParam(params: URLSearchParams): string | undefined {
+  const raw = (params.get("owners") ?? "").trim();
+  return raw && raw.length <= 129 * MAX_OWNERS && OWNERS_PARAM.test(raw) ? raw : undefined;
+}
+
 /** Whose a row is, for display when the view spans more than the caller. */
 export function ownerLabel(
   people: ViewablePeople | null,

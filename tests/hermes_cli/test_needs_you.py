@@ -653,3 +653,34 @@ async def test_suggested_tasks_counts_without_todo_alerts():
 def test_response_carries_the_suggested_count():
     assert ny.response([], suggested_count=4)["suggested_count"] == 4
     assert ny.response([], count_only=True)["suggested_count"] is None
+
+
+def test_others_approvals_are_view_only_and_role_duties_are_team(gateway_queue):
+    """"Whose data": Leo sees Ada's approval only when he asks, and cannot act on it."""
+    from tools.approval import list_pending_gateway_approvals
+
+    gateway_queue("run_a", user="ada")
+    gateway_queue("run_c", user=None)
+    runs = {"run_a": {"session_id": "s1", "profile": None},
+            "run_c": {"session_id": "s2", "profile": None}}
+    approvals = list_pending_gateway_approvals(["run_a", "run_c"])
+    mine = ny.chat_approval_entries(approvals, runs, OWNER, admin=True)
+    assert [(r["context"]["run_id"], r.get("team")) for r in mine] == [("run_c", True)]
+    assert any(a.get("endpoint") for a in mine[0]["actions"])
+    widened = ny.chat_approval_entries(approvals, runs, OWNER, admin=True, requesters={"ada"})
+    [ada] = [r for r in widened if r["context"]["run_id"] == "run_a"]
+    assert ada["foreign"] is True and ada["owner_user_id"] == "ada"
+    assert ada["actions"] and not any(a.get("endpoint") for a in ada["actions"])
+
+
+def test_route_owner_opens_on_their_own_waits(route, monkeypatch):
+    from hermes_cli import web_server
+
+    client, _state, pushed = route
+    monkeypatch.setattr(web_server, "_comms_session_subject", lambda request: "leo")
+    assert client.get("/api/needs-you").json()["count"] == 0
+    body = client.get("/api/needs-you?owners=leo,ada").json()
+    [item] = body["items"]
+    assert item["foreign"] is True and item["owner_user_id"] == "ada"
+    assert pushed[-1] == ("leo", [])
+    assert client.get("/api/needs-you?owners=bad%20id").status_code == 400

@@ -4996,3 +4996,19 @@ class TestInsightsMessageIndexes:
         )
         assert "idx_messages_assistant_tool_calls" in detail, detail
         assert "SCAN m |" not in detail + " |", detail
+
+
+def test_list_and_count_narrow_to_several_owners(tmp_path):
+    """`user_ids` backs the "Whose data" chat view: only those people's chats."""
+    from hermes_state import SessionDB
+
+    db = SessionDB(db_path=tmp_path / "state.db")
+    for sid, uid in (("a", "leo"), ("b", "ada"), ("c", "eve"), ("d", None)):
+        db.create_session(sid, source="web", user_id=uid)
+    ids = {s["id"] for s in db.list_sessions_rich(user_ids=["leo", "ada"])}
+    assert ids == {"a", "b"}
+    assert db.session_count(user_ids=["leo", "ada"]) == 2
+    assert db.list_sessions_rich(user_ids=[]) == [] and db.session_count(user_ids=[]) == 0
+    assert db.session_count() == 4
+    assert db.session_count(user_ids=["leo", None]) == 2
+    db.close()

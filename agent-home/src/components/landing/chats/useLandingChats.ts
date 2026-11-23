@@ -15,6 +15,7 @@ import {
   splitSessions,
   type LandingSession,
 } from "./model";
+import { readViewing, useOnViewingChange } from "@/lib/viewing";
 
 /** Untitled chats get their agent title a few seconds after the first reply. */
 export const TITLE_POLL_MS = 10_000;
@@ -126,13 +127,15 @@ export function useLandingChats({
 
   const source = userChatsOnly ? USER_CHAT_SOURCE : undefined;
   const refresh = useCallback(
-    (force = true) => chatsApi.sessions(profile, { force, source }).then(apply),
+    (force = true) =>
+      chatsApi.sessions(profile, { force, source, owners: readViewing() }).then(apply),
     [profile, source, apply],
   );
+  useOnViewingChange(() => void refresh(true));
 
   useEffect(() => {
     let cancelled = false;
-    void chatsApi.sessions(profile, { source }).then((next) => {
+    void chatsApi.sessions(profile, { source, owners: readViewing() }).then((next) => {
       if (!cancelled) apply(next);
     });
     let retry: number | undefined;

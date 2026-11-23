@@ -1,4 +1,5 @@
 import { replaceLocation } from "@/lib/replace-location";
+import { clearViewing } from "@/lib/viewing";
 
 let leaving: Promise<void> | null = null;
 
@@ -8,6 +9,7 @@ let leaving: Promise<void> | null = null;
  * straight back to `/`), then load `/login` once, however many polls hit it.
  */
 export function leaveExpiredSession(): Promise<void> {
+  clearViewing();
   leaving ??= fetch("/api/session/logout", { method: "POST" })
     .catch(() => undefined)
     .then(() => replaceLocation("/login"));

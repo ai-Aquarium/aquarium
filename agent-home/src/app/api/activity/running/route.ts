@@ -23,20 +23,22 @@ import { isUpstreamUnauthenticated } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
 import { canAdminister } from "@/lib/auth/roles";
 import { readSession } from "@/lib/auth/session";
+import { ownersParam } from "@/lib/whose-data";
 import type { ActivityRunning } from "@/types";
 
 const CACHE_SECONDS = 10;
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: Request): Promise<NextResponse> {
   const principal = await getPrincipal();
   if (!principal) {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
+  const owners = ownersParam(new URL(req.url).searchParams);
   const client = await apiClientForRequest();
   const read = async (): Promise<ActivityRunning> => {
     const [items, scheduled] = await Promise.all([
-      client.activityRunning(),
-      client.activityScheduled().catch(() => null),
+      client.activityRunning(owners),
+      client.activityScheduled(owners).catch(() => null),
     ]);
     return {
       items: Array.isArray(items) ? items : [],
@@ -52,6 +54,7 @@ export async function GET(): Promise<NextResponse> {
             "activity-running",
             createHash("sha256").update(token).digest("hex"),
             canAdminister(principal) ? "admin" : "member",
+            owners ?? "",
           ],
           { revalidate: CACHE_SECONDS },
         )()

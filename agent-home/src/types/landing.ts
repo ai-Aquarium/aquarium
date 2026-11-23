@@ -41,6 +41,11 @@ export interface NeedsYouAction {
 
 export interface NeedsYouEntry {
   id: string;
+  /** A duty of the owner/admin role, not of one person ("Team"). */
+  team?: boolean;
+  /** Somebody else's, shown by "Viewing": view-only (Open is the only action). */
+  foreign?: boolean;
+  owner_user_id?: string | null;
   source: NeedsYouSource;
   severity: NeedsYouSeverity;
   title: string;

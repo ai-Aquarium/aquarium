@@ -175,9 +175,14 @@ def test_an_hr_enrollee_chats_under_their_hr_role_in_the_hr_home(client, turns, 
 
 
 def test_visibility_follows_the_target_profiles_role(client):
-    # hana owns hr → every hr conversation; dan is an hr admin → only his own
+    # hana owns hr → may read every hr conversation, but the list opens on her
+    # own ("Whose data"); dan is an hr admin → only his own
     # (only the owner sees every conversation in a profile).
-    assert _listed(client, "hana", profile="hr") == {"hr-hana", "hr-dan", "hr-leo"}
+    assert _listed(client, "hana", profile="hr") == {"hr-hana"}
+    assert _listed(client, "hana", profile="hr", owners="hana,dan,leo") == {
+        "hr-hana", "hr-dan", "hr-leo",
+    }
+    assert _listed(client, "dan", profile="hr", owners="hana,dan,leo") == {"hr-dan"}
     assert _listed(client, "dan", profile="hr") == {"hr-dan"}
 
 
@@ -206,9 +211,13 @@ def test_profile_wide_tag_reads_require_enrolment_in_the_target(client):
 
 
 def test_acting_profile_behaviour_is_unchanged(client, turns, box):
-    # The default owner still sees every default conversation, by name or not.
-    assert _listed(client, "leo") == {"hermes-root-leo", "hermes-root-bob"}
-    assert _listed(client, "leo", profile="default") == {"hermes-root-leo", "hermes-root-bob"}
+    # The default owner may still list every default conversation, by name or
+    # not, when they ask for it; the list opens on their own.
+    assert _listed(client, "leo") == {"hermes-root-leo"}
+    assert _listed(client, "leo", owners="leo,bob") == {"hermes-root-leo", "hermes-root-bob"}
+    assert _listed(client, "leo", profile="default", owners="leo,bob") == {
+        "hermes-root-leo", "hermes-root-bob",
+    }
     assert _listed(client, "bob") == {"hermes-root-bob"}
     # A default member chats in default as their default role.
     assert _chat(client, "hermes-root-bob", "bob").status_code == 200

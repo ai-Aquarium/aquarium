@@ -84,6 +84,25 @@ def _csv(value: str) -> list[str]:
     return [part.strip() for part in (value or "").split(",") if part.strip()]
 
 
+def _whose(request: Request, owners: str) -> dict[str, Any]:
+    """The "Whose data" view (FG-38) of a signed-in list read.
+
+    No ``owners=`` → just the caller's own, even for the owner; ``owners=``
+    → rows owned by those people, within the caller's own authority. A caller
+    with no interactive login keeps its full scope.
+    """
+    from hermes_cli.access import parse_owner_filter
+    from hermes_cli.web_server import _comms_session_subject
+
+    if request is None or not _comms_session_subject(request):
+        return {}
+    try:
+        named = parse_owner_filter(owners)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"owners": named} if named else {"personal": True}
+
+
 def _flag(value: Optional[str]) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes"}
 
@@ -117,13 +136,17 @@ async def list_todos(
     include_snoozed: Optional[str] = None,
     limit: int = _DEFAULT_LIMIT,
     cursor: str = "",
+    owners: str = "",
 ) -> dict[str, Any]:
     """A keyset page of the caller's visible to-dos, newest first.
+
+    Opens on the caller's own; ``owners=`` widens to those people (``_whose``).
 
     All list-ish parameters are comma-separated. Snoozed to-dos are hidden by
     default — a snooze the list ignores is not a snooze.
     """
     principal = await _resolve_principal(request)
+    whose = _whose(request, owners)
     store = _store()
     if not await _table_ready(store):
         return {"items": [], "next_cursor": None}
@@ -144,6 +167,7 @@ async def list_todos(
         include_snoozed=_flag(include_snoozed),
         limit=max(1, min(int(limit or _DEFAULT_LIMIT), _MAX_LIMIT)),
         cursor=cursor or None,
+        **whose,
     )
     if pinned is not None:
         items = [pinned, *(item for item in items if item.id != pinned.id)]
@@ -158,13 +182,14 @@ async def list_todos(
 
 
 @router.get("/facets")
-async def todos_facets(request: Request) -> dict[str, Any]:
-    """Stages, priorities and sources the caller actually has."""
+async def todos_facets(request: Request, owners: str = "") -> dict[str, Any]:
+    """Stages, priorities and sources the caller actually has (same view as the list)."""
     principal = await _resolve_principal(request)
+    whose = _whose(request, owners)
     store = _store()
     if not await _table_ready(store):
         return {"stages": [], "priorities": [], "source_kinds": []}
-    return await store.facets(principal)
+    return await store.facets(principal, **whose)
 
 
 @router.post("")

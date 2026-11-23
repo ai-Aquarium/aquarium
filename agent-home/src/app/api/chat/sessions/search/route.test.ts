@@ -60,12 +60,12 @@ describe("GET /api/chat/sessions/search", () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.results).toHaveLength(1);
-    expect(searchSessions).toHaveBeenCalledWith("hello", 20);
+    expect(searchSessions).toHaveBeenCalledWith("hello", 20, undefined);
   });
 
   it("forwards limit param", async () => {
     await get(new URLSearchParams({ q: "hello", limit: "10" }));
-    expect(searchSessions).toHaveBeenCalledWith("hello", 10);
+    expect(searchSessions).toHaveBeenCalledWith("hello", 10, undefined);
   });
 
   it("returns 502 on upstream error", async () => {

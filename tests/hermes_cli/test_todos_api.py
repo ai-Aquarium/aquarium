@@ -10,6 +10,7 @@ somebody else's to-do is indistinguishable from a missing one.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any, Optional
 
 import pytest
@@ -352,3 +353,24 @@ async def test_unsnooze_rejects_a_malformed_time(wired):
             request=_request({"until": "next tuesday"}), todo_id="tsk_1"
         )
     assert excinfo.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_a_signed_in_list_opens_on_just_me_and_widens_by_owners(wired, monkeypatch):
+    """"Whose data" (FG-38): the owner sees only their own to-dos by default."""
+    from hermes_cli import web_server
+
+    monkeypatch.setattr(web_server, "_comms_session_subject", lambda request: "leo")
+    req = SimpleNamespace(state=SimpleNamespace())
+    await todos_api.list_todos(request=req)
+    assert wired.calls[-1].get("personal") is True and "owners" not in wired.calls[-1]
+    await todos_api.list_todos(request=req, owners="leo,ada")
+    assert wired.calls[-1]["owners"] == ["leo", "ada"] and "personal" not in wired.calls[-1]
+    with pytest.raises(HTTPException):
+        await todos_api.list_todos(request=req, owners="not an id!")
+
+
+@pytest.mark.asyncio
+async def test_a_service_caller_keeps_its_full_scope(wired):
+    await todos_api.list_todos(request=None)
+    assert "personal" not in wired.calls[-1] and "owners" not in wired.calls[-1]

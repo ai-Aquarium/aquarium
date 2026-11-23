@@ -3600,6 +3600,7 @@ async def _chat_scope(request: "Request") -> Optional[str]:
     try:
         if profile == "all":
             principal = await _comms_resolve_principal(request)
+            request.state.chat_caller = principal.user_id
             scope = _chat_scope_for(principal)
             if scope is None and not await _owner_everywhere(
                 _comms_session_subject(request)
@@ -3609,7 +3610,50 @@ async def _chat_scope(request: "Request") -> Optional[str]:
         principal = await _chat_principal(request, profile)
     except _CommsNotConfigured:
         return None
+    request.state.chat_caller = principal.user_id
     return _chat_scope_for(principal)
+
+
+def _view_owners(request: "Request", me: str) -> list[str]:
+    """Whose data a signed-in list read shows: ``owners=``, else just *me*.
+
+    "Whose data" (FG-38) default: the owner/admin may read other people's
+    rows, but a list opens on their own and widens only when they name others.
+    The caller still applies its own authority; this only narrows it.
+    """
+    from hermes_cli.access import parse_owner_filter
+
+    try:
+        owners = parse_owner_filter(request.query_params.get("owners"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return owners or [me]
+
+
+async def _chat_list_owners(
+    request: "Request", scope: Optional[str] = Depends(_chat_scope)
+) -> Optional[list[Optional[str]]]:
+    """Dependency: whose chats a chat *list* shows (``None`` = no narrowing).
+
+    A login limited to its own chats gets just those; a login that may read
+    every chat (the owner) still opens on its own and widens with ``owners=``.
+    Callers with no interactive login keep the full list.
+    """
+    if scope is not None:
+        return [scope]
+    caller = getattr(request.state, "chat_caller", None)
+    if not caller:
+        return None
+    owners: list = _view_owners(request, caller)
+    # A conversation with no recorded owner predates multi-user: the owner's.
+    return owners + [None] if caller in owners else owners
+
+
+async def _chat_own_scope(
+    request: "Request", scope: Optional[str] = Depends(_chat_scope)
+) -> Optional[str]:
+    """Dependency: the caller's own chats only, even for the owner (pin suggestions)."""
+    return scope if scope is not None else getattr(request.state, "chat_caller", None)
 
 
 def _require_chat_access(db, session_id: Optional[str], scope: Optional[str]) -> None:
@@ -6617,11 +6661,13 @@ def get_sessions(
     pinned: str = "any",
     scope: Optional[str] = Depends(_chat_scope),
     pin_user: Optional[str] = Depends(_session_list_pin_user),
+    owners: Optional[list[str]] = Depends(_chat_list_owners),
 ):
     """List sessions.
 
     A login limited to its own chats (see :func:`_chat_scope`) only lists the
-    conversations it owns.
+    conversations it owns; the owner's list opens on their own chats and
+    ``owners=`` widens it to the people named (see :func:`_chat_list_owners`).
 
     Every row carries the caller's ``pinned_at`` (null when not pinned);
     ``pinned=only`` lists just the caller's pinned chats, whatever their age.
@@ -6688,6 +6734,7 @@ def get_sessions(
                 order_by_last_active=order == "recent",
                 user_id=scope,
                 root_ids=list(pins) if pinned == "only" else None,
+                user_ids=owners,
             )
             if filtered_ids is not None:
                 id_set = set(filtered_ids)
@@ -6701,6 +6748,7 @@ def get_sessions(
                 archived_only=archived_only,
                 exclude_children=True,
                 user_id=scope,
+                user_ids=owners,
             )
             now = time.time()
             # Bulk-attach each row's tags (one query for the whole page, not
@@ -6747,6 +6795,7 @@ def get_profiles_sessions(
     source: str = None,
     exclude_sources: str = None,
     scope: Optional[str] = Depends(_chat_scope),
+    owners: Optional[list[str]] = Depends(_chat_list_owners),
 ):
     """Unified, read-only session list aggregated across ALL profiles.
 
@@ -6819,6 +6868,7 @@ def get_profiles_sessions(
                 include_archived=include_archived,
                 archived_only=archived_only,
                 order_by_last_active=order == "recent",
+                user_ids=owners,
             )
             profile_total = db.session_count(
                 source=source_filter,
@@ -6827,6 +6877,7 @@ def get_profiles_sessions(
                 include_archived=include_archived,
                 archived_only=archived_only,
                 exclude_children=True,
+                user_ids=owners,
             )
             total += profile_total
             profile_totals[name] = profile_total
@@ -6866,6 +6917,7 @@ def search_sessions(
     limit: int = 20,
     profile: Optional[str] = None,
     scope: Optional[str] = Depends(_chat_scope),
+    owners: Optional[list[str]] = Depends(_chat_list_owners),
 ):
     """Search sessions by ID plus full-text message content using FTS5.
 
@@ -6973,12 +7025,16 @@ def search_sessions(
             seen: dict = {}
             owner_cache: dict = {}
 
+            if not isinstance(owners, list):  # called directly, not via the route
+                owners = None if scope is None else [scope]
+            allowed = None if owners is None else set(owners)
+
             def visible(raw_sid: str) -> bool:
-                if scope is None:
+                if allowed is None:
                     return True
                 if raw_sid not in owner_cache:
                     owner_cache[raw_sid] = db.session_owner_user_id(raw_sid)
-                return owner_cache[raw_sid] == scope
+                return owner_cache[raw_sid] in allowed
 
             def add_lineage_result(raw_sid: str, payload: dict) -> None:
                 if not raw_sid or not visible(raw_sid):
@@ -11928,8 +11984,9 @@ async def get_pin_suggestions(
     request: Request,
     profile: Optional[str] = None,
     scope: Optional[str] = Depends(_chat_scope),
+    own: Optional[str] = Depends(_chat_own_scope),
 ):
-    """Chats the agent suggests pinning (landing "review").
+    """Chats the agent suggests pinning (landing "review"), only ever the caller's own.
 
     Served from a per-user cache; a due model review runs in the background
     (``pending: true``) and never touches any conversation. Gated by
@@ -11940,7 +11997,7 @@ async def get_pin_suggestions(
     user_id = await _pin_user_id(request, profile)
     db = _open_session_db_for_profile(profile)
     try:
-        return session_pins.get_suggestions(db, scope, user_id)
+        return session_pins.get_suggestions(db, own, user_id)
     finally:
         db.close()
 
@@ -13415,12 +13472,21 @@ async def activity_running(request: Request):
     from hermes_cli import activity_running as act
     from hermes_cli.projects_api import _enrolled_profiles, _instance_admin
 
+    from hermes_cli.access import personal_view
+
     try:
         principal = await _comms_resolve_principal(request)
     except _CommsNotConfigured:
         # No multi-user datastore → no principal to scope rows to; show
         # nothing rather than everything.
         return []
+    # "Whose data" (FG-38): a signed-in caller sees their own work unless
+    # owners= names other people; those rows still need the caller's authority.
+    me = principal.user_id
+    interactive = bool(_comms_session_subject(request))
+    whose = set(_view_owners(request, me)) if interactive else None
+    others = (whose or set()) - {me}
+    reader = personal_view(principal) if interactive else principal
     # Snapshot on the loop that mutates the registry, then read off it.
     all_runs = [
         {
@@ -13448,10 +13514,26 @@ async def activity_running(request: Request):
             [r for r in all_runs if (r["profile"] or None) == run_profile],
             _chat_scope_for(run_principal),
         ))
-    enrolled = (
-        set() if _instance_admin(principal)
-        else await _enrolled_profiles(principal.user_id)
+    own_enrolled = await _enrolled_profiles(me) if interactive else set()
+    enrolled = set() if _instance_admin(principal) else (
+        own_enrolled if interactive else await _enrolled_profiles(me)
     )
+
+    def _theirs(rows: list) -> list:
+        return [r for r in rows if r.get("owner_user_id") in others]
+
+    def _projects() -> list:
+        if not interactive:
+            return act.project_items(principal, enrolled)
+        rows = act.project_items(reader, own_enrolled)
+        return rows + (_theirs(act.project_items(principal, enrolled)) if others else [])
+
+    def _cron() -> list:
+        if not interactive:
+            return act.cron_items(principal, enrolled, act.cron_dirs())
+        dirs = act.cron_dirs()
+        rows = act.cron_items(reader, own_enrolled, dirs, mine=me)
+        return rows + (_theirs(act.cron_items(principal, enrolled, dirs)) if others else [])
 
     def _collect() -> list:
         items: list = []
@@ -13459,16 +13541,19 @@ async def activity_running(request: Request):
             ("chats", lambda: [
                 item
                 for runs, scope in chat_groups
-                for item in act.chat_items(runs, scope, _open_session_db_for_profile)
+                for item in act.chat_items(
+                    runs, scope, _open_session_db_for_profile, whose,
+                )
             ]),
-            ("projects", lambda: act.project_items(principal, enrolled)),
-            ("cron", lambda: act.cron_items(principal, enrolled, act.cron_dirs())),
+            ("projects", _projects),
+            ("cron", _cron),
         ):
             try:
                 items.extend(read())
             except Exception:
                 _log.exception("activity: %s source failed", label)
-        return act.finalize(items)
+        unique = {(i["kind"], i["id"]): i for i in reversed(items)}
+        return act.finalize([i for i in items if unique.get((i["kind"], i["id"])) is i])
 
     return await asyncio.to_thread(_collect)
 
@@ -13490,6 +13575,15 @@ async def activity_scheduled(request: Request):
     except _CommsNotConfigured:
         # No principal to scope by: count nothing rather than everything.
         return empty
+    from hermes_cli.access import personal_view
+
+    me = principal.user_id
+    if _comms_session_subject(request) and set(_view_owners(request, me)) == {me}:
+        # "Whose data" default (FG-38): only what is the caller's own.
+        return await asyncio.to_thread(
+            act.scheduled_summary, personal_view(principal),
+            await _enrolled_profiles(me), None, me,
+        )
     enrolled = (
         set() if _instance_admin(principal)
         else await _enrolled_profiles(principal.user_id)
@@ -13517,7 +13611,14 @@ async def needs_you(request: Request):
         principal = await _comms_resolve_principal(request)
     except _CommsNotConfigured:
         return ny.response([], count_only=count_only)
+    from hermes_cli.access import personal_view
+
     admin = _instance_admin(principal)
+    # "Whose data" (FG-38): the caller's own waits plus duties of their role
+    # (Team); owners= adds other people's, view-only.
+    me = principal.user_id
+    interactive = bool(_comms_session_subject(request))
+    others = (set(_view_owners(request, me)) - {me}) if interactive else set()
     items: list = []
 
     try:
@@ -13525,9 +13626,10 @@ async def needs_you(request: Request):
 
         ntf = NotificationStore(_comms_app_store(), config=load_config() or {})
         await ntf.initialize()
-        items.extend(
-            ny.notification_entries(await ntf.list_pending(principal), principal.user_id)
-        )
+        pending = await ntf.list_pending(principal)
+        items.extend(ny.notification_entries(pending, principal.user_id))
+        for other in sorted(others):
+            items.extend(ny.mark_foreign(ny.notification_entries(pending, other), other))
     except Exception:
         _log.warning("needs-you: notifications source failed", exc_info=True)
     suggested_count = None
@@ -13561,6 +13663,7 @@ async def needs_you(request: Request):
 
         items.extend(ny.chat_approval_entries(
             list_pending_gateway_approvals(runs.keys()), runs, principal, admin=admin,
+            requesters=others,
         ))
     except Exception:
         _log.warning("needs-you: chat approvals source failed", exc_info=True)
@@ -13574,7 +13677,7 @@ async def needs_you(request: Request):
         from hermes_cli.profile_suggestion import ProfileSuggestionStore
 
         open_rows, _reviewed = await ProfileSuggestionStore(_comms_app_store()).queue(principal)
-        items.extend(ny.profile_suggestion_entries(open_rows))
+        items.extend(ny.mark_team(ny.profile_suggestion_entries(open_rows)))
     except Exception:
         _log.warning("needs-you: profile suggestions source failed", exc_info=True)
 
@@ -13583,20 +13686,36 @@ async def needs_you(request: Request):
         from hermes_cli import site_sources as ss
 
         sources = await dd.list_sources(principal, ss.current_profile())
-        items.extend(ny.data_draft_entries(sources))
-        items.extend(ny.data_schema_entries(sources))
-        items.extend(ny.data_health_entries(sources))
+        items.extend(ny.mark_team([
+            *ny.data_draft_entries(sources),
+            *ny.data_schema_entries(sources),
+            *ny.data_health_entries(sources),
+        ]))
     except Exception:
         _log.warning("needs-you: data dictionary source failed", exc_info=True)
 
     try:
-        items.extend(await ny.source_claims_for(principal.user_id))
+        items.extend(ny.mark_team(await ny.source_claims_for(principal.user_id)))
     except Exception:
         _log.warning("needs-you: source claims failed", exc_info=True)
 
     try:
-        enrolled = set() if admin else await _enrolled_profiles(principal.user_id)
-        items.extend(await asyncio.to_thread(ny.project_entries, principal, enrolled, covered))
+        own_enrolled = await _enrolled_profiles(me)
+        enrolled = set() if admin else own_enrolled
+        if not interactive:
+            items.extend(await asyncio.to_thread(ny.project_entries, principal, enrolled, covered))
+        else:
+            mine = await asyncio.to_thread(
+                ny.project_entries, personal_view(principal), own_enrolled, covered,
+            )
+            items.extend(mine)
+            if others:
+                seen = {i["id"] for i in mine}
+                theirs = await asyncio.to_thread(ny.project_entries, principal, enrolled, covered)
+                items.extend(ny.mark_foreign([
+                    i for i in theirs
+                    if i["id"] not in seen and i["context"].get("owner_user_id") in others
+                ], None))
     except Exception:
         _log.warning("needs-you: projects source failed", exc_info=True)
 
@@ -13604,7 +13723,8 @@ async def needs_you(request: Request):
     # Enrolled push devices are the instance's, not per-member, so only the
     # admin's own waits are pushed from here.
     if admin:
-        task = asyncio.create_task(ny.push_new(principal.user_id, items))
+        own = [i for i in items if not i.get("foreign")]
+        task = asyncio.create_task(ny.push_new(principal.user_id, own))
         _NEEDS_YOU_PUSH_TASKS.add(task)
         task.add_done_callback(_NEEDS_YOU_PUSH_TASKS.discard)
     return ny.response(items, count_only=count_only, suggested_count=suggested_count)

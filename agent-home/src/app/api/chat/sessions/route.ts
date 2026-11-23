@@ -21,6 +21,7 @@ import { NextResponse } from "next/server";
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
 import { profileFromUrl } from "@/lib/chat/profile";
+import { ownersParam } from "@/lib/whose-data";
 
 export async function GET(request: Request): Promise<NextResponse> {
   const principal = await getPrincipal();
@@ -52,6 +53,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     excludeTags: url.searchParams.get("exclude_tags") ?? undefined,
     tagMatch: url.searchParams.get("tag_match") ?? undefined,
     pinned: url.searchParams.get("pinned") === "only" ? ("only" as const) : undefined,
+    owners: ownersParam(url.searchParams),
   };
   try {
     const client = await apiClientForRequest({ profile: profileFromUrl(request.url) });

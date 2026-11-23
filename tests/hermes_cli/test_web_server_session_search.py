@@ -91,3 +91,35 @@ def test_desktop_session_search_merges_id_matches_before_content_matches(monkeyp
             },
         ]
     }
+
+
+def test_chat_lists_open_on_just_me_for_the_owner():
+    """"Whose data" (FG-38): the owner may read every chat, but lists open on their own."""
+    import asyncio
+
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    from hermes_cli.web_server import _chat_list_owners, _chat_own_scope
+
+    def req(query: str, caller=None):
+        r = Request({"type": "http", "query_string": query.encode(), "headers": []})
+        r.state.chat_caller = caller
+        return r
+
+    run = asyncio.run
+    # None: chats with no recorded owner (pre-multi-user) are the owner's.
+    assert run(_chat_list_owners(req("", "leo"), None)) == ["leo", None]
+    assert run(_chat_list_owners(req("owners=leo,ada", "leo"), None)) == ["leo", "ada", None]
+    assert run(_chat_list_owners(req("owners=ada", "leo"), None)) == ["ada"]
+    # A login limited to its own chats cannot widen with owners=.
+    assert run(_chat_list_owners(req("owners=ada", "eve"), "eve")) == ["eve"]
+    # No interactive login: the full list, as before.
+    assert run(_chat_list_owners(req(""), None)) is None
+    assert run(_chat_own_scope(req("", "leo"), None)) == "leo"
+    try:
+        run(_chat_list_owners(req("owners=bad%20id", "leo"), None))
+    except HTTPException as exc:
+        assert exc.status_code == 400
+    else:
+        raise AssertionError("a malformed owners= must be a 400")

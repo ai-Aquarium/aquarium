@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { landingApi } from "@/lib/landing/api";
+import { useViewing } from "@/lib/viewing";
 import type { NeedsYouEntry, NeedsYouResponse, NeedsYouSeverity } from "@/types/landing";
+
+const NO_OWNERS: string[] = [];
 
 /*
  * Minimal local adapter for the needs-you feed until the B3 workstream's
@@ -41,16 +44,18 @@ export interface NeedsYouState {
   refresh(): Promise<void>;
 }
 
-const lastGood: Partial<Record<"full" | "count", NeedsYouResponse>> = {};
+const lastGood: Record<string, NeedsYouResponse | undefined> = {};
 
 export function resetNeedsYouCache(): void {
-  delete lastGood.full;
-  delete lastGood.count;
+  for (const key of Object.keys(lastGood)) delete lastGood[key];
 }
 
 export function useNeedsYou(opts?: { countOnly?: boolean }): NeedsYouState {
   const countOnly = Boolean(opts?.countOnly);
-  const key = countOnly ? "count" : "full";
+  // The bell (count) is always the caller's own; the list follows "Viewing".
+  const viewing = useViewing();
+  const owners = countOnly ? NO_OWNERS : viewing;
+  const key = countOnly ? "count" : `full:${owners.join(",")}`;
   const [data, setData] = useState<NeedsYouResponse | null>(() => lastGood[key] ?? null);
   const [stale, setStale] = useState(false);
   const mounted = useRef(true);
@@ -60,7 +65,7 @@ export function useNeedsYou(opts?: { countOnly?: boolean }): NeedsYouState {
     if (inFlight.current) return inFlight.current;
     const run = (async () => {
       try {
-        const next = await landingApi.needsYou({ countOnly });
+        const next = await landingApi.needsYou({ countOnly, owners });
         if (!mounted.current) return;
         if (next) {
           lastGood[key] = next;
@@ -75,7 +80,7 @@ export function useNeedsYou(opts?: { countOnly?: boolean }): NeedsYouState {
     })();
     inFlight.current = run;
     return run;
-  }, [countOnly, key]);
+  }, [countOnly, key, owners]);
 
   useEffect(() => {
     mounted.current = true;

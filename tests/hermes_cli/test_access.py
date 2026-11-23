@@ -353,3 +353,20 @@ def test_reads_by_elevation_labels_only_the_rows_that_needed_rank() -> None:
         )
         is False
     )
+
+
+def test_scope_filter_personal_view_reads_the_owner_as_a_member() -> None:
+    """"Whose data" default: the owner's own + shared rows, no bypass."""
+    pred = scope_filter(_p("root", "owner"), personal=True)
+    assert pred.sql == "(visibility = 'shared' OR visibility = $1)"
+    assert pred.params == ("private:root",)
+    assert scope_filter(_p("alice", "member"), personal=True) == scope_filter(_p("alice", "member"))
+
+
+def test_personal_view_only_ever_drops_authority() -> None:
+    from hermes_cli.access import personal_view
+
+    assert personal_view(_p("root", "owner")).role == "member"
+    assert personal_view(_p("ada", "admin")).role == "member"
+    member = _p("eve", "member")
+    assert personal_view(member) is member

@@ -190,10 +190,10 @@ def test_backfill_numbers_every_profiles_chats_in_creation_order(box):
 
 
 def test_list_rows_carry_the_conversations_ref_across_compression(client):
-    rows = _refs_by_id(client, "leo")
+    rows = _refs_by_id(client, "leo", owners="leo,bob")
     # root-leo is projected to its live tip; the ref stays the root's.
     assert rows == {"root-leo-2": "C1", "root-bob": "C2"}
-    assert _refs_by_id(client, "hana", profile="hr") == {
+    assert _refs_by_id(client, "hana", profile="hr", owners="hana,dan,leo") == {
         "hr-hana": "C3",
         "hr-dan": "C4",
         "hr-leo": "C5",

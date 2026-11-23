@@ -1,3 +1,4 @@
+import { withOwners } from "@/lib/viewing";
 import { signedOut } from "@/lib/auth/expired-session";
 import type {
   LandingBarResponse,
@@ -25,9 +26,11 @@ async function getJson<T>(url: string): Promise<T | null> {
 
 export const landingApi = {
   bar: () => getJson<LandingBarResponse>("/api/landing/bar"),
-  needsYou: (opts?: { countOnly?: boolean }) =>
+  needsYou: (opts?: { countOnly?: boolean; owners?: string[] }) =>
     getJson<NeedsYouResponse>(
-      opts?.countOnly ? "/api/needs-you?include=count" : "/api/needs-you",
+      opts?.countOnly
+        ? "/api/needs-you?include=count"
+        : withOwners("/api/needs-you", opts?.owners ?? []),
     ),
   pinSuggestions: (profile?: string) =>
     getJson<PinSuggestionsResponse>(

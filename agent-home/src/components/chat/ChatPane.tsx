@@ -46,6 +46,7 @@ import type {
   SessionTag,
   TagSuggestion,
 } from "@/types";
+import { readViewing } from "@/lib/viewing";
 
 export interface ChatPaneProps {
   initialSessions: SessionSummary[];
@@ -476,7 +477,7 @@ export function ChatPane({
   // ── Search handlers ──────────────────────────────────────────────
 
   const crossSessionSearch = (q: string, signal: AbortSignal) =>
-    chatsApi.searchMessages(q, signal, profile);
+    chatsApi.searchMessages(q, signal, profile, readViewing());
 
   function jumpToSearchResult(result: { session_id: string; snippet: string }) {
     const term = highlightTermOf(result.snippet);
