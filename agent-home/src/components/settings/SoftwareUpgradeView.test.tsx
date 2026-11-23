@@ -262,4 +262,26 @@ describe("technical log", () => {
     expect(panel.getAttribute("data-maximized")).toBe("false");
     expect(pre.className).toContain("max-h-48");
   });
+
+  it("is written in the foreground colour, not the background's", () => {
+    render(<SoftwareUpgradeView initial={{ ...STATUS, job: JOB }} />);
+    const pre = screen.getByText("== backup ==");
+    expect(pre.className).toContain("text-[var(--color-fg)]");
+    expect(pre.className).not.toContain("text-[var(--color-bg)]");
+  });
+});
+
+describe("finish job", () => {
+  it("names its install step after the system helpers", () => {
+    const finish = {
+      ...JOB,
+      kind: "finish",
+      from: "v1.3.0",
+      to: "v1.3.0",
+      steps: [step("download", "done"), step("install", "running"), step("checks", "pending")],
+    } as SoftwareUpgradeJob;
+    render(<SoftwareUpgradeView initial={{ ...STATUS, job: finish }} />);
+    expect(screen.getByText("Install system helpers")).toBeTruthy();
+    expect(screen.queryByText("Install packages")).toBeNull();
+  });
 });
