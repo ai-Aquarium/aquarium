@@ -572,3 +572,29 @@ def test_updating_past_a_discarded_shared_base_keeps_the_active_edit(conn):
     assert up["conflicts"] == []
     # The sibling's restored "Review" stays; the child only changed b.
     assert [s["title"] for s in pdb.get_playbook(conn, pid, up["rev"])["steps"]] == ["Review", "B1"]
+
+
+def test_updating_past_a_discarded_step_falls_back_to_an_earlier_active_rev(conn):
+    pid = pdb.create_project(conn, name="Roots", folders=["/tmp/roots"])
+    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A"), ("b", "B")))
+    v2 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A2"), ("b", "B")), base_rev=None)
+    pdb.activate_playbook_rev(conn, pid, v1)
+    v3 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A"), ("b", "B3")), base_rev=v1)
+    v4 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A"), ("b", "B4")), base_rev=v3)
+    pdb.activate_playbook_rev(conn, pid, v2)
+    assert pdb.discard_playbook_rev(conn, pid, v3) is None
+    up = pdb.rebase_playbook_rev(conn, pid, v4)
+    assert "refused" not in up, up
+    assert [s["title"] for s in pdb.get_playbook(conn, pid, up["rev"])["steps"]] == ["A2", "B4"]
+
+
+def test_a_proposal_beyond_a_discarded_once_active_rev_is_current(conn):
+    pid = pdb.create_project(conn, name="Back", folders=["/tmp/back"])
+    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A")))
+    pdb.activate_playbook_rev(conn, pid, v1)
+    v2 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "B")))
+    pdb.activate_playbook_rev(conn, pid, v2)
+    v3 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "C")))
+    pdb.activate_playbook_rev(conn, pid, v1)
+    assert pdb.discard_playbook_rev(conn, pid, v2) is None
+    assert pdb.rebase_playbook_rev(conn, pid, v3) == {"refused": "current"}
