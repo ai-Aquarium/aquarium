@@ -556,6 +556,9 @@ _PROJECT_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("todo_profile", "todo_profile TEXT"),
     ("todo_id", "todo_id TEXT"),
     ("reply_route", "reply_route TEXT"),
+    # The highest playbook rev ever handed out, so a discarded rev's number
+    # is never given to a different revision.
+    ("playbook_rev_seq", "playbook_rev_seq INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -2736,11 +2739,15 @@ def _insert_playbook_rev(
 ) -> int:
     """``save_playbook_rev``'s insert, inside the caller's transaction."""
     row = conn.execute(
-        "SELECT COALESCE(MAX(rev), 0) AS m FROM project_playbook "
-        "WHERE project_id = ?",
-        (project_id,),
+        "SELECT MAX(COALESCE((SELECT MAX(rev) FROM project_playbook "
+        "WHERE project_id = ?), 0), COALESCE((SELECT playbook_rev_seq "
+        "FROM projects WHERE id = ?), 0)) AS m",
+        (project_id, project_id),
     ).fetchone()
     rev = int(row["m"]) + 1
+    conn.execute(
+        "UPDATE projects SET playbook_rev_seq = ? WHERE id = ?", (rev, project_id)
+    )
     if base_rev is _ACTIVE_REV:
         active = conn.execute(
             "SELECT rev FROM project_playbook WHERE project_id = ? AND active = 1",
@@ -2975,10 +2982,14 @@ def discard_playbook_rev(
     ``"pinned:<run_no>"`` — a rev a run pinned is that run's recorded plan
     and stays for history even if it is no longer active. With
     ``proposer`` (a member, not a lead) only that person's own proposal —
-    never active — may go; anything else is ``"not_yours"``."""
+    never active — may go; anything else is ``"not_yours"``.
+
+    Proposals written from the discarded one now build on what it was
+    written from (its changes become theirs), so they can still be updated
+    onto the active rev. Its number is never reused (``playbook_rev_seq``)."""
     with write_txn(conn):
         row = conn.execute(
-            "SELECT active, activated_at, created_by FROM project_playbook "
+            "SELECT active, activated_at, created_by, base_rev FROM project_playbook "
             "WHERE project_id = ? AND rev = ?",
             (project_id, rev),
         ).fetchone()
@@ -2997,6 +3008,11 @@ def discard_playbook_rev(
         ).fetchone()
         if pinned is not None:
             return f"pinned:{pinned['run_no']}"
+        conn.execute(
+            "UPDATE project_playbook SET base_rev = ? "
+            "WHERE project_id = ? AND base_rev = ?",
+            (row["base_rev"], project_id, rev),
+        )
         conn.execute(
             "DELETE FROM project_playbook WHERE project_id = ? AND rev = ?",
             (project_id, rev),
