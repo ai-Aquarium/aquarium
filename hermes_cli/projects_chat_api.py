@@ -858,7 +858,8 @@ def projects_api_refuse_archived(project) -> None:
 
 
 _MEDIA_REF_RE = re.compile(r"/api/chat/media\?path=([^\s)\"'&<>\]]+)")
-_LINK_LINE_RE = re.compile(r"^!?\[[^\]\n]*\]\([^)\s]+\)$")
+# A file name may itself hold ``]`` (agent-home does not escape it).
+_LINK_LINE_RE = re.compile(r"^!?\[[^\n]*\]\([^)\s]+\)$")
 
 
 def _attached_refs(content: str) -> list[str]:
