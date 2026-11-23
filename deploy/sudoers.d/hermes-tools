@@ -10,5 +10,5 @@ hermes ALL=(hermes-tools) NOPASSWD:SETENV: /usr/local/sbin/hermes-tools-exec
 # environment, keeping just the kanban worker variables, the requester ticket
 # (FG-33 0.4) and the chat a `projects create --from-chat` runs in, all of which
 # the helper checks.
-Defaults!/usr/local/sbin/hermes-tools-cli !use_pty, env_keep += "HERMES_KANBAN_TASK HERMES_KANBAN_RUN_ID HERMES_PRINCIPAL_TICKET HERMES_SESSION_ID HERMES_SESSION_PROFILE"
+Defaults!/usr/local/sbin/hermes-tools-cli !use_pty, env_keep += "HERMES_KANBAN_TASK HERMES_KANBAN_RUN_ID HERMES_PRINCIPAL_TICKET HERMES_SESSION_ID"
 hermes-tools ALL=(hermes) NOPASSWD: /usr/local/sbin/hermes-tools-cli

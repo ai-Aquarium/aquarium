@@ -50,12 +50,10 @@ KEEP_ENV = {
 #: otherwise act as the owner).
 TICKET_ENV = "HERMES_PRINCIPAL_TICKET"
 TICKET_KEY = "auth/principal-ticket.key"
-#: The chat a ``projects create --from-chat`` runs in (gateway session vars),
-#: kept only for that command; its owner must be the ticket's person.
-SESSION_ENV = {
-    "HERMES_SESSION_ID": re.compile(r"[A-Za-z0-9_.:-]{1,128}"),
-    "HERMES_SESSION_PROFILE": re.compile(r"[a-z0-9][a-z0-9_-]{0,63}"),
-}
+#: The chat a ``projects create --from-chat`` runs in (gateway session var),
+#: kept only for that command; the CLI finds the profile holding it and requires
+#: its owner to be the ticket's person, and that profile hosts the project.
+SESSION_ENV = {"HERMES_SESSION_ID": re.compile(r"[A-Za-z0-9_.:-]{1,128}")}
 TICKET_RE = re.compile(r"v1\.([A-Za-z0-9_-]{1,1024})\.([0-9]{1,16})\.([A-Za-z0-9_-]{43})")
 MAX_ARGS = 256
 MAX_ARG_LEN = 256 * 1024
@@ -79,6 +77,8 @@ _VPN = {"--json": F}
 STDIN = frozenset({"-"})
 CADENCES = frozenset({"one_off", "repeatable", "standing"})
 _NUM = re.compile(r"[0-9]{1,9}")
+#: A project slug/ref or step key: one URL path segment, never ``..`` or ``/``.
+_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
 ARGS = "args"  # a leaf's check of its positional arguments
 
 
@@ -109,6 +109,8 @@ PLAYBOOK_DRAFT = {
 def _playbook_args(pos):
     if not pos:
         raise Refused("`hermes projects playbook` needs a project")
+    if not _NAME.fullmatch(pos[0]):
+        raise Refused("the project must be its slug or ref")
     action, rest = (pos[1], pos[2:]) if len(pos) > 1 else ("show", [])
     if action == "show":
         if len(rest) > 1 or (rest and not _NUM.fullmatch(rest[0])):
@@ -124,6 +126,8 @@ def _playbook_args(pos):
             raise Refused(f"playbook draft {verb} takes {PLAYBOOK_DRAFT[verb]} argument(s)")
         if extra:
             _json_arg(extra[-1])
+        if verb == "patch-step" and not _NAME.fullmatch(extra[0]):
+            raise Refused("the step key must be a plain name")
     else:
         raise Refused(f"`hermes projects playbook {action}` is not available")
 
@@ -199,11 +203,11 @@ COMMANDS = {
     }},
     "memory": {"subs": {"status": {}}},
     # Start a project from chat and propose its playbook, as the chatting person
-    # (ticket -> --actor). --host-profile can only be the chat's own profile
-    # (session_args). Off: --actor/--as-human, delete/archive/restore, activate, run, members.
-    "projects": {"subs": {
+    # (ticket -> --actor; an --actor given must be that person). The host is the
+    # chat's profile. Off: --as-human, --host-profile, delete/archive/restore,
+    # activate, run, members.
+    "projects": {"opts": {"--actor": V}, "subs": {
         "create": {ARGS: _one("goal sentence"), "--description": STDIN, "--output": V,
-                   "--host-profile": SESSION_ENV["HERMES_SESSION_PROFILE"],
                    "--name": V, "--cadence": CADENCES, "--audience": V, "--goal-id": V,
                    "--from-chat": re.compile(r"[1-5]"), "--chat-summary": V, "--json": F},
         "playbook": {ARGS: _playbook_args, "--note": V, "--after": V,
@@ -387,23 +391,36 @@ def as_requester(path, argv, ticket, key, now_ms=None):
             raise Refused("`hermes projects` runs only for the person in this chat "
                           "(no valid requester ticket)")
         return argv, ""
-    return [argv[0], f"{AS_REQUESTER[path[0]]}={user_id}", *argv[1:]], ticket
+    rest = argv[1:]
+    if path[0] == "projects":
+        rest, named = _without_option(rest, "--actor")
+        if any(n != user_id for n in named):
+            raise Refused("--actor can only be the person in this chat")
+    return [argv[0], f"{AS_REQUESTER[path[0]]}={user_id}", *rest], ticket
 
 
-def session_args(path, argv, environ):
-    """``(env, extra argv)`` for ``projects create``: the chat it runs in, and
-    that chat's profile as the project's host (the only host it may name)."""
+def _without_option(argv, name):
+    """``(argv without NAME and its values, the values)``."""
+    out, values, i = [], [], 0
+    while i < len(argv):
+        if argv[i] == name and i + 1 < len(argv):
+            values.append(argv[i + 1])
+            i += 2
+        elif argv[i].startswith(name + "="):
+            values.append(argv[i].partition("=")[2])
+            i += 1
+        else:
+            out.append(argv[i])
+            i += 1
+    return out, values
+
+
+def session_args(path, environ):
+    """The chat env a ``projects create`` runs in (checked), else nothing."""
     if path != ["projects", "create"]:
-        return {}, []
-    env = {k: environ[k] for k, pattern in SESSION_ENV.items()
-           if environ.get(k) and pattern.fullmatch(environ[k])}
-    profile = env.get("HERMES_SESSION_PROFILE", "")
-    named = [argv[i + 1] if a == "--host-profile" else a.partition("=")[2]
-             for i, a in enumerate(argv)
-             if a == "--host-profile" or a.startswith("--host-profile=")]
-    if any(n != profile for n in named):
-        raise Refused("--host-profile can only be the profile this chat runs on")
-    return env, ([f"--host-profile={profile}"] if profile and not named else [])
+        return {}
+    return {k: environ[k] for k, pattern in SESSION_ENV.items()
+            if environ.get(k) and pattern.fullmatch(environ[k])}
 
 
 def main(argv):
@@ -458,13 +475,7 @@ def main(argv):
             return 2
         if ticket:
             env[TICKET_ENV] = ticket
-    try:
-        session_env, extra = session_args(path, argv, os.environ)
-    except Refused as exc:
-        print(f"hermes: refused: {exc}.", file=sys.stderr)
-        return 2
-    env.update(session_env)
-    argv = [*argv, *extra]
+    env.update(session_args(path, os.environ))
     env.update({
         "HERMES_HOME": conf["HERMES_HOME"],
         "HOME": me.pw_dir,

@@ -39,7 +39,8 @@ the work now when the user explicitly asks you to do it in this chat.
 
 Fill the brief from the conversation: the goal sentence, a description
 (`--description -` reads stdin), at least one `--output`, and
-`--host-profile` set to the profile this chat runs on. If the goal or the
+`--host-profile` set to the profile this chat runs on (with `--from-chat`,
+leave it out: the chat's profile is the host). If the goal or the
 expected output is unclear, ask one short question before creating.
 
 For a project asked for in this chat:
