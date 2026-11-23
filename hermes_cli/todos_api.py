@@ -103,6 +103,17 @@ def _whose(request: Request, owners: str) -> dict[str, Any]:
     return {"owners": named} if named else {"personal": True}
 
 
+def _acting(request: Request, principal):
+    """Who a write acts as: a signed-in owner/admin changes only their own
+    (and shared) to-dos; others' seen through "Whose data" are view-only."""
+    from hermes_cli.access import personal_view
+    from hermes_cli.web_server import _comms_session_subject
+
+    if getattr(request, "state", None) is None or not _comms_session_subject(request):
+        return principal
+    return personal_view(principal)
+
+
 def _flag(value: Optional[str]) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes"}
 
@@ -331,7 +342,7 @@ async def start_todo(request: Request, todo_id: str) -> dict[str, Any]:
     principal = await _resolve_principal(request)
     body = await request.json()
     store = _store()
-    if not await _table_ready(store) or await store.get(principal, todo_id) is None:
+    if not await _table_ready(store) or await store.get(_acting(request, principal), todo_id) is None:
         raise HTTPException(status_code=404, detail="No such to-do")
 
     # 1. The state change happens first and independently.
@@ -409,7 +420,7 @@ async def update_todo(request: Request, todo_id: str) -> dict[str, Any]:
     principal = await _resolve_principal(request)
     body = await request.json()
     store = _store()
-    if not await _table_ready(store) or await store.get(principal, todo_id) is None:
+    if not await _table_ready(store) or await store.get(_acting(request, principal), todo_id) is None:
         raise HTTPException(status_code=404, detail="No such to-do")
 
     try:
@@ -451,7 +462,7 @@ async def set_todo_stage(request: Request, todo_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="missing field: stage")
 
     store = _store()
-    if not await _table_ready(store) or await store.get(principal, todo_id) is None:
+    if not await _table_ready(store) or await store.get(_acting(request, principal), todo_id) is None:
         raise HTTPException(status_code=404, detail="No such to-do")
     try:
         todo = await store.set_stage(
@@ -482,7 +493,7 @@ async def complete_todo(request: Request, todo_id: str) -> dict[str, Any]:
     principal = await _resolve_principal(request)
     body = await request.json()
     store = _store()
-    if not await _table_ready(store) or await store.get(principal, todo_id) is None:
+    if not await _table_ready(store) or await store.get(_acting(request, principal), todo_id) is None:
         raise HTTPException(status_code=404, detail="No such to-do")
 
     try:
@@ -537,7 +548,7 @@ async def snooze_todo(request: Request, todo_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="missing field: until")
 
     store = _store()
-    if not await _table_ready(store) or await store.get(principal, todo_id) is None:
+    if not await _table_ready(store) or await store.get(_acting(request, principal), todo_id) is None:
         raise HTTPException(status_code=404, detail="No such to-do")
     todo = await store.snooze(
         principal, todo_id, until=until, actor=f"user:{principal.user_id}"
@@ -570,7 +581,7 @@ async def unsnooze_todo(request: Request, todo_id: str) -> dict[str, Any]:
         )
 
     store = _store()
-    if not await _table_ready(store) or await store.get(principal, todo_id) is None:
+    if not await _table_ready(store) or await store.get(_acting(request, principal), todo_id) is None:
         raise HTTPException(status_code=404, detail="No such to-do")
     todo = await store.unsnooze(
         principal,
@@ -623,7 +634,7 @@ async def promote_todo(
     store = _store()
     if not await _table_ready(store):
         raise HTTPException(status_code=404, detail="No such to-do")
-    todo = await store.get(principal, todo_id)
+    todo = await store.get(_acting(request, principal), todo_id)
     if todo is None:
         raise HTTPException(status_code=404, detail="No such to-do")
 
@@ -800,7 +811,7 @@ async def update_todo_draft(request: Request, todo_id: str) -> dict[str, Any]:
     store = _store()
     if not await _table_ready(store):
         raise HTTPException(status_code=404, detail="No such to-do")
-    todo = await store.get(principal, todo_id)
+    todo = await store.get(_acting(request, principal), todo_id)
     if todo is None:
         raise HTTPException(status_code=404, detail="No such to-do")
 

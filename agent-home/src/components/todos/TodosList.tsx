@@ -16,7 +16,8 @@ import {
   type TodosFilterState,
 } from "@/components/todos/filters";
 import type { Todo, TodoStage, TodosFacets, TodosResponse } from "@/types";
-import { readViewing, useOnViewingChange } from "@/lib/viewing";
+import { OwnerBadge, useViewableRoster } from "@/components/access/ViewingChip";
+import { readViewing, useOnViewingChange, useViewing } from "@/lib/viewing";
 
 const PAGE_SIZE = 50;
 
@@ -35,11 +36,17 @@ const PAGE_SIZE = 50;
  */
 export function TodosList({
   initial,
-  facets,
+  facets: initialFacets,
 }: {
   initial: TodosResponse;
   facets: TodosFacets;
 }) {
+  const [facets, setFacets] = useState<TodosFacets>(initialFacets);
+  const viewing = useViewing();
+  const roster = useViewableRoster(viewing.length > 0);
+  // Someone else's to-do in a wider "Viewing" is view-only (FG-38).
+  const theirs = (todo: Todo) =>
+    viewing.length > 0 && !!roster && !!todo.owner_user_id && todo.owner_user_id !== roster.me;
   const [items, setItems] = useState<Todo[]>(initial.items);
   const [cursor, setCursor] = useState<string | null>(initial.next_cursor);
   // The server rendered from the same URL, so the state starts from the
@@ -96,7 +103,25 @@ export function TodosList({
   );
 
   // The server rendered just me; a wider "Viewing" re-reads the first page.
-  useOnViewingChange(() => void fetchPage(filters, null), { initial: true });
+  useOnViewingChange(
+    () => {
+      void fetchPage(filters, null);
+      const owners = readViewing();
+      if (!owners.length) {
+        setFacets(initialFacets);
+        return;
+      }
+      void fetch(`/api/todos/facets?owners=${encodeURIComponent(owners.join(","))}`, {
+        cache: "no-store",
+      })
+        .then((res) => (res.ok ? (res.json() as Promise<TodosFacets>) : null))
+        .then((next) => {
+          if (next) setFacets(next);
+        })
+        .catch(() => undefined);
+    },
+    { initial: true },
+  );
 
   const applyStage = useCallback(
     async (todo: Todo, stage: TodoStage): Promise<Todo | null> => {
@@ -220,7 +245,8 @@ export function TodosList({
               key={todo.id}
               from={fromQuery}
               todo={todo}
-              onStage={setStage}
+              onStage={theirs(todo) ? undefined : setStage}
+              badge={theirs(todo) ? <OwnerBadge userId={todo.owner_user_id} /> : null}
               busy={pending === todo.id}
             />
           ))}

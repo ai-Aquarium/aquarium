@@ -1020,10 +1020,12 @@ def by_severity(items: Iterable[dict]) -> dict[str, int]:
 def response(
     items: list[dict], *, count_only: bool = False, suggested_count: Optional[int] = None,
 ) -> dict:
+    # The counts (bell, badges) are the caller's own: never other people's.
+    own = [i for i in items if not i.get("foreign")]
     payload: dict = {
-        "count": len(items),
+        "count": len(own),
         "suggested_count": suggested_count,
-        "by_severity": by_severity(items),
+        "by_severity": by_severity(own),
         "collected_at": time.time(),
     }
     payload["items"] = [] if count_only else items

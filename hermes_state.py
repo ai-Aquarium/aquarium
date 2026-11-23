@@ -5532,8 +5532,11 @@ class SessionDB:
         limit: int = 20,
         include_archived: bool = True,
         user_id: str = None,
+        user_ids: Optional[List[Optional[str]]] = None,
     ) -> List[Dict[str, Any]]:
         """Search surfaced sessions by exact/prefix/substring session id.
+
+        ``user_ids`` narrows like :meth:`list_sessions_rich`.
 
         Desktop search uses this alongside FTS message search so users can paste
         a session id from logs, CLI output, or another Hermes surface and jump
@@ -5558,6 +5561,7 @@ class SessionDB:
             order_by_last_active=True,
             id_query=needle,
             user_id=user_id,
+            user_ids=user_ids,
         )
 
         def score(row: Dict[str, Any]) -> int:

@@ -19,6 +19,8 @@ import type { NeedsYouEntry, NeedsYouResponse, NeedsYouSeverity } from "@/types/
 
 import { SUGGESTED_TASKS_CHANGED } from "@/components/suggested-tasks/useSuggestedTasks";
 
+import { readViewing, useOnViewingChange } from "@/lib/viewing";
+
 import { landingApi } from "./api";
 
 export const NEEDS_YOU_POLL_MS = 15_000;
@@ -101,7 +103,8 @@ export function useNeedsYou(): UseNeedsYou {
   const refresh = useCallback((): Promise<void> => {
     if (inFlight.current) return inFlight.current;
     const run = (async () => {
-      const next = await landingApi.needsYou();
+      // Follows "Viewing"; the counts stay the caller's own (server-side).
+      const next = await landingApi.needsYou({ owners: readViewing() });
       if (!mounted.current) return;
       if (!next || !Array.isArray(next.items)) {
         setStale(true);
@@ -124,6 +127,8 @@ export function useNeedsYou(): UseNeedsYou {
     inFlight.current = run;
     return run;
   }, []);
+
+  useOnViewingChange(() => void refresh());
 
   useEffect(() => {
     mounted.current = true;

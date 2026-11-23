@@ -678,9 +678,17 @@ def test_route_owner_opens_on_their_own_waits(route, monkeypatch):
 
     client, _state, pushed = route
     monkeypatch.setattr(web_server, "_comms_session_subject", lambda request: "leo")
+
+    async def viewable(principal):
+        return [principal, SimpleNamespace(user_id="ada")]
+
+    monkeypatch.setattr(web_server, "_viewable_people", viewable)
     assert client.get("/api/needs-you").json()["count"] == 0
     body = client.get("/api/needs-you?owners=leo,ada").json()
     [item] = body["items"]
     assert item["foreign"] is True and item["owner_user_id"] == "ada"
+    # Counts stay the caller's own; a name they may not view is dropped.
+    assert body["count"] == 0
+    assert client.get("/api/needs-you?owners=leo,zed").json()["items"] == []
     assert pushed[-1] == ("leo", [])
     assert client.get("/api/needs-you?owners=bad%20id").status_code == 400

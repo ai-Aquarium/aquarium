@@ -7076,8 +7076,9 @@ def search_sessions(
             # logs, or another Hermes surface. FTS can't find those unless the
             # id happens to appear in message text. search_sessions_by_id is
             # SQL-bounded, so this stays cheap even with thousands of sessions.
+            by_owner = {"user_ids": owners} if scope is None and owners is not None else {}
             for row in db.search_sessions_by_id(
-                q, limit=safe_limit, include_archived=True, user_id=scope
+                q, limit=safe_limit, include_archived=True, user_id=scope, **by_owner
             ):
                 sid = row.get("id")
                 preview = (row.get("preview") or "").strip()
@@ -7107,7 +7108,15 @@ def search_sessions(
             # Over-fetch so lineage dedup can still surface `limit` distinct
             # conversations even when several hits collapse onto one root.
             fetch_limit = max(safe_limit * 5, 50)
-            matches = db.search_messages(query=prefix_query, limit=fetch_limit)
+            # Ownership is checked per hit (a compression continuation inherits
+            # its root's owner), so page on while other people's hits fill a page.
+            matches: list = []
+            for page in range(1 if allowed is None else 10):
+                paged = {"offset": page * fetch_limit} if page else {}
+                batch = db.search_messages(query=prefix_query, limit=fetch_limit, **paged)
+                matches.extend(m for m in batch if visible(m["session_id"]))
+                if len(batch) < fetch_limit or len({m["session_id"] for m in matches}) >= safe_limit:
+                    break
 
             for m in matches:
                 if len(seen) >= safe_limit:
@@ -13578,11 +13587,18 @@ async def activity_scheduled(request: Request):
     from hermes_cli.access import personal_view
 
     me = principal.user_id
-    if _comms_session_subject(request) and set(_view_owners(request, me)) == {me}:
-        # "Whose data" default (FG-38): only what is the caller's own.
+    if _comms_session_subject(request):
+        # "Whose data" (FG-38): the caller's own, plus the picked people's.
+        own_enrolled = await _enrolled_profiles(me)
+        others = await _picked_others(request, principal)
+        if not others:
+            return await asyncio.to_thread(
+                act.scheduled_summary, personal_view(principal), own_enrolled, None, me,
+            )
         return await asyncio.to_thread(
-            act.scheduled_summary, personal_view(principal),
-            await _enrolled_profiles(me), None, me,
+            act.scheduled_summary, principal,
+            set() if _instance_admin(principal) else own_enrolled, None, me,
+            others, (personal_view(principal), own_enrolled),
         )
     enrolled = (
         set() if _instance_admin(principal)
@@ -13618,7 +13634,7 @@ async def needs_you(request: Request):
     # (Team); owners= adds other people's, view-only.
     me = principal.user_id
     interactive = bool(_comms_session_subject(request))
-    others = (set(_view_owners(request, me)) - {me}) if interactive else set()
+    others = await _picked_others(request, principal)
     items: list = []
 
     try:
@@ -13661,9 +13677,23 @@ async def needs_you(request: Request):
     try:
         from tools.approval import list_pending_gateway_approvals
 
+        scope = _chat_scope_for(principal)
+
+        def _may_open(approval: dict) -> bool:
+            # Another person's approval shows only if the caller may open its chat.
+            if approval.get("requester_user_id") in (None, me) or scope is None:
+                return True
+            run = runs.get(approval["session_key"])
+            try:
+                _require_chat_access_by_id(run["session_id"], run.get("profile"), scope)
+            except (HTTPException, KeyError, TypeError):
+                return False
+            return True
+
+        approvals = list_pending_gateway_approvals(runs.keys())
         items.extend(ny.chat_approval_entries(
-            list_pending_gateway_approvals(runs.keys()), runs, principal, admin=admin,
-            requesters=others,
+            [a for a in approvals if _may_open(a)] if others else approvals,
+            runs, principal, admin=admin, requesters=others,
         ))
     except Exception:
         _log.warning("needs-you: chat approvals source failed", exc_info=True)
@@ -13984,6 +14014,17 @@ async def resolve_run_approval(run_id: str, request: Request):
         if entry is None:
             raise HTTPException(status_code=404, detail="no such run")
         _require_chat_access_by_id(entry["session_id"], entry.get("profile"), scope)
+    if _comms_session_subject(request):
+        # Reading someone's chat is not answering for them (FG-38 view-only).
+        from tools.approval import list_pending_gateway_approvals
+
+        askers = {
+            a.get("requester_user_id") for a in list_pending_gateway_approvals([run_id])
+        } - {None}
+        if askers and askers != {principal.user_id}:
+            raise HTTPException(
+                status_code=403, detail="Only the person who asked can answer this approval"
+            )
     try:
         body = await request.json()
     except Exception:
@@ -17723,6 +17764,39 @@ async def settings_accounts_assign(request: Request):
     return await _settings_accounts_payload(principal)
 
 
+async def _viewable_people(principal) -> list:
+    """The caller first, then everyone else whose data they may pick (FG-38)."""
+    from hermes_cli.access import ELEVATED_READER_ROLES, PrincipalStore, role_rank
+    from hermes_cli.config import load_config as _load_config
+    from plugins.memory.supabase_pgvector.store import _role_reads_configured
+
+    people = [principal]
+    role_reads = _role_reads_configured(_load_config() or {})
+    if principal.is_owner or (role_reads and principal.role in ELEVATED_READER_ROLES):
+        rank = role_rank(principal.role)
+        for person in await PrincipalStore(_comms_app_store()).list_principals(active=True):
+            if person.user_id != principal.user_id and (
+                principal.is_owner or role_rank(person.role) > rank
+            ):
+                people.append(person)
+    return people
+
+
+async def _picked_others(request: "Request", principal) -> set:
+    """The other people ``owners=`` names that the caller may view (FG-38).
+
+    ``owners=`` is a filter, never access: a name outside the caller's
+    viewable set is dropped, so it cannot surface anyone else's items.
+    """
+    me = principal.user_id
+    if not _comms_session_subject(request):
+        return set()
+    others = set(_view_owners(request, me)) - {me}
+    if not others:
+        return set()
+    return others & {p.user_id for p in await _viewable_people(principal)}
+
+
 @app.get("/api/access/viewable-people")
 async def access_viewable_people(request: Request):
     """Whose data the caller may pick in "Whose data" (FG-38 P4).
@@ -17733,20 +17807,12 @@ async def access_viewable_people(request: Request):
     owner); otherwise only themselves. Listing is not access: every read
     re-checks through the scope predicate and RLS.
     """
-    from hermes_cli.access import ELEVATED_READER_ROLES, PrincipalStore, role_rank
     from hermes_cli.config import load_config as _load_config
     from plugins.memory.supabase_pgvector.store import _role_reads_configured
 
     principal = await _comms_resolve_principal(request)
     role_reads = _role_reads_configured(_load_config() or {})
-    people = [principal]
-    if principal.is_owner or (role_reads and principal.role in ELEVATED_READER_ROLES):
-        rank = role_rank(principal.role)
-        for person in await PrincipalStore(_comms_app_store()).list_principals(active=True):
-            if person.user_id != principal.user_id and (
-                principal.is_owner or role_rank(person.role) > rank
-            ):
-                people.append(person)
+    people = await _viewable_people(principal)
     return {
         "me": principal.user_id,
         "role_reads": role_reads,

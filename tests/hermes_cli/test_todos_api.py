@@ -374,3 +374,23 @@ async def test_a_signed_in_list_opens_on_just_me_and_widens_by_owners(wired, mon
 async def test_a_service_caller_keeps_its_full_scope(wired):
     await todos_api.list_todos(request=None)
     assert "personal" not in wired.calls[-1] and "owners" not in wired.calls[-1]
+
+
+@pytest.mark.asyncio
+async def test_someone_else_s_todo_is_view_only_for_a_signed_in_owner(wired, monkeypatch):
+    # "Whose data" lets the owner read Ada's to-do; it never lets them move it.
+    from hermes_cli import web_server
+
+    monkeypatch.setattr(web_server, "_comms_session_subject", lambda request: "leo")
+    acting: list = []
+
+    async def get(principal, todo_id, **kwargs):
+        acting.append(principal.role)
+        return None if principal.role == "member" else _todo()
+
+    monkeypatch.setattr(wired, "get", get)
+    request = _request({"stage": "done"})
+    request.state = SimpleNamespace()
+    with pytest.raises(HTTPException) as excinfo:
+        await todos_api.set_todo_stage(request=request, todo_id="ada-1")
+    assert excinfo.value.status_code == 404 and acting == ["member"]
