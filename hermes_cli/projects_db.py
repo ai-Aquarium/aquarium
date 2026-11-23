@@ -1330,57 +1330,64 @@ def set_project_status(
     if status not in VALID_PROJECT_STATUSES:
         raise ValueError(f"status must be one of {sorted(VALID_PROJECT_STATUSES)}")
     with write_txn(conn):
-        row = conn.execute(
-            "SELECT status, goal FROM projects WHERE id = ?", (project_id,)
-        ).fetchone()
-        if row is None:
-            return False
-        if row["status"] == "planning" and status != "planning":
-            missing: List[str] = []
-            for table, label in (
-                ("project_outputs", "at least one output"),
-                ("project_members", "at least one member"),
-                ("project_profiles", "at least one profile"),
-            ):
-                count = conn.execute(
-                    f"SELECT COUNT(*) AS n FROM {table} WHERE project_id = ?",
-                    (project_id,),
-                ).fetchone()["n"]
-                if not count:
-                    missing.append(label)
-            if missing:
-                raise ValueError(
-                    f"project {project_id} cannot leave 'planning': missing "
-                    + ", ".join(missing)
-                )
-        if row["status"] == "needs_completion" and status != "needs_completion":
-            # L2: an imported legacy project must be completed before it can
-            # live — the gate names every missing mandatory field, the same
-            # shape as the planning-exit gate above.
-            missing = _needs_completion_missing(conn, project_id, row["goal"])
-            if missing:
-                raise ValueError(
-                    f"project {project_id} was imported from a legacy store "
-                    "and needs completion before it can leave "
-                    f"'needs_completion': missing " + ", ".join(missing)
-                )
-        # ``done`` stamps the completion date (kept through archiving);
-        # reopening the project clears it.
-        if status == "done":
-            completed_sql = "completed_at = COALESCE(completed_at, ?)"
-            completed_arg: Optional[int] = _now()
-            if row["status"] != "done":
-                completed_sql = "completed_at = ?"
-        elif status == "archived":
-            completed_sql = "completed_at = COALESCE(completed_at, ?)"
-            completed_arg = None
-        else:
+        return _set_project_status_locked(conn, project_id, status)
+
+
+def _set_project_status_locked(
+    conn: sqlite3.Connection, project_id: str, status: str
+) -> bool:
+    """set_project_status inside the caller's write transaction."""
+    row = conn.execute(
+        "SELECT status, goal FROM projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    if row is None:
+        return False
+    if row["status"] == "planning" and status != "planning":
+        missing: List[str] = []
+        for table, label in (
+            ("project_outputs", "at least one output"),
+            ("project_members", "at least one member"),
+            ("project_profiles", "at least one profile"),
+        ):
+            count = conn.execute(
+                f"SELECT COUNT(*) AS n FROM {table} WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()["n"]
+            if not count:
+                missing.append(label)
+        if missing:
+            raise ValueError(
+                f"project {project_id} cannot leave 'planning': missing "
+                + ", ".join(missing)
+            )
+    if row["status"] == "needs_completion" and status != "needs_completion":
+        # L2: an imported legacy project must be completed before it can
+        # live — the gate names every missing mandatory field, the same
+        # shape as the planning-exit gate above.
+        missing = _needs_completion_missing(conn, project_id, row["goal"])
+        if missing:
+            raise ValueError(
+                f"project {project_id} was imported from a legacy store "
+                "and needs completion before it can leave "
+                f"'needs_completion': missing " + ", ".join(missing)
+            )
+    # ``done`` stamps the completion date (kept through archiving);
+    # reopening the project clears it.
+    if status == "done":
+        completed_sql = "completed_at = COALESCE(completed_at, ?)"
+        completed_arg: Optional[int] = _now()
+        if row["status"] != "done":
             completed_sql = "completed_at = ?"
-            completed_arg = None
-        cur = conn.execute(
-            f"UPDATE projects SET status = ?, {completed_sql} WHERE id = ?",
-            (status, completed_arg, project_id),
-        )
+    elif status == "archived":
+        completed_sql = "completed_at = COALESCE(completed_at, ?)"
+        completed_arg = None
+    else:
+        completed_sql = "completed_at = ?"
+        completed_arg = None
+    cur = conn.execute(
+        f"UPDATE projects SET status = ?, {completed_sql} WHERE id = ?",
+        (status, completed_arg, project_id),
+    )
     return cur.rowcount > 0
 
 
@@ -3190,24 +3197,31 @@ def activate_playbook_rev(
 ) -> bool:
     """Human-only activation (§7.2): exactly one rev is active at a time."""
     with write_txn(conn):
-        exists = conn.execute(
-            "SELECT 1 FROM project_playbook WHERE project_id = ? AND rev = ? "
-            "AND discarded_at IS NULL",
-            (project_id, rev),
-        ).fetchone()
-        if exists is None:
-            return False
-        conn.execute(
-            # A superseded revision keeps ``activated_at``: it was in use once,
-            # so it reads as an earlier version, never as a pending proposal.
-            "UPDATE project_playbook SET active = 0 WHERE project_id = ?",
-            (project_id,),
-        )
-        conn.execute(
-            "UPDATE project_playbook SET active = 1, activated_at = ?, "
-            "note = COALESCE(?, note) WHERE project_id = ? AND rev = ?",
-            (_now(), note, project_id, rev),
-        )
+        return _activate_playbook_rev_locked(conn, project_id, rev, note=note)
+
+
+def _activate_playbook_rev_locked(
+    conn: sqlite3.Connection, project_id: str, rev: int, *, note: Optional[str]
+) -> bool:
+    """activate_playbook_rev inside the caller's write transaction."""
+    exists = conn.execute(
+        "SELECT 1 FROM project_playbook WHERE project_id = ? AND rev = ? "
+        "AND discarded_at IS NULL",
+        (project_id, rev),
+    ).fetchone()
+    if exists is None:
+        return False
+    conn.execute(
+        # A superseded revision keeps ``activated_at``: it was in use once,
+        # so it reads as an earlier version, never as a pending proposal.
+        "UPDATE project_playbook SET active = 0 WHERE project_id = ?",
+        (project_id,),
+    )
+    conn.execute(
+        "UPDATE project_playbook SET active = 1, activated_at = ?, "
+        "note = COALESCE(?, note) WHERE project_id = ? AND rev = ?",
+        (_now(), note, project_id, rev),
+    )
     return True
 
 
@@ -3610,13 +3624,16 @@ def open_project_run(
     trace_id: Optional[str] = None,
     auto_approve: bool = False,
     first_only: bool = False,
+    activate: bool = False,
 ) -> dict:
     """Open the run row: ``run_no = max+1``, status ``running`` (§6).
 
     Raises :class:`RunAlreadyOpen` while another run of the project is
     ``running`` or ``waiting``; checked inside the write transaction so two
     concurrent starts cannot both open one. ``first_only`` opens run 1 or
-    nothing (:class:`FirstRunTaken`), checked in the same transaction."""
+    nothing (:class:`FirstRunTaken`), checked in the same transaction.
+    ``activate`` (with ``first_only``) also makes ``playbook_rev`` and the
+    project active there (:func:`_start_first_run_locked`)."""
     if trigger not in VALID_RUN_TRIGGERS:
         raise ValueError(f"trigger must be one of {sorted(VALID_RUN_TRIGGERS)}")
     if not str(profile or "").strip():
@@ -3633,6 +3650,10 @@ def open_project_run(
         open_runs = list_open_project_runs(conn, project_id)
         if open_runs:
             raise RunAlreadyOpen(open_runs[0]["run_no"], open_runs[0]["status"])
+        if activate:
+            if not first_only or playbook_rev is None:
+                raise ValueError("activate opens a first run of a given revision")
+            _start_first_run_locked(conn, project_id, int(playbook_rev))
         row = conn.execute(
             "SELECT COALESCE(MAX(run_no), 0) AS m FROM project_runs "
             "WHERE project_id = ?",
@@ -3657,6 +3678,42 @@ class FirstRunTaken(ValueError):
     def __init__(self, run_no: int):
         self.run_no = run_no
         super().__init__(f"this project already has run {run_no}")
+
+
+class FirstRunRefused(ValueError):
+    """A first run that may not start: the project is not planning/active
+    (or is archived), or the revision is gone. ``not_found`` tells which."""
+
+    def __init__(self, message: str, *, not_found: bool = False):
+        self.not_found = not_found
+        super().__init__(message)
+
+
+def _start_first_run_locked(conn: sqlite3.Connection, project_id: str, rev: int) -> None:
+    """Make *rev* active and a planning project active, in the transaction
+    that opens run 1, so a refused start leaves both as they were."""
+    row = conn.execute(
+        "SELECT slug, status, archived FROM projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    if row is None:
+        raise FirstRunRefused("project not found", not_found=True)
+    state = "archived" if row["archived"] else row["status"]
+    if state not in ("planning", "active"):
+        raise FirstRunRefused(
+            f"project {row['slug']} is '{state}': only a planning or active "
+            "project starts its first run"
+        )
+    plan = conn.execute(
+        "SELECT active FROM project_playbook WHERE project_id = ? AND rev = ? "
+        "AND discarded_at IS NULL",
+        (project_id, rev),
+    ).fetchone()
+    if plan is None:
+        raise FirstRunRefused(f"playbook revision {rev} not found", not_found=True)
+    if not plan["active"]:
+        _activate_playbook_rev_locked(conn, project_id, rev, note=None)
+    if state == "planning":
+        _set_project_status_locked(conn, project_id, "active")
 
 
 def get_project_run_by_id(

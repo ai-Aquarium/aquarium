@@ -4296,24 +4296,10 @@ async def first_run_route(request: Request, rev: int) -> dict[str, Any]:
                     status_code=404, detail=f"playbook revision {rev} not found"
                 )
             _attach_plan_profiles_sync(conn, project.id, rev, principal, accessible)
-            if not playbook.get("active"):
-                if not projects_db.activate_playbook_rev(conn, project.id, rev):
-                    raise HTTPException(
-                        status_code=404, detail=f"playbook revision {rev} not found"
-                    )
-                projects_db.record_project_activity(
-                    conn, project.id, "playbook_activated",
-                    actor=principal.user_id, detail={"rev": rev},
-                )
-            if current.status == "planning":
-                projects_db.set_project_status(conn, project.id, "active")
-                projects_db.record_project_activity(
-                    conn, project.id, "brief_edited",
-                    actor=principal.user_id, detail={"fields": ["status"]},
-                )
-                current = projects_db.get_project(conn, project.id)
             with _board_conn(current) as bconn:
                 try:
+                    # Activation, the status change and run 1 land in one
+                    # transaction: a refused start changes none of them.
                     started = projects_run.start_run(
                         conn,
                         bconn,
@@ -4323,6 +4309,7 @@ async def first_run_route(request: Request, rev: int) -> dict[str, Any]:
                         playbook_rev=rev,
                         accessible=accessible,
                         first_only=True,
+                        activate=True,
                     )
                 except (projects_db.FirstRunTaken, projects_db.RunAlreadyOpen) as exc:
                     # Another click got there first: its run 1 is the answer.
@@ -4330,10 +4317,24 @@ async def first_run_route(request: Request, rev: int) -> dict[str, Any]:
                     if done is not None:
                         return done
                     raise HTTPException(status_code=409, detail=str(exc))
+                except projects_db.FirstRunRefused as exc:
+                    raise HTTPException(
+                        status_code=404 if exc.not_found else 409, detail=str(exc)
+                    )
                 except projects_run.AssigneeNotAccessible as exc:
                     raise HTTPException(status_code=403, detail=str(exc))
                 except ValueError as exc:
                     raise HTTPException(status_code=409, detail=str(exc))
+            if not playbook.get("active"):
+                projects_db.record_project_activity(
+                    conn, project.id, "playbook_activated",
+                    actor=principal.user_id, detail={"rev": rev},
+                )
+            if current.status == "planning":
+                projects_db.record_project_activity(
+                    conn, project.id, "brief_edited",
+                    actor=principal.user_id, detail={"fields": ["status"]},
+                )
         return {"rev": rev, "run": started["run"], "started": True}
 
     return await asyncio.to_thread(_first_run_sync)

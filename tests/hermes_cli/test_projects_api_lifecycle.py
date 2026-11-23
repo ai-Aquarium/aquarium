@@ -1076,7 +1076,7 @@ def test_first_run_that_loses_the_race_inside_the_start_returns_the_winner(env, 
     real_start = projects_run.start_run
 
     def start_after_another(pconn, bconn, **kwargs):
-        real_start(pconn, bconn, **{**kwargs, "first_only": False})
+        real_start(pconn, bconn, **kwargs)
         return real_start(pconn, bconn, **kwargs)
 
     monkeypatch.setattr(projects_run, "start_run", start_after_another)
@@ -1186,5 +1186,47 @@ def test_first_run_is_a_human_act(env):
     finally:
         state["subject"] = OWNER.user_id
     assert resp.status_code == 403 and "human" in resp.json()["detail"].lower()
+    assert client.get(f"{PREFIX}/{slug}/playbook").json()["active"] is None
+    assert _runs(env, slug) == []
+
+
+def test_first_run_that_loses_to_another_revision_leaves_the_winners_plan(env, monkeypatch):
+    """Two tabs: one starts v2 between this request's check and its start.
+    This v1 request is refused and v1 is not made active behind v2's run."""
+    client, _state = env
+    slug, v1 = _planning_project_with_v1(env)
+    v2 = client.post(
+        f"{PREFIX}/{slug}/playbook", json={"body": "v2", "steps": STEPS}
+    ).json()["rev"]
+    real_start = projects_run.start_run
+
+    def other_tab_first(pconn, bconn, **kwargs):
+        real_start(pconn, bconn, **{**kwargs, "playbook_rev": v2})
+        return real_start(pconn, bconn, **kwargs)
+
+    monkeypatch.setattr(projects_run, "start_run", other_tab_first)
+    resp = client.post(f"{PREFIX}/{slug}/playbook/{v1}/first-run", json={})
+    assert resp.status_code == 409, resp.text
+    assert client.get(f"{PREFIX}/{slug}/playbook").json()["active"]["rev"] == v2
+    runs = client.get(f"{PREFIX}/{slug}/runs").json()["runs"]
+    assert [(r["run_no"], r["playbook_rev"]) for r in runs] == [(1, v2)]
+
+
+def test_first_run_archived_mid_request_stays_archived(env, monkeypatch):
+    client, _state = env
+    slug, rev = _planning_project_with_v1(env)
+    pid = _pid(env, slug)
+    real_start = projects_run.start_run
+
+    def archived_meanwhile(pconn, bconn, **kwargs):
+        projects_db.archive_project(pconn, pid)
+        return real_start(pconn, bconn, **kwargs)
+
+    monkeypatch.setattr(projects_run, "start_run", archived_meanwhile)
+    resp = client.post(f"{PREFIX}/{slug}/playbook/{rev}/first-run", json={})
+    assert resp.status_code == 409 and "archived" in resp.json()["detail"]
+    with projects_db.connect_closing() as conn:
+        row = projects_db.get_project(conn, pid)
+    assert row.archived and row.status == "archived"
     assert client.get(f"{PREFIX}/{slug}/playbook").json()["active"] is None
     assert _runs(env, slug) == []
