@@ -156,7 +156,9 @@ export function ProjectLog({ project }: { project: ProjectDetail }) {
               type="button"
               data-filter={value}
               aria-pressed={filter === value}
-              onClick={() => refilter(() => setFilter(value))}
+              onClick={() => {
+                if (filter !== value) refilter(() => setFilter(value));
+              }}
               className={`${CHIP} ${filter === value ? CHIP_ON : CHIP_OFF}`}
             >
               {t(`log.${value}`)}

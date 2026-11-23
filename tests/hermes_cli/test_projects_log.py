@@ -357,3 +357,117 @@ def test_log_read_gate_is_the_project_read_gate(env):
             conn, project_id=private["id"], user_id="eve", role="viewer"
         )
     assert client.get(f"{_PREFIX}/{private['slug']}/log").status_code == 200
+
+
+def _run_with_session(pid: str, started_at: int) -> dict:
+    with projects_db.connect_closing() as conn:
+        run = projects_db.open_project_run(
+            conn, project_id=pid, trigger="manual", triggered_by="leo",
+            profile="default",
+        )
+        projects_db.update_project_run(conn, run["id"], session_id="sess-run")
+        conn.execute(
+            "UPDATE project_runs SET started_at = ? WHERE id = ?",
+            (started_at, run["id"]),
+        )
+        conn.commit()
+    return run
+
+
+def test_show_older_reaches_every_tool_call(env):
+    project = _create(env)
+    base = int(time.time()) - 500
+    _run_with_session(project["id"], base)
+    db = _state_db(env[2], "default")
+    for i in range(1, 102):  # one call a second
+        _tool_message(db, "sess-run", [f"t{i}"], base + i)
+    db.close()
+    rows = _all(env, project["slug"], kind="tools", limit=50)
+    assert sorted(r["detail"]["tool"] for r in rows) == sorted(
+        f"t{i}" for i in range(1, 102)
+    )
+
+
+def test_paging_inside_one_busy_second(env):
+    project = _create(env)
+    base = int(time.time()) - 100
+    _run_with_session(project["id"], base)
+    db = _state_db(env[2], "default")
+    for i in range(7):  # all in the same second
+        _tool_message(db, "sess-run", [f"same{i}"], base + 10.25)
+    _tool_message(db, "sess-run", ["earlier"], base + 5)
+    db.close()
+    paged = _all(env, project["slug"], kind="tools", limit=2)
+    assert sorted(r["detail"]["tool"] for r in paged) == sorted(
+        [f"same{i}" for i in range(7)] + ["earlier"]
+    )
+    assert len({r["id"] for r in paged}) == len(paged)
+
+
+def test_reassigned_card_keeps_its_earlier_tool_calls(env):
+    project = _create(env)
+    pid = project["id"]
+    base = int(time.time()) - 100
+    run = _run_with_session(pid, base)
+    with kanban_db.connect_closing() as bconn:
+        # Worked by the host profile, then reassigned elsewhere.
+        tid = kanban_db.create_task(
+            bconn, title="Research", project_id=pid, assignee="writer"
+        )
+    with projects_db.connect_closing() as conn:
+        projects_db.link_run_card(conn, run["id"], tid)
+    db = _state_db(env[2], "default")
+    db.execute(
+        "INSERT INTO api_call_log (session_id, kanban_task_id, ts) "
+        "VALUES ('sess-research', ?, ?)", (tid, base + 1),
+    )
+    _tool_message(db, "sess-research", ["web_search"], base + 2)
+    db.close()
+    tools = _all(env, project["slug"], kind="tools")
+    assert [r["detail"]["tool"] for r in tools] == ["web_search"]
+    assert tools[0]["link"] == {"type": "card", "id": tid}
+
+
+def test_retro_and_delivery_by_a_person_are_credited_to_them(env):
+    project = _create(env)
+    pid, slug = project["id"], project["slug"]
+    client = env[0]
+    with projects_db.connect_closing() as conn:
+        run = projects_db.open_project_run(
+            conn, project_id=pid, trigger="schedule", profile="default",
+        )
+        oid = projects_db.get_project_outputs(conn, pid)[0]["id"]
+    resp = client.post(
+        f"{_PREFIX}/{slug}/runs/{run['run_no']}/retro",
+        json={"retro": "Went fine."},
+    )
+    assert resp.status_code == 200, resp.text
+    resp = client.post(
+        f"{_PREFIX}/{slug}/outputs/{oid}/deliver",
+        json={"label": "digest.pdf", "profile": "default", "run_id": run["id"]},
+    )
+    assert resp.status_code == 200, resp.text
+
+    rows = _all(env, slug)
+    retros = [r for r in rows if r["action"] == "run_retro"]
+    delivered = [r for r in rows if r["action"] == "output_delivered"]
+    assert [(r["actor"], r["who"]) for r in retros] == [("person", "leo")]
+    assert [(r["actor"], r["who"]) for r in delivered] == [("person", "leo")]
+    assert delivered[0]["detail"]["title"] == "The Monday digest email"
+    assert delivered[0]["link"] == {"type": "run", "run_no": run["run_no"]}
+    assert "Went fine" not in json.dumps(retros)
+    people = {r["id"] for r in _all(env, slug, actor="people")}
+    assert {retros[0]["id"], delivered[0]["id"]} <= people
+
+
+def test_activity_inside_an_open_write_commits_with_it(env):
+    project = _create(env)
+    with projects_db.connect_closing() as conn:
+        with projects_db.write_txn(conn):
+            projects_db.record_project_activity(
+                conn, project["id"], "tools_edited", actor="leo",
+                detail={"fields": ["toolsets"]},
+            )
+    assert any(
+        r["action"] == "tools_edited" for r in _all(env, project["slug"])
+    )
