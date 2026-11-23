@@ -3336,15 +3336,25 @@ export class HermesApiClient {
     return this.request("/api/software-upgrade/job");
   }
 
-  async checkSoftwareUpgrade(): Promise<SoftwareUpgradeStatus> {
-    return this.request("/api/software-upgrade/check", { method: "POST" });
+  /** Refresh the release list; with a version, also run its pre-flight checks. */
+  async checkSoftwareUpgrade(version?: string): Promise<SoftwareUpgradeStatus> {
+    return this.request(
+      "/api/software-upgrade/check",
+      version ? { method: "POST", json: { version } } : { method: "POST" },
+    );
   }
 
   async startSoftwareUpgrade(body: {
     version: string;
     password: string;
+    confirm_busy?: boolean;
   }): Promise<{ started: boolean; status: SoftwareUpgradeStatus }> {
     return this.request("/api/software-upgrade/start", { method: "POST", json: body });
+  }
+
+  /** "Try again" for the system-helper step an older upgrade job left undone. */
+  async finishSoftwareUpgrade(): Promise<{ started: boolean; status: SoftwareUpgradeStatus }> {
+    return this.request("/api/software-upgrade/finish", { method: "POST" });
   }
 
   async rollbackSoftwareUpgrade(body: {
