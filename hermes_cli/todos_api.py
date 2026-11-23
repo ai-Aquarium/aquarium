@@ -257,6 +257,9 @@ async def get_todo(request: Request, todo_id: str) -> dict[str, Any]:
     # Once started, the to-do is its project: the page follows ``project.url``.
     await todo_task.attach_projects(principal, [payload])
     payload["history"] = await store.history(principal, todo_id)
+    # Someone else's to-do read through "Whose data" is view-only (FG-38).
+    acting = _acting(request, principal)
+    payload["editable"] = acting is principal or await store.get(acting, todo_id) is not None
     source = await _source_item(principal, todo)
     payload["source"] = source
     memory = await _memory_doc(principal, source)

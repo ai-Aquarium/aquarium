@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
@@ -10,7 +17,13 @@ import type { UseSuggestedTasks } from "@/components/suggested-tasks/useSuggeste
 import type { SuggestedTask } from "@/types";
 import type { NeedsYouEntry } from "@/types/landing";
 
-import { NeedsYouPanel, NeedsYouPanelView, needsYouCount, sortBySeverity, withoutSuggestedAsks } from "./NeedsYouPanel";
+import {
+  NeedsYouPanel,
+  NeedsYouPanelView,
+  needsYouCount,
+  sortBySeverity,
+  withoutSuggestedAsks,
+} from "./NeedsYouPanel";
 import { needsYouEntry, needsYouResponse } from "./fixtures";
 import { resetNeedsYouFeedCache, useNeedsYouFeed } from "./useNeedsYouFeed";
 
@@ -21,9 +34,17 @@ afterEach(() => {
 });
 
 const json = (body: unknown) =>
-  new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 
-const view = { count: 0, newIds: new Set<string>(), loaded: true, stale: false };
+const view = {
+  count: 0,
+  newIds: new Set<string>(),
+  loaded: true,
+  stale: false,
+};
 
 describe("NeedsYouPanelView", () => {
   it("shows the all-clear picture when nothing is waiting", () => {
@@ -49,11 +70,26 @@ describe("NeedsYouPanelView", () => {
       needsYouEntry({ id: "c", severity: "approval", title: "Approve" }),
     ];
     const { container } = render(
-      <NeedsYouPanelView {...view} count={3} items={items} newIds={new Set(["c"])} />,
+      <NeedsYouPanelView
+        {...view}
+        count={3}
+        items={items}
+        newIds={new Set(["c"])}
+      />,
     );
-    const rows = [...container.querySelectorAll("[data-component=NeedsYouItem]")];
-    expect(rows.map((r) => r.getAttribute("data-severity"))).toEqual(["blocking", "approval", "fyi"]);
-    expect(rows.map((r) => r.hasAttribute("data-new"))).toEqual([false, true, false]);
+    const rows = [
+      ...container.querySelectorAll("[data-component=NeedsYouItem]"),
+    ];
+    expect(rows.map((r) => r.getAttribute("data-severity"))).toEqual([
+      "blocking",
+      "approval",
+      "fyi",
+    ]);
+    expect(rows.map((r) => r.hasAttribute("data-new"))).toEqual([
+      false,
+      true,
+      false,
+    ]);
   });
 
   it("keeps the server order within a severity", () => {
@@ -65,7 +101,10 @@ describe("NeedsYouPanelView", () => {
 describe("useNeedsYouFeed", () => {
   it("flags entries that appear after the first read and keeps last good data on failure", async () => {
     const first = needsYouResponse([needsYouEntry({ id: "a" })]);
-    const second = needsYouResponse([needsYouEntry({ id: "a" }), needsYouEntry({ id: "b" })]);
+    const second = needsYouResponse([
+      needsYouEntry({ id: "a" }),
+      needsYouEntry({ id: "b" }),
+    ]);
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(json(first))
@@ -87,31 +126,64 @@ describe("useNeedsYouFeed", () => {
   });
 
   it("treats a missing route as not loaded rather than all clear", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 404 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("", { status: 404 }),
+    );
     render(<NeedsYouPanel />);
-    await waitFor(() => expect(screen.getByText(/Couldn’t check right now/)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText(/Couldn’t check right now/)).toBeTruthy(),
+    );
     expect(screen.queryByTestId("needs-you-all-clear")).toBeNull();
   });
 });
 
 describe("NeedsYouPanelView with suggested tasks", () => {
   const KEY = "arrival:email:sales%40acme.hk:msg-1";
-  const ask = (id: string, severity: NeedsYouEntry["severity"], context: NeedsYouEntry["context"] = {}) =>
-    ({ id, source: "todo", severity, title: id, context, created_at: 0, href: "/", actions: [] }) as NeedsYouEntry;
+  const ask = (
+    id: string,
+    severity: NeedsYouEntry["severity"],
+    context: NeedsYouEntry["context"] = {},
+  ) =>
+    ({
+      id,
+      source: "todo",
+      severity,
+      title: id,
+      context,
+      created_at: 0,
+      href: "/",
+      actions: [],
+    }) as NeedsYouEntry;
   const card = {
     channel: "email",
     todo: { id: "t1" },
-    source: { id: "m1", surface: "email", account_id: "sales@acme.hk", external_id: "msg-1" },
+    source: {
+      id: "m1",
+      surface: "email",
+      account_id: "sales@acme.hk",
+      external_id: "msg-1",
+    },
   } as unknown as SuggestedTask;
-  const feed = (items: SuggestedTask[], extra: Partial<UseSuggestedTasks> = {}): UseSuggestedTasks => ({
-    items, loaded: true, error: null, profile: "default", refresh: async () => {}, remove: () => {}, ...extra,
+  const feed = (
+    items: SuggestedTask[],
+    extra: Partial<UseSuggestedTasks> = {},
+  ): UseSuggestedTasks => ({
+    items,
+    loaded: true,
+    error: null,
+    profile: "default",
+    refresh: async () => {},
+    remove: () => {},
+    ...extra,
   });
 
   it("drops only the alert a card on screen stands for", () => {
     const items = [
       ask("same-message", "fyi", { arrival_key: KEY }),
       ask("same-message-reply", "approval", { arrival_key: KEY }),
-      ask("other-message", "fyi", { arrival_key: "arrival:email:sales%40acme.hk:msg-2" }),
+      ask("other-message", "fyi", {
+        arrival_key: "arrival:email:sales%40acme.hk:msg-2",
+      }),
       ask("no-arrival", "fyi"),
     ];
     expect(withoutSuggestedAsks(items, feed([card])).map((e) => e.id)).toEqual([
@@ -123,17 +195,34 @@ describe("NeedsYouPanelView with suggested tasks", () => {
 
   it("keeps alerts raised in another profile, and everything when no card shows", () => {
     const cfo = ask("cfo", "fyi", { arrival_key: KEY, profiles: ["cfo"] });
-    const both = ask("both", "fyi", { arrival_key: KEY, profiles: ["cfo", "default"] });
-    const here = ask("here", "fyi", { arrival_key: KEY, profiles: ["default"] });
-    expect(withoutSuggestedAsks([cfo, both, here], feed([card])).map((e) => e.id)).toEqual(["cfo", "both"]);
+    const both = ask("both", "fyi", {
+      arrival_key: KEY,
+      profiles: ["cfo", "default"],
+    });
+    const here = ask("here", "fyi", {
+      arrival_key: KEY,
+      profiles: ["default"],
+    });
+    expect(
+      withoutSuggestedAsks([cfo, both, here], feed([card])).map((e) => e.id),
+    ).toEqual(["cfo", "both"]);
     expect(withoutSuggestedAsks([cfo, here], feed([]))).toHaveLength(2);
-    expect(withoutSuggestedAsks([here], feed([card], { error: "down" }))).toHaveLength(1);
+    expect(
+      withoutSuggestedAsks([here], feed([card], { error: "down" })),
+    ).toHaveLength(1);
     expect(withoutSuggestedAsks([here], undefined)).toHaveLength(1);
   });
 
   it("counts every suggested task, quiet ones included, without the alerts they replace", () => {
-    const quiet = { ...card, todo: { id: "t2", stage: "staged" }, source: null } as unknown as SuggestedTask;
-    const items = [ask("same-message", "fyi", { arrival_key: KEY }), ask("card-wait", "approval")];
+    const quiet = {
+      ...card,
+      todo: { id: "t2", stage: "staged" },
+      source: null,
+    } as unknown as SuggestedTask;
+    const items = [
+      ask("same-message", "fyi", { arrival_key: KEY }),
+      ask("card-wait", "approval"),
+    ];
     expect(needsYouCount(2, items, feed([card, quiet]))).toBe(3);
     expect(needsYouCount(2, items, undefined)).toBe(2);
   });
@@ -141,15 +230,30 @@ describe("NeedsYouPanelView with suggested tasks", () => {
   it("counts past the loaded page without counting an unloaded task and its alert twice", () => {
     // 50 quiet suggestions loaded; one older open suggestion (t-old) is on page 2
     // and has its own alert. 51 tasks need you, however many pages are loaded.
-    const page1 = Array.from({ length: 50 }, (_, i) =>
-      ({ ...card, todo: { id: `q${i}`, stage: "staged" }, source: null }) as unknown as SuggestedTask,
+    const page1 = Array.from(
+      { length: 50 },
+      (_, i) =>
+        ({
+          ...card,
+          todo: { id: `q${i}`, stage: "staged" },
+          source: null,
+        }) as unknown as SuggestedTask,
     );
-    const older = ask("old-alert", "fyi", { todo_id: "t-old", suggested: true, arrival_key: KEY, profile: "default" });
+    const older = ask("old-alert", "fyi", {
+      todo_id: "t-old",
+      suggested: true,
+      arrival_key: KEY,
+      profile: "default",
+    });
     const tally = { count: 51 };
     expect(needsYouCount(1, [older], feed(page1), tally)).toBe(51);
     expect(needsYouCount(1, [older], feed([...page1, card]), tally)).toBe(51);
     // Another profile's alert for the same to-do id is not this task.
-    const elsewhere = ask("other-profile", "fyi", { todo_id: "t-old", suggested: true, profiles: ["default", "cfo"] });
+    const elsewhere = ask("other-profile", "fyi", {
+      todo_id: "t-old",
+      suggested: true,
+      profiles: ["default", "cfo"],
+    });
     expect(needsYouCount(1, [elsewhere], feed(page1), tally)).toBe(52);
     // Approvals always count on their own.
     const approval = ask("reply", "approval", { todo_id: "t-old" });
@@ -158,10 +262,32 @@ describe("NeedsYouPanelView with suggested tasks", () => {
 
   it("counts a suggested task and its alert once however many alerts there are", () => {
     const alerts = Array.from({ length: 250 }, (_, i) =>
-      ask(`a${i}`, "fyi", { todo_id: `s${i}`, suggested: true, profile: "default" }),
+      ask(`a${i}`, "fyi", {
+        todo_id: `s${i}`,
+        suggested: true,
+        profile: "default",
+      }),
     );
-    const started = ask("started", "fyi", { todo_id: "w1", profile: "default" });
+    const started = ask("started", "fyi", {
+      todo_id: "w1",
+      profile: "default",
+    });
     const tally = { count: 250 };
     expect(needsYouCount(251, [...alerts, started], feed([]), tally)).toBe(251);
+  });
+});
+
+describe("needsYouCount with a wider Viewing", () => {
+  it("never counts other people's waits", () => {
+    const theirs = {
+      ...needsYouEntry(),
+      id: "theirs",
+      foreign: true,
+      owner_user_id: "ada",
+    } as NeedsYouEntry;
+    expect(needsYouCount(0, [theirs], undefined)).toBe(0);
+    expect(needsYouCount(0, [theirs], undefined, { count: 0 } as never)).toBe(
+      0,
+    );
   });
 });

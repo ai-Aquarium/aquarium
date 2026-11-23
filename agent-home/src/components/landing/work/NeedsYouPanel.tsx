@@ -3,12 +3,19 @@
 import { useState } from "react";
 
 import { SuggestedTasksNeedsYou } from "@/components/suggested-tasks/SuggestedTasksNeedsYou";
-import { type UseSuggestedTasks, useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
+import {
+  type UseSuggestedTasks,
+  useSuggestedTasks,
+} from "@/components/suggested-tasks/useSuggestedTasks";
 import { useNeedsYouText } from "@/lib/landing/needsYouText";
 import { arrivalKeyOf } from "@/lib/suggested-tasks/channels";
 import type { NeedsYouEntry } from "@/types/landing";
 
-import { type DraftRevision, type NeedsYouDetailItem, NeedsYouDetails } from "./NeedsYouDetails";
+import {
+  type DraftRevision,
+  type NeedsYouDetailItem,
+  NeedsYouDetails,
+} from "./NeedsYouDetails";
 import { NeedsYouItem } from "./NeedsYouItem";
 import { SectionHeader } from "./SectionHeader";
 import { SEVERITY_RANK } from "./tone";
@@ -23,8 +30,8 @@ export function sortBySeverity(items: NeedsYouEntry[]): NeedsYouEntry[] {
     .map((entry, i) => ({ entry, i }))
     .sort(
       (a, b) =>
-        (SEVERITY_RANK[a.entry.severity] ?? 9) - (SEVERITY_RANK[b.entry.severity] ?? 9) ||
-        a.i - b.i,
+        (SEVERITY_RANK[a.entry.severity] ?? 9) -
+          (SEVERITY_RANK[b.entry.severity] ?? 9) || a.i - b.i,
     )
     .map((x) => x.entry);
 }
@@ -49,17 +56,25 @@ export type NeedsYouPanelViewProps = Pick<
  * from other profiles, for messages past the loaded page, without an arrival,
  * and reply approvals (severity approval) all stay.
  */
-export function withoutSuggestedAsks(items: NeedsYouEntry[], suggested?: UseSuggestedTasks): NeedsYouEntry[] {
-  if (!suggested?.loaded || suggested.error || suggested.items.length === 0) return items;
+export function withoutSuggestedAsks(
+  items: NeedsYouEntry[],
+  suggested?: UseSuggestedTasks,
+): NeedsYouEntry[] {
+  if (!suggested?.loaded || suggested.error || suggested.items.length === 0)
+    return items;
   const shown = new Set(
-    suggested.items.map((t) => arrivalKeyOf(t.source)).filter((k): k is string => k !== null),
+    suggested.items
+      .map((t) => arrivalKeyOf(t.source))
+      .filter((k): k is string => k !== null),
   );
   const here = suggested.profile ?? null;
   return items.filter((e) => {
     if (e.source !== "todo" || e.severity === "approval") return true;
     const key = e.context?.arrival_key;
     if (!key || !shown.has(key)) return true;
-    const raisedIn = (e.context.profiles ?? [e.context.profile]).filter((p): p is string => !!p);
+    const raisedIn = (e.context.profiles ?? [e.context.profile]).filter(
+      (p): p is string => !!p,
+    );
     return raisedIn.some((p) => p !== here);
   });
 }
@@ -84,7 +99,9 @@ export function NeedsYouPanelView({
   const kept = withoutSuggestedAsks(items, suggested);
   const sorted = sortBySeverity(kept);
   const suggestions = suggested?.items.length ?? 0;
-  const shownCount = loaded ? needsYouCount(count, items, suggested, tally) : null;
+  const shownCount = loaded
+    ? needsYouCount(count, items, suggested, tally)
+    : null;
   const details = useDetails(sorted, suggested, onActed);
 
   return (
@@ -100,19 +117,30 @@ export function NeedsYouPanelView({
         count={shownCount}
         attention={sorted.length + suggestions > 0}
       />
-      {suggested ? <SuggestedTasksNeedsYou feed={suggested} canStart={canStart} onDetails={details.openTask} /> : null}
+      {suggested ? (
+        <SuggestedTasksNeedsYou
+          feed={suggested}
+          canStart={canStart}
+          onDetails={details.openTask}
+        />
+      ) : null}
       {!loaded ? (
         stale ? (
           <p className="px-3 text-[12px] leading-[16px] text-[var(--color-muted)]">
             {t("retrying")}
           </p>
         ) : (
-          <div aria-hidden className="flex flex-col gap-2" data-testid="needs-you-skeleton">
+          <div
+            aria-hidden
+            className="flex flex-col gap-2"
+            data-testid="needs-you-skeleton"
+          >
             <div className="h-[102px] animate-pulse rounded-[var(--radius-lg)] bg-[var(--color-surface-2)]" />
             <div className="h-[102px] animate-pulse rounded-[var(--radius-lg)] bg-[var(--color-surface-2)]" />
           </div>
         )
-      ) : sorted.length === 0 && suggestions > 0 ? null : sorted.length === 0 ? (
+      ) : sorted.length === 0 && suggestions > 0 ? null : sorted.length ===
+        0 ? (
         <div
           data-testid="needs-you-all-clear"
           className="flex flex-col items-center gap-2 py-3 text-center"
@@ -178,14 +206,22 @@ function useDetails(
   const [open, setOpen] = useState<NeedsYouDetailItem | null>(null);
   const [revisions, setRevisions] = useState<Record<string, DraftRevision>>({});
   const items: NeedsYouDetailItem[] = [
-    ...(suggested?.items ?? []).map((task) => ({ key: `suggested:${task.todo.id}`, kind: "suggested" as const, task })),
-    ...entries.map((entry) => ({ key: entry.id, kind: "entry" as const, entry })),
+    ...(suggested?.items ?? []).map((task) => ({
+      key: `suggested:${task.todo.id}`,
+      kind: "suggested" as const,
+      task,
+    })),
+    ...entries.map((entry) => ({
+      key: entry.id,
+      kind: "entry" as const,
+      entry,
+    })),
   ];
   const todoOf = (item: NeedsYouDetailItem | null) =>
-    item?.kind === "entry" ? item.entry.context.todo_id ?? null : null;
+    item?.kind === "entry" ? (item.entry.context.todo_id ?? null) : null;
   const revisionOf = (item: NeedsYouDetailItem) => {
     const id = todoOf(item);
-    return id ? revisions[id] ?? null : null;
+    return id ? (revisions[id] ?? null) : null;
   };
 
   let current: NeedsYouDetailItem | null = null;
@@ -194,7 +230,12 @@ function useDetails(
     const todoId = todoOf(open);
     if (!current && todoId && revisions[todoId]) {
       current =
-        items.find((i) => i.kind === "entry" && i.entry.severity === "approval" && todoOf(i) === todoId) ?? null;
+        items.find(
+          (i) =>
+            i.kind === "entry" &&
+            i.entry.severity === "approval" &&
+            todoOf(i) === todoId,
+        ) ?? null;
     }
     current = current ?? open;
   }
@@ -207,7 +248,9 @@ function useDetails(
   };
   const moveOn = () => {
     const rest = items.filter((i) => i.key !== current?.key);
-    setOpen(rest.length ? rest[Math.min(Math.max(index, 0), rest.length - 1)] : null);
+    setOpen(
+      rest.length ? rest[Math.min(Math.max(index, 0), rest.length - 1)] : null,
+    );
   };
 
   return {
@@ -217,7 +260,8 @@ function useDetails(
     step,
     revisionOf,
     close: () => setOpen(null),
-    openEntry: (entry: NeedsYouEntry) => setOpen({ key: entry.id, kind: "entry", entry }),
+    openEntry: (entry: NeedsYouEntry) =>
+      setOpen({ key: entry.id, kind: "entry", entry }),
     openTask: (task: NonNullable<UseSuggestedTasks["items"]>[number]) =>
       setOpen({ key: `suggested:${task.todo.id}`, kind: "suggested", task }),
     acted: (entry: NeedsYouEntry) => {
@@ -226,7 +270,11 @@ function useDetails(
     },
     revise: (entry: NeedsYouEntry, note: string) => {
       const todoId = entry.context.todo_id;
-      if (todoId) setRevisions((r) => ({ ...r, [todoId]: { note, answeredKey: entry.id } }));
+      if (todoId)
+        setRevisions((r) => ({
+          ...r,
+          [todoId]: { note, answeredKey: entry.id },
+        }));
       if (current) setOpen(current);
       onActed?.(entry);
     },
@@ -244,8 +292,12 @@ export interface SuggestedTally {
 }
 
 /** The tally from a Needs-you read, or null when it had none. */
-export function tallyOf(needsYou: { suggestedCount: number | null }): SuggestedTally | null {
-  return needsYou.suggestedCount === null ? null : { count: needsYou.suggestedCount };
+export function tallyOf(needsYou: {
+  suggestedCount: number | null;
+}): SuggestedTally | null {
+  return needsYou.suggestedCount === null
+    ? null
+    : { count: needsYou.suggestedCount };
 }
 
 /**
@@ -264,18 +316,25 @@ export function needsYouCount(
   suggested?: UseSuggestedTasks,
   tally?: SuggestedTally | null,
 ): number {
+  // Only the caller's own waits count: others' seen through "Viewing" never do.
+  const own = items.filter((e) => !e.foreign);
   if (!tally) {
-    const kept = withoutSuggestedAsks(items, suggested);
-    return Math.max(count - (items.length - kept.length), kept.length) + (suggested?.items.length ?? 0);
+    const kept = withoutSuggestedAsks(own, suggested);
+    return (
+      Math.max(count - (own.length - kept.length), kept.length) +
+      (suggested?.items.length ?? 0)
+    );
   }
   const here = suggested?.profile ?? null;
-  const dropped = items.filter((e) => {
+  const dropped = own.filter((e) => {
     if (e.source !== "todo" || e.severity === "approval") return false;
     if (!e.context?.suggested) return false;
-    const raisedIn = (e.context.profiles ?? [e.context.profile]).filter((p): p is string => !!p);
+    const raisedIn = (e.context.profiles ?? [e.context.profile]).filter(
+      (p): p is string => !!p,
+    );
     return !raisedIn.some((p) => p !== here);
   }).length;
-  return Math.max(count - dropped, items.length - dropped) + tally.count;
+  return Math.max(count - dropped, own.length - dropped) + tally.count;
 }
 
 /**
@@ -295,14 +354,31 @@ export function NeedsYouPanel({
   tally?: SuggestedTally | null;
 }) {
   return suggested ? (
-    <PanelWith feed={feed} canStart={canStart} suggested={suggested} tally={tally} />
+    <PanelWith
+      feed={feed}
+      canStart={canStart}
+      suggested={suggested}
+      tally={tally}
+    />
   ) : (
     <PanelReadingSuggestions feed={feed} canStart={canStart} />
   );
 }
 
-function PanelReadingSuggestions({ feed, canStart }: { feed?: NeedsYouFeed; canStart: boolean }) {
-  return <PanelWith feed={feed} canStart={canStart} suggested={useSuggestedTasks()} />;
+function PanelReadingSuggestions({
+  feed,
+  canStart,
+}: {
+  feed?: NeedsYouFeed;
+  canStart: boolean;
+}) {
+  return (
+    <PanelWith
+      feed={feed}
+      canStart={canStart}
+      suggested={useSuggestedTasks()}
+    />
+  );
 }
 
 function PanelWith({
@@ -329,7 +405,20 @@ function PanelWith({
   );
 }
 
-function OwnFeed({ suggested, canStart }: { suggested: UseSuggestedTasks; canStart: boolean }) {
+function OwnFeed({
+  suggested,
+  canStart,
+}: {
+  suggested: UseSuggestedTasks;
+  canStart: boolean;
+}) {
   const feed = useNeedsYouFeed();
-  return <NeedsYouPanelView {...feed} suggested={suggested} canStart={canStart} onActed={() => void feed.refresh()} />;
+  return (
+    <NeedsYouPanelView
+      {...feed}
+      suggested={suggested}
+      canStart={canStart}
+      onActed={() => void feed.refresh()}
+    />
+  );
 }

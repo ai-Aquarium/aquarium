@@ -13677,23 +13677,28 @@ async def needs_you(request: Request):
     try:
         from tools.approval import list_pending_gateway_approvals
 
-        scope = _chat_scope_for(principal)
-
-        def _may_open(approval: dict) -> bool:
-            # Another person's approval shows only if the caller may open its chat.
-            if approval.get("requester_user_id") in (None, me) or scope is None:
+        async def _may_open(approval: dict) -> bool:
+            # Another person's approval shows only if the caller may open its
+            # chat, judged in the chat's own profile (FG-28 D3).
+            if approval.get("requester_user_id") in (None, me):
                 return True
             run = runs.get(approval["session_key"])
+            if run is None:
+                return False
             try:
-                _require_chat_access_by_id(run["session_id"], run.get("profile"), scope)
-            except (HTTPException, KeyError, TypeError):
+                viewer = await _chat_principal(request, run.get("profile"))
+                _require_chat_access_by_id(
+                    run["session_id"], run.get("profile"), _chat_scope_for(viewer)
+                )
+            except HTTPException:
                 return False
             return True
 
         approvals = list_pending_gateway_approvals(runs.keys())
+        if others:
+            approvals = [a for a in approvals if await _may_open(a)]
         items.extend(ny.chat_approval_entries(
-            [a for a in approvals if _may_open(a)] if others else approvals,
-            runs, principal, admin=admin, requesters=others,
+            approvals, runs, principal, admin=admin, requesters=others,
         ))
     except Exception:
         _log.warning("needs-you: chat approvals source failed", exc_info=True)
@@ -14014,7 +14019,8 @@ async def resolve_run_approval(run_id: str, request: Request):
         if entry is None:
             raise HTTPException(status_code=404, detail="no such run")
         _require_chat_access_by_id(entry["session_id"], entry.get("profile"), scope)
-    if _comms_session_subject(request):
+    signed_in = bool(_comms_session_subject(request))
+    if signed_in:
         # Reading someone's chat is not answering for them (FG-38 view-only).
         from tools.approval import list_pending_gateway_approvals
 
@@ -14036,7 +14042,10 @@ async def resolve_run_approval(run_id: str, request: Request):
         raise HTTPException(status_code=400, detail="invalid choice")
     from tools.approval import resolve_gateway_approval
 
-    resolved = resolve_gateway_approval(run_id, choice)
+    # Bound to the caller, so an approval queued after the check above is
+    # still only answered by whoever asked for it.
+    bound = {"approver_user_id": principal.user_id} if signed_in else {}
+    resolved = resolve_gateway_approval(run_id, choice, **bound)
     return {
         "object": "hermes.run.approval",
         "run_id": run_id,

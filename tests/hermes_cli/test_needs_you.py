@@ -692,3 +692,23 @@ def test_route_owner_opens_on_their_own_waits(route, monkeypatch):
     assert client.get("/api/needs-you?owners=leo,zed").json()["items"] == []
     assert pushed[-1] == ("leo", [])
     assert client.get("/api/needs-you?owners=bad%20id").status_code == 400
+
+
+def test_route_hides_an_approval_whose_chat_the_viewer_cannot_open(route, monkeypatch):
+    # Chat access is judged in the chat's own profile, not the serving one.
+    from fastapi import HTTPException
+
+    from hermes_cli import web_server
+
+    client, _state, _pushed = route
+    monkeypatch.setattr(web_server, "_comms_session_subject", lambda request: "leo")
+
+    async def viewable(principal):
+        return [principal, SimpleNamespace(user_id="ada")]
+
+    async def not_enrolled(request, profile):
+        raise HTTPException(status_code=403, detail="not enrolled")
+
+    monkeypatch.setattr(web_server, "_viewable_people", viewable)
+    monkeypatch.setattr(web_server, "_chat_principal", not_enrolled)
+    assert client.get("/api/needs-you?owners=leo,ada").json()["items"] == []

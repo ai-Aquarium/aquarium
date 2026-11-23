@@ -1396,6 +1396,8 @@ export interface TodoTransition {
  */
 export interface TodoDetail extends Todo {
   history: TodoTransition[];
+  /** False when it is someone else's, read through "Whose data": view-only. */
+  editable?: boolean;
   source: IncomingItem | null;
   /** The memory document the source arrival produced (absent when not remembered). */
   memory?: { id: string; title: string };
