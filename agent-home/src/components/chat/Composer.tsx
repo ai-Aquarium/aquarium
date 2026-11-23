@@ -159,6 +159,7 @@ export function Composer({
   narrow = false,
   tall = false,
   onMenuOpenChange,
+  onTextChange,
 }: {
   sending: boolean;
   /** A Stop was requested and the server is winding the turn down. */
@@ -206,6 +207,8 @@ export function Composer({
   onMenuOpenChange?: (open: boolean) => void;
   /** Below `lg` (the chat page): touch-sized (44px) actions. */
   tall?: boolean;
+  /** The field's text changed (the project chat carries it across profiles). */
+  onTextChange?: (text: string) => void;
 }) {
   const [text, setText] = useState(initialText);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
@@ -221,6 +224,9 @@ export function Composer({
     setDraftSeen(draft.seq);
     setText(draft.text);
   }
+  useEffect(() => {
+    onTextChange?.(text);
+  }, [text, onTextChange]);
   const draftSeq = draft?.seq;
   useEffect(() => {
     if (draftSeq != null) textRef.current?.focus();

@@ -28,6 +28,18 @@ export function targetProfileFromUrl(url: string): string | undefined {
   return raw === "default" ? "default" : clean(raw);
 }
 
+/**
+ * Like `profileFromBody`, but an explicit `"default"` stays `"default"`: the
+ * project chat can pick the box's own home while the console sits in another
+ * profile, and every call of that conversation must address the same home.
+ */
+export function targetProfileFromBody(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const raw = (body as { profile?: unknown }).profile;
+  const value = typeof raw === "string" ? raw.trim() : "";
+  return value === "default" ? "default" : clean(value);
+}
+
 /** Read `profile` from an already-parsed JSON body. */
 export function profileFromBody(body: unknown): string | undefined {
   if (!body || typeof body !== "object") return undefined;
@@ -50,6 +62,12 @@ export function withProfileQuery(path: string, profile: string | undefined): str
   if (!name) return path;
   const sep = path.includes("?") ? "&" : "?";
   return `${path}${sep}profile=${encodeURIComponent(name)}`;
+}
+
+/** Like `withProfileQuery`, but an explicit `default` is kept (see `targetProfileFromBody`). */
+export function withTargetProfileQuery(path: string, profile: string | undefined): string {
+  if ((profile ?? "").trim() !== "default") return withProfileQuery(path, profile);
+  return `${path}${path.includes("?") ? "&" : "?"}profile=default`;
 }
 
 /** Add the selected profile to a BFF JSON body (browser side). */

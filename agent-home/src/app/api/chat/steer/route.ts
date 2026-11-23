@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
-import { profileFromBody } from "@/lib/chat/profile";
+import { targetProfileFromBody } from "@/lib/chat/profile";
 import type { ChatInputMode } from "@/types";
 
 const MODES: readonly ChatInputMode[] = ["steer", "queue", "interrupt"];
@@ -63,7 +63,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
   try {
-    const client = await apiClientForRequest({ profile: profileFromBody(body) });
+    const client = await apiClientForRequest({ profile: targetProfileFromBody(body) });
     const resp = await client.steerChatRun(sessionId, runId, text, mode);
     return NextResponse.json(resp);
   } catch (err) {

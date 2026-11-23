@@ -15,6 +15,7 @@ import {
   timelineMessages,
 } from "@/components/projects/chat/projectTimeline";
 import { useProjectAction } from "@/components/projects/useProjectAction";
+import { stripInjectedContext } from "@/lib/chat/transcript";
 import { useT } from "@/i18n";
 import type {
   ChatMessage,
@@ -64,15 +65,32 @@ export function ProjectChatPanel({
   const t = useT("projects");
   const [profile, setProfile] = useState(chat?.profile ?? "default");
   const [timeline, setTimeline] = useState(chat?.timeline ?? null);
-  const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
-  // A handed-over draft fills the composer once; the pane remounts after each
-  // turn, and a sent draft must not come back.
-  const [spentDraft, setSpentDraft] = useState<number | undefined>(undefined);
-  const draftSeq = useRef(composerDraft?.seq);
-  useEffect(() => {
-    draftSeq.current = composerDraft?.seq;
-  });
+  // A page refresh (a plan saved, discarded or made active) brings a new
+  // timeline: take it, so no stale proposal card stays actionable.
+  const [seenTimeline, setSeenTimeline] = useState(chat?.timeline);
+  if (chat?.timeline !== seenTimeline) {
+    setSeenTimeline(chat?.timeline);
+    if (chat?.timeline) setTimeline(chat.timeline);
+  }
+  // What reaches the composer: a tab's "Discuss in chat" text, or the unsent
+  // text carried over when the picker swaps the answering profile's pane.
+  const [handoff, setHandoff] = useState<ComposerDraft | undefined>(undefined);
+  const [seenDraft, setSeenDraft] = useState<number | undefined>(undefined);
+  if (composerDraft && composerDraft.seq !== seenDraft) {
+    setSeenDraft(composerDraft.seq);
+    setHandoff((prev) => ({ text: composerDraft.text, seq: (prev?.seq ?? 0) + 1 }));
+  }
+  const unsent = useRef("");
+  const onComposerText = useCallback((text: string) => {
+    unsent.current = text;
+  }, []);
+  const select = (next: string) => {
+    if (next === profile) return;
+    const text = unsent.current;
+    if (text) setHandoff((prev) => ({ text, seq: (prev?.seq ?? 0) + 1 }));
+    setProfile(next);
+  };
 
   const profiles = useMemo(
     () => (chat ? pickerProfiles(chat.profiles, chat.projectProfiles, profile) : []),
@@ -87,8 +105,6 @@ export function ProjectChatPanel({
       );
       if (!res.ok) return;
       setTimeline((await res.json()) as ProjectChatTimeline);
-      setSpentDraft(draftSeq.current);
-      setVersion((v) => v + 1);
     } catch {
       // Keep the timeline on screen; the next turn re-reads it.
     }
@@ -100,7 +116,7 @@ export function ProjectChatPanel({
       profiles={profiles}
       selected={profile}
       disabled={busy}
-      onSelect={setProfile}
+      onSelect={select}
     />
   );
 
@@ -117,7 +133,7 @@ export function ProjectChatPanel({
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="pb-2 lg:hidden">{picker("project-chat-profile-phone")}</div>
             <ProjectChatPane
-              key={`${profile}:${version}`}
+              key={profile}
               slug={slug}
               profile={profile}
               timeline={timeline}
@@ -126,9 +142,8 @@ export function ProjectChatPanel({
               onMessageCount={onMessageCount}
               onBusy={setBusy}
               onStale={refresh}
-              composerDraft={
-                composerDraft && composerDraft.seq !== spentDraft ? composerDraft : undefined
-              }
+              composerDraft={handoff}
+              onComposerText={onComposerText}
             />
           </div>
         ) : (
@@ -194,6 +209,7 @@ function ProjectChatPane({
   onBusy,
   onStale,
   composerDraft,
+  onComposerText,
 }: {
   slug: string;
   profile: string;
@@ -204,16 +220,20 @@ function ProjectChatPane({
   onBusy: (busy: boolean) => void;
   onStale: () => void;
   composerDraft?: ComposerDraft;
+  onComposerText: (text: string) => void;
 }) {
   const t = useT("projects");
   const initialMessages = useMemo(() => timelineMessages(timeline), [timeline]);
-  const [stale, setStale] = useState(false);
+  // Turns that ended (`stale`) vs the ones re-read (`synced`): the timeline is
+  // re-read once nothing is in flight, without remounting the composer.
+  const [stale, setStale] = useState(0);
+  const [synced, setSynced] = useState(0);
   const conv = useChatConversation({
     profile,
     initialSessionId: sessionFor(timeline, profile),
     initialMessages,
     findSession: () => undefined,
-    onSessionsStale: () => setStale(true),
+    onSessionsStale: () => setStale((n) => n + 1),
     hidden,
     projectSlug: slug,
   });
@@ -231,9 +251,10 @@ function ProjectChatPane({
   useEffect(() => {
     onStaleRef.current = onStale;
   });
+  if (stale !== synced && !busy) setSynced(stale);
   useEffect(() => {
-    if (stale && !busy) onStaleRef.current();
-  }, [stale, busy]);
+    if (synced > 0) onStaleRef.current();
+  }, [synced]);
 
   const count = conv.messages.length;
   const onCountRef = useRef(onMessageCount);
@@ -245,12 +266,26 @@ function ProjectChatPane({
   // Live rows (the turn being typed/streamed) have no profile yet: they are
   // the picked profile's.
   const labelled = (m: ChatMessage) => m.profile ?? profile;
+  // A live row gets its catch-up / context marks once the timeline re-read
+  // has the stored turn.
+  const marksFor = (m: ChatMessage): ChatMessage => {
+    if (m.role !== "user" || m.profile || m.sentWhileWorking) return m;
+    const typed = stripInjectedContext(m.content);
+    const stored = [...timeline.messages]
+      .reverse()
+      .find(
+        (r) => r.role === "user" && r.profile === profile && stripInjectedContext(r.content) === typed,
+      );
+    if (!stored) return m;
+    return { ...m, catchUp: stored.catch_up || undefined, seeded: stored.seeded || undefined };
+  };
   const cards = useMemo(
     () => placeProposals(conv.messages, timeline.proposals),
     [conv.messages, timeline.proposals],
   );
 
-  const renderAround = (m: ChatMessage, i: number) => {
+  const renderAround = (row: ChatMessage, i: number) => {
+    const m = marksFor(row);
     const who = labelled(m);
     const before: ReactNode[] = [];
     if (i === 0) {
@@ -290,6 +325,7 @@ function ProjectChatPane({
         storageEnabled={storageEnabled}
         composerLauncherClearance={false}
         composerDraft={composerDraft}
+        onComposerTextChange={onComposerText}
         renderAround={renderAround}
         emptyState={
           <div className="space-y-3">

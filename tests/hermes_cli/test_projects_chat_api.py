@@ -17,6 +17,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from agent.prompt_builder import format_steer_marker
 from hermes_cli import projects_api, projects_chat_api, projects_db
 from hermes_state import SessionDB
 
@@ -53,6 +54,12 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(projects_api, "_enrolled_profiles", _enrolled)
     monkeypatch.setattr(projects_api, "_interactive_subject", _subject)
     monkeypatch.setattr(projects_chat_api, "_session_db", _db)
+    state["chat_profiles"] = {"default", "research", "finance"}
+
+    async def _chat_profiles(user_id):
+        return set(state["chat_profiles"])
+
+    monkeypatch.setattr(projects_chat_api, "_chat_profiles", _chat_profiles)
 
     app = FastAPI()
     app.include_router(projects_api.router)
@@ -218,7 +225,7 @@ def test_another_persons_chat_is_neither_linked_nor_shown(env, project):
     with projects_db.connect_closing() as conn:
         projects_db.add_project_link(
             conn, project_id=project["id"], kind="conversation",
-            profile="research", ref=theirs,
+            profile="research", ref=theirs, label="project chat", added_by="leo",
         )
     _say(env, "research", theirs, "user", "secret")
     assert _timeline(env, slug)["messages"] == []
@@ -271,3 +278,54 @@ def test_catch_up_digest_is_bounded():
     assert digest.startswith(f"{projects_chat_api.CATCH_UP_HEADER} 40 ")
     assert len(digest.splitlines()) == projects_chat_api.CATCH_UP_MAX_TURNS + 1
     assert len(digest) < (projects_chat_api.CATCH_UP_TURN_CHARS + 20) * 10
+
+
+def test_an_attached_conversation_never_becomes_the_chat_destination(env, project):
+    slug = project["slug"]
+    r = _session(env, "research", "s-r")
+    _turn(env, slug, "research", r, "Find sources", "Found three.")
+    other = _session(env, "research", "s-invoices")
+    with projects_db.connect_closing() as conn:
+        projects_db.add_project_link(
+            conn, project_id=project["id"], kind="conversation",
+            profile="research", ref=other, label="Invoices", added_by="leo",
+        )
+    assert _timeline(env, slug)["sessions"] == [{"profile": "research", "session_id": r}]
+    # A second page that opened its own fresh session still lands in the canonical one.
+    fresh = _session(env, "research", "s-fresh")
+    assert _prepare(env, slug, "research", fresh, "More?")["session_id"] == r
+
+
+def test_a_suspended_profile_is_neither_shown_nor_addressable(env, project):
+    slug = project["slug"]
+    r = _session(env, "research", "s-r")
+    _turn(env, slug, "research", r, "Find sources", "Found three.")
+    env[1]["chat_profiles"] = {"default", "finance"}
+    assert _timeline(env, slug)["messages"] == []
+    resp = env[0].post(
+        f"/api/registry/projects/{slug}/chat/prepare",
+        json={"profile": "research", "session_id": r, "message": "hi"},
+    )
+    assert resp.status_code == 403
+
+
+def test_attachment_notes_and_steers_reach_the_timeline_and_catch_up(env, project):
+    slug = project["slug"]
+    r = _session(env, "research", "s-r")
+    f = _session(env, "finance", "s-f")
+    out = _prepare(env, slug, "research", r, "Compare the last two entries")
+    note = "[The user sent an image: 'a.png'. It is saved at: /c/a.png.]"
+    _say(env, "research", r, "user", f"{note}\n\n{out['message']}")
+    _say(env, "research", r, "tool", "ok\n\n" + format_steer_marker("Only this year"))
+    _say(env, "research", r, "assistant", "Done.")
+
+    rows = _timeline(env, slug)["messages"]
+    first = rows[0]
+    assert first["seeded"] is True and "[project chat:" not in first["content"]
+    assert first["content"].startswith(note)
+    steer = [m for m in rows if m.get("sent_while_working")]
+    assert [m["content"] for m in steer] == ["Only this year"]
+
+    digest = _prepare(env, slug, "finance", f, "Cost it")["message"]
+    assert "Compare the last two entries" in digest and "Only this year" in digest
+    assert "a.png" not in digest
