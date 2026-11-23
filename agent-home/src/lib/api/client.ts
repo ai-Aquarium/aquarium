@@ -2898,6 +2898,19 @@ export class HermesApiClient {
     );
   }
 
+  /** Update a proposal written from an older revision onto the active
+   *  one; it stays proposed. `conflicts` names steps (or "body") both
+   *  sides changed — the proposal's version was kept. */
+  async rebaseProjectPlaybook(
+    slug: string,
+    rev: number,
+  ): Promise<{ rev: number; base_rev: number; conflicts: string[] }> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/playbook/${encodeURIComponent(rev)}/rebase`,
+      { method: "POST", json: {} },
+    );
+  }
+
   /** Discard a proposed revision — the paired judgement to activation.
    *  Refused (409) for the active rev or one a run has pinned. */
   async discardProjectPlaybook(

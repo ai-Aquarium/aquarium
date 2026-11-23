@@ -242,6 +242,65 @@ def test_discard_is_a_human_act(env):
         state["subject"] = OWNER.user_id
 
 
+def test_a_card_edit_is_a_new_proposal_while_another_waits(env):
+    """v1 active, v2 proposed: an edit written from v2 is v3, v2 is kept,
+    and each records the revision it was written from."""
+    project = _create_active_project(env)
+    client, _state = env
+    slug = project["slug"]
+    v1 = _save_and_activate_playbook(env, project)
+    v2 = client.post(
+        f"{PREFIX}/{slug}/playbook", json={"body": "v2", "steps": STEPS}
+    ).json()["rev"]
+    edited = [{**STEPS[0], "title": "Collect arrivals (3h)"}, *STEPS[1:]]
+    resp = client.post(
+        f"{PREFIX}/{slug}/playbook",
+        json={"body": "v2", "steps": edited, "base_rev": v2},
+    )
+    assert resp.status_code == 200, resp.text
+    v3 = resp.json()["rev"]
+    assert v3 == v2 + 1 and resp.json()["active"] is False
+    revs = {r["rev"]: r for r in client.get(f"{PREFIX}/{slug}/playbook").json()["revisions"]}
+    assert revs[v2]["base_rev"] == v1 and revs[v3]["base_rev"] == v2
+    assert not revs[v2]["active"] and not revs[v3]["active"]
+
+
+def test_update_onto_active_rebases_a_proposal_written_from_an_older_version(env):
+    project = _create_active_project(env)
+    client, state = env
+    slug = project["slug"]
+    v1 = _save_and_activate_playbook(env, project)
+    agent = client.post(
+        f"{PREFIX}/{slug}/playbook",
+        json={"body": "v2", "steps": [*STEPS[:2], {**STEPS[2], "title": "Send it"}]},
+    ).json()["rev"]
+    mine = client.post(
+        f"{PREFIX}/{slug}/playbook",
+        json={
+            "body": "The weekly method",
+            "steps": [{**STEPS[0], "title": "Collect arrivals (3h)"}, *STEPS[1:]],
+            "base_rev": v1,
+        },
+    ).json()["rev"]
+    resp = client.post(f"{PREFIX}/{slug}/playbook/{mine}/rebase", json={})
+    assert resp.status_code == 409 and "already based" in resp.json()["detail"]
+
+    assert client.post(
+        f"{PREFIX}/{slug}/playbook/{agent}/activate", json={}
+    ).status_code == 200
+    resp = client.post(f"{PREFIX}/{slug}/playbook/{mine}/rebase", json={})
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"rev": mine, "base_rev": agent, "conflicts": []}
+    listed = client.get(f"{PREFIX}/{slug}/playbook").json()
+    assert listed["active"]["rev"] == agent  # still a proposal, nothing activated
+    rebased = next(r for r in listed["revisions"] if r["rev"] == mine)
+    assert [s["title"] for s in rebased["steps"]] == [
+        "Collect arrivals (3h)", "Owner reviews", "Send it",
+    ]
+    assert client.post(f"{PREFIX}/{slug}/playbook/{v1}/rebase", json={}).status_code == 409
+    assert client.post(f"{PREFIX}/{slug}/playbook/99/rebase", json={}).status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # Archive (§13: the ordinary removal verb)
 # ---------------------------------------------------------------------------

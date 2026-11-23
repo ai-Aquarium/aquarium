@@ -3,12 +3,13 @@
 import { useT } from "@/i18n";
 import type { PlaybookRev } from "@/types";
 import { useTimeLabel } from "@/components/projects/useTimeLabel";
-import { revisionState } from "@/components/projects/playbook/revisions";
+import { proposalBase, revisionState } from "@/components/projects/playbook/revisions";
 
 /**
  * The playbook's versions as a row of chips, oldest first (v1 v2 … v5
  * proposed), with the picked one's note, author and date beneath. The
- * active version carries a filled dot; a proposal is labelled.
+ * active version carries a filled dot; a proposal is labelled, and one
+ * based on an older version says so.
  */
 export function RevisionPicker({
   revisions,
@@ -28,12 +29,14 @@ export function RevisionPicker({
         {revisions.map((rev) => {
           const state = revisionState(rev, activeRev);
           const picked = rev.rev === selected.rev;
+          const { outdated } = proposalBase(rev, revisions, activeRev);
           return (
             <button
               key={rev.rev}
               type="button"
               data-rev={rev.rev}
               data-state={state}
+              data-outdated={outdated ? "true" : undefined}
               aria-pressed={picked}
               aria-label={state === "active" ? t("chipActive", { rev: rev.rev }) : undefined}
               onClick={() => onSelect(rev.rev)}
@@ -52,7 +55,11 @@ export function RevisionPicker({
                 />
               ) : null}
               {t("chip", { rev: rev.rev })}
-              {state === "proposed" ? <span className="font-normal">{t("chipProposed")}</span> : null}
+              {state === "proposed" ? (
+                <span className="font-normal">
+                  {outdated ? `${t("chipProposed")} · ${t("chipOutdated")}` : t("chipProposed")}
+                </span>
+              ) : null}
             </button>
           );
         })}
@@ -69,6 +76,7 @@ export function RevisionMeta({ rev }: { rev: PlaybookRev }) {
   const parts = [
     rev.note?.trim() ? t("metaNote", { rev: rev.rev, note: rev.note.trim() }) : t("metaPlain", { rev: rev.rev }),
     rev.created_by ? t("by", { who: rev.created_by }) : null,
+    rev.base_rev != null && !rev.active && rev.activated_at == null ? t("basedOn", { base: rev.base_rev }) : null,
     rev.activated_at != null
       ? t("activated", { when: timeLabel(rev.activated_at) })
       : rev.created_at != null

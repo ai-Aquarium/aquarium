@@ -4,6 +4,7 @@ import type { PlaybookRev, ProjectPlaybookResponse } from "@/types";
 import {
   defaultCompareBase,
   defaultRevision,
+  proposalBase,
   revisionState,
   revisionsAscending,
   compareSteps,
@@ -87,5 +88,28 @@ describe("playbook revisions", () => {
     ]);
     expect(rekeyed.unchanged).toBe(true);
     expect(rekeyed.rows.every((r) => r.kind === "same" && r.changes.length === 0)).toBe(true);
+  });
+});
+
+describe("several proposals at once", () => {
+  const r = (n: number, over: Partial<PlaybookRev> = {}): PlaybookRev => ({ ...rev(n), ...over });
+
+  it("a never-active revision that records its base stays proposed when a newer one is made active", () => {
+    expect(revisionState(r(6, { base_rev: 4 }), 7)).toBe("proposed");
+    // Was active once: history, whatever its number.
+    expect(revisionState(r(6, { base_rev: 4, activated_at: 10 }), 7)).toBe("earlier");
+    // An old revision with no recorded base is history, as before.
+    expect(revisionState(r(3), 7)).toBe("earlier");
+    expect(revisionState(r(8), 7)).toBe("proposed");
+  });
+
+  it("is outdated only when its base is neither the active version nor a pending proposal", () => {
+    const revs = [r(4, { activated_at: 1 }), r(5, { active: 1, activated_at: 2, base_rev: 4 }), r(6, { base_rev: 4 }), r(7, { base_rev: 6 }), r(8, { base_rev: 5 })];
+    expect(proposalBase(revs[2], revs, 5)).toEqual({ base: 4, outdated: true, canUpdate: true });
+    expect(proposalBase(revs[3], revs, 5)).toEqual({ base: 6, outdated: false, canUpdate: false });
+    expect(proposalBase(revs[4], revs, 5)).toEqual({ base: 5, outdated: false, canUpdate: false });
+    // The base was discarded: still outdated, but there is nothing to re-apply from.
+    expect(proposalBase(r(9, { base_rev: 2 }), revs, 5)).toEqual({ base: 2, outdated: true, canUpdate: false });
+    expect(proposalBase(revs[1], revs, 5).outdated).toBe(false);
   });
 });

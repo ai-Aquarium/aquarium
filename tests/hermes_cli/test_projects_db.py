@@ -327,3 +327,102 @@ def test_list_playbook_revs_carries_decoded_steps(conn):
     assert revs[0]["active"] in (0, False)
     assert [s["key"] for s in revs[0]["steps"]] == ["draft", "review"]
     assert revs[0]["steps"][1]["checkpoint"] is True
+
+
+def _steps(*pairs):
+    return [{"key": k, "title": t} for k, t in pairs]
+
+
+def test_several_proposals_wait_at_once_each_recording_its_base(conn):
+    """v5 active, v6 proposed, an edit of v6 is v7 — nothing is overwritten,
+    and each proposal names the revision it was written from."""
+    pid = pdb.create_project(conn, name="Many Proposals", folders=["/tmp/many"])
+    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A")))
+    pdb.activate_playbook_rev(conn, pid, v1)
+    v2 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A2")))
+    v3 = pdb.save_playbook_rev(
+        conn, project_id=pid, steps=_steps(("a", "A3")), base_rev=v2
+    )
+    revs = {r["rev"]: r for r in pdb.list_playbook_revs(conn, pid)}
+    assert revs[v2]["base_rev"] == v1  # defaults to the active revision
+    assert revs[v3]["base_rev"] == v2
+    assert not revs[v2]["active"] and not revs[v3]["active"]
+    assert revs[v2]["steps"][0]["title"] == "A2"
+
+    # Making one active leaves the other proposed; the superseded rev keeps
+    # its activation time (it was in use once — history, not a proposal).
+    pdb.activate_playbook_rev(conn, pid, v3)
+    revs = {r["rev"]: r for r in pdb.list_playbook_revs(conn, pid)}
+    assert revs[v3]["active"]
+    assert not revs[v2]["active"] and revs[v2]["activated_at"] is None
+    assert revs[v1]["activated_at"] is not None
+
+
+def test_merge_keeps_both_sides_changes_and_names_conflicts():
+    base = {"body": "b", "steps": _steps(("a", "A"), ("b", "B"), ("c", "C"))}
+    proposal = {
+        "body": "b",
+        "steps": [
+            {"key": "a", "title": "A (3h)"},
+            {"key": "b", "title": "B mine"},
+            {"key": "c", "title": "C"},
+            {"key": "n", "title": "New mine", "depends_on": ["c"]},
+        ],
+    }
+    active = {
+        "body": "b theirs",
+        "steps": [
+            {"key": "a", "title": "A"},
+            {"key": "b", "title": "B theirs"},
+            {"key": "x", "title": "Added there"},
+        ],
+    }
+    body, steps, conflicts = pdb.merge_playbook_onto(base, proposal, active)
+    titles = {s["key"]: s["title"] for s in steps}
+    assert body == "b theirs"  # only the active side changed the body
+    assert titles["a"] == "A (3h)"  # only the proposal changed it
+    assert titles["b"] == "B mine" and conflicts == ["b"]  # both: mine kept, named
+    assert "c" not in titles  # the active side removed it, the proposal didn't touch it
+    assert titles["x"] == "Added there" and titles["n"] == "New mine"
+    # A dependency on a step that no longer exists is dropped, not left dangling.
+    assert next(s for s in steps if s["key"] == "n")["depends_on"] == []
+
+
+def test_rebase_moves_a_stale_proposal_onto_the_active_revision(conn):
+    pid = pdb.create_project(conn, name="Rebase", folders=["/tmp/rebase"])
+    v1 = pdb.save_playbook_rev(
+        conn, project_id=pid, steps=_steps(("pull", "Pull CRM export"), ("send", "Send"))
+    )
+    pdb.activate_playbook_rev(conn, pid, v1)
+    agent = pdb.save_playbook_rev(
+        conn, project_id=pid,
+        steps=_steps(("pull", "Pull CRM export"), ("send", "Send to the list")),
+    )
+    mine = pdb.save_playbook_rev(
+        conn, project_id=pid,
+        steps=_steps(("pull", "Pull CRM export, wait 3h"), ("send", "Send")),
+        base_rev=v1,
+    )
+    assert pdb.rebase_playbook_rev(conn, pid, mine) == {"refused": "current"}
+    pdb.activate_playbook_rev(conn, pid, agent)
+
+    result = pdb.rebase_playbook_rev(conn, pid, mine)
+    assert result == {"rev": mine, "base_rev": agent, "conflicts": []}
+    after = pdb.get_playbook(conn, pid, mine)
+    assert not after["active"] and after["base_rev"] == agent
+    assert [s["title"] for s in after["steps"]] == [
+        "Pull CRM export, wait 3h", "Send to the list",
+    ]
+    # Superseded (once active) revisions are history, not proposals.
+    assert pdb.rebase_playbook_rev(conn, pid, v1) == {"refused": "active"}
+    assert pdb.rebase_playbook_rev(conn, pid, 99) == {"refused": "not_found"}
+
+
+def test_rebase_refuses_a_proposal_without_a_recorded_base(conn):
+    pid = pdb.create_project(conn, name="Legacy", folders=["/tmp/legacy"])
+    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A")))
+    legacy = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "B")))
+    conn.execute("UPDATE project_playbook SET base_rev = NULL WHERE rev = ?", (legacy,))
+    conn.commit()
+    pdb.activate_playbook_rev(conn, pid, v1)
+    assert pdb.rebase_playbook_rev(conn, pid, legacy) == {"refused": "no_base"}

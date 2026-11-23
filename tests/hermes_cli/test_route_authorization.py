@@ -382,6 +382,7 @@ SIGNED_IN = {
     "POST /api/registry/projects/{slug}/playbook/draft",
     "GET /api/registry/projects/{slug}/playbook/draft",
     "POST /api/registry/projects/{slug}/playbook/{rev}/activate",
+    "POST /api/registry/projects/{slug}/playbook/{rev}/rebase",
     "DELETE /api/registry/projects/{slug}/playbook/{rev}",
     "GET /api/registry/projects/{slug}/directives",
     "POST /api/registry/projects/{slug}/directives",

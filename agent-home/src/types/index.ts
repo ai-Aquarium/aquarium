@@ -2701,6 +2701,8 @@ export interface PlaybookRev {
   created_at: number;
   activated_at: number | null;
   note: string | null;
+  /** The revision a proposal was written from; null on old revisions. */
+  base_rev?: number | null;
 }
 
 export interface ProjectPlaybookResponse {

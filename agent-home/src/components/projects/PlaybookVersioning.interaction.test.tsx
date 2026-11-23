@@ -261,3 +261,70 @@ describe("PlanPanel — make active and version notes", () => {
     expect(JSON.parse(String(init!.body))).not.toHaveProperty("note");
   });
 });
+
+describe("PlanPanel — several proposals at once", () => {
+  // v4 was active, then the agent's v5 was made active; v6 was written from
+  // v4 meanwhile and v7 from the (still pending) v6.
+  const V4_OLD = rev(4, { activated_at: 1_700_000_100 });
+  const V5_ACTIVE = { ...V5, active: 1, activated_at: 1_700_000_200, base_rev: 4 };
+  const V6 = rev(6, { base_rev: 4, note: "Wait 3h for the export" });
+  const V7 = rev(7, { base_rev: 6, note: "Rename the clean step" });
+  const MANY: ProjectPlaybookResponse = { active: V5_ACTIVE, revisions: [V7, V6, V5_ACTIVE, V4_OLD] };
+
+  it("keeps every pending proposal proposed and marks the one based on an older version", () => {
+    vi.stubGlobal("fetch", server());
+    const { container } = render(<PlanPanel {...PROPS} playbook={MANY} />);
+    expect(chip(container, 6).getAttribute("data-state")).toBe("proposed");
+    expect(chip(container, 7).getAttribute("data-state")).toBe("proposed");
+    expect(chip(container, 4).getAttribute("data-state")).toBe("earlier");
+    // v6 was written from v4, v7 from the pending v6 (it carries v6's change).
+    expect(chip(container, 6).getAttribute("data-outdated")).toBe("true");
+    expect(chip(container, 7).getAttribute("data-outdated")).toBeNull();
+    expect(chip(container, 6).textContent).toContain("older base");
+
+    fireEvent.click(chip(container, 6));
+    const decision = container.querySelector('[data-component="RevisionDecision"]') as HTMLElement;
+    expect(decision.getAttribute("data-outdated")).toBe("true");
+    expect(within(decision).getByText(/Based on an older version: v4, while v5 is active now/)).toBeTruthy();
+    expect(within(decision).getByRole("button", { name: "Make active" })).toBeTruthy();
+    expect(within(decision).getByRole("button", { name: "Update onto active" })).toBeTruthy();
+  });
+
+  it("Update onto active POSTs the rebase and names what both sides changed", async () => {
+    const fetchMock = server((url, init) =>
+      init?.method === "POST" && url === `${BASE}/playbook/6/rebase`
+        ? jsonResponse(200, { rev: 6, base_rev: 5, conflicts: ["clean", "body"] })
+        : null,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, getByRole, findByText } = render(<PlanPanel {...PROPS} playbook={MANY} />);
+    fireEvent.click(chip(container, 6));
+    fireEvent.click(getByRole("button", { name: "Update onto active" }));
+    expect(await findByText(/v6 now builds on v5\. Both changed clean, the text; v6's version was kept/)).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/activate"))).toBe(false);
+  });
+
+  it("a member can update a proposal onto active but not make it active", () => {
+    vi.stubGlobal("fetch", server());
+    const { container, queryByRole } = render(<PlanPanel {...PROPS} canActivate={false} playbook={MANY} />);
+    fireEvent.click(chip(container, 6));
+    expect(queryByRole("button", { name: "Make active" })).toBeNull();
+    expect(queryByRole("button", { name: "Update onto active" })).toBeTruthy();
+  });
+
+  it("Edit opens the picked version and saves a new proposal based on it, never blocked", async () => {
+    const fetchMock = server((url, init) =>
+      init?.method === "POST" && url === `${BASE}/playbook` ? jsonResponse(200, { rev: 8, active: false }) : null,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, getByText } = render(<PlanPanel {...PROPS} playbook={MANY} />);
+    fireEvent.click(chip(container, 6));
+    const edit = getByText("Edit") as HTMLButtonElement;
+    expect(edit.disabled).toBe(false);
+    fireEvent.click(edit);
+    fireEvent.click(getByText("Save as revision"));
+    await vi.waitFor(() => expect(router.refresh).toHaveBeenCalled());
+    const [, init] = fetchMock.mock.calls.find(([url, i]) => url === `${BASE}/playbook` && i?.method === "POST")!;
+    expect(JSON.parse(String(init!.body)).base_rev).toBe(6);
+  });
+});

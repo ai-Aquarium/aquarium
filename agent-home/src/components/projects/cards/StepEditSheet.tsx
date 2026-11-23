@@ -18,8 +18,9 @@ import { dependents, stepDeps, stepsWithEdit, type StepEdit } from "./stepCards"
 
 /**
  * Edit one step from its card. Saving writes the whole revision back with
- * only this step changed (every other field carried as-is), as a proposed
- * revision based on the one shown — activation stays a lead's act.
+ * only this step changed (every other field carried as-is), as a new
+ * proposed revision based on the one shown — even while other proposals
+ * wait. Nothing is activated; that stays a separate Make active.
  */
 export function StepEditSheet({
   slug,
@@ -30,6 +31,7 @@ export function StepEditSheet({
   lockedReason,
   nextRev,
   onClose,
+  onSaved,
 }: {
   slug: string;
   rev: PlaybookRev;
@@ -40,6 +42,8 @@ export function StepEditSheet({
   lockedReason: string | null;
   nextRev: number;
   onClose: () => void;
+  /** The new proposal's number, once saved. */
+  onSaved?: (rev: number) => void;
 }) {
   const t = useT("playbookCards");
   const steps = rev.steps ?? [];
@@ -53,7 +57,7 @@ export function StepEditSheet({
     checkpoint: Boolean(step?.checkpoint),
   }));
   const [error, setError] = useState<string | null>(null);
-  const save = useProjectAction();
+  const save = useProjectAction<{ rev?: number }>();
   const roster = useAssignableProfiles(slug, lockedReason == null);
   if (!step) return null;
 
@@ -81,7 +85,10 @@ export function StepEditSheet({
         steps: stepsWithEdit(steps, step.key, edit, assignment as Record<string, unknown>),
         base_rev: rev.rev,
       },
-      onSuccess: () => onClose(),
+      onSuccess: (data) => {
+        onClose();
+        if (typeof data?.rev === "number") onSaved?.(data.rev);
+      },
     });
   };
 
@@ -205,7 +212,7 @@ export function StepEditSheet({
           <span>{t("edit.checkpointLabel")}</span>
         </label>
         {locked ? null : (
-          <p className="text-xs text-[var(--color-muted)]">{t("edit.hint", { next: nextRev })}</p>
+          <p className="text-xs text-[var(--color-muted)]">{t("edit.hint", { next: nextRev, rev: rev.rev })}</p>
         )}
         {error ? (
           <p role="alert" className="text-sm text-[var(--color-danger)]">

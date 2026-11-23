@@ -30,12 +30,13 @@ import { useT } from "@/i18n";
 import { PlaybookCards, PlaybookViewSwitch } from "@/components/projects/cards/PlaybookCards";
 import type { CardsView } from "@/components/projects/cards/stepCards";
 import { PencilIcon, SparklesIcon } from "@/components/ui/icons";
-import { CompareIcon } from "@/components/projects/playbook/icons";
+import { CompareIcon, MakeActiveIcon, RebaseIcon } from "@/components/projects/playbook/icons";
 import { RevisionCompare } from "@/components/projects/playbook/RevisionCompare";
 import { RevisionPicker } from "@/components/projects/playbook/RevisionPicker";
 import {
   defaultCompareBase,
   defaultRevision,
+  proposalBase,
   revisionState,
   revisionsAscending,
   type RevisionState,
@@ -120,10 +121,10 @@ function stepsToPayload(drafts: StepDraft[]): PlaybookStep[] {
 }
 
 /**
- * Inactive revisions split by where they sit relative to the active one.
- * Only a revision written *after* the active plan is a pending proposal;
- * an older one is history (it was superseded, or never picked), so it must
- * not reappear as "awaiting a decision" every time another rev is activated.
+ * Inactive revisions split into pending proposals and history, as
+ * `revisionState` reads them: a superseded (once active) revision is
+ * history; several proposals can wait at once, and stay proposed when
+ * another one is made active.
  */
 export function splitRevisions(playbook: ProjectPlaybookResponse | null): {
   proposed: PlaybookRev[];
@@ -133,8 +134,8 @@ export function splitRevisions(playbook: ProjectPlaybookResponse | null): {
   const activeRev = playbook?.active?.rev;
   if (activeRev == null) return { proposed: inactive, earlier: [] };
   return {
-    proposed: inactive.filter((rev) => rev.rev > activeRev),
-    earlier: inactive.filter((rev) => rev.rev < activeRev),
+    proposed: inactive.filter((rev) => revisionState(rev, activeRev) === "proposed"),
+    earlier: inactive.filter((rev) => revisionState(rev, activeRev) === "earlier"),
   };
 }
 
@@ -254,6 +255,8 @@ export function PlanPanel({
   const [drafting, setDrafting] = useState(false);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [activatedRev, setActivatedRev] = useState<number | null>(null);
+  /** The proposal just saved here (editor or a card), for its confirmation. */
+  const [savedRev, setSavedRev] = useState<number | null>(null);
   const [view, setView] = useState<CardsView>("text");
   const byRev = (rev: number | null) => (rev == null ? undefined : revisions.find((r) => r.rev === rev));
   const selected = byRev(picked) ?? byRev(defaultRevision(playbook)) ?? active;
@@ -264,11 +267,6 @@ export function PlanPanel({
         ? byRev(compareFrom)
         : byRev(defaultCompareBase(playbook, selected.rev));
   const selectedState = selected ? revisionState(selected, activeRev) : null;
-
-  // A proposed revision is a pending decision — the only moves are
-  // Make active or Discard. Starting another draft/write on top of it would
-  // just stack more undecided revisions.
-  const awaitingDecision = !editing && proposed.length > 0;
 
   const slugPath = `/api/projects/${encodeURIComponent(slug)}`;
 
@@ -378,7 +376,7 @@ export function PlanPanel({
       },
       onSuccess: (data) => {
         setEditing(false);
-        if (typeof data?.rev === "number") setPicked(data.rev);
+        if (typeof data?.rev === "number") proposedHere(data.rev);
       },
     });
   };
@@ -388,11 +386,16 @@ export function PlanPanel({
     setActivatedRev(null);
   };
 
+  const proposedHere = (rev: number) => {
+    setPicked(rev);
+    setActivatedRev(null);
+    setSavedRev(rev);
+  };
+
   const inputClass =
     "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]";
   const toolClass =
     "inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 text-xs disabled:opacity-50";
-  const pendingTitle = awaitingDecision ? t("pendingDecision") : undefined;
 
   return (
     <section
@@ -425,8 +428,7 @@ export function PlanPanel({
             busy={draftAction.busy}
             pendingLabel="Starting the draft…"
             onClick={draftWithAgent}
-            disabled={drafting || awaitingDecision}
-            title={pendingTitle}
+            disabled={drafting}
             className={toolClass}
           >
             <SparklesIcon size={14} />
@@ -437,9 +439,7 @@ export function PlanPanel({
           <button
             type="button"
             data-component="EditPlaybook"
-            onClick={() => openEditor(active)}
-            disabled={awaitingDecision}
-            title={pendingTitle}
+            onClick={() => openEditor(selected ?? active)}
             className={toolClass}
           >
             <PencilIcon size={14} />
@@ -490,25 +490,46 @@ export function PlanPanel({
             </p>
           ) : null}
 
-          {view !== "text" && !editing && playbook != null && revisions.length > 0 ? (
-            <PlaybookCards
-              slug={slug}
-              playbook={playbook}
-              view={view}
-              latestRunNo={latestRunNo}
-              profiles={profiles}
-              hostProfile={hostProfile}
-              archived={archived}
-              canPropose={canPropose}
-            />
-          ) : null}
-
-          {selected != null && !editing && view === "text" ? (
+          {selected != null && !editing ? (
             <RevisionPicker
               revisions={revisions}
               activeRev={activeRev}
               selected={selected}
               onSelect={selectRev}
+            />
+          ) : null}
+
+          {selected != null &&
+          !editing &&
+          selectedState !== "active" &&
+          (view === "text" || selectedState === "proposed") ? (
+            <RevisionDecision
+              key={selected.rev}
+              slug={slug}
+              rev={selected}
+              revisions={revisions}
+              activeRev={activeRev}
+              state={selectedState ?? "proposed"}
+              canActivate={canActivate}
+              canPropose={canPropose}
+              archived={archived}
+              justSaved={savedRev === selected.rev}
+              onActivated={setActivatedRev}
+            />
+          ) : null}
+
+          {view !== "text" && !editing && playbook != null && revisions.length > 0 ? (
+            <PlaybookCards
+              slug={slug}
+              playbook={playbook}
+              view={view}
+              rev={selected}
+              latestRunNo={latestRunNo}
+              profiles={profiles}
+              hostProfile={hostProfile}
+              archived={archived}
+              canPropose={canPropose}
+              onProposed={proposedHere}
             />
           ) : null}
 
@@ -534,21 +555,6 @@ export function PlanPanel({
               state={selectedState ?? "active"}
               hostProfile={hostProfile}
               cardByName={cardByName}
-            />
-          ) : null}
-
-          {selected != null &&
-          !editing &&
-          selectedState !== "active" &&
-          (view === "text" || selectedState === "proposed") ? (
-            <RevisionDecision
-              key={selected.rev}
-              slug={slug}
-              rev={selected}
-              state={selectedState ?? "proposed"}
-              canActivate={canActivate}
-              archived={archived}
-              onActivated={setActivatedRev}
             />
           ) : null}
 
@@ -807,40 +813,62 @@ function RevisionBody({
 }
 
 /**
- * The decision bar under a version that is not in use: what making it
- * active means, then the lead's Discard + Make active (members see who
- * decides). A version saved without a note can be given one here — it
- * rides on the activate call.
+ * The decision bar under the version picker for a version that is not in
+ * use: what making it active means, then the lead's Make active (the
+ * primary action — nothing is ever activated by saving), Update onto
+ * active for a proposal based on an older version, and Discard. Members
+ * see who decides. A version saved without a note can be given one here —
+ * it rides on the activate call.
  */
 function RevisionDecision({
   slug,
   rev,
+  revisions,
+  activeRev,
   state,
   canActivate,
+  canPropose,
   archived,
+  justSaved,
   onActivated,
 }: {
   slug: string;
   rev: PlaybookRev;
+  revisions: PlaybookRev[];
+  activeRev: number | null;
   state: RevisionState;
   canActivate: boolean;
+  canPropose: boolean;
   archived: boolean;
+  /** Saved from this panel a moment ago: confirm it, then offer Make active. */
+  justSaved: boolean;
   onActivated: (rev: number) => void;
 }) {
   const t = useT("playbook");
   const [note, setNote] = useState("");
   const addsNote = !archived && canActivate && !rev.note?.trim();
+  const { base, outdated, canUpdate } = proposalBase(rev, revisions, activeRev);
   return (
     <div
       data-component="RevisionDecision"
       data-state={state}
+      data-outdated={outdated ? "true" : undefined}
       className={`mt-3 flex flex-col gap-2 rounded-xl border px-3 py-2.5 text-sm ${
         state === "proposed"
           ? "border-dashed border-[var(--color-warn)] bg-[var(--color-attention-bg)]"
           : "border-[var(--color-border)] bg-[var(--color-surface-2)]"
       }`}
     >
-      <p>{t(state === "proposed" ? "proposedBanner" : "earlierBanner", { rev: rev.rev })}</p>
+      <p role={justSaved ? "status" : undefined} data-component={justSaved ? "ProposalSaved" : undefined}>
+        {justSaved && base != null
+          ? t("savedBanner", { rev: rev.rev, base })
+          : t(state === "proposed" ? "proposedBanner" : "earlierBanner", { rev: rev.rev })}
+      </p>
+      {outdated && base != null && activeRev != null ? (
+        <p data-component="ProposalOutdated" className="text-[var(--color-warn-text)]">
+          {t(canUpdate ? "outdated" : "outdatedNoBase", { base, active: activeRev })}
+        </p>
+      ) : null}
       {addsNote ? (
         <label className="flex flex-col gap-1">
           <span className="text-xs text-[var(--color-muted)]">{t("noteLabel")}</span>
@@ -854,18 +882,61 @@ function RevisionDecision({
           />
         </label>
       ) : null}
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {!archived && canActivate ? (
-          <>
-            <DiscardRevision slug={slug} rev={rev.rev} />
-            <ActivateRevision slug={slug} rev={rev.rev} note={note} onActivated={onActivated} />
-          </>
+          <ActivateRevision slug={slug} rev={rev.rev} note={note} onActivated={onActivated} />
         ) : null}
+        {!archived && canPropose && canUpdate && activeRev != null ? (
+          <UpdateOntoActive slug={slug} rev={rev.rev} activeRev={activeRev} />
+        ) : null}
+        {!archived && canActivate ? <DiscardRevision slug={slug} rev={rev.rev} /> : null}
         {!archived && !canActivate ? (
           <span className="text-xs text-[var(--color-muted)]">{t("leadDecides")}</span>
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * Re-apply a proposal's own changes onto the active version (it stays a
+ * proposal). When both changed the same step, the proposal's version is
+ * kept and named, so nothing is dropped silently.
+ */
+function UpdateOntoActive({ slug, rev, activeRev }: { slug: string; rev: number; activeRev: number }) {
+  const t = useT("playbook");
+  const action = useProjectAction<{ conflicts?: string[] }>();
+  const [conflicts, setConflicts] = useState<string[] | null>(null);
+  const titleOf = (key: string) => (key === "body" ? t("conflictText") : key);
+  return (
+    <>
+      <ActionButton
+        data-action="rebase-revision"
+        busy={action.busy}
+        pendingLabel={t("updating")}
+        onClick={() =>
+          void action.run(`/api/projects/${encodeURIComponent(slug)}/playbook/${rev}/rebase`, {
+            body: {},
+            onSuccess: (data) => setConflicts(data?.conflicts ?? []),
+          })
+        }
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--color-accent)] px-3 text-sm font-medium text-[var(--color-accent)] disabled:opacity-50"
+      >
+        <RebaseIcon size={16} />
+        {t("updateOntoActive")}
+      </ActionButton>
+      {conflicts != null ? (
+        <p role="status" data-component="ProposalUpdated" className="w-full text-xs">
+          {conflicts.length > 0
+            ? t("updatedConflicts", { rev, active: activeRev, what: conflicts.map(titleOf).join(", ") })
+            : t("updatedNotice", { rev, active: activeRev })}
+        </p>
+      ) : null}
+      <ActionError
+        action={action}
+        className="flex w-full flex-wrap items-center gap-2 text-xs text-[var(--color-danger)]"
+      />
+    </>
   );
 }
 
@@ -930,8 +1001,9 @@ function ActivateRevision({
             { body: note.trim() ? { note: note.trim() } : {}, onSuccess: () => onActivated(rev) },
           )
         }
-        className="inline-flex min-h-11 items-center rounded-lg bg-[var(--color-accent)] px-3 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
+        className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[var(--color-accent)] px-5 text-sm font-semibold text-[var(--color-accent-fg)] shadow-sm disabled:opacity-50"
       >
+        <MakeActiveIcon size={18} />
         {t("makeActive")}
       </ActionButton>
       <ActionError

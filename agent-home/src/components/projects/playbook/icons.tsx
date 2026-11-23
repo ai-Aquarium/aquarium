@@ -36,3 +36,21 @@ export const SwapIcon = (p: IconProps) => (
     <path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7" />
   </Glyph>
 );
+
+/** A tick in a circle — Make active. */
+export const MakeActiveIcon = (p: IconProps) => (
+  <Glyph {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="m8 12.5 2.5 2.5L16 9.5" />
+  </Glyph>
+);
+
+/** A branch moved up onto the main line — Update onto active. */
+export const RebaseIcon = (p: IconProps) => (
+  <Glyph {...p}>
+    <circle cx="6" cy="5" r="2" />
+    <circle cx="6" cy="19" r="2" />
+    <circle cx="18" cy="12" r="2" />
+    <path d="M6 7v10M16.2 11.1 8 6M16 12H6" />
+  </Glyph>
+);

@@ -4,7 +4,6 @@
   "write": "Write playbook",
   "compare": "Compare",
   "compareOnlyOne": "There is only one version so far.",
-  "pendingDecision": "A proposed version is waiting — make it active or discard it first.",
   "versions": "Versions",
   "chip": "v{rev}",
   "chipActive": "v{rev}, active",
@@ -57,5 +56,15 @@
     "toolsets": "tools changed",
     "position": "moved in the order",
     "identical": "v{from} and v{to} are the same."
-  }
+  },
+  "savedBanner": "Saved as v{rev}, a proposal based on v{base}. Nothing changes until you make it active.",
+  "basedOn": "based on v{base}",
+  "chipOutdated": "older base",
+  "outdated": "Based on an older version: v{base}, while v{active} is active now. Making it active as it is would undo what changed in between; update it onto v{active} to keep both.",
+  "outdatedNoBase": "Based on an older version: v{base}, which no longer exists. Compare it with v{active} before making it active.",
+  "updateOntoActive": "Update onto active",
+  "updating": "Updating…",
+  "updatedNotice": "v{rev} now builds on v{active} and is still proposed.",
+  "updatedConflicts": "v{rev} now builds on v{active}. Both changed {what}; v{rev}'s version was kept. Compare before making it active.",
+  "conflictText": "the text"
 }

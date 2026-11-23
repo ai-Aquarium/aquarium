@@ -145,7 +145,7 @@ describe("PlanPanel — a proposed revision is the pending decision", () => {
     ],
   };
 
-  it("locks Draft/Write while a proposal waits, offering Make active and Discard", async () => {
+  it("keeps Draft/Write open while a proposal waits, offering Make active and Discard", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(() => Promise.resolve(jsonResponse(200, { status: "idle" }))),
@@ -155,8 +155,8 @@ describe("PlanPanel — a proposed revision is the pending decision", () => {
     );
     expect(
       (getByText("Draft with the agent") as HTMLButtonElement).disabled,
-    ).toBe(true);
-    expect((getByText("Write playbook") as HTMLButtonElement).disabled).toBe(true);
+    ).toBe(false);
+    expect((getByText("Write playbook") as HTMLButtonElement).disabled).toBe(false);
     expect(getByText("Make active")).toBeTruthy();
     const discard = container.querySelector('[data-action="discard-revision"]');
     expect(discard).toBeTruthy();
