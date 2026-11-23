@@ -384,7 +384,7 @@ function Kanban({
     <div
       data-component="StepKanban"
       data-lanes={lanesBy}
-      className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-2"
+      className="-mx-1 flex snap-x items-start gap-2 overflow-x-auto px-1 pb-2 sm:items-stretch"
     >
       {lanes.map((lane) => {
         const inLane = steps.filter((s) => laneOf(s) === lane);
