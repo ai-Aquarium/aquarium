@@ -26,6 +26,8 @@ import type {
   StepAssignment,
 } from "@/types";
 import { useTimeLabel } from "@/components/projects/useTimeLabel";
+import { PlaybookCards, PlaybookViewSwitch } from "@/components/projects/cards/PlaybookCards";
+import type { CardsView } from "@/components/projects/cards/stepCards";
 
 /** How often the panel asks the server whether the agent's draft is ready. */
 export const DRAFT_POLL_MS = 2_000;
@@ -166,6 +168,8 @@ export function PlanPanel({
   hostProfile = null,
   canActivate,
   archived,
+  latestRunNo = null,
+  canPropose = true,
 }: {
   slug: string;
   playbook: ProjectPlaybookResponse | null;
@@ -175,6 +179,10 @@ export function PlanPanel({
   hostProfile?: string | null;
   canActivate: boolean;
   archived: boolean;
+  /** The newest run, whose card states the Kanban / Graph can show. */
+  latestRunNo?: number | null;
+  /** Member or lead: may propose a step change from its card. */
+  canPropose?: boolean;
 }) {
   const timeLabel = useTimeLabel();
   const { refresh } = useRefresh();
@@ -193,6 +201,7 @@ export function PlanPanel({
   const [drafting, setDrafting] = useState(false);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [activatedRev, setActivatedRev] = useState<number | null>(null);
+  const [view, setView] = useState<CardsView>("text");
   // A proposed revision is a pending decision — the only moves are
   // Activate or Discard. Starting another draft/write on top of it would
   // just stack more undecided revisions.
@@ -314,10 +323,13 @@ export function PlanPanel({
       data-component="PlanPanel"
       className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
     >
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <h2 className="flex-1 text-xs uppercase tracking-wide text-[var(--color-muted)]">
           Plan
         </h2>
+        {!editing && (active != null || proposed.length > 0) ? (
+          <PlaybookViewSwitch view={view} onChange={setView} />
+        ) : null}
         {!archived && !editing && playbook != null ? (
           <ActionButton
             data-component="DraftPlanWithAgent"
@@ -394,7 +406,20 @@ export function PlanPanel({
             </p>
           ) : null}
 
-          {active != null ? (
+          {view !== "text" && !editing && (active != null || proposed.length > 0) ? (
+            <PlaybookCards
+              slug={slug}
+              playbook={playbook}
+              view={view}
+              latestRunNo={latestRunNo}
+              profiles={profiles}
+              hostProfile={hostProfile}
+              archived={archived}
+              canPropose={canPropose}
+            />
+          ) : null}
+
+          {active != null && (view === "text" || editing) ? (
             <>
               {active.body ? (
                 <p className="mt-2 whitespace-pre-wrap text-sm">
