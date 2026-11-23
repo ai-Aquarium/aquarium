@@ -357,6 +357,9 @@ def test_broken_confinement_and_leaky_chat_list_fail_the_run(box, monkeypatch):
     monkeypatch.setattr(
         web_server, "_chat_scope_for", lambda principal: None
     )  # #520 regressed
+    monkeypatch.setitem(
+        web_server.app.dependency_overrides, web_server._chat_list_owners, lambda: None
+    )  # and the list's "Whose data" narrowing (FG-38) with it
 
     code, lines, summary = _run([
         "--base-url",
