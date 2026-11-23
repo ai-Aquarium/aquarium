@@ -5,6 +5,7 @@ import { MobileShell } from "@/components/MobileShell";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { apiClientForRequest, requirePrincipal } from "@/lib/auth/principal";
 import { readSession } from "@/lib/auth/session";
+import { isTriageSession } from "@/lib/chat/categorize";
 import { storageConfigured } from "@/lib/env";
 import type { ChatMessage, SessionSummary } from "@/types";
 
@@ -78,8 +79,9 @@ export default async function Page({
       sessionId = null;
     } else if (requested && sessions.some((s) => s.id === requested)) {
       sessionId = requested;
-    } else if (sessions.length > 0) {
-      sessionId = sessions[0].id;
+    } else {
+      // The newest real chat — a triage-agent turn is never opened on its own.
+      sessionId = sessions.find((s) => !isTriageSession(s))?.id ?? null;
     }
     if (sessionId) {
       const transcript = await client.sessionMessages(sessionId);

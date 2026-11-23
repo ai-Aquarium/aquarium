@@ -1,11 +1,12 @@
 import type { SessionSummary, SessionTag } from "@/types";
 
-export type ChatCategory = "kanban" | "daily" | "scheduled" | "others";
+export type ChatCategory = "kanban" | "daily" | "scheduled" | "triage" | "others";
 
 export const CHAT_CATEGORY_LABELS: Record<ChatCategory, string> = {
   kanban: "Kanban",
   daily: "Daily",
   scheduled: "Scheduled",
+  triage: "Triage",
   others: "Others",
 };
 
@@ -14,6 +15,7 @@ export const CHAT_CATEGORY_ORDER: ChatCategory[] = [
   "kanban",
   "daily",
   "scheduled",
+  "triage",
   "others",
 ];
 
@@ -73,6 +75,14 @@ export function isKanbanWorkspace(cwd: string | null | undefined): boolean {
   return cwd.includes("/kanban/workspaces/") || cwd.includes("/kanban/boards/");
 }
 
+/** A channel triage turn (email/WhatsApp/Telegram batch) the triage agent
+ * ran as the owner — source `triage` (`hermes_cli/triage_agent.py`). Not a
+ * chat anyone started, so it is never auto-opened or offered as a recent
+ * chat; it only shows under its own "Triage" category. */
+export function isTriageSession(session: Pick<SessionSummary, "source">): boolean {
+  return session.source === "triage";
+}
+
 function isSameLocalDay(epochSeconds: number | null, now: Date): boolean {
   if (epochSeconds === null || !Number.isFinite(epochSeconds)) return false;
   const d = new Date(epochSeconds * 1000);
@@ -84,14 +94,14 @@ function isSameLocalDay(epochSeconds: number | null, now: Date): boolean {
 }
 
 /**
- * Classify a session into one of four display categories.
+ * Classify a session into one of the display categories.
  *
  * A manual category override (see `categoryOverride`) always wins — the
  * whole point of letting a user move a conversation to a different
  * category is that it stops being auto-derived. Absent an override, the
  * priority order is: a kanban-worker session is "kanban" even if it also
  * happened today; a cron-triggered session is "scheduled" even if today;
- * anything else from today is "daily"; everything older falls to "others".
+ * a triage-agent session is "triage" even if today; anything else from today is "daily"; everything older falls to "others".
  */
 export function categorizeSession(
   session: Pick<SessionSummary, "source" | "cwd" | "started_at" | "tags">,
@@ -101,11 +111,12 @@ export function categorizeSession(
   if (override) return override;
   if (isKanbanWorkspace(session.cwd)) return "kanban";
   if (session.source === "cron") return "scheduled";
+  if (isTriageSession(session)) return "triage";
   if (isSameLocalDay(session.started_at, now)) return "daily";
   return "others";
 }
 
-/** Group a session list into the four categories, preserving each
+/** Group a session list into the categories, preserving each
  * category's relative order from the input array. */
 export function groupSessionsByCategory(
   sessions: SessionSummary[],
@@ -115,6 +126,7 @@ export function groupSessionsByCategory(
     kanban: [],
     daily: [],
     scheduled: [],
+    triage: [],
     others: [],
   };
   for (const s of sessions) {
