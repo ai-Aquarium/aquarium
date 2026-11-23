@@ -132,11 +132,14 @@ export function RunRowActions({
   slug,
   runNo,
   status,
+  canContinue = status === "waiting",
   large = false,
 }: {
   slug: string;
   runNo: number;
   status: ProjectRunStatus;
+  /** Also true for a running run held at a supervised checkpoint. */
+  canContinue?: boolean;
   /** 44px buttons (the Execution tab's current run). */
   large?: boolean;
 }) {
@@ -160,7 +163,7 @@ export function RunRowActions({
       className="flex flex-wrap items-center gap-1.5 px-3 pb-2"
     >
       {dialog}
-      {status === "waiting" ? (
+      {canContinue ? (
         <ActionButton
           busy={pending("continue")}
           pendingLabel={ROW_PENDING.continue}

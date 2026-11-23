@@ -912,3 +912,19 @@ def test_run_cards_carry_step_timing_for_comparison(env):
     # Cards not yet started stay untimed.
     others = [c for c in body["cards"] if c["task_id"] != gather_id]
     assert all(c["completed_at"] is None for c in others)
+
+
+def test_run_brief_names_the_playbook_version_its_run_used(env):
+    """The project read's recent runs feed the Execution table and the
+    per-version score trend: each brief row carries the same
+    ``playbook_rev`` as that run's detail."""
+    project = _active_project(env)
+    client, _state = env
+    _save_and_activate_playbook(env, project)
+    client.post(f"/api/registry/projects/{project['slug']}/runs", json={})
+
+    brief = client.get(f"/api/registry/projects/{project['slug']}").json()["runs"]
+    detail = client.get(f"/api/registry/projects/{project['slug']}/runs/1").json()
+    row = {r["run_no"]: r for r in brief}[1]
+    assert detail["playbook_rev"] is not None
+    assert row["playbook_rev"] == detail["playbook_rev"]
