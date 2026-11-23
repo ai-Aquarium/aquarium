@@ -53,6 +53,8 @@ export interface ChatsPanelProps {
   onAllChats?: () => void;
   /** List every chat, not just the latest {@link RECENT_LIMIT}, and drop the "All chats" button. */
   showAll?: boolean;
+  /** `page`: the full-page All chats view — controls on one row, chats as a grid of cards. */
+  layout?: "list" | "page";
   fetchImpl?: typeof fetch;
   /** Show category chips (All / Kanban / Daily / Scheduled / Others) that filter the list. */
   categoryFilter?: boolean;
@@ -123,9 +125,10 @@ export function ChatsPanel({
   profiles: givenProfiles,
   activeSessionId = null,
   initialSessions,
-  allChatsHref = "/chat",
+  allChatsHref = "/chats",
   onAllChats,
   showAll = false,
+  layout = "list",
   fetchImpl = fetch,
   searchShortcut = false,
   onNavigate,
@@ -216,6 +219,11 @@ export function ChatsPanel({
       ? latestSession([...pinned, ...recent])?.id ?? null
       : null;
 
+  const page = layout === "page";
+  const listClass = page
+    ? "grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3 [&>li]:border [&>li]:border-[var(--color-border)] [&>li]:bg-[var(--color-surface)]"
+    : "flex flex-col";
+
   const row = (s: LandingSession) => (
     <SessionRow
       key={s.id}
@@ -239,9 +247,13 @@ export function ChatsPanel({
   );
 
   return (
-    <div data-component="ChatsPanel" className="flex min-h-0 flex-1 flex-col gap-2">
-      <NewChatButton currentProfile={profile} profiles={profiles} onStarted={onNavigate} fetchImpl={fetchImpl} />
-      <SessionSearch value={query} onChange={setQuery} shortcut={searchShortcut} id={searchId} />
+    <div data-component="ChatsPanel" data-layout={layout} className={`flex min-h-0 flex-1 flex-col ${page ? "gap-3" : "gap-2"}`}>
+      <div className={page ? "grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,16rem)]" : "contents"}>
+        <div className={page ? "sm:order-2" : "contents"}>
+          <NewChatButton currentProfile={profile} profiles={profiles} onStarted={onNavigate} fetchImpl={fetchImpl} />
+        </div>
+        <SessionSearch value={query} onChange={setQuery} shortcut={searchShortcut} id={searchId} />
+      </div>
 
       {categoryFilter && !searching ? (
         <div
@@ -308,7 +320,7 @@ export function ChatsPanel({
           <>
             <SectionHeader label="Results" count={results.length} />
             {results.length ? (
-              <ul className="flex flex-col">{results.map(row)}</ul>
+              <ul className={listClass}>{results.map(row)}</ul>
             ) : (
               <p className="px-3 py-2 text-xs text-[var(--color-muted)]">No chats match “{query.trim()}”.</p>
             )}
@@ -326,13 +338,13 @@ export function ChatsPanel({
             {pinned.length ? (
               <section aria-label="Pinned chats" className="flex flex-col">
                 <SectionHeader label="Pinned" count={pinned.length} />
-                <ul className="flex flex-col">{pinned.map(row)}</ul>
+                <ul className={listClass}>{pinned.map(row)}</ul>
               </section>
             ) : null}
             {recent.length ? (
               <section aria-label="Recent chats" className="flex flex-col">
                 <SectionHeader label="Recent" />
-                <ul className="flex flex-col">{recent.map(row)}</ul>
+                <ul className={listClass}>{recent.map(row)}</ul>
               </section>
             ) : null}
             {categoryFilter && !pinned.length && !recent.length ? (

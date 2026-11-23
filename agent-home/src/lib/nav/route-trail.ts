@@ -19,6 +19,7 @@ interface RouteNode {
 const ROUTES: RouteNode[] = [
   { pattern: "/", label: "Home" },
   { pattern: "/chat", label: "Chat", parent: "/" },
+  { pattern: "/chats", label: "All chats", parent: "/" },
   { pattern: "/inbox", label: "Inbox", parent: "/" },
   { pattern: "/inbox/:id", label: "Message", parent: "/inbox" },
   { pattern: "/todos", label: "To-dos", parent: "/" },

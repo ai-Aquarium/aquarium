@@ -74,7 +74,7 @@ describe("ChatsSidebar", () => {
     ]);
     expect(screen.queryByText("Archived thing")).toBeNull();
     expect(screen.getAllByRole("img", { name: "Working now" })).toHaveLength(1);
-    expect(screen.getByRole("link", { name: /All chats/ }).getAttribute("href")).toBe("/chat");
+    expect(screen.getByRole("link", { name: /All chats/ }).getAttribute("href")).toBe("/chats");
   });
 
   it("filters by search", async () => {
