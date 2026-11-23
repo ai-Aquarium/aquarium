@@ -2813,6 +2813,24 @@ export interface ProjectEventsResponse {
   since: number;
 }
 
+/** One project Log row (Stage 6, mirror of `projects_log._row`). */
+export interface ProjectLogEntry {
+  id: string;
+  actor: "person" | "agent";
+  who: string | null;
+  kind: "playbook" | "runs" | "tools" | "outputs" | "inputs" | "settings";
+  action: string;
+  detail: Record<string, string | number | string[] | null | undefined>;
+  at: number;
+  link: { type: "run"; run_no: number } | { type: "card"; id: string } | null;
+}
+
+/** `GET /api/projects/{slug}/log`: one page, newest first. */
+export interface ProjectLogResponse {
+  entries: ProjectLogEntry[];
+  next_cursor: string | null;
+}
+
 /** One doctor finding (§15 failure mode 1). */
 export interface ProjectDoctorFinding {
   code: string;
