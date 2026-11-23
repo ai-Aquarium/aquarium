@@ -116,6 +116,7 @@ PAGES: Tuple[PageSpec, ...] = (
     PageSpec("/onboarding", ("OnboardingWizard",)),
     # ProfilePicker renders only for an account enrolled in two or more profiles.
     PageSpec("/chat", ("ChatPane", "Composer", "ChatsSidebar"), quick=True),
+    PageSpec("/chats", ("AllChatsView", "ChatsPanel")),
     PageSpec("/projects", ("ProjectsList", "ProjectsFilters", "NewProjectAction"), quick=True),
     PageSpec("/projects?view=task", ("ModeSwitch", "TaskHome")),
     PageSpec("/projects?view=project", ("ModeSwitch", "ProjectsList")),
@@ -198,7 +199,7 @@ PAGES: Tuple[PageSpec, ...] = (
 # agent-home/src/lib/nav/menu-access.ts as (path, exact) rules.
 APP_URLS: Mapping[str, Tuple[Tuple[Tuple[str, bool], ...], Tuple[Tuple[str, bool], ...]]] = {
     "todos": ((("/todos", False),), (("/api/todos", False),)),
-    "chat": ((("/chat", False),), ()),
+    "chat": ((("/chat", False), ("/chats", True)), ()),
     "inbox": ((("/inbox", True),), (("/api/incomings", True), ("/api/incomings/facets", False))),
     "memory": ((("/memory", False),), (("/api/memory/projection", False), ("/api/memory/query", False))),
     "projects": ((("/projects", True), ("/projects/new", False)), ()),
