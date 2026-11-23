@@ -442,6 +442,7 @@ export function PlanPanel({
   };
 
   const proposedHere = (rev: number) => {
+    setPickedDraft(null);
     setPicked(rev);
     setActivatedRev(null);
     setSavedRev(rev);
@@ -500,7 +501,7 @@ export function PlanPanel({
         ) : null}
         {/* Over a draft, Edit would load the saved version hidden behind it;
             before any version, Write playbook stays (nothing is hidden). */}
-        {!archived && !editing && !(shownDraft && selected != null) ? (
+        {!archived && !editing && canPropose && !(shownDraft && selected != null) ? (
           <button
             type="button"
             data-component="EditPlaybook"

@@ -168,6 +168,13 @@ describe("working drafts in Planning", () => {
     });
     fireEvent.click(await screen.findByRole("button", { name: /Draft · ada/ }));
     expect(document.querySelector('[data-component="PlaybookDraft"]')).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Write playbook" })).toBeNull();
+  });
+
+  it("keeps Write playbook for a member while only drafts exist", async () => {
+    vi.stubGlobal("fetch", server([draft({ base_rev: 0 })]));
+    mount(vi.fn(), { playbook: { active: null, revisions: [] } });
+    await screen.findByRole("button", { name: /Save as/ });
     expect(screen.getByRole("button", { name: "Write playbook" })).toBeTruthy();
   });
 
