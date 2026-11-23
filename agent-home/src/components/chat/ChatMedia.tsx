@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { mediaRef } from "@/lib/chat/media-ref";
+import { useT } from "@/i18n";
+import { mediaDownloadRef, mediaFileName, mediaRef } from "@/lib/chat/media-ref";
+import { newTabRel } from "@/lib/http/link-rel";
 import type { ChatMediaUrlResponse } from "@/types";
 
 /**
@@ -12,7 +14,8 @@ import type { ChatMediaUrlResponse } from "@/types";
  * (`GET /api/chat/media?path=…`) for a short-lived signed URL once it is near
  * the viewport (400px margin), so a long history doesn't sign every image.
  * The server re-checks that the path belongs to the requesting principal before
- * signing, so a tampered path simply renders as unavailable.
+ * signing, so a tampered path simply renders as unavailable. The image opens
+ * full size in a new tab, and a Download link saves it under its file name.
  */
 /** Nearest scrolling ancestor, so the margin applies to the chat thread's box. */
 function scrollParent(el: Element): Element | null {
@@ -24,6 +27,7 @@ function scrollParent(el: Element): Element | null {
 }
 
 export function ChatMedia({ path, alt }: { path: string; alt: string }) {
+  const t = useT("fileViewer");
   const ref = useRef<HTMLSpanElement>(null);
   // No IntersectionObserver (old browsers, SSR) → load straight away.
   const [near, setNear] = useState(
@@ -80,8 +84,39 @@ export function ChatMedia({ path, alt }: { path: string; alt: string }) {
   return (
     <span ref={ref} data-component="ChatMedia" className="mt-1 block">
       {url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={alt} className="max-h-64 rounded-lg" />
+        <>
+          <a
+            href={url}
+            target="_blank"
+            rel={newTabRel(url)}
+            data-action="open-image"
+            title={t("openNewTab")}
+            className="inline-block max-w-full"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url} alt={alt} className="max-h-64 max-w-full rounded-lg" />
+          </a>
+          <span className="mt-1 flex gap-3 text-xs text-[var(--color-muted)]">
+            <a
+              href={url}
+              target="_blank"
+              rel={newTabRel(url)}
+              data-action="open-full"
+              className="underline underline-offset-2"
+            >
+              {t("openNewTab")}
+            </a>
+            <a
+              href={mediaDownloadRef(path)}
+              rel={newTabRel(url)}
+              download={mediaFileName(path)}
+              data-action="download"
+              className="underline underline-offset-2"
+            >
+              {t("download")}
+            </a>
+          </span>
+        </>
       ) : (
         <span className="text-xs text-[var(--color-muted)]">
           {failed ? `${alt} — unavailable` : `Loading ${alt}…`}

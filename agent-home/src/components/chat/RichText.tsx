@@ -4,12 +4,24 @@ import Markdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+import type { ReactNode } from "react";
 
+import { ChatFile } from "@/components/chat/ChatFile";
 import { ChatMedia } from "@/components/chat/ChatMedia";
 import { ViewerLink } from "@/components/chat/ViewerLink";
-import { mediaRefPath } from "@/lib/chat/media-ref";
+import { mediaFileName, mediaRefPath } from "@/lib/chat/media-ref";
 import { newTabRel } from "@/lib/http/link-rel";
 import { viewerFileId } from "@/lib/nav/viewer-back";
+
+/** The plain text of a link's rendered children. */
+function textOf(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  if (node && typeof node === "object" && "props" in node) {
+    return textOf((node.props as { children?: ReactNode }).children);
+  }
+  return "";
+}
 
 /**
  * Renders an assistant reply as Markdown plus a *sanitized* subset of inline
@@ -32,6 +44,17 @@ export function RichText({ content }: { content: string }) {
           a: ({ children, href }) => {
             const viewId = viewerFileId(href);
             if (viewId) return <ViewerLink id={viewId}>{children}</ViewerLink>;
+            // A private-bucket file ref answers with JSON, so a raw link would
+            // open that JSON; the chip resolves it to an openable URL.
+            const mediaPath = href ? mediaRefPath(href) : null;
+            if (mediaPath) {
+              return (
+                <ChatFile
+                  path={mediaPath}
+                  name={textOf(children).trim() || mediaFileName(mediaPath)}
+                />
+              );
+            }
             return (
               <a
                 href={href}

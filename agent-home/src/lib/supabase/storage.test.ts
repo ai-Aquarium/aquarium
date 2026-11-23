@@ -78,6 +78,27 @@ describe("canReadMediaPath", () => {
     expect(canReadMediaPath(principal(), "mia_member/home_2/u1-a.png")).toBe(false);
   });
 
+  it("accepts the file-registry key shape <user>/files/<2hex>/<16hex>-<name>", () => {
+    expect(canReadMediaPath(member, "mia_member/files/ab/0123456789abcdef-chart.png")).toBe(true);
+    expect(canReadMediaPath(member, "mia_member/files/9f/9f3c2b1a00ff4e5d-Q3-sales.xlsx")).toBe(true);
+    // Python's slug keeps `..` inside a name and a trailing `_`.
+    expect(canReadMediaPath(member, "mia_member/files/ab/0123456789abcdef-q3..final_.pdf")).toBe(true);
+  });
+
+  it("rejects another user's file-registry key and traversal in that shape", () => {
+    expect(canReadMediaPath(member, "leo_owner/files/ab/0123456789abcdef-chart.png")).toBe(false);
+    expect(canReadMediaPath(principal(), "mia_member/files/ab/0123456789abcdef-chart.png")).toBe(false);
+    for (const bad of [
+      "mia_member/files/../../leo_owner/files/ab/0123456789abcdef-chart.png",
+      "mia_member/files/ab/...",
+      "mia_member/files/ab/.hidden.png",
+      "mia_member/files/ab/0123456789abcdef-chart%2F..png",
+      "mia_member/files/ab/0123456789abcdef-chart png",
+    ]) {
+      expect(canReadMediaPath(member, bad), bad).toBe(false);
+    }
+  });
+
   it("rejects prefix look-alikes", () => {
     expect(canReadMediaPath(member, "mia_member_evil/s/a.png")).toBe(false);
     expect(canReadMediaPath(member, "not_mia_member/s/a.png")).toBe(false);

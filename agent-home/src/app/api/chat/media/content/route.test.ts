@@ -67,6 +67,56 @@ describe("GET /api/chat/media/content", () => {
     expect(res.headers.get("content-security-policy")).toMatch(/^sandbox;/);
   });
 
+  describe("disposition for agent-made files (<user>/files/<2hex>/<16hex>-<name>)", () => {
+    const key = (name: string) => `mia_member/files/ab/0123456789abcdef-${name}`;
+    const typed = (type: string) =>
+      fetchMock.mockResolvedValueOnce(
+        new Response("x", { status: 200, headers: { "content-type": type } }),
+      );
+
+    it("opens an image or PDF inline, named after the file not the key", async () => {
+      for (const [name, type] of [
+        ["chart.png", "image/png"],
+        ["report.pdf", "application/pdf"],
+      ]) {
+        typed(type);
+        const res = await get(key(name));
+        expect(res.headers.get("content-type")).toBe(type);
+        expect(res.headers.get("content-disposition")).toBe(
+          `inline; filename="${name}"; filename*=UTF-8''${name}`,
+        );
+      }
+    });
+
+    it("downloads other types with the file's name", async () => {
+      typed("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      const res = await get(key("Q3-sales.xlsx"));
+      expect(res.headers.get("content-disposition")).toBe(
+        `attachment; filename="Q3-sales.xlsx"; filename*=UTF-8''Q3-sales.xlsx`,
+      );
+    });
+
+    it("types an untyped image by its extension so it still opens inline", async () => {
+      typed("application/octet-stream");
+      const res = await get(key("chart.png"));
+      expect(res.headers.get("content-type")).toBe("image/png");
+      expect(res.headers.get("content-disposition")).toMatch(/^inline;/);
+    });
+
+    it("never promotes an untyped non-inline file (HTML stays a download)", async () => {
+      typed("application/octet-stream");
+      const res = await get(key("page.html"));
+      expect(res.headers.get("content-type")).toBe("application/octet-stream");
+      expect(res.headers.get("content-disposition")).toMatch(/^attachment;/);
+    });
+
+    it("download=1 saves even an image as an attachment", async () => {
+      typed("image/png");
+      const res = await get(key("chart.png"), "&download=1");
+      expect(res.headers.get("content-disposition")).toMatch(/^attachment; filename="chart.png"/);
+    });
+  });
+
   it("403s another principal's object without signing or fetching", async () => {
     expect((await get(OTHER)).status).toBe(403);
     expect(createSignedUrl).not.toHaveBeenCalled();

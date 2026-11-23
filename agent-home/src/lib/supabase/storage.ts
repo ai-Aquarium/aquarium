@@ -158,6 +158,8 @@ export async function removeChatMedia(principal: Principal, path: string): Promi
   return true;
 }
 
+const SAFE_SEGMENT = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
+
 /**
  * Whether `path` is an object key this principal may read.
  *
@@ -176,11 +178,12 @@ export function canReadMediaPath(principal: Principal, path: string): boolean {
   const segments = path.split("/");
   if (segments.length < 2) return false;
   for (const segment of segments) {
-    if (!segment || segment === "." || segment === "..") return false;
-    if (segment.includes("..")) return false;
-    // Every segment written by `scopedMediaPath` is slugged; anything else is
-    // a crafted key.
-    if (segment !== slug(segment)) return false;
+    // Writers slug every segment (`scopedMediaPath` here, `slug` in
+    // hermes_cli/file_registry.py), so a key is only `[A-Za-z0-9._-]`. The two
+    // slugs differ in detail (Python keeps `..` inside a name and a trailing
+    // `_`), so accept the shared charset rather than this module's exact
+    // output; a segment of only dots (`.`, `..`) or a leading dot is refused.
+    if (!SAFE_SEGMENT.test(segment)) return false;
   }
   return segments[0] === slug(principal.user_id);
 }
