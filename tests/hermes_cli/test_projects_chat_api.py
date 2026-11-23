@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agent.prompt_builder import format_steer_marker
+from hermes_cli.ref_mentions import with_block
 from hermes_cli import projects_api, projects_chat_api, projects_db
 from hermes_state import SessionDB
 
@@ -653,29 +654,37 @@ def test_a_file_attached_in_the_group_chat_opens_for_everyone_on_the_project(env
     assert _media(env, slug, shared).status_code in (403, 404)
 
 
-def test_a_follow_up_queued_before_a_demotion_stays_with_its_reply(env, project):
+def test_follow_ups_queued_before_a_demotion_stay_with_their_replies(env, project):
     slug = project["slug"]
     _join(project, "ada")
     env[1]["actor"] = MEMBER_P
     ada = _session(env, "research", "s-ada", user="ada")
     out = _prepare(env, slug, "research", ada, "Draft the summary")
     _say(env, "research", ada, "user", out["message"])
-    # Sent while that turn worked; it runs after Ada is made a viewer.
-    with projects_db.connect_closing() as conn:
-        projects_db.record_chat_input(conn, ada, time.time())
+    # Both sent while that turn worked; they run after Ada is made a viewer.
+    first_sent = time.time()
+    time.sleep(0.01)
+    second_sent = time.time()
     time.sleep(0.01)
     with projects_db.connect_closing() as conn:
         projects_db.remove_project_member(conn, project["id"], "ada")
     _join(project, "ada", role="viewer")
     _say(env, "research", ada, "assistant", "Drafted.")
-    _say(env, "research", ada, "user", "Use the May totals")
-    _say(env, "research", ada, "assistant", "Updated.")
+    for typed, reply, sent in (
+        ("Use the May totals", "Updated.", first_sent),
+        ("Add a chart", "Added.", second_sent),
+    ):
+        with projects_db.connect_closing() as conn:
+            projects_db.record_chat_input(conn, ada, sent)
+        time.sleep(0.01)
+        _say(env, "research", ada, "user", typed)
+        _say(env, "research", ada, "assistant", reply)
     _say(env, "research", ada, "user", "Sent after the change")
     _say(env, "research", ada, "assistant", "Hidden.")
 
     env[1]["actor"] = OWNER
     assert [m["content"] for m in _timeline(env, slug)["messages"]] == [
-        "Draft the summary", "Drafted.", "Use the May totals", "Updated.",
+        "Draft the summary", "Drafted.", "Use the May totals", "Updated.", "Add a chart", "Added.",
     ]
 
 
@@ -728,6 +737,8 @@ def test_a_file_named_inside_an_attached_document_stays_private(env, project):
         + out["message"]
         + "\n\n[notes.txt](/api/chat/media?path=leo%2Fs-leo%2Fu1-notes.txt)"
     )
+    # A short ref the turn names gets its description appended after the links.
+    stored = with_block(stored, [{"ref": "P12", "kind": "project", "title": "Sales"}])
     _say(env, "research", leo, "user", stored)
     _say(env, "research", leo, "assistant", "Read it.")
     env[1]["actor"] = MEMBER_P

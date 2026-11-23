@@ -579,21 +579,22 @@ def proposals_since(conn, project_id: str, since: Optional[float]) -> list[dict]
 
 
 def _sent_while_posting(
-    rows: list[dict], spans: list[tuple[float, float]], queued: list[float] = ()
+    rows: list[dict], spans: list[tuple[float, float]], queued: list[tuple] = ()
 ) -> list[dict]:
     """The turns asked while their person could post, each with its reply.
 
-    A turn that ran from the queue was asked when it was sent (*queued*,
-    after the previous turn started), not when it ran."""
+    A turn started from a queued input (*queued*: ``(started, sent)``, the
+    start falling between the previous turn and this one) was asked when the
+    input was sent, not when it ran."""
     out: list[dict] = []
     keep = False
-    started = float("-inf")
+    previous = float("-inf")
     for m in rows:
         if m["role"] == "user":
             at = m["timestamp"]
             if not m.get("sent_while_working"):
-                sent = [q for q in queued if started <= q <= at]
-                started, at = at, (sent[0] if sent else at)
+                sent = [s for launched, s in queued if previous < launched <= at]
+                previous, at = at, (sent[-1] if sent else at)
             keep = any(a <= at < b for a, b in spans)
         if keep:
             out.append(m)
@@ -866,7 +867,16 @@ def _attached_refs(content: str) -> list[str]:
     or in an attached document's inlined contents."""
     from urllib.parse import unquote
 
-    lines = (content or "").rstrip().split("\n")
+    from hermes_cli.ref_mentions import BLOCK_HEADER
+
+    content = (content or "").rstrip()
+    # The descriptions of short refs (``P12``) the server appends after them.
+    cut = content.rfind(f"\n\n{BLOCK_HEADER}\n")
+    if cut >= 0 and all(
+        line.startswith("- ") for line in content[cut:].split("\n")[3:]
+    ):
+        content = content[:cut]
+    lines = content.split("\n")
     refs: list[str] = []
     while lines and _LINK_LINE_RE.match(lines[-1]):
         refs += [unquote(r) for r in _MEDIA_REF_RE.findall(lines.pop())]

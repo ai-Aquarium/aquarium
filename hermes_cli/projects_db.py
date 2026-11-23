@@ -207,16 +207,18 @@ CREATE TABLE IF NOT EXISTS project_member_changes (
 CREATE INDEX IF NOT EXISTS idx_project_member_changes
     ON project_member_changes(project_id, changed_at);
 
--- When a project chat's queued or interrupting input was sent: it runs as a
--- later turn, but who could post is judged at the time it was sent.
+-- A project chat turn started from a queued or interrupting input: when it
+-- started and when the input was sent. Who could post is judged at the time
+-- it was sent.
 CREATE TABLE IF NOT EXISTS project_chat_inputs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id  TEXT NOT NULL,
-    accepted_at REAL NOT NULL
+    accepted_at REAL NOT NULL,
+    launched_at REAL NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_project_chat_inputs
-    ON project_chat_inputs(session_id, accepted_at);
+    ON project_chat_inputs(session_id, launched_at);
 
 CREATE INDEX IF NOT EXISTS idx_project_chat_prepares
     ON project_chat_prepares(project_id, session_id, snapshot_at);
@@ -1435,24 +1437,31 @@ def _record_member_change(
     )
 
 
-def record_chat_input(conn: sqlite3.Connection, session_id: str, accepted_at: float) -> None:
+def record_chat_input(
+    conn: sqlite3.Connection,
+    session_id: str,
+    accepted_at: float,
+    launched_at: Optional[float] = None,
+) -> None:
     with write_txn(conn):
         conn.execute(
-            "INSERT INTO project_chat_inputs (session_id, accepted_at) VALUES (?, ?)",
-            (session_id, float(accepted_at)),
+            "INSERT INTO project_chat_inputs (session_id, accepted_at, launched_at) "
+            "VALUES (?, ?, ?)",
+            (session_id, float(accepted_at), time.time() if launched_at is None else launched_at),
         )
 
 
-def get_chat_inputs(conn: sqlite3.Connection, session_ids: List[str]) -> List[float]:
-    """When the queued inputs of these conversations were sent, oldest first."""
+def get_chat_inputs(conn: sqlite3.Connection, session_ids: List[str]) -> List[tuple]:
+    """``(when it started, when it was sent)`` for each turn these
+    conversations ran from a queued input, oldest first."""
     if not session_ids:
         return []
     marks = ",".join("?" for _ in session_ids)
     return [
-        float(r[0])
+        (float(r[0]), float(r[1]))
         for r in conn.execute(
-            f"SELECT accepted_at FROM project_chat_inputs WHERE session_id IN ({marks}) "
-            "ORDER BY accepted_at",
+            f"SELECT launched_at, accepted_at FROM project_chat_inputs "
+            f"WHERE session_id IN ({marks}) ORDER BY launched_at, id",
             list(session_ids),
         ).fetchall()
     ]

@@ -13086,9 +13086,11 @@ def _start_chat_run(run_id, run_entry, loop, principal, profile, sid, user_messa
             try:
                 next_sid = db.resolve_resume_session_id(eff_sid) or eff_sid
                 next_history = db.get_messages_as_conversation(next_sid)
+                # A compressed conversation continues under another source.
+                touched = {sid, eff_sid, next_sid}
                 project_chat = any(
                     (db.get_session(s) or {}).get("source") == "project_chat"
-                    for s in {sid, eff_sid, next_sid}
+                    for s in touched | {db.get_compression_root(s) for s in touched}
                 )
             finally:
                 db.close()

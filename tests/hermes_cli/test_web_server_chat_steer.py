@@ -1068,7 +1068,12 @@ def test_a_project_chat_records_when_a_queued_input_was_sent(base, chat, turns):
 
     db = hermes_state.SessionDB()
     try:
-        db.ensure_session("s-project", source="project_chat", user_id="root")
+        db.ensure_session("s-root", source="project_chat", user_id="root")
+        # Compressed earlier: the conversation continues under another source.
+        db.end_session("s-root", "compression")
+        db.ensure_session(
+            "s-project", source="api_server", user_id="root", parent_session_id="s-root"
+        )
     finally:
         db.close()
     turns.hold("first")
@@ -1088,5 +1093,5 @@ def test_a_project_chat_records_when_a_queued_input_was_sent(base, chat, turns):
     with projects_db.connect_closing() as conn:
         accepted = projects_db.get_chat_inputs(conn, ["s-project"])
         ordinary = projects_db.get_chat_inputs(conn, [chat])
-    assert len(accepted) == 1 and accepted[0] <= sent
+    assert len(accepted) == 1 and accepted[0][1] <= sent <= accepted[0][0]
     assert ordinary == []
