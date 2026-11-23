@@ -67,6 +67,25 @@ describe("POST /api/chat/send attachments", () => {
     expect(message).not.toContain("http");
   });
 
+  it("escapes brackets and parentheses in a file name", async () => {
+    await post({
+      sessionId: "home_2",
+      message: "look",
+      attachments: [
+        {
+          path: "mia_member/home_2/u1-a.png",
+          name: "[Q4](final copy).png",
+          content_type: "image/png",
+          size: 4,
+        },
+      ],
+    });
+    const [, message] = sendChat.mock.calls[0];
+    expect(message).toContain(
+      "![\\[Q4\\]\\(final copy\\).png](/api/chat/media?path=mia_member%2Fhome_2%2Fu1-a.png)",
+    );
+  });
+
   it("drops an attachment path owned by another principal", async () => {
     const res = await post({
       sessionId: "home_2",

@@ -77,6 +77,20 @@ describe("POST /api/chat/stream projectSlug", () => {
     expect(openChatStream).toHaveBeenCalledTimes(1);
   });
 
+  it("sends a document's escaped link through the project turn", async () => {
+    await post({
+      message: "Read this",
+      profile: "finance",
+      projectSlug: "digest",
+      attachments: [
+        { path: "leo/s1/u1-q4.pdf", name: "[Q4](final copy).pdf", content_type: "application/pdf", size: 1 },
+      ],
+    });
+    const link = "[\\[Q4\\]\\(final copy\\).pdf](/api/chat/media?path=leo%2Fs1%2Fu1-q4.pdf)";
+    expect(prepareProjectChat.mock.calls[0][1].message).toBe(`Read this\n\n${link}`);
+    expect(openChatStream.mock.calls[0][1].endsWith(link)).toBe(true);
+  });
+
   it("honours an explicit default and streams into the canonical conversation", async () => {
     prepareProjectChat.mockImplementationOnce(async (_slug, body) => ({
       session_id: "canonical_default",

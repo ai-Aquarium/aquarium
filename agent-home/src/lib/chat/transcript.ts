@@ -88,13 +88,15 @@ export function stripUiContextLine(content: string): string {
  */
 const ATTACHMENT_NOTE = /^\[The user (?:sent (?:a text document|a document|an image): '|attached ')/;
 const NOTE_START = /\n\n\[The user (?:sent (?:a text document|a document|an image): '|attached ')/;
-const LINK_LINE = /^!?\[(?:(?!\]\()[^\n])*\]\([^)\s]+\)$/;
+const LINK_LINE = /^!?\[(?:\\.|(?!\]\()[^\n\\])*\]\([^)\s]+\)$/;
+// Stored before names were escaped (one may end in a backslash).
+const OLD_LINK_LINE = /^!?\[(?:(?!\]\()[^\n])*\]\([^)\s]+\)$/;
 
 /** Where the trailing block of attachment links (`withAttachments`) starts. */
 function trailingLinksStart(text: string): number {
   const lines = text.split("\n");
   let i = lines.length;
-  while (i > 0 && LINK_LINE.test(lines[i - 1])) i--;
+  while (i > 0 && (LINK_LINE.test(lines[i - 1]) || OLD_LINK_LINE.test(lines[i - 1]))) i--;
   return i === lines.length ? text.length : lines.slice(0, i).join("\n").length + (i > 0 ? 1 : 0);
 }
 
