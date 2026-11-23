@@ -3899,6 +3899,9 @@ def _release_verifiable(cfg: Dict[str, str], version: str) -> Tuple[bool, str]:
             if layout(cfg) == "git":
                 return True, f"{version} is published (it has no server package; the checkout is updated from git)."
             return False, f"{version} has no signed server package, so it can't be installed here."
+        if layout(cfg) == "git" and not find_cosign():
+            return True, (f"{version} is published; cosign isn't installed, so the checkout is updated "
+                          "from git and the system helpers are left as they are.")
         folder = P(f"{UPGRADE_DOWNLOADS}/check-{version}")
         folder.mkdir(parents=True, exist_ok=True)
         os.chmod(folder.parent, 0o700)
