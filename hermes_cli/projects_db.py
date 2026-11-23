@@ -3811,15 +3811,18 @@ def record_project_activity(
     Best-effort by design: the edit it describes has already happened, so a
     failure to log it must never fail the request that made it.
     """
+    args = (project_id, actor, action,
+            json.dumps(detail or {}, sort_keys=True), _now())
+    sql = ("INSERT INTO project_activity "
+           "(project_id, actor, action, detail, created_at) "
+           "VALUES (?, ?, ?, ?, ?)")
     try:
-        with write_txn(conn):
-            conn.execute(
-                "INSERT INTO project_activity "
-                "(project_id, actor, action, detail, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (project_id, actor, action,
-                 json.dumps(detail or {}, sort_keys=True), _now()),
-            )
+        if conn.in_transaction:
+            # Inside the caller's write: commit or roll back with it.
+            conn.execute(sql, args)
+        else:
+            with write_txn(conn):
+                conn.execute(sql, args)
     except sqlite3.Error:
         logger.warning("project activity not recorded: %s", action, exc_info=True)
 

@@ -2332,6 +2332,9 @@ async def deliver_output(request: Request, output_id: str) -> dict[str, Any]:
         request, judgement=True
     )
     _refuse_if_archived(project, "delivering an output")
+    # Agents deliver through this route too; only a verified human session
+    # earns a person's row in the Log (else the delivery's profile shows).
+    human = bool(await _interactive_subject(request))
     try:
         body = await request.json()
     except Exception:
@@ -2361,6 +2364,12 @@ async def deliver_output(request: Request, output_id: str) -> dict[str, Any]:
                 note=body.get("note"),
             )
             projects_db.update_project_output(conn, output_id, status="delivered")
+            if human:
+                projects_db.record_project_activity(
+                    conn, project.id, "output_delivered",
+                    actor=principal.user_id,
+                    detail={"delivery_id": did, "label": body.get("label")},
+                )
             return {"delivery_id": did, "output_id": output_id,
                     "by": principal.user_id}
 
@@ -5133,6 +5142,7 @@ async def run_retro_route(request: Request, run_no: int) -> dict[str, Any]:
         request, judgement=True
     )
     _refuse_if_archived(project, "writing a retro")
+    human = bool(await _interactive_subject(request))  # see deliver_output
     body = await request.json()
     retro = str(body.get("retro") or "").strip()
     if not retro:
@@ -5216,6 +5226,11 @@ async def run_retro_route(request: Request, run_no: int) -> dict[str, Any]:
             if score_self is not None:
                 fields["score_self"] = score_self
             projects_db.update_project_run(conn, run["id"], **fields)
+            if human:
+                projects_db.record_project_activity(
+                    conn, project.id, "run_retro", actor=principal.user_id,
+                    detail={"run_no": run_no, "score": score_self},
+                )
             payload = projects_db.get_project_run_by_id(conn, run["id"])
             payload["proposals"] = _materialize(conn, run_no)
             return payload

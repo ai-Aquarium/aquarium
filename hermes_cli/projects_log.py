@@ -25,7 +25,7 @@ import logging
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from hermes_cli import kanban_db, projects_db
 from hermes_cli.profiles import normalize_profile_name, resolve_profile_env
@@ -57,6 +57,8 @@ _ACTIVITY_KINDS = {
     "run_continued": "runs",
     "run_stopped": "runs",
     "run_cancelled": "runs",
+    "run_retro": "runs",
+    "output_delivered": "outputs",
 }
 
 _TEXT_CAP = 160
@@ -111,13 +113,37 @@ def _project_rows(conn: sqlite3.Connection, project) -> list[dict]:
         ))
 
     activity = projects_db.list_project_activity(conn, pid)
-    activated_logged = {
-        a["detail"].get("rev") for a in activity
-        if a["action"] == "playbook_activated"
+
+    def logged(action: str, key: str) -> set:
+        return {a["detail"].get(key) for a in activity if a["action"] == action}
+
+    # A derived row the person's own activity row already covers is skipped,
+    # so the Log credits who did it rather than where the work lives.
+    activated_logged = logged("playbook_activated", "rev")
+    retro_logged = logged("run_retro", "run_no")
+    delivery_logged = logged("output_delivered", "delivery_id")
+    deliveries = {
+        d["id"]: d for d in conn.execute(
+            "SELECT d.id, d.run_id, d.task_id, d.label, d.profile, "
+            "d.delivered_at, o.title FROM project_output_deliveries d "
+            "JOIN project_outputs o ON o.id = d.output_id "
+            "WHERE o.project_id = ?", (pid,),
+        ).fetchall()
+    }
+    run_nos = {
+        row["id"]: row["run_no"] for row in conn.execute(
+            "SELECT id, run_no FROM project_runs WHERE project_id = ?", (pid,)
+        ).fetchall()
     }
     for a in activity:
         d = a["detail"]
         link = _run_link(d.get("run_no"))
+        if a["action"] == "output_delivered":
+            dlv = deliveries.get(d.get("delivery_id"))
+            if dlv is not None:
+                run_no = run_nos.get(dlv["run_id"])
+                d = {**d, "title": _cap(dlv["title"]), "run_no": run_no}
+                link = _run_link(run_no) or _card_link(dlv["task_id"])
         rows.append(_row(
             f"act:{a['id']}", "person" if a["actor"] else "agent", a["actor"],
             _ACTIVITY_KINDS.get(a["action"], "settings"), a["action"],
@@ -163,7 +189,7 @@ def _project_rows(conn: sqlite3.Connection, project) -> list[dict]:
                 r["ended_at"], {"run_no": n, "status": r["status"]},
                 _run_link(n),
             ))
-        if r["retro_at"]:
+        if r["retro_at"] and n not in retro_logged:
             rows.append(_row(
                 f"run:{n}:retro", "agent", r["profile"], "runs", "run_retro",
                 r["retro_at"], {"run_no": n, "score": r["score_self"]},
@@ -176,11 +202,6 @@ def _project_rows(conn: sqlite3.Connection, project) -> list[dict]:
                 {"run_no": n, "score": r["score_user"]}, _run_link(n),
             ))
 
-    run_nos = {
-        row["id"]: row["run_no"] for row in conn.execute(
-            "SELECT id, run_no FROM project_runs WHERE project_id = ?", (pid,)
-        ).fetchall()
-    }
     for o in conn.execute(
         "SELECT id, title, accepted_at, accepted_by FROM project_outputs "
         "WHERE project_id = ?", (pid,)
@@ -191,12 +212,9 @@ def _project_rows(conn: sqlite3.Connection, project) -> list[dict]:
                 "outputs", "output_accepted", o["accepted_at"],
                 {"title": _cap(o["title"])},
             ))
-    for d in conn.execute(
-        "SELECT d.id, d.run_id, d.task_id, d.label, d.profile, "
-        "d.delivered_at, o.title FROM project_output_deliveries d "
-        "JOIN project_outputs o ON o.id = d.output_id WHERE o.project_id = ?",
-        (pid,),
-    ).fetchall():
+    for d in deliveries.values():
+        if d["id"] in delivery_logged:
+            continue
         run_no = run_nos.get(d["run_id"])
         rows.append(_row(
             f"dlv:{d['id']}", "agent", d["profile"], "outputs",
@@ -353,37 +371,57 @@ def _session_tool_rows(
     run_no: int,
     card: Optional[tuple[str, str]],
     limit: int,
+    before: Callable[[dict], bool],
 ) -> list[dict]:
+    """Tool rows from ``sessions`` in ``[lo, hi)`` that pass ``before``.
+
+    Messages are read newest first in batches until ``limit`` rows pass the
+    cursor *and* the scan has left the second the last of them falls in, so
+    rows already shown in the boundary second never use up the lookahead."""
     sessions = [s for s in sessions if s]
     if not sessions:
         return []
     conn = _open_ro(db)
     if conn is None:
         return []
+    marks = ",".join("?" for _ in sessions)
+    sql = (
+        "SELECT id, tool_calls, timestamp FROM messages WHERE session_id "
+        f"IN ({marks}) AND role = 'assistant' AND tool_calls IS NOT NULL "
+        "AND timestamp >= ? AND (timestamp < ? OR (timestamp = ? AND id < ?)) "
+        "ORDER BY timestamp DESC, id DESC LIMIT ?"
+    )
+    batch = max(int(limit), 50)
+    rows: list[dict] = []
+    top, top_id = hi, None
     try:
-        marks = ",".join("?" for _ in sessions)
-        msgs = conn.execute(
-            "SELECT id, tool_calls, timestamp FROM messages WHERE session_id "
-            f"IN ({marks}) AND role = 'assistant' AND tool_calls IS NOT NULL "
-            "AND timestamp >= ? AND timestamp < ? "
-            "ORDER BY timestamp DESC, id DESC LIMIT ?",
-            [*sessions, lo, hi, int(limit)],
-        ).fetchall()
+        while True:
+            msgs = conn.execute(
+                sql, [*sessions, lo, top, top, top_id or 0, batch],
+            ).fetchall()
+            for m in msgs:
+                for i, name in enumerate(_tool_names(m["tool_calls"])):
+                    detail = {"tool": name, "run_no": run_no}
+                    if card:
+                        detail["card"] = _cap(card[1])
+                    row = _row(
+                        f"tool:{profile}:{m['id']}:{i}", "agent", profile,
+                        "tools", "tool_called", int(m["timestamp"]), detail,
+                        _card_link(card[0]) if card else _run_link(run_no),
+                    )
+                    if before(row):
+                        rows.append(row)
+            if len(msgs) < batch:
+                break
+            top, top_id = msgs[-1]["timestamp"], msgs[-1]["id"]
+            if len(rows) >= limit:
+                floor = sorted(rows, key=_key, reverse=True)[limit - 1]["at"]
+                if int(top) < floor:
+                    break
     except sqlite3.Error:
-        return []
+        return rows
     finally:
         conn.close()
-    rows = []
-    for m in msgs:
-        for i, name in enumerate(_tool_names(m["tool_calls"])):
-            detail = {"tool": name, "run_no": run_no}
-            if card:
-                detail["card"] = _cap(card[1])
-            rows.append(_row(
-                f"tool:{profile}:{m['id']}:{i}", "agent", profile, "tools",
-                "tool_called", int(m["timestamp"]), detail,
-                _card_link(card[0]) if card else _run_link(run_no),
-            ))
     return rows
 
 
@@ -407,7 +445,7 @@ def _worker_sessions(db: Path, task_id: str) -> list[str]:
 
 def _run_tool_rows(
     pconn, bconn, project, principal, run: dict, allowed: set[str],
-    *, lo: float, hi: float, limit: int,
+    *, lo: float, hi: float, limit: int, before: Callable[[dict], bool],
 ) -> list[dict]:
     """One run's tool calls in ``[lo, hi)``: the run's own session (host
     profile) plus every visible card's worker sessions (assignee profile).
@@ -420,7 +458,7 @@ def _run_tool_rows(
         if db is not None:
             rows += _session_tool_rows(
                 db, host, [run["session_id"]], lo=lo, hi=hi, run_no=run_no,
-                card=None, limit=limit,
+                card=None, limit=limit, before=before,
             )
     task_ids = [
         r["task_id"] for r in pconn.execute(
@@ -440,17 +478,18 @@ def _run_tool_rows(
         ).fetchall()
     except sqlite3.Error:
         return rows
+    # A card's worker sessions live in whichever profile ran each attempt,
+    # which a reassignment does not move: look in every project profile.
+    stores = [(p, _state_db(p)) for p in sorted(allowed)]
     for c in cards:
-        profile = c["assignee"] or ""
-        if profile not in allowed:
-            continue
-        db = _state_db(profile)
-        if db is None:
-            continue
-        rows += _session_tool_rows(
-            db, profile, _worker_sessions(db, c["id"]), lo=lo, hi=hi,
-            run_no=run_no, card=(c["id"], c["title"] or c["id"]), limit=limit,
-        )
+        for profile, db in stores:
+            if db is None:
+                continue
+            rows += _session_tool_rows(
+                db, profile, _worker_sessions(db, c["id"]), lo=lo, hi=hi,
+                run_no=run_no, card=(c["id"], c["title"] or c["id"]),
+                limit=limit, before=before,
+            )
     return rows
 
 
@@ -531,10 +570,11 @@ def build_log(
                 found = _run_tool_rows(
                     pconn, bconn, project, principal, run, allowed,
                     lo=max(lo, run["started_at"]), hi=hi, limit=limit + 1,
+                    before=before,
                 )
                 if found:
                     page = sorted(
-                        page + [r for r in found if before(r)],
+                        page + found,
                         key=_key, reverse=True,
                     )[: limit + 1]
 
