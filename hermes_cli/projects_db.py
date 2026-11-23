@@ -2838,28 +2838,6 @@ def merge_playbook_onto(
     return body, steps, conflicts
 
 
-def _settled_base(
-    conn: sqlite3.Connection, project_id: str, proposal: dict
-) -> Optional[dict]:
-    """The revision ``proposal`` really builds on: its ``base_rev``, or —
-    when that is itself still a proposal — that one's base, and so on up to
-    a revision that is or was active. Revisions are never edited after they
-    are saved, so this is the exact content the chain started from. None
-    when the chain breaks (no recorded base, written from nothing, or a
-    revision on the way was discarded)."""
-    seen: set[int] = set()
-    rev = proposal.get("base_rev")
-    while rev and rev not in seen:
-        seen.add(rev)
-        row = get_playbook(conn, project_id, rev)
-        if row is None:
-            return None
-        if row.get("active") or row.get("activated_at"):
-            return row
-        rev = row.get("base_rev")
-    return None
-
-
 def _lineage(conn: sqlite3.Connection, project_id: str, rev: int) -> List[dict]:
     """``rev`` and the revisions it was written from, nearest first, along
     ``base_rev`` until the chain ends (written from nothing, no recorded
@@ -2886,7 +2864,8 @@ def rebase_playbook_rev(
     created_by: Optional[str] = None,
 ) -> dict:
     """Update a proposal onto the active revision: its changes since the
-    nearest revision it shares with the active one (else ``_settled_base``)
+    nearest revision it shares with the active one (else its nearest
+    ancestor that is or was active, discarded or not)
     are re-applied to the active one (``merge_playbook_onto``) and saved as
     a **new** proposal based on the active rev. The old proposal is left as
     it was: revisions are immutable, so proposals written from it keep a
@@ -2895,7 +2874,8 @@ def rebase_playbook_rev(
     Returns ``{"rev", "from_rev", "base_rev", "conflicts"}``, or
     ``{"refused": …}`` with ``"not_found"``, ``"active"`` (active now or
     once — not a proposal), ``"no_active"``, ``"current"`` (already builds
-    on the active rev), ``"no_base"`` (no recoverable revision it was
+    on the active rev), ``"included"`` (the active rev builds on it, so
+    there is nothing to re-apply), ``"no_base"`` (no recoverable revision it was
     written from) or ``"invalid:<reason>"`` (including a merge that leaves
     no steps).
     """
@@ -2912,9 +2892,14 @@ def rebase_playbook_rev(
         if any(r["rev"] == active["rev"] for r in ancestors):
             return {"refused": "current"}
         on_active = {r["rev"] for r in _lineage(conn, project_id, active["rev"])}
+        if rev in on_active:
+            return {"refused": "included"}
         base = next((r for r in ancestors if r["rev"] in on_active), None)
         if base is None:
-            base = _settled_base(conn, project_id, proposal)
+            base = next(
+                (r for r in ancestors if r.get("active") or r.get("activated_at")),
+                None,
+            )
         if base is None:
             return {"refused": "no_base"}
         body, steps, conflicts = merge_playbook_onto(base, proposal, active)

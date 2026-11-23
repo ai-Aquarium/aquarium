@@ -30,15 +30,18 @@ export type ProposalBase = {
   outdated: boolean;
   /** Its changes can be re-applied onto the active version. */
   canUpdate: boolean;
-  why: "older" | "missing" | "root" | null;
+  /** "included": the active version already builds on this one, so there is nothing to re-apply. */
+  why: "older" | "missing" | "root" | "included" | null;
 };
 
 /**
  * A proposal that doesn't build on the active version is "based on an
  * older version", including one written from a pending proposal whose own
  * base is no longer active: making it active would undo what changed in
- * between. Revisions are never edited once saved, so the chain stays true;
- * a discarded one on the way is followed through `discarded`.
+ * between. It can be updated from the nearest version it shares with the
+ * active one, else its nearest version that was active. Revisions are never
+ * edited once saved, so the chain stays true; a discarded one on the way is
+ * followed through `discarded`.
  */
 export function proposalBase(
   rev: PlaybookRev,
@@ -49,21 +52,31 @@ export function proposalBase(
   const base = rev.base_rev ?? null;
   const settled: ProposalBase = { base, from: null, outdated: false, canUpdate: false, why: null };
   if (base == null || activeRev == null || revisionState(rev, activeRev) !== "proposed") return settled;
-  const seen = new Set<number>();
-  let cur: number | null = base;
-  while (cur && !seen.has(cur)) {
-    seen.add(cur);
-    const at: PlaybookAncestor | undefined =
-      revisions.find((r) => r.rev === cur) ?? discarded.find((r) => r.rev === cur);
-    if (!at) return { base, from: cur, outdated: true, canUpdate: false, why: "missing" };
-    if (("active" in at && at.active) || at.rev === activeRev || at.activated_at != null) {
-      return at.rev === activeRev
-        ? { ...settled, from: at.rev }
-        : { base, from: at.rev, outdated: true, canUpdate: true, why: "older" };
+  const find = (n: number): PlaybookAncestor | undefined =>
+    revisions.find((r) => r.rev === n) ?? discarded.find((r) => r.rev === n);
+  const lineage = (start: number | null) => {
+    const out: PlaybookAncestor[] = [];
+    const seen = new Set<number>();
+    let cur = start;
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      const at = find(cur);
+      if (!at) return { out, missing: cur };
+      out.push(at);
+      cur = at.base_rev ?? null;
     }
-    cur = at.base_rev ?? null;
-  }
-  return { base, from: null, outdated: true, canUpdate: false, why: cur == null ? "missing" : "root" };
+    return { out, missing: null };
+  };
+  // The same decision the server makes on "Update onto active".
+  const mine = lineage(base);
+  if (mine.out.some((r) => r.rev === activeRev)) return { ...settled, from: activeRev };
+  const onActive = new Set(lineage(activeRev).out.map((r) => r.rev));
+  if (onActive.has(rev.rev)) return { base, from: rev.rev, outdated: true, canUpdate: false, why: "included" };
+  const shared =
+    mine.out.find((r) => onActive.has(r.rev)) ??
+    mine.out.find((r) => ("active" in r && r.active) || r.activated_at != null);
+  if (shared) return { base, from: shared.rev, outdated: true, canUpdate: true, why: "older" };
+  return { base, from: mine.missing, outdated: true, canUpdate: false, why: mine.missing != null ? "missing" : "root" };
 }
 
 /** Oldest first, the order the version chips read in. */

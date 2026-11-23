@@ -63,6 +63,7 @@
   "chipOutdated": "older base",
   "outdated": "Based on an older version: v{base}, while v{active} is active now. Making it active as it is would undo what changed in between; update it onto v{active} to keep both.",
   "outdatedNoBase": "Based on an older version: v{base}, which no longer exists. Compare it with v{active} before making it active.",
+  "outdatedIncluded": "v{active} is active now and already builds on this version, so there is nothing to update. Making it active as it is would undo what changed since.",
   "outdatedRoot": "Written from scratch while no version was active; v{active} is active now. Compare it with v{active} before making it active.",
   "updateOntoActive": "Update onto active",
   "updating": "Updating…",

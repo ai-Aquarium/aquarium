@@ -4288,6 +4288,12 @@ async def rebase_playbook_route(request: Request, rev: int) -> dict[str, Any]:
                 status_code=409,
                 detail=f"revision {rev} is already based on the active revision",
             )
+        if refusal == "included":
+            raise HTTPException(
+                status_code=409,
+                detail=f"the active revision already builds on revision {rev}; "
+                "there is nothing to update",
+            )
         if refusal == "no_base":
             raise HTTPException(
                 status_code=409,
