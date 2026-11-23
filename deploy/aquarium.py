@@ -48,6 +48,7 @@ import pwd
 import re
 import secrets
 import shutil
+import signal
 import socket
 import stat
 import sqlite3
@@ -56,6 +57,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -138,6 +140,9 @@ DEFAULTS: Dict[str, str] = {
     "DB_CONTAINER": "supabase-db",
     "BACKUP_DIR": "/var/backups/aquarium",
     "BACKUP_KEEP": "10",
+    # An upgrade only backs up the changes since the newest background base backup when
+    # that base is at most this old; otherwise it takes a full backup.
+    "BACKUP_BASE_MAX_AGE_HOURS": "72",
     "KEEP_RELEASES": "3",
     "DASHBOARD_URL": "http://127.0.0.1:9119/",
     "AGENT_HOME_URL": "http://127.0.0.1:3100/login",
@@ -1219,9 +1224,12 @@ def cmd_update(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
         src = root_sources(cfg, tarball, folder / "root-sources")
 
         if not args.no_backup:
-            mark("backup")
             step("Backup before the update")
-            backup = make_backup(cfg, label=f"pre-update-{version}")
+            base = pick_base(cfg)
+            if getattr(args, "backup_plan", None):
+                args.backup_plan(stamp_iso(base["created"]) if base else None)
+            mark("backup")
+            backup = make_backup(cfg, label=f"pre-update-{version}", base=base)
             state["last_backup"] = real(backup)
             args.backup_path = str(backup)
 
@@ -1293,6 +1301,8 @@ def cmd_update(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
         prune_root_copies(cfg)
         audit(f"update {before} -> {version}: ok")
         say(f"\nUpdated to {version}. Previous version {before} is kept for rollback.")
+        if getattr(args, "progress", None) is None:  # an upgrade job starts it when it has finished
+            start_base_backup(cfg, "update")
         return 0
 
 
@@ -1315,6 +1325,18 @@ def restore_configs(copies: List[Tuple[Path, Path]]) -> None:
 # --------------------------------------------------------------------------- backup
 
 SKIP_DIRS = {"__pycache__", "node_modules", ".venv", "venv", ".npm", ".cache", ".next"}
+# Inside a Hermes home: scratch folders whose files only live for one tool call.
+# cache/vision and cache/video hold URL downloads that tools/vision_tools.py fetches, analyses and
+# deletes again (should_cleanup). Nothing refers to them afterwards. The other cache/ folders
+# (documents, images, audio, screenshots, delegation) hold files that conversations point to, so
+# they stay in the backup.
+SKIP_HOME_DIRS = ("cache/vision", "cache/video")
+GZIP_LEVEL = 1  # level 9 costs several times the CPU for a few % smaller archives
+BASE_UNIT = "aquarium-base-backup"
+BASE_STATUS = "/var/lib/aquarium/base-backup-status.json"
+BASE_LOCK = "/run/aquarium-base-backup.lock"
+BASE_SUFFIX = "+base.tar.gz.gpg"
+DELTA_RE = re.compile(r"\+base-(\d{8}T\d{6}Z)\.tar\.gz\.gpg$")
 COUNT_SQL = (
     "SELECT table_schema||'.'||table_name, (xpath('/row/c/text()', query_to_xml("
     "format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text "
@@ -1412,63 +1434,154 @@ def _is_sqlite(path: Path) -> bool:
         return False
 
 
-def _add_file(tar: tarfile.TarFile, path: Path, arcname: str, manifest: Dict) -> None:
+def _sqlite_copy(path: Path, dest: Path) -> None:
+    """A consistent copy of a live SQLite database (not byte by byte)."""
+    src = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    dst = sqlite3.connect(dest)
+    with dst:
+        src.backup(dst)
+    src.close()
+    dst.close()
+
+
+def _add_file(tar: tarfile.TarFile, path: Path, arcname: str, manifest: Dict, *,
+              tree: Optional[Dict] = None, base: Optional[Dict] = None,
+              times: Optional[Dict[str, float]] = None) -> None:
+    """Add one path. With ``tree``, record it there (type, size, mtime, sha256); with ``base`` (the
+    tree of a base backup), skip a regular file whose size and mtime are unchanged since then."""
     info = tar.gettarinfo(str(path), arcname)
+    entry: Optional[Dict] = None
     if info.isfile():
+        st = path.lstat()
+        entry = {"type": "file", "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+        live_db = _is_sqlite(path)
+        old = base.get(arcname) if base is not None else None
+        if (old and not live_db and old.get("type") == "file" and old.get("sha256")
+                and old.get("size") == st.st_size and old.get("mtime_ns") == st.st_mtime_ns):
+            entry["sha256"] = old["sha256"]
+            if tree is not None:
+                tree[arcname] = entry
+            return
+        digest = hashlib.sha256()
         spool = tempfile.SpooledTemporaryFile(max_size=64 << 20)
-        if _is_sqlite(path):  # a live database: copy it consistently, not byte by byte
-            with tempfile.TemporaryDirectory() as tmp:
-                copy = Path(tmp) / "db"
-                src = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-                dst = sqlite3.connect(copy)
-                with dst:
-                    src.backup(dst)
-                src.close()
-                dst.close()
-                with open(copy, "rb") as fh:
-                    shutil.copyfileobj(fh, spool)
-        else:
-            with open(path, "rb") as fh:
-                shutil.copyfileobj(fh, spool)
+        began = time.monotonic()
+        with contextlib.ExitStack() as stack:
+            if live_db:
+                tmp = stack.enter_context(tempfile.TemporaryDirectory())
+                _sqlite_copy(path, Path(tmp) / "db")
+                path = Path(tmp) / "db"
+            with open(path, "rb") as fh:  # read once: hash while spooling
+                for chunk in iter(lambda: fh.read(1 << 20), b""):
+                    digest.update(chunk)
+                    spool.write(chunk)
+        if live_db and times is not None:
+            times["sqlite"] = times.get("sqlite", 0.0) + time.monotonic() - began
         info.size = spool.tell()
         spool.seek(0)
-        manifest["files"][arcname] = hashlib.sha256(spool.read()).hexdigest()
-        spool.seek(0)
+        manifest["files"][arcname] = entry["sha256"] = digest.hexdigest()
         tar.addfile(info, spool)
         spool.close()
-    elif info.isdir() or info.issym():
+    elif info.isdir():
+        entry = {"type": "dir"}
         tar.addfile(info)
+    elif info.issym():
+        entry = {"type": "symlink", "target": info.linkname}
+        tar.addfile(info)
+    if entry is not None and tree is not None:
+        tree[arcname] = entry
 
 
-def iter_tree(root: Path) -> Iterator[Path]:
+def iter_tree(root: Path, skip: Sequence[Path] = ()) -> Iterator[Path]:
     """``root`` and everything below it (parents first), without following links."""
     yield root
     if root.is_dir() and not root.is_symlink():
         for dirpath, dirs, files in os.walk(root):
-            dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+            dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS and Path(dirpath) / d not in skip)
             for name in dirs + sorted(files):
                 yield Path(dirpath) / name
 
 
+class _TimedWriter:
+    """Counts the seconds spent handing data to compression + encryption."""
+
+    def __init__(self, raw) -> None:
+        self.raw, self.seconds = raw, 0.0
+
+    def write(self, data) -> int:
+        began = time.monotonic()
+        n = self.raw.write(data)
+        self.seconds += time.monotonic() - began
+        return n
+
+
+def _gpg_argv(key: Path, out: str) -> List[str]:
+    # --compress-algo none: the tar stream is gzipped already; gpg would compress it a second time.
+    return ["gpg", "--batch", "--yes", "--quiet", "--pinentry-mode", "loopback", "--passphrase-file", str(key),
+            "--symmetric", "--cipher-algo", "AES256", "--compress-algo", "none", "-o", out]
+
+
+def _gpg_write(data: bytes, key: Path, target: Path) -> None:
+    genv = gpg_env()
+    try:
+        p = subprocess.run(_gpg_argv(key, str(target) + ".part"), input=data, env=genv, capture_output=True)
+        if p.returncode != 0:
+            raise Fail("encrypting failed: " + p.stderr.decode(errors="replace").strip()[-200:])
+        os.chmod(str(target) + ".part", 0o600)
+        os.replace(str(target) + ".part", target)
+    finally:
+        shutil.rmtree(genv["GNUPGHOME"], ignore_errors=True)
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(str(target) + ".part")
+
+
+def _gpg_read(path: Path, key: Path) -> Optional[bytes]:
+    genv = gpg_env()
+    try:
+        p = subprocess.run(["gpg", "--batch", "--quiet", "--pinentry-mode", "loopback", "--passphrase-file",
+                            str(key), "--decrypt", str(path)], env=genv, capture_output=True)
+        return p.stdout if p.returncode == 0 else None
+    finally:
+        shutil.rmtree(genv["GNUPGHOME"], ignore_errors=True)
+
+
 def make_backup(cfg: Dict[str, str], *, label: str = "manual", to: Optional[Path] = None,
-                progress: Optional[Callable[[str, int], None]] = None) -> Path:
+                progress: Optional[Callable[[str, int], None]] = None, base: Optional[Dict] = None,
+                kind: str = "full") -> Path:
+    """Write one encrypted backup. ``kind="base"`` is the background base backup; with ``base``
+    (from pick_base) it holds only the files changed since that base, plus fresh database dumps."""
     report = progress or (lambda phase, percent: None)
     if not have("gpg"):
         raise Fail("gpg is not installed", "apt-get install -y gnupg")
+    if kind != "base":
+        stop_base_backup(cfg)  # never two backup writers at once; the foreground one wins
     key = backup_key()
     dest_dir = to or P(cfg["BACKUP_DIR"])
     dest_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(dest_dir, 0o700)
     stamp = utcnow()
-    name = f"aquarium-backup-{stamp}-{re.sub(r'[^A-Za-z0-9.-]', '_', label)}.tar.gz.gpg"
+    if kind == "base":
+        name = f"aquarium-backup-{stamp}{BASE_SUFFIX}"
+    elif base is not None:
+        kind = "delta"
+        name = (f"aquarium-backup-{stamp}-{re.sub(r'[^A-Za-z0-9.-]', '_', label)}"
+                f"+base-{base['created']}.tar.gz.gpg")
+    else:
+        name = f"aquarium-backup-{stamp}-{re.sub(r'[^A-Za-z0-9.-]', '_', label)}.tar.gz.gpg"
     target = dest_dir / name
-    staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=dest_dir))
+    staging = Path(tempfile.mkdtemp(prefix=".staging-base-" if kind == "base" else ".staging-", dir=dest_dir))
     manifest: Dict = {"format": 1, "created": stamp, "label": label, "release": current_release(),
                       "layout": layout(cfg), "hostname": socket.gethostname(), "files": {}, "paths": [],
-                      "db": None, "apps_db": []}
+                      "db": None, "apps_db": [], "kind": kind}
+    tree: Optional[Dict] = {} if kind in ("base", "delta") else None
+    if kind == "delta":
+        manifest["base"] = {"name": base["name"], "sha256": base["sha256"], "created": base["created"]}
+    times: Dict[str, float] = {}
+    began = time.monotonic()
     genv = gpg_env()
+    procs: List[subprocess.Popen] = []
     try:
         report("database", 5)
+        t0 = time.monotonic()
         url_env = None if db_running(cfg) else db_admin_env()
         if url_env is not None:
             manifest["db"] = dump_with_admin_url(url_env, staging)
@@ -1488,43 +1601,84 @@ def make_backup(cfg: Dict[str, str], *, label: str = "manual", to: Optional[Path
             manifest["db"] = {"database": "postgres", "tables": db_counts(cfg, "postgres")}
         else:
             say("  database not running here: backing up files only")
+        times["database"] = time.monotonic() - t0
+        t0 = time.monotonic()
         manifest["apps_db"] = backup_app_dbs(cfg, staging)
+        times["app_dbs"] = time.monotonic() - t0
         sources = backup_sources(cfg)
         manifest["paths"] = sources
+        skip = [P(h) / d for h in hermes_homes(cfg) for d in SKIP_HOME_DIRS]
         report("files", 30)
-        gpg = subprocess.Popen(
-            ["gpg", "--batch", "--yes", "--quiet", "--pinentry-mode", "loopback", "--passphrase-file", str(key),
-             "--symmetric", "--cipher-algo", "AES256", "-o", str(target) + ".part"],
-            stdin=subprocess.PIPE, env=genv)
+        gpg = subprocess.Popen(_gpg_argv(key, str(target) + ".part"), stdin=subprocess.PIPE, env=genv)
+        procs.append(gpg)
         assert gpg.stdin is not None
-        with tarfile.open(fileobj=gpg.stdin, mode="w|gz") as tar:
+        if have("pigz"):  # all cores; same gzip format, so every restore path reads it
+            pigz = subprocess.Popen(["pigz", f"-{GZIP_LEVEL}", "-c"], stdin=subprocess.PIPE, stdout=gpg.stdin)
+            procs.append(pigz)
+            gpg.stdin.close()
+            assert pigz.stdin is not None
+            sink, gz = pigz.stdin, None
+        else:
+            gz = gzip.GzipFile(fileobj=gpg.stdin, mode="wb", compresslevel=GZIP_LEVEL)
+            sink = gz
+        timed = _TimedWriter(sink)
+        t0 = time.monotonic()
+        with tarfile.open(fileobj=timed, mode="w|") as tar:
             if manifest["db"] is not None:
                 for f in ("postgres.dump", "globals.sql"):
                     _add_file(tar, staging / "db" / f, f"db/{f}", manifest)
             for entry in manifest["apps_db"]:
                 _add_file(tar, staging / entry["file"], entry["file"], manifest)
+            base_tree = base["tree"] if base is not None else None
             for i, src in enumerate(sources):
                 say(f"  {src}")
                 report("files", 30 + 30 * i // max(len(sources), 1))
-                for p in iter_tree(P(src)):
-                    _add_file(tar, p, "root" + real(p), manifest)
+                for p in iter_tree(P(src), skip):
+                    _add_file(tar, p, "root" + real(p), manifest, tree=tree, base=base_tree, times=times)
+            files_end = time.monotonic()
+            if tree is not None:
+                manifest["tree"] = tree
+            times["compress_encrypt"] = timed.seconds
+            times["files"] = max(files_end - t0 - timed.seconds - times.get("sqlite", 0.0), 0.0)
+            times.setdefault("sqlite", 0.0)
+            manifest["timings"] = {k: round(v, 2) for k, v in times.items()}
             data = (json.dumps(manifest, indent=1, sort_keys=True) + "\n").encode()
             info = tarfile.TarInfo("manifest.json")
             info.size, info.mtime, info.mode = len(data), int(time.time()), 0o600
             tar.addfile(info, io.BytesIO(data))
-        gpg.stdin.close()
+        if gz is not None:
+            gz.close()
+            gpg.stdin.close()
+        else:
+            sink.close()
+            if procs[1].wait() != 0:
+                raise Fail("compressing the backup failed")
         if gpg.wait() != 0:
             raise Fail("encrypting the backup failed")
         os.chmod(str(target) + ".part", 0o600)
         os.replace(str(target) + ".part", target)
     finally:
+        for proc in procs:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
         shutil.rmtree(staging, ignore_errors=True)
         shutil.rmtree(genv["GNUPGHOME"], ignore_errors=True)
         with contextlib.suppress(FileNotFoundError):
             os.unlink(str(target) + ".part")
+    times["total"] = time.monotonic() - began
     size = target.stat().st_size / 2**20
-    say(f"  backup written: {real(target)} ({size:.1f} MB, {len(manifest['files'])} files"
+    what = (f"{len(manifest['files'])} changed of {sum(1 for e in tree.values() if e['type'] == 'file')} files"
+            if kind == "delta" and tree is not None else f"{len(manifest['files'])} files")
+    say(f"  backup written: {real(target)} ({size:.1f} MB, {what}"
         + (f", {len(manifest['db']['tables'])} tables" if manifest["db"] else "") + ")")
+    say("  timings: " + ", ".join(f"{k} {v:.1f}s" for k, v in times.items()))
+    if kind == "base":
+        assert tree is not None
+        index = {"format": 1, "name": name, "created": stamp, "size": target.stat().st_size,
+                 "sha256": sha256_file(target), "layout": manifest["layout"], "hostname": manifest["hostname"],
+                 "paths": manifest["paths"], "release": manifest["release"], "tree": tree}
+        _gpg_write(json.dumps(index, sort_keys=True).encode(), key, Path(str(target) + ".index.gpg"))
     audit(f"backup {real(target)}")
     if to is None:
         prune_backups(cfg)
@@ -1579,14 +1733,257 @@ def dump_with_admin_url(env: Dict[str, str], staging: Path) -> Dict:
     return {"database": env["PGDATABASE"], "tables": url_counts(env, env["PGDATABASE"]), "via": "db-admin.env"}
 
 
+def base_of(path: Path) -> Optional[str]:
+    """The file name of the base backup a delta backup needs, from the delta's name."""
+    m = DELTA_RE.search(path.name)
+    return f"aquarium-backup-{m.group(1)}{BASE_SUFFIX}" if m else None
+
+
 def prune_backups(cfg: Dict[str, str]) -> None:
+    """Keep the newest BACKUP_KEEP backups, the newest base, and every base a kept delta needs."""
     keep = max(int(cfg["BACKUP_KEEP"]), 1)
     files = sorted(P(cfg["BACKUP_DIR"]).glob("aquarium-backup-*.tar.gz.gpg"))
-    for old in files[:-keep]:
+    bases = [f for f in files if f.name.endswith(BASE_SUFFIX)]
+    points = [f for f in files if f not in bases]
+    for old in points[:-keep]:
         old.unlink()
+    needed = {base_of(f) for f in points[-keep:]} | ({bases[-1].name} if bases else set())
+    for b in bases:
+        if b.name not in needed:
+            for delta in P(cfg["BACKUP_DIR"]).glob(f"aquarium-backup-*+base-{b.name[16:32]}.tar.gz.gpg"):
+                delta.unlink()  # unreachable: deltas older than every kept backup
+            b.unlink()
+            with contextlib.suppress(FileNotFoundError):
+                Path(str(b) + ".index.gpg").unlink()
+
+
+def _write_status(path: Path, st: Dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(st, fh, sort_keys=True)
+    if os.geteuid() == 0:  # windows-footgun: ok — Linux-only server CLI
+        # The dashboard (service user) reads progress and results; no secrets are in this file.
+        with contextlib.suppress(KeyError):
+            os.chown(tmp, 0, pwd.getpwnam(load_config()["SERVICE_USER"]).pw_gid)
+    os.chmod(tmp, 0o640)
+    os.replace(tmp, path)
+
+
+def load_base_status() -> Dict:
+    try:
+        st = json.loads(P(BASE_STATUS).read_text())
+        return st if isinstance(st, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_base_status(st: Dict) -> None:
+    _write_status(P(BASE_STATUS), st)
+
+
+def stamp_iso(stamp: str) -> str:
+    return _dt.datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").replace(
+        tzinfo=_dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def base_backup_units() -> Dict[str, str]:
+    """The background base backup: a low-priority oneshot, started after each successful upgrade
+    and nightly. Same text as deploy/aquarium-base-backup.{service,timer}."""
+    return {
+        f"{BASE_UNIT}.service": (
+            "[Unit]\nDescription=Aquarium base backup (makes the next upgrade's backup quick)\n"
+            "After=docker.service\n\n"
+            f"[Service]\nType=oneshot\nExecStart={SELF_INSTALL} backup --base\n"
+            "Nice=19\nIOSchedulingClass=idle\nPrivateTmp=yes\nNoNewPrivileges=yes\n"),
+        f"{BASE_UNIT}.timer": (
+            "[Unit]\nDescription=Nightly Aquarium base backup\n\n"
+            "[Timer]\nOnCalendar=*-*-* 03:30:00\nPersistent=true\nRandomizedDelaySec=30min\n\n"
+            "[Install]\nWantedBy=timers.target\n"),
+    }
+
+
+def _pid_state(pid: int) -> Optional[str]:
+    """None when ``pid`` is gone or is not an aquarium process, else its /proc state letter."""
+    try:
+        if b"aquarium" not in Path(f"/proc/{pid}/cmdline").read_bytes():
+            return None
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return None
+
+
+def _terminate(pid: int) -> None:
+    for sig, wait in ((signal.SIGTERM, 30.0), (signal.SIGKILL, 10.0)):
+        if _pid_state(pid) in (None, "Z"):
+            return
+        with contextlib.suppress(OSError):
+            os.kill(pid, sig)
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline and _pid_state(pid) not in (None, "Z"):
+            time.sleep(0.1)
+
+
+def stop_base_backup(cfg: Dict[str, str]) -> None:
+    """Stop a queued/running background base backup and drop its partial files.
+
+    Called by every foreground backup writer (upgrade, restore, manual and offsite backups) while
+    it holds admin_lock(). The base job only switches to running while it holds admin_lock() too,
+    so after this returns no base job writes until the caller's lock is released."""
+    st = load_base_status()
+    if st.get("state") in ("queued", "running"):
+        say("  stopping the background base backup (the next one starts after this)")
+        systemctl("stop", f"{BASE_UNIT}.service", check=False)
+        pid = int(st.get("pid") or 0)
+        if pid and pid != os.getpid():
+            _terminate(pid)
+        st.update(state="stopped", pid=None, finished=now_iso(),
+                  error="stopped because another backup, restore or upgrade started")
+        save_base_status(st)
+    folder = P(cfg["BACKUP_DIR"])
+    for part in folder.glob(f"aquarium-backup-*{BASE_SUFFIX}*.part"):
+        with contextlib.suppress(FileNotFoundError):
+            part.unlink()
+    for staging in folder.glob(".staging-base-*"):
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def pick_base(cfg: Dict[str, str]) -> Optional[Dict]:
+    """The newest usable base backup's index for an incremental backup, or None (take a full one)."""
+    stop_base_backup(cfg)
+
+    def full(why: str) -> None:
+        say(f"  full backup: {why}")
+        return None
+
+    bases = sorted(P(cfg["BACKUP_DIR"]).glob(f"aquarium-backup-*{BASE_SUFFIX}"))
+    if not bases:
+        return full("no background base backup yet")
+    path = bases[-1]
+    index = Path(str(path) + ".index.gpg")
+    try:
+        key = backup_key(create=False)
+    except Fail:
+        return full("no backup key")
+    raw = _gpg_read(index, key) if index.is_file() else None
+    if raw is None:
+        return full("the base backup's index is missing or does not open with the current backup key")
+    try:
+        idx = json.loads(raw)
+        created = _dt.datetime.strptime(idx["created"], "%Y%m%dT%H%M%SZ").replace(tzinfo=_dt.timezone.utc)
+    except (ValueError, KeyError, TypeError):
+        return full("the base backup's index is damaged")
+    if (idx.get("name") != path.name or idx.get("size") != path.stat().st_size or not idx.get("sha256")
+            or not isinstance(idx.get("tree"), dict)):
+        return full("the base backup does not match its index")
+    hours = (_dt.datetime.now(_dt.timezone.utc) - created).total_seconds() / 3600
+    limit = float(cfg.get("BACKUP_BASE_MAX_AGE_HOURS") or DEFAULTS["BACKUP_BASE_MAX_AGE_HOURS"])
+    if not -1 <= hours <= limit:
+        return full(f"the base backup is {hours:.0f} hours old (limit {limit:.0f})")
+    if (idx.get("layout") != layout(cfg) or idx.get("hostname") != socket.gethostname()
+            or idx.get("paths") != backup_sources(cfg)):
+        return full("the base backup was made for other folders or another server")
+    say(f"  only the changes since the base backup of {stamp_iso(idx['created'])}")
+    return idx
+
+
+def start_base_backup(cfg: Dict[str, str], reason: str, after_job: Optional[str] = None) -> None:
+    """Queue the background base backup. Never fails the caller: a base that never arrives only
+    means the next upgrade takes a full backup."""
+    try:
+        changed = False
+        for name, text in base_backup_units().items():
+            path = P(f"{SYSTEMD}/{name}")
+            if not path.is_file() or path.read_text() != text:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text)
+                os.chmod(path, 0o644)
+                changed = True
+        if changed:
+            systemctl("daemon-reload", check=False)
+            systemctl("enable", f"{BASE_UNIT}.timer", check=False)
+            systemctl("start", f"{BASE_UNIT}.timer", check=False)
+        prev = load_base_status()
+        save_base_status({"state": "queued", "reason": reason, "after_job": after_job, "queued": now_iso(),
+                          "last": prev.get("last")})
+        proc = systemctl("start", "--no-block", f"{BASE_UNIT}.service", check=False)
+        if proc.returncode != 0:
+            raise Fail("systemd did not start " + BASE_UNIT)
+        say("A background base backup is preparing the next upgrade.")
+    except (Fail, OSError) as error:
+        say(f"  WARN  background base backup not started: {error}")
+        with contextlib.suppress(OSError):
+            st = load_base_status()
+            st.update(state="failed", finished=now_iso(), error=str(error), pid=None)
+            save_base_status(st)
+
+
+def run_base_backup(cfg: Dict[str, str]) -> int:
+    """`aquarium backup --base`, in aquarium-base-backup.service (low priority). It never holds
+    admin_lock() while it works, so it cannot make other aquarium commands fail."""
+    lock_path = P(BASE_LOCK)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            say("a base backup is already running")
+            return 0
+        prev = load_base_status()
+        queued = prev.get("state") == "queued"
+        st = {"state": "queued", "pid": os.getpid(), "reason": prev.get("reason") if queued else "nightly",
+              "after_job": prev.get("after_job") if queued else None,
+              "queued": prev.get("queued") if queued else now_iso(), "last": prev.get("last")}
+        save_base_status(st)
+
+        def stop(signum, frame):
+            raise SystemExit(128 + signum)
+
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGTERM, stop)
+        began = time.monotonic()
+        try:
+            while True:  # wait for a running upgrade/backup to finish; never block it
+                try:
+                    with admin_lock():
+                        st.update(state="running", started=now_iso())
+                        save_base_status(st)
+                    break
+                except Fail:
+                    if time.monotonic() - began > 6 * 3600:
+                        raise Fail("another aquarium command kept running for 6 hours")
+                    time.sleep(5)
+            step("Base backup")
+            path = make_backup(cfg, label="base", kind="base")
+        except (Fail, OSError, SystemExit) as error:
+            cur = load_base_status()
+            if cur.get("state") != "stopped":
+                st.update(state="failed" if not isinstance(error, SystemExit) else "stopped", pid=None,
+                          finished=now_iso(), error=str(error) or "stopped")
+                save_base_status(st)
+            stop_base_parts(cfg)
+            if isinstance(error, SystemExit):
+                return 1
+            raise
+        finished = now_iso()
+        st.update(state="done", pid=None, finished=finished, error=None, name=path.name,
+                  seconds=round(time.monotonic() - began),
+                  last={"name": path.name, "created": stamp_iso(path.name[16:32]), "finished": finished})
+        save_base_status(st)
+    return 0
+
+
+def stop_base_parts(cfg: Dict[str, str]) -> None:
+    folder = P(cfg["BACKUP_DIR"])
+    for part in folder.glob(f"aquarium-backup-*{BASE_SUFFIX}*.part"):
+        with contextlib.suppress(FileNotFoundError):
+            part.unlink()
 
 
 def cmd_backup(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
+    if getattr(args, "base", False):
+        return run_base_backup(cfg)
     with admin_lock():
         step("Backup")
         target = make_backup(cfg, label=args.label, to=Path(args.to) if args.to else None)
@@ -1628,7 +2025,40 @@ def open_backup(path: Path, key: Path, dest: Path) -> Dict:
            if not (dest / name).is_file() or sha256_file(dest / name) != digest]
     if bad:
         raise Fail(f"{len(bad)} file(s) in the backup are damaged, e.g. {bad[0]}", "Use another backup.")
+    if manifest.get("kind") == "delta":
+        _apply_base(path, key, dest, manifest)
     return manifest
+
+
+def _apply_base(path: Path, key: Path, dest: Path, manifest: Dict) -> None:
+    """Complete an opened delta backup from its base: every file of the delta's file list that the
+    delta does not hold comes from the base (checksum-checked). Files deleted since the base are
+    not in that list, so ``dest`` ends up exactly like a full backup made at the delta's time."""
+    ref = manifest.get("base") or {}
+    name = str(ref.get("name") or "")
+    if not re.fullmatch(r"aquarium-backup-\d{8}T\d{6}Z\+base\.tar\.gz\.gpg", name):
+        raise Fail("the backup names no valid base backup")
+    base = path.parent / name
+    if not base.is_file():
+        raise Fail(f"this backup holds only the changes since {name}, which is missing",
+                   f"Put {name} next to {path.name}, or use a full backup.")
+    if sha256_file(base) != ref.get("sha256"):
+        raise Fail(f"the base backup {name} is damaged or was replaced", "Use a full backup.")
+    work = Path(tempfile.mkdtemp(prefix=".base-", dir=dest))
+    try:
+        base_manifest = open_backup(base, key, work)
+        files = manifest["files"]
+        for arc, entry in (manifest.get("tree") or {}).items():
+            if entry.get("type") != "file" or arc in files:
+                continue
+            src = work / arc
+            if base_manifest["files"].get(arc) != entry.get("sha256") or not src.is_file():
+                raise Fail(f"the base backup {name} does not hold {arc} as expected", "Use a full backup.")
+            (dest / arc).parent.mkdir(parents=True, exist_ok=True)
+            os.replace(src, dest / arc)
+            files[arc] = entry["sha256"]
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def pg_restore_into(cfg: Dict[str, str], dump: Path, dbname: str, clean: bool) -> int:
@@ -1709,6 +2139,7 @@ def cmd_restore(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
         raise Fail(f"{args.file} not found")
     key = Path(args.key_file) if args.key_file else backup_key(create=False)
     with admin_lock():
+        stop_base_backup(cfg)
         base = P(cfg["BACKUP_DIR"])
         base.mkdir(parents=True, exist_ok=True)
         os.chmod(base, 0o700)
@@ -2727,18 +3158,7 @@ def load_offsite_status() -> Dict:
 
 
 def save_offsite_status(st: Dict) -> None:
-    path = offsite_status_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump(st, fh, sort_keys=True)
-    if os.geteuid() == 0:  # windows-footgun: ok — Linux-only server CLI
-        # The dashboard (service user) reads progress and results; no secrets are in this file.
-        with contextlib.suppress(KeyError):
-            os.chown(tmp, 0, pwd.getpwnam(load_config()["SERVICE_USER"]).pw_gid)
-    os.chmod(tmp, 0o640)
-    os.replace(tmp, path)
+    _write_status(offsite_status_path(), st)
 
 
 def update_offsite_status(**changes) -> Dict:
@@ -3415,7 +3835,22 @@ def upgrade_public_status(cfg: Dict[str, str]) -> Dict:
     return {"ok": True, "installed": {**info, "label": installed_label(info)}, "job": job or None,
             "history": [_public_record(r) for r in reversed(upgrades[-UPGRADE_HISTORY_SHOWN:])],
             "releases_checked_at": checked,
-            "rollback": {"to": rb["to"]} if rb else None, "finish": finish}
+            "rollback": {"to": rb["to"]} if rb else None, "finish": finish,
+            "base_backup": base_backup_public()}
+
+
+def base_backup_public() -> Optional[Dict]:
+    st = load_base_status()
+    if not st.get("state"):
+        return None
+    state = st["state"]
+    pid = int(st.get("pid") or 0)
+    if state in ("queued", "running") and pid and _pid_state(pid) in (None, "Z"):
+        state = "failed"  # the job died without recording why
+    return {"state": state, "reason": st.get("reason"), "after_job": st.get("after_job"),
+            "queued": st.get("queued"), "started": st.get("started"), "finished": st.get("finished"),
+            "error": st.get("error") if state in ("failed", "stopped") else None,
+            "last": (st.get("last") or {}).get("created")}
 
 
 def _read_request() -> Dict:
@@ -3582,7 +4017,8 @@ def _restore_backup(cfg: Dict[str, str], backup: str) -> None:
 
 
 def _upgrade_release(cfg: Dict[str, str], tracker: UpgradeJob, ref: str, force: bool) -> None:
-    args = argparse.Namespace(version=ref, channel=None, force=force, no_backup=False, progress=tracker.mark)
+    args = argparse.Namespace(version=ref, channel=None, force=force, no_backup=False, progress=tracker.mark,
+                              backup_plan=lambda since: tracker.job.update(backup_since=since))
     try:
         cmd_update(args, cfg)
     finally:
@@ -3642,9 +4078,11 @@ def verified_package(cfg: Dict[str, str], version: str, folder: Path) -> Optiona
 
 def _upgrade_git(cfg: Dict[str, str], tracker: UpgradeJob, ref: str, label: str) -> None:
     with admin_lock():
-        tracker.mark("backup")
         step("Backup before the upgrade")
-        tracker.job["backup"] = str(make_backup(cfg, label=label))
+        base = pick_base(cfg)
+        tracker.job["backup_since"] = stamp_iso(base["created"]) if base else None
+        tracker.mark("backup")
+        tracker.job["backup"] = str(make_backup(cfg, label=label, base=base))
         tracker._save()
     tracker.mark("download")
     step(f"Downloading the signed package of {ref} (for the system helpers)")
@@ -3729,6 +4167,9 @@ def upgrade_run(cfg: Dict[str, str]) -> int:
             state = load_state()
             state["finish_failed"] = {"version": ref, "error": error, "at": now_iso()}
             save_state(state)
+    if result == "ok" and kind in ("upgrade", "rollback"):
+        job["base_backup"] = True
+        start_base_backup(cfg, kind, after_job=job["id"])
     tracker.finish(result, error)
     if result == "ok" and lay == "git":
         job["to_commit"] = _git_out(cfg, "rev-parse", "--short", "HEAD") or None
@@ -4537,6 +4978,8 @@ def parser() -> argparse.ArgumentParser:
     p = sub.add_parser("backup", help="encrypted backup of database, data folders and settings")
     p.add_argument("--to", help="folder to write to (default /var/backups/aquarium)")
     p.add_argument("--label", default="manual")
+    p.add_argument("--base", action="store_true",
+                   help="background base backup that later upgrades back up changes against (low priority)")
     p = sub.add_parser("restore", help="put a backup back (or --test it without changing anything)")
     p.add_argument("file")
     p.add_argument("--test", action="store_true", help="check the backup opens and restores into a scratch database")
