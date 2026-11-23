@@ -859,9 +859,9 @@ def projects_api_refuse_archived(project) -> None:
 
 
 _MEDIA_REF_RE = re.compile(r"/api/chat/media\?path=([^\s)\"'&<>\]]+)")
-# One link per line; its name may hold a bracketed part (``draft [v2].pdf``,
-# agent-home does not escape it) but never another link.
-_LINK_LINE_RE = re.compile(r"^!?\[(?:[^\[\]\n]|\[[^\[\]\n]*\])*\]\(([^)\s]+)\)$")
+# One link per line. agent-home does not escape a file name, so its label may
+# hold any brackets, but never ``](`` (that would be a second link).
+_LINK_LINE_RE = re.compile(r"^!?\[(?:(?!\]\().)*\]\(([^)\s]+)\)$")
 
 
 def _attached_refs(content: str) -> list[str]:

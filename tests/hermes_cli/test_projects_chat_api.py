@@ -738,6 +738,7 @@ def test_a_file_named_inside_an_attached_document_stays_private(env, project):
         + "\n\n[notes.txt](/api/chat/media?path=leo%2Fs-leo%2Fu1-notes.txt)"
         # agent-home does not escape a "]" in a file name.
         + "\n[draft [v2].pdf](/api/chat/media?path=leo%2Fs-leo%2Fu2-draft_v2.pdf)"
+        + "\n[odd] name [[x].pdf](/api/chat/media?path=leo%2Fs-leo%2Fu4-odd.pdf)"
     )
     # A short ref the turn names gets its description appended after the links.
     stored = with_block(stored, [{"ref": "P12", "kind": "project", "title": "Sales"}])
@@ -746,6 +747,7 @@ def test_a_file_named_inside_an_attached_document_stays_private(env, project):
     env[1]["actor"] = MEMBER_P
     assert _media(env, slug, "leo/s-leo/u1-notes.txt").status_code == 200
     assert _media(env, slug, "leo/s-leo/u2-draft_v2.pdf").status_code == 200
+    assert _media(env, slug, "leo/s-leo/u4-odd.pdf").status_code == 200
     assert _media(env, slug, "leo/s-x/u9-secret.png").status_code == 403
 
 
