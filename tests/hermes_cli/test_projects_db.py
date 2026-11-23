@@ -511,3 +511,30 @@ def test_rebase_refuses_a_merge_that_leaves_no_steps(conn):
     result = pdb.rebase_playbook_rev(conn, pid, no_b)
     assert result["refused"].startswith("invalid:") and "no steps" in result["refused"]
     assert pdb.get_playbook(conn, pid, no_b)["steps"][0]["key"] == "a"
+
+
+def test_a_discarded_rev_number_is_never_reused(conn):
+    pid = pdb.create_project(conn, name="Seq", folders=["/tmp/seq"])
+    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A")))
+    pdb.activate_playbook_rev(conn, pid, v1)
+    draft = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "B")))
+    assert pdb.discard_playbook_rev(conn, pid, draft) is None
+    again = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "C")))
+    assert again > draft
+
+
+def test_discarding_a_base_moves_its_proposals_onto_its_own_base(conn):
+    pid = pdb.create_project(conn, name="Withdraw", folders=["/tmp/withdraw"])
+    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A"), ("b", "B")))
+    pdb.activate_playbook_rev(conn, pid, v1)
+    parent = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A1"), ("b", "B")))
+    child = pdb.save_playbook_rev(
+        conn, project_id=pid, steps=_steps(("a", "A1"), ("b", "B1")), base_rev=parent
+    )
+    other = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A"), ("b", "B"), ("c", "C")))
+    pdb.activate_playbook_rev(conn, pid, other)
+    assert pdb.discard_playbook_rev(conn, pid, parent) is None
+    assert pdb.get_playbook(conn, pid, child)["base_rev"] == v1
+    # The child keeps the withdrawn parent's change and can still be updated.
+    up = pdb.rebase_playbook_rev(conn, pid, child)
+    assert [s["title"] for s in pdb.get_playbook(conn, pid, up["rev"])["steps"]] == ["A1", "B1", "C"]
