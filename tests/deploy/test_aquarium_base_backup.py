@@ -156,7 +156,7 @@ def _rewrite_index(box, base: Path, **changes):
 
 
 @pytest.mark.parametrize("case", ["missing", "no-index", "other-key", "stale", "other-server", "other-folders",
-                                  "truncated", "in-progress"])
+                                  "truncated", "bitflip", "in-progress"])
 def test_unusable_base_falls_back_to_a_full_backup(box, capsys, case):
     if case != "missing":
         base = make_base(box)
@@ -174,6 +174,10 @@ def test_unusable_base_falls_back_to_a_full_backup(box, capsys, case):
     elif case == "truncated":
         with open(base, "ab") as fh:
             fh.write(b"x")
+    elif case == "bitflip":
+        data = bytearray(base.read_bytes())
+        data[len(data) // 2] ^= 1
+        base.write_bytes(bytes(data))
     elif case == "in-progress":
         base.unlink()
         Path(str(base) + ".index.gpg").unlink()
@@ -371,3 +375,46 @@ def test_rollback_restores_from_a_delta(box, monkeypatch, capsys):
     assert box.run("upgrade", "run") == 0, capsys.readouterr().out
     assert os.readlink(box.p("/opt/aquarium/current")) == "releases/v1.0.0"
     assert "migrated: true" not in box.p(f"{HOME}/config.yaml").read_text()
+
+
+def test_permission_only_change_is_kept(box, capsys):
+    script = box.write(f"{HOME}/notes/run.sh", "echo hi\n")
+    os.chmod(script, 0o644)
+    make_base(box)
+    os.chmod(script, 0o755)
+    cfg = aq.load_config()
+    delta = aq.make_backup(cfg, label="pre-upgrade-x", base=aq.pick_base(cfg))
+    assert f"root{HOME}/notes/run.sh" in archive_members(box, delta)
+    os.chmod(script, 0o600)
+    assert box.run("restore", str(delta), "--yes", "--no-safety-backup") == 0, capsys.readouterr().out
+    assert box.p(f"{HOME}/notes/run.sh").stat().st_mode & 0o777 == 0o755
+
+
+def test_a_reader_without_delta_support_refuses_a_delta(box):
+    """The old open_backup checks that every file in the manifest was unpacked."""
+    make_base(box)
+    cfg = aq.load_config()
+    delta = aq.make_backup(cfg, label="pre-upgrade-x", base=aq.pick_base(cfg))
+    dest = box.tmp / "old"
+    dest.mkdir()
+    with tarfile.open(fileobj=io.BytesIO(aq._gpg_read(delta, key(box))), mode="r:gz") as tar:
+        tar.extractall(dest, filter="tar")
+    manifest = json.loads((dest / "manifest.json").read_text())
+    missing = [n for n in manifest["files"] if not (dest / n).is_file()]
+    assert missing and set(missing) == set(manifest["inherited"])
+    assert f"root{HOME}/config.yaml" in manifest["files"]
+
+
+def test_rollback_without_the_base_changes_nothing(box, monkeypatch, capsys):
+    base = make_base(box)
+    _start_upgrade(box, monkeypatch, capsys, {"version": "v1.1.0"})
+    assert box.run("upgrade", "run") == 0
+    base.unlink()
+    st = _status(box, monkeypatch, capsys)
+    assert st["rollback"] is None
+    base.write_bytes(b"replaced")
+    capsys.readouterr()
+    monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
+    box.run("upgrade", "rollback")
+    box.run("upgrade", "run")
+    assert os.readlink(box.p("/opt/aquarium/current")) == "releases/v1.1.0"

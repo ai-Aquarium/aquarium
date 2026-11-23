@@ -1448,16 +1448,17 @@ def _add_file(tar: tarfile.TarFile, path: Path, arcname: str, manifest: Dict, *,
               tree: Optional[Dict] = None, base: Optional[Dict] = None,
               times: Optional[Dict[str, float]] = None) -> None:
     """Add one path. With ``tree``, record it there (type, size, mtime, sha256); with ``base`` (the
-    tree of a base backup), skip a regular file whose size and mtime are unchanged since then."""
+    tree of a base backup), skip a regular file whose size, mtime, mode and owner are unchanged since then."""
     info = tar.gettarinfo(str(path), arcname)
     entry: Optional[Dict] = None
     if info.isfile():
         st = path.lstat()
-        entry = {"type": "file", "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+        entry = {"type": "file", "size": st.st_size, "mtime_ns": st.st_mtime_ns,
+                 "mode": stat.S_IMODE(st.st_mode), "uid": st.st_uid, "gid": st.st_gid}
         live_db = _is_sqlite(path)
         old = base.get(arcname) if base is not None else None
         if (old and not live_db and old.get("type") == "file" and old.get("sha256")
-                and old.get("size") == st.st_size and old.get("mtime_ns") == st.st_mtime_ns):
+                and all(old.get(k) == entry[k] for k in ("size", "mtime_ns", "mode", "uid", "gid"))):
             entry["sha256"] = old["sha256"]
             if tree is not None:
                 tree[arcname] = entry
@@ -1638,6 +1639,12 @@ def make_backup(cfg: Dict[str, str], *, label: str = "manual", to: Optional[Path
             files_end = time.monotonic()
             if tree is not None:
                 manifest["tree"] = tree
+            if kind == "delta":
+                # "files" lists every file, as in a full backup, so an older `aquarium` (no delta
+                # support) refuses this archive as damaged instead of restoring a partial tree.
+                inherited = sorted(a for a, e in tree.items() if e["type"] == "file" and a not in manifest["files"])
+                manifest["inherited"] = inherited
+                manifest["files"].update({a: tree[a]["sha256"] for a in inherited})
             times["compress_encrypt"] = timed.seconds
             times["files"] = max(files_end - t0 - timed.seconds - times.get("sqlite", 0.0), 0.0)
             times.setdefault("sqlite", 0.0)
@@ -1872,6 +1879,8 @@ def pick_base(cfg: Dict[str, str]) -> Optional[Dict]:
     if (idx.get("name") != path.name or idx.get("size") != path.stat().st_size or not idx.get("sha256")
             or not isinstance(idx.get("tree"), dict)):
         return full("the base backup does not match its index")
+    if sha256_file(path) != idx["sha256"]:
+        return full("the base backup is damaged (its checksum changed)")
     hours = (_dt.datetime.now(_dt.timezone.utc) - created).total_seconds() / 3600
     limit = float(cfg.get("BACKUP_BASE_MAX_AGE_HOURS") or DEFAULTS["BACKUP_BASE_MAX_AGE_HOURS"])
     if not -1 <= hours <= limit:
@@ -2019,8 +2028,9 @@ def open_backup(path: Path, key: Path, dest: Path) -> Dict:
         manifest = json.loads((dest / "manifest.json").read_text())
     except (OSError, ValueError):
         raise Fail("the backup has no manifest; it was not made by `aquarium backup` or is incomplete")
+    inherited = set(manifest.get("inherited") or ()) if manifest.get("kind") == "delta" else set()
     bad = [name for name, digest in manifest.get("files", {}).items()
-           if not (dest / name).is_file() or sha256_file(dest / name) != digest]
+           if name not in inherited and (not (dest / name).is_file() or sha256_file(dest / name) != digest)]
     if bad:
         raise Fail(f"{len(bad)} file(s) in the backup are damaged, e.g. {bad[0]}", "Use another backup.")
     if manifest.get("kind") == "delta":
@@ -2042,21 +2052,45 @@ def _apply_base(path: Path, key: Path, dest: Path, manifest: Dict) -> None:
                    f"Put {name} next to {path.name}, or use a full backup.")
     if sha256_file(base) != ref.get("sha256"):
         raise Fail(f"the base backup {name} is damaged or was replaced", "Use a full backup.")
-    work = Path(tempfile.mkdtemp(prefix=".base-", dir=dest))
+    wanted = {arc: manifest["files"][arc] for arc in manifest.get("inherited") or ()}
+    genv = gpg_env()
     try:
-        base_manifest = open_backup(base, key, work)
-        files = manifest["files"]
-        for arc, entry in (manifest.get("tree") or {}).items():
-            if entry.get("type") != "file" or arc in files:
-                continue
-            src = work / arc
-            if base_manifest["files"].get(arc) != entry.get("sha256") or not src.is_file():
-                raise Fail(f"the base backup {name} does not hold {arc} as expected", "Use a full backup.")
-            (dest / arc).parent.mkdir(parents=True, exist_ok=True)
-            os.replace(src, dest / arc)
-            files[arc] = entry["sha256"]
+        gpg = subprocess.Popen(["gpg", "--batch", "--quiet", "--pinentry-mode", "loopback", "--passphrase-file",
+                                str(key), "--decrypt", str(base)], stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, env=genv)
+        assert gpg.stdout is not None
+        try:  # only the inherited files: the base's own database dumps are never unpacked
+            with tarfile.open(fileobj=gpg.stdout, mode="r|gz") as tar:
+                for member in tar:
+                    if member.isfile() and member.name in wanted:
+                        tar.extract(member, dest, filter="tar")
+        except (tarfile.TarError, EOFError, OSError) as error:
+            gpg.kill()
+            raise Fail(f"cannot open the base backup {name} ({error.__class__.__name__})", "Use a full backup.")
+        if gpg.wait() != 0:
+            raise Fail(f"cannot decrypt the base backup {name}", "Use a full backup.")
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        shutil.rmtree(genv["GNUPGHOME"], ignore_errors=True)
+    bad = [arc for arc, digest in wanted.items()
+           if not (dest / arc).is_file() or sha256_file(dest / arc) != digest]
+    if bad:
+        raise Fail(f"the base backup {name} does not hold {bad[0]} as expected", "Use a full backup.")
+
+
+def check_backup_complete(path: Path) -> None:
+    """Before anything changes: a delta's base must be next to it and unchanged."""
+    m = DELTA_RE.search(path.name)
+    if not m:
+        return
+    base = path.parent / f"aquarium-backup-{m.group(1)}{BASE_SUFFIX}"
+    raw = _gpg_read(Path(str(base) + ".index.gpg"), backup_key(create=False)) if base.is_file() else None
+    try:
+        digest = json.loads(raw)["sha256"] if raw else None
+    except (ValueError, KeyError, TypeError):
+        digest = None
+    if not digest or sha256_file(base) != digest:
+        raise Fail(f"{path.name} holds only the changes since {base.name}, which is missing or damaged",
+                   "Nothing was changed. Restore a full backup with `aquarium restore`.")
 
 
 def pg_restore_into(cfg: Dict[str, str], dump: Path, dbname: str, clean: bool) -> int:
@@ -3787,6 +3821,11 @@ def _public_record(rec: Dict) -> Dict:
     return out
 
 
+def _base_present(path: Path) -> bool:
+    m = DELTA_RE.search(path.name)
+    return not m or (path.parent / f"aquarium-backup-{m.group(1)}{BASE_SUFFIX}").is_file()
+
+
 def rollback_target(cfg: Dict[str, str], info: Optional[Dict] = None) -> Optional[Dict]:
     """The newest finished change, if it was an upgrade to what runs now and its backup is still here."""
     info = info or installed_info(cfg)
@@ -3801,7 +3840,7 @@ def rollback_target(cfg: Dict[str, str], info: Optional[Dict] = None) -> Optiona
             continue
         if (rec.get("result") == "ok" and rec.get("kind") == "upgrade"
                 and ({rec.get("to"), rec.get("to_commit")} & here) and rec.get("from_ref")
-                and rec.get("backup") and Path(rec["backup"]).is_file()):
+                and rec.get("backup") and Path(rec["backup"]).is_file() and _base_present(Path(rec["backup"]))):
             return {"to": rec.get("from"), "ref": rec["from_ref"], "backup": rec["backup"], "id": rec.get("id"),
                     "root_copies": saved + ([rec["root_copies"]] if rec.get("root_copies") else [])}
         return None
@@ -4136,6 +4175,7 @@ def upgrade_run(cfg: Dict[str, str]) -> int:
             rb = rollback_target(cfg)
             if not rb or rb["ref"] != ref:
                 raise Fail("the upgrade to roll back is no longer the newest change")
+            check_backup_complete(Path(rb["backup"]))
             if lay == "release":
                 _upgrade_release(cfg, tracker, ref, force=True)
             else:
