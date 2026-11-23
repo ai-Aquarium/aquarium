@@ -31,7 +31,9 @@ VECTORS = json.loads(
     ).read_text(encoding="utf-8")
 )
 
-ADA = SimpleNamespace(user_id="Ada Lovelace", display="Ada", role="member", is_owner=False)
+# Admins' file tools may use any file; members are confined to their folder.
+ADA = SimpleNamespace(user_id="Ada Lovelace", display="Ada", role="admin", is_owner=False)
+MIA = SimpleNamespace(user_id="mia", display="Mia", role="member", is_owner=False)
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 32
 
 
@@ -301,3 +303,134 @@ def test_tags_sharing_a_line_are_delivered_separately(tmp_path):
     assert out.startswith("Chart ![c.png](/api/chat/media?path=")
     assert " and sheet [my data.csv](/api/chat/media?path=" in out
     assert out.endswith(") and notes.txt end")
+
+
+
+def _old_file(path: Path, data: bytes = b"%PDF-1.4 old") -> Path:
+    """A file past the gateway's recency window, so only folder rules admit it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    os.utime(path, (1_000_000_000, 1_000_000_000))
+    return path
+
+
+def _rewrite_as(principal, content, **kw):
+    kw.setdefault("storage", _Storage())
+    kw.setdefault("registry", _Registry())
+    out, edits = asyncio.run(ahm.rewrite_media_tags(content, principal, **kw))
+    return out, kw["storage"]
+
+
+def test_member_cannot_attach_a_file_outside_their_folder(tmp_path):
+    from hermes_constants import get_hermes_home
+
+    recent = tmp_path / "elsewhere.pdf"
+    recent.write_bytes(b"%PDF-1.4 recent")
+    others = _old_file(Path(get_hermes_home()) / "workspaces" / "zoe" / "z.pdf")
+    out, storage = _rewrite_as(MIA, f"A MEDIA:{recent}\nB MEDIA:{others}")
+    assert storage.uploads == []
+    assert "(elsewhere.pdf: not attached, file is outside your own folder)" in out
+    assert "(z.pdf: not attached, " in out
+
+
+def test_member_attaches_an_older_file_from_their_own_folder():
+    from tools.access_policy import files_root
+
+    mine = _old_file(files_root(MIA.user_id, MIA.role) / "plan.pdf")
+    out, storage = _rewrite_as(MIA, f"MEDIA:{mine}")
+    assert out.startswith("[plan.pdf](/api/chat/media?path=mia%2Ffiles%2F")
+    assert len(storage.uploads) == 1
+
+
+@pytest.mark.parametrize("who,folder", [(MIA, "mia"), (ADA, "someone")])
+def test_files_are_checked_in_the_turns_profile(tmp_path, who, folder):
+    from agent.profile_runtime import profile_runtime_scope
+
+    home = tmp_path / "profiles" / "sales"
+    report = _old_file(home / "workspaces" / folder / "report.pdf")
+    content = f"MEDIA:{report}"
+    out, storage = _rewrite_as(
+        who, content, file_scope=lambda: profile_runtime_scope(home)
+    )
+    assert out.startswith("[report.pdf](/api/chat/media?path=")
+    assert len(storage.uploads) == 1
+
+    out, storage = _rewrite_as(who, content)
+    assert storage.uploads == [] and out.startswith("(report.pdf: not attached, ")
+
+
+class _InitRegistry(_Registry):
+    def __init__(self, fail: bool = False) -> None:
+        super().__init__()
+        self.fail = fail
+        self.initialized = 0
+        self._store = SimpleNamespace(dsn=f"fake-{id(self)}", schema="app_test")
+        self.role_reads = False
+
+    async def initialize(self):
+        self.initialized += 1
+        if self.fail:
+            raise RuntimeError("no database")
+
+
+def test_registry_is_initialized_before_the_first_upload(tmp_path):
+    a, b = tmp_path / "a.png", tmp_path / "b.png"
+    a.write_bytes(PNG)
+    b.write_bytes(PNG + b"b")
+    registry = _InitRegistry()
+    out, edits, storage, _ = _rewrite(f"MEDIA:{a}\nMEDIA:{b}", registry=registry)
+    assert registry.initialized == 1
+    assert len(registry.calls) == 2 and len(storage.uploads) == 2
+
+
+def test_registry_that_cannot_initialize_uploads_nothing(tmp_path):
+    chart = tmp_path / "c.png"
+    chart.write_bytes(PNG)
+    out, _, storage, _ = _rewrite(f"MEDIA:{chart}", registry=_InitRegistry(fail=True))
+    assert storage.uploads == []
+    assert out == "(c.png: not attached, the file registry is unavailable)"
+
+
+def test_nested_fence_examples_in_a_longer_fence_are_left_alone(tmp_path):
+    chart = tmp_path / "c.png"
+    chart.write_bytes(PNG)
+    example = f"MEDIA:{tmp_path}/report.pdf"
+    draft = (
+        "````skill-draft\n# Skill\n```bash\nmake\n```\n"
+        f"Then reply with {example}\n```sh\necho {example}\n```\n````\n"
+    )
+    out, edits, storage, _ = _rewrite(f"{draft}Here: MEDIA:{chart}")
+    assert out.startswith(draft)
+    assert len(edits) == 1 and len(storage.uploads) == 1
+    assert out.endswith(")") and "![c.png](" in out
+
+
+def test_same_length_nested_fences_in_a_draft_are_left_alone(tmp_path):
+    chart = tmp_path / "c.png"
+    chart.write_bytes(PNG)
+    example = f"MEDIA:{tmp_path}/report.pdf"
+    draft = (
+        "```skill-draft\n# Skill\n```bash\nmake\n```\n"
+        f"Then reply with {example}\n```sh\necho {example}\n```\n```\n"
+    )
+    out, edits, storage, _ = _rewrite(f"{draft}Here: MEDIA:{chart}")
+    assert out.startswith(draft)
+    assert len(edits) == 1 and "![c.png](" in out
+
+
+def test_crlf_fences_do_not_hide_later_attachments(tmp_path):
+    chart = tmp_path / "c.png"
+    chart.write_bytes(PNG)
+    block = "````\r\nMEDIA:/tmp/example.png\r\n````\r\n"
+    out, edits, _, _ = _rewrite(f"{block}Chart: MEDIA:{chart}\r\n")
+    assert out.startswith(block)
+    assert len(edits) == 1 and "![c.png](" in out
+
+
+def test_member_attaches_a_screenshot_from_the_hermes_cache():
+    from gateway.platforms import base
+
+    shot = _old_file(base._HERMES_HOME / "cache" / "screenshots" / "shot.png", PNG)
+    out, storage = _rewrite_as(MIA, f"MEDIA:{shot}")
+    assert out.startswith("![shot.png](/api/chat/media?path=mia%2Ffiles%2F")
+    assert len(storage.uploads) == 1

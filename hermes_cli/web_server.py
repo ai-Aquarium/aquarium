@@ -12401,7 +12401,10 @@ async def _deliver_agent_home_media(principal, profile, session_id: str, content
 
         conversation = await asyncio.to_thread(_title)
         rewritten, edits = await rewrite_media_tags(
-            content, principal, conversation=conversation
+            content,
+            principal,
+            conversation=conversation,
+            file_scope=lambda: _chat_turn_profile_scope(profile),
         )
         if not edits:
             return content

@@ -16,12 +16,15 @@ reason). Nothing here raises: a file is never a reason to fail the turn.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import mimetypes
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any, Callable, ContextManager, Optional, Union
 from urllib.parse import quote
 
 log = logging.getLogger(__name__)
@@ -44,6 +47,72 @@ def media_ref(key: str) -> str:
     return f"{MEDIA_ROUTE}?path={quote(key, safe=_URI_COMPONENT_SAFE)}"
 
 
+_FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})[^\n]*$", re.MULTILINE)
+
+
+def _mask_fences(content: str) -> str:
+    """Blank fenced code blocks the CommonMark way, keeping offsets.
+
+    A fence closes only at a line of the same character at least as long as
+    its opener, so a ``````skill-draft`````` block holding a nested ```` ``` ````
+    example stays one block (the gateway's masker pairs any two ```` ``` ````).
+    Used together with the gateway's masker (:func:`_protected_scan`), which
+    covers same-length nesting that CommonMark would close early.
+    """
+    chars = list(content)
+    pos = 0
+    while True:
+        opener = _FENCE_OPEN.search(content, pos)
+        if opener is None:
+            break
+        fence = opener.group(1)
+        if fence[0] == "`" and "`" in content[opener.end(1):opener.end()]:
+            pos = opener.end()  # backticks in the info string: not a fence
+            continue
+        closer = re.compile(
+            r"^ {0,3}" + re.escape(fence[0]) + "{%d,}[ \t]*\r?$" % len(fence), re.MULTILINE
+        ).search(content, opener.end())
+        if closer is None:
+            pos = opener.end()  # unclosed: leave it to the gateway's masker
+            continue
+        end = closer.end()
+        for i in range(opener.start(), end):
+            if chars[i] != "\n":
+                chars[i] = " "
+        pos = end
+    return "".join(chars)
+
+
+def _protected_scan(content: str) -> str:
+    """*content* with every span either masker treats as code blanked."""
+    from gateway.platforms.base import BasePlatformAdapter
+
+    gateway = BasePlatformAdapter._mask_protected_spans(content)
+    fences = _mask_fences(content)
+    scan = "".join(
+        " " if (g == " " or f == " ") and c != "\n" else c
+        for c, g, f in zip(content, gateway, fences)
+    )
+    return BasePlatformAdapter._mask_json_string_media(scan)
+
+
+def _in_managed_root(path: str) -> bool:
+    """True for Hermes caches and operator allow dirs (screenshots, exports ...).
+
+    The gateway trusts these unconditionally; tools such as browser_vision
+    write there on a member's behalf, outside the member's own folder.
+    """
+    from gateway.platforms.base import _media_delivery_allowed_roots, _path_is_within
+
+    for root in _media_delivery_allowed_roots():
+        try:
+            if _path_is_within(Path(path), root.expanduser().resolve(strict=False)):
+                return True
+        except (OSError, RuntimeError, ValueError):
+            continue
+    return False
+
+
 def _label(name: str) -> str:
     """A file name made safe for Markdown link/alt text."""
     flat = " ".join(name.split()) or "file"
@@ -61,6 +130,7 @@ class _Uploader:
     message_id: Optional[str]
     storage: Any = None
     registry: Any = None
+    file_scope: Optional[Callable[[], ContextManager[Any]]] = None
     _ready: Optional[str] = None  # None = not tried, "" = ok, else the failure note
     _done: dict = field(default_factory=dict)
 
@@ -75,15 +145,21 @@ class _Uploader:
             except StorageNotConfigured:
                 self._ready = "file storage is not configured"
                 return self._ready
-        if self.registry is None:
-            try:
+        try:
+            if self.registry is None:
                 from hermes_cli.file_registry import default_registry
 
                 self.registry = default_registry()
-            except Exception as exc:  # noqa: BLE001 - reported as a note
-                log.warning("agent-home media: file registry unavailable (%s)", exc)
-                self._ready = "the file registry is unavailable"
-                return self._ready
+            if hasattr(self.registry, "initialize"):
+                # Same once-per-schema setup as a browser upload, so the first
+                # file on a fresh install isn't uploaded and then unregistrable.
+                from hermes_cli.files_api import _initialize_once
+
+                await _initialize_once(self.registry)
+        except Exception as exc:  # noqa: BLE001 - reported as a note
+            log.warning("agent-home media: file registry unavailable (%s)", exc)
+            self._ready = "the file registry is unavailable"
+            return self._ready
         self._ready = ""
         return self._ready
 
@@ -94,18 +170,29 @@ class _Uploader:
         self._done[raw_path] = out
         return out
 
-    async def _deliver(self, raw_path: str) -> str:
-        from gateway.platforms.base import (
-            MEDIA_DELIVERY_EXTS,
-            validate_media_delivery_path,
-        )
-        from hermes_cli.file_registry import MAX_REGISTER_BYTES, store_and_register
+    def _read(self, raw_path: str) -> Union[str, bytes]:
+        """The file's bytes, or the note saying why it can't be shared.
+
+        Checked as the turn's person in the turn's profile — the same folder
+        rules their own file tools get — so a reply can't attach a file that
+        person couldn't open.
+        """
+        from tools.access_policy import acting_as, check_file_access
+
+        role = getattr(self.principal, "role", None)
+        with contextlib.ExitStack() as stack:
+            if self.file_scope is not None:
+                stack.enter_context(self.file_scope())
+            stack.enter_context(acting_as(self.principal.user_id, str(role) if role else None))
+            return self._check_and_read(raw_path, check_file_access)
+
+    @staticmethod
+    def _check_and_read(raw_path: str, check_file_access) -> Union[str, bytes]:
+        from gateway.platforms.base import validate_media_delivery_path
+        from hermes_cli.file_registry import MAX_REGISTER_BYTES
 
         path = os.path.expanduser(raw_path)
         name = os.path.basename(path.rstrip("/")) or "file"
-        ext = os.path.splitext(name)[1].lower()
-        if ext not in MEDIA_DELIVERY_EXTS:
-            return _note(name, "unsupported file type")
         if not os.path.isabs(path):
             return _note(name, "path is not absolute")
         if os.path.islink(path):
@@ -115,6 +202,8 @@ class _Uploader:
         safe = validate_media_delivery_path(path)
         if not safe:
             return _note(name, "file is outside the folders the app can share")
+        if not _in_managed_root(safe) and check_file_access(Path(safe)):
+            return _note(name, "file is outside your own folder")
         try:
             size = os.stat(safe).st_size
         except OSError:
@@ -127,11 +216,6 @@ class _Uploader:
                 f"file is too large ({size / (1024 * 1024):.1f} MB, "
                 f"limit {MAX_REGISTER_BYTES // (1024 * 1024)} MB)",
             )
-        if self.principal is None or not getattr(self.principal, "user_id", None):
-            return _note(name, "no signed-in user to store it for")
-        failure = await self._prepare()
-        if failure:
-            return _note(name, failure)
         try:
             fd = os.open(safe, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
             with os.fdopen(fd, "rb") as handle:
@@ -140,6 +224,24 @@ class _Uploader:
             return _note(name, "file could not be read")
         if len(data) > MAX_REGISTER_BYTES:
             return _note(name, "file is too large")
+        return data
+
+    async def _deliver(self, raw_path: str) -> str:
+        from gateway.platforms.base import MEDIA_DELIVERY_EXTS
+        from hermes_cli.file_registry import store_and_register
+
+        name = os.path.basename(os.path.expanduser(raw_path).rstrip("/")) or "file"
+        ext = os.path.splitext(name)[1].lower()
+        if ext not in MEDIA_DELIVERY_EXTS:
+            return _note(name, "unsupported file type")
+        if self.principal is None or not getattr(self.principal, "user_id", None):
+            return _note(name, "no signed-in user to store it for")
+        data = await asyncio.to_thread(self._read, raw_path)
+        if isinstance(data, str):
+            return data
+        failure = await self._prepare()
+        if failure:
+            return _note(name, failure)
         content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
         asset = await store_and_register(
             self.principal,
@@ -170,13 +272,15 @@ async def rewrite_media_tags(
     message_id: Optional[str] = None,
     storage: Any = None,
     registry: Any = None,
+    file_scope: Optional[Callable[[], ContextManager[Any]]] = None,
 ) -> tuple[str, list[tuple[str, str]]]:
     """Upload every ``MEDIA:`` tag in *content* and replace it.
 
     Returns ``(rewritten, edits)`` where *edits* lists ``(tag_text,
     replacement)`` in order, so the same rewrite can be applied to the stored
     copy of the reply. Tags inside code spans/blocks and quotes are examples,
-    not deliveries, and are left alone (the gateway's own masking).
+    not deliveries, and are left alone. *file_scope* (e.g. the turn's
+    profile scope) is entered around every file check and read.
     """
     if not content or "MEDIA:" not in content:
         return content, []
@@ -187,8 +291,7 @@ async def rewrite_media_tags(
         _normalize_media_tag_path,
     )
 
-    scan = BasePlatformAdapter._mask_protected_spans(content)
-    scan = BasePlatformAdapter._mask_json_string_media(scan)
+    scan = _protected_scan(content)
     # The shared tag regex lets an unquoted path contain spaces, so it can run
     # on past the file ("MEDIA:/a/c.png and MEDIA:/a/d.csv" is one match).
     # Cut such a match at the first extension that names an existing file.
@@ -196,7 +299,12 @@ async def rewrite_media_tags(
         r"\.(?:" + _MEDIA_EXT_ALTERNATION + r")(?=[\s`\"',;:)\]}]|$)", re.IGNORECASE
     )
     uploader = _Uploader(
-        principal, conversation, message_id, storage=storage, registry=registry
+        principal,
+        conversation,
+        message_id,
+        storage=storage,
+        registry=registry,
+        file_scope=file_scope,
     )
     pieces: list[str] = []
     edits: list[tuple[str, str]] = []
