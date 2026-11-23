@@ -326,7 +326,7 @@ function TurnLabel({ role, profile }: { role: string; profile: string }) {
       <p
         data-component="ProjectChatTurnLabel"
         data-profile={profile}
-        className="-mb-2 text-right text-[11px] text-[var(--color-muted)]"
+        className="-mb-1.5 pt-1 text-right text-[11px] text-[var(--color-muted)]"
       >
         {t("dock.chat.to", { profile })}
       </p>
@@ -336,7 +336,7 @@ function TurnLabel({ role, profile }: { role: string; profile: string }) {
     <p
       data-component="ProjectChatTurnLabel"
       data-profile={profile}
-      className="-mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-[var(--color-fg)]"
+      className="-mb-1.5 flex items-center gap-1.5 pt-1 text-[11px] font-semibold text-[var(--color-fg)]"
     >
       <span
         aria-hidden
