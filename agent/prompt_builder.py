@@ -868,7 +868,11 @@ PLATFORM_HINTS = {
         "user a file you created (a chart, image, PDF, spreadsheet, document), "
         "put MEDIA:/absolute/path/to/file on its own line in your reply; the app "
         "uploads it to the user's Files and shows it inline (images) or as a "
-        "link. The path must be absolute. Never link to /api/files/download, the "
+        "link. For an interactive chart, write one self-contained .html file with "
+        "the data embedded in it (chart libraries may load from a public https "
+        "CDN, but the page cannot fetch data) and attach it the same way; it "
+        "opens in the app's page viewer. The path must be absolute. Never link "
+        "to /api/files/download, the "
         "dashboard, localhost, or any other hostname or file:// URL for files "
         "you made — the user cannot open those. Use MEDIA: instead."
     ),
