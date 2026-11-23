@@ -1,0 +1,95 @@
+{
+  "_comment": "Shared contract: Python hermes_cli.file_registry (agent_home_slug, storage_key) and agent-home storage.ts (slug, canReadMediaPath). Both test suites read this file.",
+  "slug": [
+    {
+      "input": "a..b.png",
+      "slug": "a_b.png"
+    },
+    {
+      "input": "..hidden",
+      "slug": "hidden"
+    },
+    {
+      "input": ".env",
+      "slug": "env"
+    },
+    {
+      "input": "__init__",
+      "slug": "init"
+    },
+    {
+      "input": "report.final.pdf",
+      "slug": "report.final.pdf"
+    },
+    {
+      "input": "my chart (v2).png",
+      "slug": "my_chart_v2_.png"
+    },
+    {
+      "input": "日本語.csv",
+      "slug": "csv"
+    },
+    {
+      "input": "a...b",
+      "slug": "a_b"
+    },
+    {
+      "input": "x_.",
+      "slug": "x"
+    },
+    {
+      "input": "Leo Lau",
+      "slug": "Leo_Lau"
+    },
+    {
+      "input": "user@example.com",
+      "slug": "user_example.com"
+    },
+    {
+      "input": "abc-123_DEF.txt",
+      "slug": "abc-123_DEF.txt"
+    },
+    {
+      "input": "",
+      "slug": "file"
+    }
+  ],
+  "keys": [
+    {
+      "user_id": "leo",
+      "filename": "a..b.png",
+      "digest": "d1429ce2448a3833f105a387260cd8048049b2d8b6d08819b68467fab391e031",
+      "key": "leo/files/d1/d1429ce2448a3833-a-b.png"
+    },
+    {
+      "user_id": "Leo Lau",
+      "filename": "chart 1.png",
+      "digest": "4aaebee973c4ec5c56264f7ff17c87a4fe4b2daba4f41955c09620aead882ec3",
+      "key": "Leo_Lau/files/4a/4aaebee973c4ec5c-chart-1.png"
+    },
+    {
+      "user_id": "user@example.com",
+      "filename": "..hidden.svg",
+      "digest": "fc23b4bb077619bc65a5f82f5736c0aafc531986c15253e6f6e11d511fed890b",
+      "key": "user_example.com/files/fc/fc23b4bb077619bc-hidden.svg"
+    },
+    {
+      "user_id": "_root_",
+      "filename": "résumé...final.pdf",
+      "digest": "81798f9ccaabbc5a5c811569f16283b2e668e8a9dbc0985c952378b4144094d8",
+      "key": "root/files/81/81798f9ccaabbc5a-r-sum--final.pdf"
+    },
+    {
+      "user_id": "mia",
+      "filename": "-dash-.csv",
+      "digest": "bc04b005ab74831b1bab95fbe89049bd15f7b2043d272609b1b98426d65b01ac",
+      "key": "mia/files/bc/bc04b005ab74831b-dash-.csv"
+    },
+    {
+      "user_id": "a.b",
+      "filename": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.png",
+      "digest": "6c64d543f1ccfa1fc205e268e4664f838f8069e1dc4ea4668e6e447d8b05bafd",
+      "key": "a.b/files/6c/6c64d543f1ccfa1f-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.png"
+    }
+  ]
+}

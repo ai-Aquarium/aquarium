@@ -780,6 +780,7 @@ async def run_lab_turn(
                         principal=principal,
                         trusted_local=False,
                         on_agent_ready=lock_down_agent,
+                        prompt_platform="agent_home",
                     )
             finally:
                 run_db.close()
@@ -789,6 +790,7 @@ async def run_lab_turn(
     try:
         result, _usage = await asyncio.get_running_loop().run_in_executor(None, _run)
         reply = result.get("final_response", "") if isinstance(result, dict) else ""
+        reply = await ws._deliver_agent_home_media(principal, profile, sid, reply or "")
         ws._trace_emit(trace, "outbound", sid, f"skill {kind} reply ({len(reply)} chars)")
     except Exception as exc:
         ws._trace_emit(trace, "error", type(exc).__name__, f"skill {kind} turn error: {type(exc).__name__}")

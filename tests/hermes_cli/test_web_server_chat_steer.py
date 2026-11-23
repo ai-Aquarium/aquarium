@@ -564,6 +564,57 @@ def test_queue_runs_each_message_as_its_own_turn_in_order(base, chat, turns):
     ]
 
 
+def test_a_queued_turns_files_are_delivered_too(base, chat, turns, monkeypatch, tmp_path):
+    import hermes_cli.file_registry as file_registry
+    from hermes_cli.filestore import SupabaseStorage
+
+    uploads = []
+
+    class _Storage:
+        bucket = "agent-home-media"
+
+        async def upload(self, path, data, *, content_type="application/octet-stream"):
+            uploads.append(path)
+            return path
+
+    class _Registry:
+        async def register(self, principal, **kwargs):
+            return SimpleNamespace(**kwargs)
+
+    monkeypatch.setattr(SupabaseStorage, "from_env", classmethod(lambda cls: _Storage()))
+    monkeypatch.setattr(file_registry, "default_registry", lambda mode=None: _Registry())
+    chart = tmp_path / "chart.png"
+    chart.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 16)
+    queued = f"send MEDIA:{chart}"
+    turns.hold("first")
+
+    async def _scenario():
+        async with _client(base) as ac:
+            primary = asyncio.create_task(_stream(ac, chat, "first"))
+            run_id = await _live_run(ac, chat)
+            await _send(ac, chat, run_id, queued, "queue")
+            turns.release("first")
+            bodies = await _chain_bodies(ac, chat, await primary)
+            await _until_idle(ac, chat)
+            return bodies
+
+    bodies = asyncio.run(_scenario())
+    assert len(bodies) == 2
+    completed = [d["content"] for n, d in _events(bodies[1]) if n == "assistant.completed"]
+    assert len(completed) == 1 and "MEDIA:" not in completed[0]
+    assert completed[0].startswith("re:send ![chart.png](/api/chat/media?path=root%2Ffiles%2F")
+    assert len(uploads) == 1
+
+    import hermes_state
+
+    db = hermes_state.SessionDB()
+    try:
+        stored = [m["content"] for m in db.get_messages(chat) if m["role"] == "assistant"]
+    finally:
+        db.close()
+    assert stored[-1] == completed[0]
+
+
 def test_interrupt_stops_the_turn_and_runs_first(base, chat, turns):
     turns.hold("first")
 

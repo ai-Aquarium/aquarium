@@ -12345,6 +12345,7 @@ async def session_chat(session_id: str, request: Request):
                         session_id=sid,
                         principal=principal,
                         auto_title_db_factory=lambda: _open_session_db_for_profile(profile),
+                        prompt_platform="agent_home",
                     )
             finally:
                 run_db.close()
@@ -12355,6 +12356,9 @@ async def session_chat(session_id: str, request: Request):
         result, usage = await loop.run_in_executor(None, _run)
         final_response = result.get("final_response", "") if isinstance(result, dict) else ""
         effective_sid = result.get("session_id", sid) if isinstance(result, dict) else sid
+        final_response = await _deliver_agent_home_media(
+            principal, profile, effective_sid, final_response or ""
+        )
         _trace_emit(
             trace,
             "outbound",
@@ -12374,6 +12378,49 @@ async def session_chat(session_id: str, request: Request):
         "message": {"role": "assistant", "content": final_response},
         "usage": usage,
     }
+
+
+async def _deliver_agent_home_media(principal, profile, session_id: str, content: str) -> str:
+    """Upload the reply's ``MEDIA:`` files and return the rewritten reply.
+
+    The rewrite is also stored over the persisted assistant message so a
+    reload shows what the stream showed. Never raises (see
+    :mod:`hermes_cli.agent_home_media`).
+    """
+    if not content or "MEDIA:" not in content:
+        return content
+    try:
+        from hermes_cli.agent_home_media import persist_rewrite, rewrite_media_tags
+
+        def _title() -> str:
+            db = _open_session_db_for_profile(profile)
+            try:
+                return db.get_session_title(session_id) or session_id
+            finally:
+                db.close()
+
+        conversation = await asyncio.to_thread(_title)
+        rewritten, edits = await rewrite_media_tags(
+            content, principal, conversation=conversation
+        )
+        if not edits:
+            return content
+
+        def _persist() -> None:
+            db = _open_session_db_for_profile(profile)
+            try:
+                if not persist_rewrite(db, session_id, content, rewritten, edits):
+                    _log.warning(
+                        "[agent-home] media rewrite not persisted session=%s", session_id
+                    )
+            finally:
+                db.close()
+
+        await asyncio.to_thread(_persist)
+        return rewritten
+    except Exception:
+        _log.exception("[agent-home] media delivery failed session=%s", session_id)
+        return content
 
 
 def _agent_home_trace(
@@ -13009,6 +13056,7 @@ def _start_chat_run(run_id, run_entry, loop, principal, profile, sid, user_messa
                         on_agent_ready=_agent_ready,
                         principal=principal,
                         auto_title_db_factory=lambda: _open_session_db_for_profile(profile),
+                        prompt_platform="agent_home",
                     )
             finally:
                 run_db.close()
@@ -13096,6 +13144,9 @@ def _start_chat_run(run_id, run_entry, loop, principal, profile, sid, user_messa
             # An interrupted turn reports ``final_response: None``.
             final_response = (result.get("final_response") or "") if isinstance(result, dict) else ""
             eff_sid = result.get("session_id", sid) if isinstance(result, dict) else sid
+            final_response = await _deliver_agent_home_media(
+                principal, profile, eff_sid, final_response
+            )
             if run_entry["cancel_requested"]:
                 _enqueue("run.cancelled", {"run_id": run_id, "session_id": eff_sid})
             _enqueue("assistant.completed", {"content": final_response, "run_id": run_id})

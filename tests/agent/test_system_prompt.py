@@ -102,3 +102,29 @@ class TestCodingContextBlock:
         monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
         agent = _make_agent(valid_tool_names=[], platform="cli")
         assert "coding agent" not in _stable_prompt(agent)
+
+
+class TestAgentHomePlatformHint:
+    """agent-home chat runs as api_server but renders Markdown + MEDIA: files."""
+
+    def test_agent_home_hint_replaces_the_plain_text_one(self):
+        from agent.prompt_builder import PLATFORM_HINTS
+
+        stable = _stable_prompt(_make_agent(platform="api_server", _platform_hint_key="agent_home"))
+        assert PLATFORM_HINTS["agent_home"] in stable
+        assert PLATFORM_HINTS["api_server"] not in stable
+        assert "MEDIA:/absolute/path" in stable
+        assert "/api/files/download" in stable
+
+    def test_other_platforms_keep_their_hint(self):
+        from agent.prompt_builder import PLATFORM_HINTS
+
+        stable = _stable_prompt(_make_agent(platform="api_server"))
+        assert PLATFORM_HINTS["api_server"] in stable
+        assert PLATFORM_HINTS["agent_home"] not in stable
+        for platform in ("telegram", "cli", "webui"):
+            assert PLATFORM_HINTS["agent_home"] not in _stable_prompt(_make_agent(platform=platform))
+
+    def test_hint_is_byte_stable_across_builds(self):
+        agent = _make_agent(platform="api_server", _platform_hint_key="agent_home")
+        assert _stable_prompt(agent) == _stable_prompt(agent)

@@ -69,6 +69,8 @@ KNOWN_SURFACES: tuple[str, ...] = (
 MAX_REGISTER_BYTES = 25 * 1024 * 1024
 
 _SLUG = re.compile(r"[^A-Za-z0-9._-]+")
+_DOT_RUN = re.compile(r"\.{2,}")
+_TS_SLUG_EDGES = re.compile(r"^[._]+|[._]+$")
 
 
 SCHEMA_SQL = f"""
@@ -224,9 +226,34 @@ def content_digest(data: bytes) -> str:
 
 
 def slug(value: str) -> str:
-    """Filesystem/URL-safe fragment for a storage key."""
-    cleaned = _SLUG.sub("-", (value or "").strip()).strip("-.")
-    return cleaned[:120] or "file"
+    """Filesystem/URL-safe fragment for a storage key.
+
+    The result must also be a fixed point of agent-home's ``slug`` (see
+    :func:`agent_home_slug`): ``canReadMediaPath`` rejects any key segment
+    that its own slug would change, so a ``..`` run or a leading/trailing
+    ``.``/``_`` here would make the file unreadable in the app.
+    """
+    cleaned = _DOT_RUN.sub("-", _SLUG.sub("-", (value or "").strip())).strip("-._")
+    if len(cleaned) > 120:
+        stem, dot, ext = cleaned.rpartition(".")
+        if dot and stem and len(ext) <= 16:
+            # Keep the extension: it is what marks a long name as an image.
+            cleaned = f"{stem[:119 - len(ext)].strip('-._')}.{ext}"
+        cleaned = cleaned[:120].strip("-._")
+    return cleaned or "file"
+
+
+def agent_home_slug(value: str) -> str:
+    """Python twin of ``slug`` in ``agent-home/src/lib/supabase/storage.ts``.
+
+    agent-home prefixes every principal's media with ``slug(user_id)`` and only
+    serves keys whose first segment equals it, so the owner segment of
+    :func:`storage_key` is built with exactly this rule. Kept in step with the
+    TypeScript by the shared vectors in
+    ``agent-home/src/lib/supabase/slug-vectors.json``.
+    """
+    cleaned = _DOT_RUN.sub("_", _SLUG.sub("_", value or ""))
+    return _TS_SLUG_EDGES.sub("", cleaned) or "file"
 
 
 def storage_key(
@@ -252,7 +279,7 @@ def storage_key(
     they know, and a future layout may want them without a signature change.
     """
     return (
-        f"{slug(owner_user_id)}/files/{digest[:2]}/"
+        f"{agent_home_slug(owner_user_id)}/files/{digest[:2]}/"
         f"{digest[:16]}-{slug(filename)}"
     )
 
