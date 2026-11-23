@@ -64,7 +64,10 @@ function server() {
   });
 }
 
-function mount(playbook: ProjectPlaybookResponse, extra: { archived?: boolean; latestRunNo?: number | null } = {}) {
+function mount(
+  playbook: ProjectPlaybookResponse,
+  extra: { archived?: boolean; latestRunNo?: number | null; canPropose?: boolean } = {},
+) {
   return render(
     <PlanPanel
       slug="weekly"
@@ -74,6 +77,7 @@ function mount(playbook: ProjectPlaybookResponse, extra: { archived?: boolean; l
       canActivate
       archived={extra.archived ?? false}
       latestRunNo={extra.latestRunNo === undefined ? 8 : extra.latestRunNo}
+      canPropose={extra.canPropose}
     />,
   );
 }
@@ -188,6 +192,51 @@ describe("Plan as cards", () => {
       expect((within(sheet).getByDisplayValue("Pull") as HTMLInputElement).disabled).toBe(true);
       cleanup();
     }
+  });
+
+  it("opens a step read-only for a viewer who can't propose changes", () => {
+    vi.stubGlobal("fetch", server());
+    const r = mount(ACTIVE_ONLY, { canPropose: false });
+    fireEvent.click(r.getByRole("button", { name: "Kanban" }));
+    fireEvent.click(r.getByRole("button", { name: "Open step: Pull" }));
+    const sheet = document.querySelector('[data-component="StepEditSheet"]') as HTMLElement;
+    expect(within(sheet).getByText(/Only project members can change it/)).toBeTruthy();
+    expect(within(sheet).queryByRole("button", { name: "Save as a new revision" })).toBeNull();
+  });
+
+  it("offers every assignable profile, not just the project's own", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        url === "/api/projects/weekly/assignable-profiles"
+          ? Promise.resolve(
+              json(200, {
+                profiles: [
+                  { name: "ops", in_project: true, is_host: true },
+                  { name: "legal", in_project: false, is_host: false },
+                ],
+              }),
+            )
+          : server()(url),
+      ),
+    );
+    const r = mount(ACTIVE_ONLY);
+    fireEvent.click(r.getByRole("button", { name: "Kanban" }));
+    fireEvent.click(r.getByRole("button", { name: "Open step: Clean" }));
+    const sheet = within(document.querySelector('[data-component="StepEditSheet"]') as HTMLElement);
+    await waitFor(() => expect(sheet.getByRole("option", { name: "legal (not in project yet)" })).toBeTruthy());
+    for (const name of ["ops", "finance"]) expect(sheet.getByRole("option", { name })).toBeTruthy();
+  });
+
+  it("shows a step changed since the latest run as Not run yet", async () => {
+    vi.stubGlobal("fetch", server());
+    const changed = V4.map((s) => (s.key === "pull" ? { ...s, title: "Pull two files" } : s));
+    const r = mount({ active: rev(4, V4, 1), revisions: [rev(4, V4, 1), rev(5, changed, 0)] });
+    fireEvent.click(r.getByRole("button", { name: "Kanban" }));
+    const lane = (name: string) =>
+      r.container.querySelector(`[data-lane="${name}"]`) as HTMLElement;
+    await waitFor(() => expect(within(lane("running")).getByText("Clean")).toBeTruthy());
+    expect(within(lane("new")).getByText("Pull two files")).toBeTruthy();
   });
 
   it("gives every card control a 44px touch target", () => {

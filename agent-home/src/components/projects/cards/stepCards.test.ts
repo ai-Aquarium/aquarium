@@ -11,6 +11,7 @@ import {
   planLane,
   runLaneForStatus,
   runLanesByStep,
+  runLanesForSteps,
   stepLevels,
   stepsWithEdit,
 } from "./stepCards";
@@ -108,6 +109,30 @@ describe("latest-run lanes", () => {
   });
 });
 
+describe("latest-run lanes across revisions", () => {
+  const cards = [
+    { task_id: "a", step_key: "pull", status: "done", title: "" },
+    { task_id: "b", step_key: "clean", status: "done", title: "" },
+  ] as unknown as ProjectRunCard[];
+
+  it("keeps a run's state only for steps unchanged since the revision it ran", () => {
+    const ran = [step("pull"), step("clean", { depends_on: ["pull"] })];
+    const shown = [
+      step("pull"),
+      step("clean", { depends_on: ["pull"], body: "import two files" }),
+      step("chart", { depends_on: ["clean"] }),
+    ];
+    const lanes = runLanesForSteps(shown, cards, ran);
+    expect(lanes.get("pull")).toBe("done");
+    expect(lanes.has("clean")).toBe(false);
+    expect(lanes.has("chart")).toBe(false);
+  });
+
+  it("matches by key alone when the run's revision is the one shown or unknown", () => {
+    expect(runLanesForSteps(STEPS, cards, null)).toEqual(runLanesByStep(cards));
+  });
+});
+
 describe("graph", () => {
   it("places every step one level past its deepest dependency", () => {
     const levels = stepLevels(STEPS);
@@ -140,9 +165,39 @@ describe("graph", () => {
     }
   });
 
+  it("routes an edge that skips a column through its own channel above every node", () => {
+    const layout = graphLayout([
+      step("a"),
+      step("b", { depends_on: ["a"] }),
+      step("c", { depends_on: ["a", "b"] }),
+      step("d", { depends_on: ["a"] }),
+    ]);
+    const top = Math.min(...layout.nodes.map((n) => n.y));
+    const long = layout.edges.filter((e) => e.channelY != null);
+    expect(long.map((e) => `${e.from}->${e.to}`)).toEqual(["a->c"]);
+    for (const e of long) {
+      expect(e.channelY!).toBeGreaterThanOrEqual(0);
+      expect(e.channelY!).toBeLessThan(top);
+    }
+    const ys = long.map((e) => e.channelY);
+    expect(new Set(ys).size).toBe(ys.length);
+    for (const e of layout.edges.filter((e) => e.channelY == null)) {
+      const lv = (k: string) => layout.nodes.find((n) => n.step.key === k)!.level;
+      expect(lv(e.to) - lv(e.from)).toBe(1);
+    }
+  });
+
   it("lists every transitive dependent, so a step can't be made to wait on one", () => {
     expect([...dependents(STEPS, "clean")].sort()).toEqual(["chart", "outliers", "review"]);
     expect(dependents(STEPS, "review").size).toBe(0);
+  });
+});
+
+describe("what counts as a changed step", () => {
+  it("treats a change to only the step's tools as Draft", () => {
+    const active = rev(4, [step("pull", { toolsets: ["file", "terminal"] })], 1);
+    expect(planLane(step("pull", { toolsets: ["terminal", "file"] }), active)).toBe("ready");
+    expect(planLane(step("pull", { toolsets: ["file"] }), active)).toBe("draft");
   });
 });
 
@@ -176,6 +231,16 @@ describe("editing a step from its card", () => {
     });
     expect(out[1]).not.toHaveProperty("needs");
     expect(out[1]).not.toHaveProperty("assignee_reason");
+  });
+});
+
+describe("editing keeps what wasn't touched", () => {
+  it("keeps the details' formatting when only the title changes", () => {
+    const body = "  1. first\n  2. second\n";
+    const [next] = stepsWithEdit([step("a", { body })], "a", { title: "A2", body, assignee: "", dependsOn: [], checkpoint: false }, {});
+    expect(next.body).toBe(body);
+    const [cleared] = stepsWithEdit([step("a", { body })], "a", { title: "A2", body: "  ", assignee: "", dependsOn: [], checkpoint: false }, {});
+    expect(cleared.body).toBeNull();
   });
 });
 

@@ -16,7 +16,7 @@ import {
   graphLayout,
   planLane,
   runLane,
-  runLanesByStep,
+  runLanesForSteps,
   stepDeps,
   stepLevels,
   type CardsView,
@@ -153,6 +153,7 @@ export function PlaybookCards({
   profiles,
   hostProfile,
   archived,
+  canPropose = true,
 }: {
   slug: string;
   playbook: ProjectPlaybookResponse;
@@ -161,6 +162,8 @@ export function PlaybookCards({
   profiles: string[];
   hostProfile: string | null;
   archived: boolean;
+  /** A member or lead; read-only viewers can open a step but not change it. */
+  canPropose?: boolean;
 }) {
   const t = useT("playbookCards");
   const [lanesBy, setLanesBy] = useState<LanesBy>("run");
@@ -170,10 +173,16 @@ export function PlaybookCards({
   const steps = useMemo(() => rev?.steps ?? [], [rev]);
   const needsRun = view === "graph" || lanesBy === "run";
   const runState = useLatestRun(slug, latestRunNo, needsRun);
-  const runLanes = useMemo(
-    () => runLanesByStep(runState.status === "ready" ? runState.run.cards : null),
-    [runState],
-  );
+  const runLanes = useMemo(() => {
+    if (runState.status !== "ready") return runLanesForSteps(steps, null, null);
+    const { run } = runState;
+    const ran =
+      run.playbook_rev == null || run.playbook_rev === rev?.rev
+        ? null
+        : ((playbook.revisions ?? []).find((r) => r.rev === run.playbook_rev) ??
+            (active?.rev === run.playbook_rev ? active : null));
+    return runLanesForSteps(steps, run.cards, ran ? (ran.steps ?? []) : null);
+  }, [runState, steps, rev, playbook.revisions, active]);
 
   if (!rev) return null;
   const proposed = !rev.active;
@@ -181,7 +190,13 @@ export function PlaybookCards({
     Math.max(rev.rev, active?.rev ?? 0, ...(playbook.revisions ?? []).map((r) => r.rev)) + 1;
   // A pending proposal is a decision to make first: a change on top of it
   // would only stack another undecided revision.
-  const lockedReason = archived ? t("edit.archived") : proposed ? t("edit.awaiting") : null;
+  const lockedReason = archived
+    ? t("edit.archived")
+    : !canPropose
+      ? t("edit.viewOnly")
+      : proposed
+        ? t("edit.awaiting")
+        : null;
 
   const runCaption = () => {
     switch (runState.status) {
@@ -433,6 +448,12 @@ function Legend() {
   );
 }
 
+/** A column-skipping edge: up into its channel above the nodes, across, then down. */
+function channelPath(x1: number, y1: number, x2: number, y2: number, yc: number): string {
+  const r = 10;
+  return `M${x1} ${y1} C${x1 + r} ${y1} ${x1 + r} ${yc} ${x1 + 2 * r} ${yc} L${x2 - 2 * r} ${yc} C${x2 - r} ${yc} ${x2 - r} ${y2} ${x2} ${y2}`;
+}
+
 function Graph({
   steps,
   runLanes,
@@ -478,11 +499,15 @@ function Graph({
             const x2 = b.x + pad - 2;
             const y2 = b.y + NODE_H / 2 + pad;
             const mid = (x1 + x2) / 2;
+            const d =
+              e.channelY == null
+                ? `M${x1} ${y1} C${mid} ${y1} ${mid} ${y2} ${x2} ${y2}`
+                : channelPath(x1, y1, x2, y2, e.channelY + pad);
             return (
               <path
                 key={`${e.from}->${e.to}`}
                 data-edge={`${e.from}->${e.to}`}
-                d={`M${x1} ${y1} C${mid} ${y1} ${mid} ${y2} ${x2} ${y2}`}
+                d={d}
                 fill="none"
                 stroke="var(--color-muted)"
                 strokeWidth={1.25}

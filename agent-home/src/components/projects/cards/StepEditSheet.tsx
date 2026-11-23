@@ -5,7 +5,11 @@ import { useState } from "react";
 import { ActionButton } from "@/components/projects/ActionButton";
 import { ActionError } from "@/components/projects/ActionError";
 import { useProjectAction } from "@/components/projects/useProjectAction";
-import { assignmentForSave, assignmentOf } from "@/components/projects/plan/StepAssignment";
+import {
+  assignmentForSave,
+  assignmentOf,
+  useAssignableProfiles,
+} from "@/components/projects/plan/StepAssignment";
 import { Sheet } from "@/components/ui/Sheet";
 import { useT } from "@/i18n";
 import type { PlaybookRev } from "@/types";
@@ -50,13 +54,19 @@ export function StepEditSheet({
   }));
   const [error, setError] = useState<string | null>(null);
   const save = useProjectAction();
+  const roster = useAssignableProfiles(slug, lockedReason == null);
   if (!step) return null;
 
   const locked = lockedReason != null;
   const after = dependents(steps, step.key);
   const others = steps.filter((s) => s.key !== step.key && !after.has(s.key));
-  const assignees = [...profiles];
-  if (step.assignee && !assignees.includes(step.assignee)) assignees.push(step.assignee);
+  // The assignable roster when loaded, plus any project profile or current
+  // pick it left out; the project's own profiles until then.
+  const outside = new Set((roster ?? []).filter((p) => !p.in_project).map((p) => p.name));
+  const assignees = (roster ?? []).map((p) => p.name);
+  for (const name of [...profiles, ...(step.assignee ? [step.assignee] : [])]) {
+    if (!assignees.includes(name)) assignees.push(name);
+  }
 
   const submit = () => {
     if (!edit.title.trim()) {
@@ -154,7 +164,7 @@ export function StepEditSheet({
             </option>
             {assignees.map((name) => (
               <option key={name} value={name}>
-                {name}
+                {outside.has(name) ? t("edit.notInProject", { profile: name }) : name}
               </option>
             ))}
           </select>

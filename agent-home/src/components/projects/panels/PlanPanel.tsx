@@ -169,6 +169,7 @@ export function PlanPanel({
   canActivate,
   archived,
   latestRunNo = null,
+  canPropose = true,
 }: {
   slug: string;
   playbook: ProjectPlaybookResponse | null;
@@ -180,6 +181,8 @@ export function PlanPanel({
   archived: boolean;
   /** The newest run, whose card states the Kanban / Graph can show. */
   latestRunNo?: number | null;
+  /** Member or lead: may propose a step change from its card. */
+  canPropose?: boolean;
 }) {
   const timeLabel = useTimeLabel();
   const { refresh } = useRefresh();
@@ -412,6 +415,7 @@ export function PlanPanel({
               profiles={profiles}
               hostProfile={hostProfile}
               archived={archived}
+              canPropose={canPropose}
             />
           ) : null}
 

@@ -64,7 +64,9 @@
     "hint": "Saving proposes revision {next}; it applies from the next run once a lead makes it active.",
     "awaiting": "A proposed revision is waiting. Activate or discard it before you change a step.",
     "archived": "This project is archived, so its plan can't change.",
-    "titleRequired": "A step needs a title."
+    "titleRequired": "A step needs a title.",
+    "viewOnly": "You can view this step. Only project members can change it.",
+    "notInProject": "{profile} (not in project yet)"
   },
   "noSteps": "This revision has no steps yet."
 }

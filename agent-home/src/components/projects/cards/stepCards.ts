@@ -37,7 +37,8 @@ export function stepChanged(step: PlaybookStep, base: PlaybookStep): boolean {
     (step.body ?? "") !== (base.body ?? "") ||
     (step.assignee ?? "") !== (base.assignee ?? "") ||
     Boolean(step.checkpoint) !== Boolean(base.checkpoint) ||
-    !sameList(stepDeps(step), stepDeps(base))
+    !sameList(stepDeps(step), stepDeps(base)) ||
+    !sameList(step.toolsets ?? [], base.toolsets ?? [])
   );
 }
 
@@ -97,6 +98,28 @@ export function runLanesByStep(cards: ProjectRunCard[] | null | undefined): Map<
   return out;
 }
 
+/**
+ * Each shown step's lane in a run. When the run's own revision is known
+ * (`ranSteps`), a step that is new or changed since then hasn't run in its
+ * current form, so it reads "Not run yet" whatever its old card did.
+ */
+export function runLanesForSteps(
+  steps: PlaybookStep[],
+  cards: ProjectRunCard[] | null | undefined,
+  ranSteps: PlaybookStep[] | null,
+): Map<string, RunLane> {
+  const byKey = runLanesByStep(cards);
+  if (ranSteps == null) return byKey;
+  const ran = new Map(ranSteps.map((s) => [s.key, s]));
+  const out = new Map<string, RunLane>();
+  for (const step of steps) {
+    const lane = byKey.get(step.key);
+    const base = ran.get(step.key);
+    if (lane != null && base != null && !stepChanged(step, base)) out.set(step.key, lane);
+  }
+  return out;
+}
+
 export function runLane(step: PlaybookStep, lanes: Map<string, RunLane>): RunLane {
   return lanes.get(step.key) ?? "new";
 }
@@ -136,6 +159,11 @@ export interface GraphNode {
 export interface GraphEdge {
   from: string;
   to: string;
+  /**
+   * For an edge that skips a column: the y of its own channel above every
+   * node, so it can't run hidden behind the nodes it passes.
+   */
+  channelY: number | null;
 }
 
 export interface GraphLayout {
@@ -149,6 +177,7 @@ export const NODE_W = 132;
 export const NODE_H = 52;
 const GAP_X = 28;
 const GAP_Y = 20;
+const CHANNEL = 8;
 
 /** Left-to-right layered layout: one column per level, centred columns. */
 export function graphLayout(steps: PlaybookStep[]): GraphLayout {
@@ -159,6 +188,21 @@ export function graphLayout(steps: PlaybookStep[]): GraphLayout {
     columns.set(l, [...(columns.get(l) ?? []), step]);
   }
   const tallest = Math.max(0, ...[...columns.values()].map((c) => c.length));
+  const keys = new Set(steps.map((s) => s.key));
+  const links = steps.flatMap((s) =>
+    stepDeps(s)
+      .filter((d) => keys.has(d) && d !== s.key)
+      .map((d) => ({ from: d, to: s.key })),
+  );
+  const span = (e: { from: string; to: string }) =>
+    (levels.get(e.to) ?? 0) - (levels.get(e.from) ?? 0);
+  const longCount = links.filter((e) => span(e) > 1).length;
+  const top = longCount * CHANNEL;
+  let channel = 0;
+  const edges: GraphEdge[] = links.map((e) => ({
+    ...e,
+    channelY: span(e) > 1 ? top - CHANNEL / 2 - CHANNEL * channel++ : null,
+  }));
   const nodes: GraphNode[] = [];
   for (const [l, column] of columns) {
     const offset = (tallest - column.length) / 2;
@@ -167,22 +211,16 @@ export function graphLayout(steps: PlaybookStep[]): GraphLayout {
         step,
         level: l,
         x: l * (NODE_W + GAP_X),
-        y: (i + offset) * (NODE_H + GAP_Y),
+        y: top + (i + offset) * (NODE_H + GAP_Y),
       });
     });
   }
-  const keys = new Set(steps.map((s) => s.key));
-  const edges = steps.flatMap((s) =>
-    stepDeps(s)
-      .filter((d) => keys.has(d) && d !== s.key)
-      .map((d) => ({ from: d, to: s.key })),
-  );
   const depth = columns.size;
   return {
     nodes,
     edges,
     width: Math.max(0, depth * (NODE_W + GAP_X) - GAP_X),
-    height: Math.max(0, tallest * (NODE_H + GAP_Y) - GAP_Y),
+    height: Math.max(0, top + tallest * (NODE_H + GAP_Y) - GAP_Y),
   };
 }
 
@@ -229,7 +267,7 @@ export function stepsWithEdit(
     for (const field of ASSIGNMENT_FIELDS) delete next[field];
     Object.assign(next, {
       title: edit.title.trim(),
-      body: edit.body.trim() || null,
+      body: edit.body.trim() ? edit.body : null,
       assignee: edit.assignee || null,
       depends_on: edit.dependsOn,
       checkpoint: edit.checkpoint,
