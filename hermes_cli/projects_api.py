@@ -4297,15 +4297,21 @@ async def rebase_playbook_route(request: Request, rev: int) -> dict[str, Any]:
 @router.delete("/{slug}/playbook/{rev}")
 async def discard_playbook_route(request: Request, rev: int) -> dict[str, Any]:
     """Discard a proposed revision — the paired human judgement to
-    activation (§7.2). Refused for the active rev and for any rev a run
-    pinned (it is that run's recorded plan and stays for history)."""
-    project, _role, _profiles, principal = await _require_write(request)
+    activation (§7.2). A lead may discard any proposal, a member only
+    their own. Refused for the active rev and for any rev a run pinned (it
+    is that run's recorded plan and stays for history)."""
+    project, role, _profiles, principal = await _require_write(
+        request, judgement=True
+    )
     _refuse_if_archived(project, "discarding a plan revision")
     await _require_human(request, "discarding a playbook revision")
+    proposer = None if _can_write(project, role, principal) else principal.user_id
 
     def _discard_sync() -> dict:
         with projects_db.connect_closing() as conn:
-            refusal = projects_db.discard_playbook_rev(conn, project.id, rev)
+            refusal = projects_db.discard_playbook_rev(
+                conn, project.id, rev, proposer=proposer
+            )
             if refusal is None:
                 projects_db.record_project_activity(
                     conn, project.id, "playbook_discarded",
@@ -4319,6 +4325,12 @@ async def discard_playbook_route(request: Request, rev: int) -> dict[str, Any]:
             raise HTTPException(
                 status_code=409,
                 detail="the active revision cannot be discarded",
+            )
+        if refusal == "not_yours":
+            raise HTTPException(
+                status_code=403,
+                detail="members can discard only their own proposals; "
+                "ask a lead to discard this one",
             )
         if refusal and refusal.startswith("pinned:"):
             raise HTTPException(

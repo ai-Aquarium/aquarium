@@ -14,6 +14,7 @@ export function PlanTab({ project, playbook, canLead, callerUserId }: ProjectTab
         hostProfile={project.host_profile}
         canActivate={canLead}
         canPropose={canLead || role === "member"}
+        callerUserId={callerUserId}
         archived={project.archived}
         latestRunNo={
           project.runs.length > 0 ? Math.max(...project.runs.map((r) => r.run_no)) : null

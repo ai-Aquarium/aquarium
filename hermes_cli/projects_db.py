@@ -2961,7 +2961,11 @@ def activate_playbook_rev(
 
 
 def discard_playbook_rev(
-    conn: sqlite3.Connection, project_id: str, rev: int
+    conn: sqlite3.Connection,
+    project_id: str,
+    rev: int,
+    *,
+    proposer: Optional[str] = None,
 ) -> Optional[str]:
     """Delete a proposed (inactive) playbook revision — the human deciding
     this draft is wrong, paired with activation (§7.2).
@@ -2969,16 +2973,23 @@ def discard_playbook_rev(
     Returns ``None`` on success, else a refusal: ``"not_found"``,
     ``"active"`` (the live plan cannot be discarded), or
     ``"pinned:<run_no>"`` — a rev a run pinned is that run's recorded plan
-    and stays for history even if it is no longer active."""
+    and stays for history even if it is no longer active. With
+    ``proposer`` (a member, not a lead) only that person's own proposal —
+    never active — may go; anything else is ``"not_yours"``."""
     with write_txn(conn):
         row = conn.execute(
-            "SELECT active FROM project_playbook WHERE project_id = ? AND rev = ?",
+            "SELECT active, activated_at, created_by FROM project_playbook "
+            "WHERE project_id = ? AND rev = ?",
             (project_id, rev),
         ).fetchone()
         if row is None:
             return "not_found"
         if row["active"]:
             return "active"
+        if proposer is not None and (
+            row["created_by"] != proposer or row["activated_at"] is not None
+        ):
+            return "not_yours"
         pinned = conn.execute(
             "SELECT run_no FROM project_runs "
             "WHERE project_id = ? AND playbook_rev = ? LIMIT 1",

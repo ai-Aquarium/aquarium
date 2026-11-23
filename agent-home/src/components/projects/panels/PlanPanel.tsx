@@ -213,6 +213,7 @@ export function PlanPanel({
   archived,
   latestRunNo = null,
   canPropose = true,
+  callerUserId = null,
 }: {
   slug: string;
   playbook: ProjectPlaybookResponse | null;
@@ -226,6 +227,8 @@ export function PlanPanel({
   latestRunNo?: number | null;
   /** Member or lead: may propose a step change from its card. */
   canPropose?: boolean;
+  /** The signed-in user: a member may discard their own proposals. */
+  callerUserId?: string | null;
 }) {
   const t = useT("playbook");
   const { refresh } = useRefresh();
@@ -520,6 +523,13 @@ export function PlanPanel({
               state={selectedState ?? "proposed"}
               canActivate={canActivate}
               canPropose={canPropose}
+              canDiscard={
+                canActivate ||
+                (canPropose &&
+                  callerUserId != null &&
+                  selected.created_by === callerUserId &&
+                  selected.activated_at == null)
+              }
               archived={archived}
               justSaved={savedRev === selected.rev}
               updated={updated}
@@ -838,6 +848,7 @@ function RevisionDecision({
   state,
   canActivate,
   canPropose,
+  canDiscard,
   archived,
   justSaved,
   updated,
@@ -851,6 +862,8 @@ function RevisionDecision({
   state: RevisionState;
   canActivate: boolean;
   canPropose: boolean;
+  /** A lead, or the member who proposed it. */
+  canDiscard: boolean;
   archived: boolean;
   /** Saved from this panel a moment ago: confirm it, then offer Make active. */
   justSaved: boolean;
@@ -919,9 +932,9 @@ function RevisionDecision({
         {!archived && canPropose && canUpdate && activeRev != null ? (
           <UpdateOntoActive slug={slug} rev={rev.rev} activeRev={activeRev} onUpdated={onUpdated} />
         ) : null}
-        {!archived && canActivate ? <DiscardRevision slug={slug} rev={rev.rev} /> : null}
+        {!archived && canDiscard ? <DiscardRevision slug={slug} rev={rev.rev} /> : null}
         {!archived && !canActivate ? (
-          <span className="text-xs text-[var(--color-muted)]">{t("leadDecides")}</span>
+          <span className="text-xs text-[var(--color-muted)]">{t(canDiscard ? "leadActivates" : "leadDecides")}</span>
         ) : null}
       </div>
     </div>

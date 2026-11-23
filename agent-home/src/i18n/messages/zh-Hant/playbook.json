@@ -19,6 +19,7 @@
   "activating": "正在啟用…",
   "discard": "捨棄",
   "discarding": "正在捨棄…",
+  "leadActivates": "由負責人啟用。你可以捨棄自己的建議版本。",
   "leadDecides": "由負責人啟用或捨棄。",
   "activatedNotice": "v{rev} 現在是使用中的劇本——下一次執行會使用它。",
   "noteLabel": "版本備註——改了甚麼、為甚麼（選填）",

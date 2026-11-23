@@ -19,6 +19,7 @@
   "activating": "Activating…",
   "discard": "Discard",
   "discarding": "Discarding…",
+  "leadActivates": "A lead makes it active. You can discard your own proposal.",
   "leadDecides": "A lead makes it active or discards it.",
   "activatedNotice": "v{rev} is now the active playbook — the next run uses it.",
   "noteLabel": "Version note — what changed and why (optional)",

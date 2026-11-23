@@ -223,6 +223,35 @@ def test_discard_refuses_the_active_revision_and_pinned_revs(env):
     assert "run 1" in resp.json()["detail"]
 
 
+def test_a_member_discards_only_their_own_proposal(env):
+    project = _create_active_project(env)
+    client, state = env
+    slug = project["slug"]
+    _save_and_activate_playbook(env, project)
+    leos = client.post(f"{PREFIX}/{slug}/playbook", json={"body": "leo", "steps": STEPS}).json()["rev"]
+
+    state["subject"] = "ada"
+    state["actor"] = MEMBER_P
+    adas = client.post(f"{PREFIX}/{slug}/playbook", json={"body": "ada", "steps": STEPS}).json()["rev"]
+    resp = client.delete(f"{PREFIX}/{slug}/playbook/{leos}")
+    assert resp.status_code == 403 and "own" in resp.json()["detail"]
+    resp = client.delete(f"{PREFIX}/{slug}/playbook/{adas}")
+    assert resp.status_code == 200, resp.text
+
+    # A viewer proposes nothing and discards nothing.
+    state["subject"] = "vic"
+    state["actor"] = VIEWER_P
+    assert client.delete(f"{PREFIX}/{slug}/playbook/{leos}").status_code == 403
+
+    # A lead still discards anyone's proposal.
+    state["subject"] = "ada"
+    state["actor"] = MEMBER_P
+    again = client.post(f"{PREFIX}/{slug}/playbook", json={"body": "ada 2", "steps": STEPS}).json()["rev"]
+    state["subject"] = "leo"
+    state["actor"] = OWNER
+    assert client.delete(f"{PREFIX}/{slug}/playbook/{again}").status_code == 200
+
+
 def test_discard_is_a_human_act(env):
     """The §16 gate: a session-less caller (an agent turn) cannot discard
     a proposed revision, same as it cannot activate one."""

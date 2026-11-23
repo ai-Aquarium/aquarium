@@ -203,6 +203,28 @@ describe("PlanPanel — make active and version notes", () => {
     expect(getByText("A lead makes it active or discards it.")).toBeTruthy();
   });
 
+  it("a member can discard their own proposal, not someone else's", async () => {
+    const fetchMock = server((url, init) =>
+      init?.method === "DELETE" && url === `${BASE}/playbook/5` ? jsonResponse(200, { rev: 5, discarded: true }) : null,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, getByText, rerender } = render(
+      <PlanPanel {...PROPS} canActivate={false} callerUserId="finance" />,
+    );
+    fireEvent.click(chip(container, 5));
+    expect(container.querySelector('[data-action="activate-revision"]')).toBeNull();
+    expect(getByText("A lead makes it active. You can discard your own proposal.")).toBeTruthy();
+    fireEvent.click(container.querySelector('[data-action="discard-revision"]')!);
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url, init]) => url === `${BASE}/playbook/5` && init?.method === "DELETE")).toBe(true),
+    );
+
+    rerender(<PlanPanel {...PROPS} canActivate={false} callerUserId="ada" />);
+    fireEvent.click(chip(container, 5));
+    expect(container.querySelector('[data-action="discard-revision"]')).toBeNull();
+    expect(getByText("A lead makes it active or discards it.")).toBeTruthy();
+  });
+
   it("Save sends the version note and opens the new version", async () => {
     const fetchMock = server((url, init) =>
       init?.method === "POST" && url === `${BASE}/playbook` ? jsonResponse(200, { rev: 6, active: false }) : null,
