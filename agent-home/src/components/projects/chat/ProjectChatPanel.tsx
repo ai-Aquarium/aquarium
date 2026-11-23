@@ -66,6 +66,13 @@ export function ProjectChatPanel({
   const [timeline, setTimeline] = useState(chat?.timeline ?? null);
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
+  // A handed-over draft fills the composer once; the pane remounts after each
+  // turn, and a sent draft must not come back.
+  const [spentDraft, setSpentDraft] = useState<number | undefined>(undefined);
+  const draftSeq = useRef(composerDraft?.seq);
+  useEffect(() => {
+    draftSeq.current = composerDraft?.seq;
+  });
 
   const profiles = useMemo(
     () => (chat ? pickerProfiles(chat.profiles, chat.projectProfiles, profile) : []),
@@ -80,6 +87,7 @@ export function ProjectChatPanel({
       );
       if (!res.ok) return;
       setTimeline((await res.json()) as ProjectChatTimeline);
+      setSpentDraft(draftSeq.current);
       setVersion((v) => v + 1);
     } catch {
       // Keep the timeline on screen; the next turn re-reads it.
@@ -118,7 +126,9 @@ export function ProjectChatPanel({
               onMessageCount={onMessageCount}
               onBusy={setBusy}
               onStale={refresh}
-              composerDraft={composerDraft}
+              composerDraft={
+                composerDraft && composerDraft.seq !== spentDraft ? composerDraft : undefined
+              }
             />
           </div>
         ) : (
