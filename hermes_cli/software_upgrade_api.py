@@ -200,7 +200,17 @@ def _job_view(job: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         "error": scrub(job.get("error")) or None,
         "steps": steps,
         "log": [scrub(line, 300) for line in (job.get("log") or [])][-200:],
+        "backup_since": job.get("backup_since") or None,
+        "base_started": bool(job.get("base_backup")),
     }
+
+
+def _base_backup_view(raw: Any) -> Optional[Dict[str, Any]]:
+    """The background base backup that makes the next upgrade's backup quick."""
+    if not isinstance(raw, dict) or raw.get("state") not in ("queued", "running", "done", "failed", "stopped"):
+        return None
+    return {"state": raw["state"], "after_job": str(raw.get("after_job") or "") or None,
+            "finished": raw.get("finished") or None, "error": scrub(raw.get("error")) or None}
 
 
 def _kind(value: Any) -> str:
@@ -339,6 +349,7 @@ def status_view(raw: Dict[str, Any], rel: Optional[Dict[str, Any]] = None) -> Di
         "checked_at": raw.get("releases_checked_at") or None,
         "rollback_to": (raw.get("rollback") or {}).get("to") or None,
         "finish": _finish_view(raw.get("finish")),
+        "base_job": _base_backup_view(raw.get("base_backup")),
     }
     if rel is not None:
         packaged_only = installed["kind"] == "release"

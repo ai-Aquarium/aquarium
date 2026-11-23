@@ -411,6 +411,21 @@ def test_job_steps_and_running_state():
     assert died["running"] is False and died["result"] == "interrupted"
 
 
+def test_background_base_backup_reaches_the_page_without_paths():
+    job = su._job_view({"id": "j", "phase": "finished", "result": "ok", "alive": False,
+                        "backup_since": "2026-11-05T03:30:00Z", "base_backup": True})
+    assert job["backup_since"] == "2026-11-05T03:30:00Z" and job["base_started"] is True
+    plain = su._job_view({"id": "j", "phase": "finished", "result": "ok", "alive": False})
+    assert plain["backup_since"] is None and plain["base_started"] is False
+    view = su.status_view({**STATUS, "base_backup": {
+        "state": "failed", "after_job": "j", "finished": "2026-11-05T10:00:00Z",
+        "error": "gpg failed writing /var/backups/aquarium/x.part"}})
+    assert view["base_job"]["state"] == "failed" and view["base_job"]["after_job"] == "j"
+    assert "/var/backups" not in view["base_job"]["error"]
+    assert su.status_view({**STATUS, "base_backup": {"state": "weird"}})["base_job"] is None
+    assert su.status_view(STATUS)["base_job"] is None
+
+
 def test_scrub():
     assert su.scrub("cp /opt/data/hermes-agent/x.py to /tmp/y failed") == "cp … to … failed"
     assert su.scrub("password=hunter2 and SECRET=abc") == "password=… and SECRET=…"

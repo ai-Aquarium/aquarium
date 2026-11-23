@@ -1809,7 +1809,7 @@ def _pid_state(pid: int) -> Optional[str]:
     try:
         if b"aquarium" not in Path(f"/proc/{pid}/cmdline").read_bytes():
             return None
-        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        return Path(f"/proc/{pid}/stat").read_text(encoding="ascii").rsplit(")", 1)[1].split()[0]
     except (OSError, IndexError):
         return None
 
@@ -1833,7 +1833,7 @@ def stop_base_backup(cfg: Dict[str, str]) -> None:
     so after this returns no base job writes until the caller's lock is released."""
     st = load_base_status()
     if st.get("state") in ("queued", "running"):
-        say("  stopping the background base backup (the next one starts after this)")
+        say("  stopping the background base backup so this one can run")
         systemctl("stop", f"{BASE_UNIT}.service", check=False)
         pid = int(st.get("pid") or 0)
         if pid and pid != os.getpid():
@@ -1841,12 +1841,7 @@ def stop_base_backup(cfg: Dict[str, str]) -> None:
         st.update(state="stopped", pid=None, finished=now_iso(),
                   error="stopped because another backup, restore or upgrade started")
         save_base_status(st)
-    folder = P(cfg["BACKUP_DIR"])
-    for part in folder.glob(f"aquarium-backup-*{BASE_SUFFIX}*.part"):
-        with contextlib.suppress(FileNotFoundError):
-            part.unlink()
-    for staging in folder.glob(".staging-base-*"):
-        shutil.rmtree(staging, ignore_errors=True)
+    stop_base_parts(cfg)
 
 
 def pick_base(cfg: Dict[str, str]) -> Optional[Dict]:
@@ -1975,10 +1970,13 @@ def run_base_backup(cfg: Dict[str, str]) -> int:
 
 
 def stop_base_parts(cfg: Dict[str, str]) -> None:
+    """Drop what an unfinished base backup left behind: its .part archive and staging folder."""
     folder = P(cfg["BACKUP_DIR"])
     for part in folder.glob(f"aquarium-backup-*{BASE_SUFFIX}*.part"):
         with contextlib.suppress(FileNotFoundError):
             part.unlink()
+    for staging in folder.glob(".staging-base-*"):
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def cmd_backup(args: argparse.Namespace, cfg: Dict[str, str]) -> int:

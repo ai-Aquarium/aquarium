@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SoftwareUpgradeView, tookLabel } from "@/components/settings/SoftwareUpgradeView";
@@ -185,6 +185,83 @@ describe("SoftwareUpgradeView", () => {
     render(<SoftwareUpgradeView initial={{ ...STATUS, job: JOB }} />);
     expect(document.querySelector('[data-step="download"]')?.getAttribute("data-state")).toBe("running");
     expect(screen.getByText(/Step 2 of 3/)).toBeTruthy();
+  });
+
+  it("says the backup only saved changes when the job used a base backup", () => {
+    const since = "2026-11-05T03:30:00Z";
+    const { unmount } = render(
+      <SoftwareUpgradeView initial={{ ...STATUS, job: { ...JOB, backup_since: since } }} />,
+    );
+    const row = document.querySelector('[data-step="backup"]')?.textContent ?? "";
+    expect(row).toContain("Backing up changes since");
+    expect(row).not.toContain("Back up");
+    unmount();
+    render(<SoftwareUpgradeView initial={{ ...STATUS, job: JOB }} />);
+    expect(document.querySelector('[data-step="backup"]')?.textContent).toContain("Back up");
+    expect(document.querySelector('[data-step="backup"]')?.textContent).not.toContain("changes since");
+  });
+
+  const PREPARING = "A background backup is preparing the next upgrade.";
+  const FINISHED = "The background backup finished, so the next upgrade only backs up what changed.";
+  const FAILED = "The background backup did not finish, so the next upgrade takes a full backup.";
+
+  async function finishWatchedJob(answer: () => Partial<SoftwareUpgradeStatus>, jobExtra: Partial<SoftwareUpgradeJob>) {
+    vi.useFakeTimers();
+    const done: SoftwareUpgradeJob = {
+      ...JOB,
+      running: false,
+      result: "ok",
+      finished: "2026-11-05T09:10:00Z",
+      steps: JOB.steps.map((s) => ({ ...s, state: "done" })),
+      ...jobExtra,
+    };
+    const fetchMock = serve({ "/api/software-upgrade/job": () => ({ ...STATUS, job: done, ...answer() }) });
+    render(<SoftwareUpgradeView initial={{ ...STATUS, job: JOB }} />);
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(screen.getByTestId("upgrade-done-banner")).toBeTruthy();
+    return fetchMock;
+  }
+
+  it.each([
+    [null, PREPARING],
+    [{ state: "running", after_job: "j1" }, PREPARING],
+    [{ state: "done", after_job: "j0" }, PREPARING],
+    [{ state: "done", after_job: "j1" }, FINISHED],
+    [{ state: "failed", after_job: "j1" }, FAILED],
+  ] as const)("notes the background backup after a successful upgrade (%o)", async (base, text) => {
+    try {
+      await finishWatchedJob(() => ({ base_job: base ? { ...base, finished: null, error: null } : null }), {
+        base_started: true,
+      });
+      expect(screen.getByTestId("upgrade-base-backup").textContent).toBe(text);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps checking the background backup until it finishes", async () => {
+    let base: SoftwareUpgradeStatus["base_job"] = { state: "running", after_job: "j1", finished: null, error: null };
+    try {
+      const fetchMock = await finishWatchedJob(() => ({ base_job: base }), { base_started: true });
+      expect(screen.getByTestId("upgrade-base-backup").textContent).toBe(PREPARING);
+      base = { ...base!, state: "done", finished: "2026-11-05T09:40:00Z" };
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(screen.getByTestId("upgrade-base-backup").textContent).toBe(FINISHED);
+      const polls = fetchMock.mock.calls.length;
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      expect(fetchMock.mock.calls.length).toBe(polls);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("has no background backup note when none was started", async () => {
+    try {
+      await finishWatchedJob(() => ({}), {});
+      expect(screen.queryByTestId("upgrade-base-backup")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("animates the running step and counts how long it has been working", () => {
