@@ -862,6 +862,7 @@ _MEDIA_REF_RE = re.compile(r"/api/chat/media\?path=([^\s)\"'&<>\]]+)")
 # One link per line. agent-home escapes ``\ [ ] ( )`` in a file name; turns
 # stored before that may hold any brackets, but never ``](`` (a second link).
 _LINK_LINE_RE = re.compile(r"^!?\[(?:\\.|(?!\]\()[^\\])*\]\(([^)\s]+)\)$")
+_OLD_LINK_LINE_RE = re.compile(r"^!?\[(?:(?!\]\().)*\]\(([^)\s]+)\)$")
 
 
 def _attached_refs(content: str) -> list[str]:
@@ -882,7 +883,7 @@ def _attached_refs(content: str) -> list[str]:
     lines = content.split("\n")
     refs: list[str] = []
     while lines:
-        link = _LINK_LINE_RE.match(lines[-1])
+        link = _LINK_LINE_RE.match(lines[-1]) or _OLD_LINK_LINE_RE.match(lines[-1])
         if not link:
             break
         lines.pop()

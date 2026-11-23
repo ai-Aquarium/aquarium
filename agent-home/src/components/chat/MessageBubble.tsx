@@ -26,11 +26,21 @@ interface Segment {
  * `[name](ref)` file-attachment links that point at a private-bucket media ref
  * (other links stay literal text — user turns aren't full Markdown).
  */
+// Names are escaped on send (`\[Q4\].pdf`); turns stored before that may
+// hold one bracketed part (`draft [v2].pdf`) or end in a lone backslash, which
+// the second pass reads in the text the first left.
+const LINK = /(!?)\[((?:\\.|[^[\]\\]|\[[^[\]]*\])*)\]\((\S+?)\)/g;
+const OLD_LINK = /(!?)\[((?:[^[\]]|\[[^[\]]*\])*)\]\((\S+?)\)/g;
+
 function segment(content: string): Segment[] {
+  return segmentWith(content, LINK).flatMap((s) =>
+    s.kind === "text" ? segmentWith(s.value, OLD_LINK) : [s],
+  );
+}
+
+function segmentWith(content: string, pattern: RegExp): Segment[] {
   const out: Segment[] = [];
-  // Names are escaped on send (`\[Q4\].pdf`); turns stored before that may
-  // hold one bracketed part (`draft [v2].pdf`).
-  const re = /(!?)\[((?:\\.|[^[\]\\]|\[[^[\]]*\])*)\]\((\S+?)\)/g;
+  const re = new RegExp(pattern.source, "g");
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {

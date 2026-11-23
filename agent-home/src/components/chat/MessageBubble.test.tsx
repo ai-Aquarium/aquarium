@@ -152,6 +152,18 @@ describe("MessageBubble", () => {
     expect(html).not.toContain("\\[");
   });
 
+  it("still shows a chip for an older unescaped name ending in a backslash", () => {
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        message={{
+          role: "user",
+          content: "see [back\\](/api/chat/media?path=mia_member%2Fhome_2%2Fu1-back.txt)",
+        }}
+      />,
+    );
+    expect(html).toContain('data-component="ChatFile"');
+  });
+
   it("keeps a bracketed file name in one download chip", () => {
     const html = renderToStaticMarkup(
       <MessageBubble
