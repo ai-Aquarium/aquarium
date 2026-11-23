@@ -1191,7 +1191,7 @@ function JobPanel({
                 <pre
                   tabIndex={maximized ? 0 : undefined}
                   aria-label={maximized ? t("logTitle") : undefined}
-                  className={`${maximized ? "min-h-0 flex-1" : "max-h-48"} overflow-auto rounded-xl bg-[var(--color-bg)] p-3 font-mono text-xs leading-relaxed text-[var(--color-bg)]`}
+                  className={`${maximized ? "min-h-0 flex-1" : "max-h-48"} overflow-auto rounded-xl bg-[var(--color-bg)] p-3 font-mono text-xs leading-relaxed text-[var(--color-fg)]`}
                 >
                   {job.log.length ? job.log.join("\n") : t("noLog")}
                 </pre>
