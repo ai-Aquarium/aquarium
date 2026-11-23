@@ -13,7 +13,14 @@ import type { TodoDraft } from "@/types";
  * the small fixes, and the session link is kept for the changes that are a
  * conversation ("redo the pricing section") rather than an edit.
  */
-export function TodoDraftPanel({ todoId }: { todoId: string }) {
+export function TodoDraftPanel({
+  todoId,
+  readOnly = false,
+}: {
+  todoId: string;
+  /** Someone else's to-do ("Whose data"): show the draft, never edit it. */
+  readOnly?: boolean;
+}) {
   const [draft, setDraft] = useState<TodoDraft | null>(null);
   const [draftText, setDraftText] = useState("");
   const [replyText, setReplyText] = useState("");
@@ -25,7 +32,9 @@ export function TodoDraftPanel({ todoId }: { todoId: string }) {
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`/api/todos/${encodeURIComponent(todoId)}/draft`);
+        const res = await fetch(
+          `/api/todos/${encodeURIComponent(todoId)}/draft`,
+        );
         if (!res.ok) return;
         const payload = (await res.json()) as TodoDraft;
         if (cancelled) return;
@@ -46,11 +55,17 @@ export function TodoDraftPanel({ todoId }: { todoId: string }) {
     setError(null);
     setNote(null);
     try {
-      const res = await fetch(`/api/todos/${encodeURIComponent(todoId)}/draft`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ draft_text: draftText, reply_text: replyText }),
-      });
+      const res = await fetch(
+        `/api/todos/${encodeURIComponent(todoId)}/draft`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            draft_text: draftText,
+            reply_text: replyText,
+          }),
+        },
+      );
       const payload = (await res.json()) as TodoDraft & { detail?: string };
       if (!res.ok) {
         setError(payload.detail ?? "That didn't stick — try again.");
@@ -100,6 +115,7 @@ export function TodoDraftPanel({ todoId }: { todoId: string }) {
           <textarea
             value={draftText}
             onChange={(e) => setDraftText(e.target.value)}
+            readOnly={readOnly}
             rows={Math.min(16, Math.max(6, draftText.split("\n").length + 1))}
             className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-transparent p-2 font-mono text-[11px] leading-relaxed"
           />
@@ -114,6 +130,7 @@ export function TodoDraftPanel({ todoId }: { todoId: string }) {
           <textarea
             value={replyText}
             onChange={(e) => setReplyText(e.target.value)}
+            readOnly={readOnly}
             rows={Math.min(10, Math.max(3, replyText.split("\n").length + 1))}
             className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-transparent p-2 font-mono text-[11px] leading-relaxed"
           />
@@ -133,19 +150,23 @@ export function TodoDraftPanel({ todoId }: { todoId: string }) {
         </ul>
       ) : null}
 
-      <div className="mt-3 flex items-center gap-2">
-        <ActionButton
-          disabled={busy || !dirty}
-          busyLabel="Saving…"
-          onAction={() => save()}
-          className="rounded-lg border border-[var(--color-accent)] bg-[var(--color-accent)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-surface)] transition hover:opacity-90 disabled:opacity-50"
-        >
-          Save edits
-        </ActionButton>
-        {note ? (
-          <span className="text-[11px] text-[var(--color-muted)]">{note}</span>
-        ) : null}
-      </div>
+      {readOnly ? null : (
+        <div className="mt-3 flex items-center gap-2">
+          <ActionButton
+            disabled={busy || !dirty}
+            busyLabel="Saving…"
+            onAction={() => save()}
+            className="rounded-lg border border-[var(--color-accent)] bg-[var(--color-accent)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-surface)] transition hover:opacity-90 disabled:opacity-50"
+          >
+            Save edits
+          </ActionButton>
+          {note ? (
+            <span className="text-[11px] text-[var(--color-muted)]">
+              {note}
+            </span>
+          ) : null}
+        </div>
+      )}
 
       {error ? (
         <p className="mt-2 text-xs text-[var(--color-muted)]">{error}</p>
