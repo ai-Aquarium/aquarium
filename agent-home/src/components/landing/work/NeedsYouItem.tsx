@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import type { NeedsYouAction, NeedsYouEntry } from "@/types/landing";
 
 import { AlertIcon, BellIcon, CheckIcon } from "@/components/ui/icons";
+import { OwnerBadge, TeamBadge } from "@/components/access/ViewingChip";
 import { SEVERITY_TONE } from "./tone";
 import { sourceRoutingHref, WhyThisProfile } from "@/components/sources/WhyThisProfile";
 
@@ -109,6 +110,8 @@ export function NeedsYouItem({
               {text.title(entry)}
             </Link>
           )}
+          {entry.team ? <TeamBadge /> : null}
+          {entry.foreign && entry.owner_user_id ? <OwnerBadge userId={entry.owner_user_id} /> : null}
           {isNew ? (
             <span className="shrink-0 rounded-full bg-[var(--color-accent)] px-1.5 text-[11px] font-semibold leading-[16px] text-[var(--color-accent-fg)]">
               {text.t("new")}

@@ -6,6 +6,7 @@ import { AuthCard, AuthLayout } from "@/components/auth/AuthLayout";
 import { LoginBrandPanel } from "@/components/auth/LoginBrandPanel";
 import { ResetRequestForm } from "@/components/auth/ResetRequestForm";
 import { LoginForm, type ProviderOption } from "@/components/LoginForm";
+import { ResetViewing } from "@/components/access/ViewingChip";
 import { getT } from "@/i18n/server";
 import { HermesApiClient, HermesApiError } from "@/lib/api/client";
 import { getPrincipal } from "@/lib/auth/principal";
@@ -54,6 +55,7 @@ export default async function LoginPage({
             {branding.name ? t("introTo", { name: branding.name }) : t("intro")}
           </p>
         </div>
+        <ResetViewing />
         <LoginForm providers={providers} profile={profile} />
         {/* Self-service recovery: a locked-out user cannot sign in to ask, and
          * nobody hands out temporary passwords by hand any more. */}

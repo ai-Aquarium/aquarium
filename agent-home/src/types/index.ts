@@ -3679,6 +3679,8 @@ export interface ActivityItem {
   profile: string | null;
   /** `running`, or `waiting` for a project run paused on a human. */
   status: string;
+  /** Whose it is, when known (labels other people's in a wider "Viewing"). */
+  owner_user_id?: string | null;
 }
 
 /** `GET /api/activity/running` (BFF) — the activity bar's payload. */

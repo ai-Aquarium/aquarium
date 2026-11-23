@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { ViewingBanner, ViewingChip } from "@/components/access/ViewingChip";
 import { AquariumMark } from "@/components/brand/AquariumMark";
 import { BoxLogo } from "@/components/brand/BoxLogo";
 import { useBranding } from "@/components/brand/BrandingProvider";
@@ -106,6 +107,7 @@ export function TopBarView({
             Aquarium dashboard
           </span>
         </Link>
+        <ViewingChip compact={compact} />
         <div className="flex shrink-0 items-center gap-2 lg:hidden">
           {compact ? <ActivityPill items={activity.items} now={activity.now} stale={activity.stale} /> : null}
           <HealthPill variant="compact" status={status} activity={activity} />
@@ -119,6 +121,7 @@ export function TopBarView({
           <AccountMenu name={accountName} role={accountRole} roles={accountRoles} currentProfile={currentProfile} />
         )}
       </header>
+      <ViewingBanner />
       <RunningStripView
         items={activity.items}
         now={activity.now}

@@ -16,6 +16,7 @@ import {
   type TodosFilterState,
 } from "@/components/todos/filters";
 import type { Todo, TodoStage, TodosFacets, TodosResponse } from "@/types";
+import { readViewing, useOnViewingChange } from "@/lib/viewing";
 
 const PAGE_SIZE = 50;
 
@@ -68,6 +69,8 @@ export function TodosList({
       try {
         const params = filtersToParams(value, after);
         params.set("limit", String(PAGE_SIZE));
+        const owners = readViewing();
+        if (owners.length) params.set("owners", owners.join(","));
         const res = await fetch(`/api/todos?${params.toString()}`, {
           cache: "no-store",
         });
@@ -91,6 +94,9 @@ export function TodosList({
     },
     [],
   );
+
+  // The server rendered just me; a wider "Viewing" re-reads the first page.
+  useOnViewingChange(() => void fetchPage(filters, null), { initial: true });
 
   const applyStage = useCallback(
     async (todo: Todo, stage: TodoStage): Promise<Todo | null> => {

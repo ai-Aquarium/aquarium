@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { signedOut } from "@/lib/auth/expired-session";
 import type { ActivityItem, ActivityRunning, ScheduledSummary } from "@/types";
+import { readViewing, useOnViewingChange, withOwners } from "@/lib/viewing";
 
 export const ACTIVITY_POLL_MS = 15_000;
 const CLOCK_TICK_MS = 1_000;
@@ -96,7 +97,9 @@ export function useActivityRunning(): ActivityRunningState {
     if (inFlight.current) return inFlight.current;
     const run = (async () => {
       try {
-        const res = await fetch("/api/activity/running", { cache: "no-store" });
+        const res = await fetch(withOwners("/api/activity/running", readViewing()), {
+          cache: "no-store",
+        });
         if (signedOut(res) || !res.ok) throw new Error(String(res.status));
         const data = (await res.json()) as ActivityRunning;
         const next = Array.isArray(data.items) ? data.items : [];
@@ -138,6 +141,7 @@ export function useActivityRunning(): ActivityRunningState {
       window.removeEventListener("focus", wake);
     };
   }, [tick]);
+  useOnViewingChange(() => void tick());
 
   const hasItems = items.length > 0;
 

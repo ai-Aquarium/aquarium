@@ -4,6 +4,7 @@ import { sendProjectAction, newIdempotencyKey } from "@/components/projects/useP
 import { withProfileQuery } from "@/lib/chat/profile";
 import { fetchSessionList } from "@/lib/chat/session-list-fetch";
 import { LANDING_ROUTES, landingApi } from "@/lib/landing/api";
+import { withOwners } from "@/lib/viewing";
 import type { PinResponse, PinSuggestionsResponse } from "@/types/landing";
 import type { ProfileSummary, SessionCreateResponse } from "@/types";
 
@@ -45,10 +46,13 @@ function profileBody(profile: string | undefined): { profile?: string } {
 export const chatsApi = {
   async sessions(
     profile: string | undefined,
-    opts: { force?: boolean; source?: string } = {},
+    opts: { force?: boolean; source?: string; owners?: string[] } = {},
   ): Promise<LandingSession[] | null> {
     const source = opts.source ? `&source=${encodeURIComponent(opts.source)}` : "";
-    const url = withProfileQuery(`/api/chat/sessions?limit=${SIDEBAR_SESSION_LIMIT}${source}`, profile);
+    const url = withProfileQuery(
+      withOwners(`/api/chat/sessions?limit=${SIDEBAR_SESSION_LIMIT}${source}`, opts.owners ?? []),
+      profile,
+    );
     const body = await fetchSessionList(url, opts);
     return body?.sessions ? (body.sessions as LandingSession[]) : null;
   },
@@ -58,9 +62,13 @@ export const chatsApi = {
     q: string,
     signal: AbortSignal,
     profile: string | undefined,
+    owners: string[] = [],
   ): Promise<MessageSearchHit[]> {
     const res = await fetch(
-      withProfileQuery(`/api/chat/sessions/search?q=${encodeURIComponent(q)}`, profile),
+      withProfileQuery(
+        withOwners(`/api/chat/sessions/search?q=${encodeURIComponent(q)}`, owners),
+        profile,
+      ),
       { cache: "no-store", signal },
     );
     if (!res.ok) throw new Error("Message search failed.");

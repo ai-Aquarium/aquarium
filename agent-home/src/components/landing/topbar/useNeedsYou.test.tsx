@@ -46,7 +46,7 @@ describe("useNeedsYou", () => {
     const spy = vi.spyOn(landingApi, "needsYou").mockResolvedValue(response([...MOCK_NEEDS_YOU].reverse()));
     const { result } = renderHook(() => useNeedsYou());
     await waitFor(() => expect(result.current.count).toBe(3));
-    expect(spy).toHaveBeenCalledWith({ countOnly: false });
+    expect(spy).toHaveBeenCalledWith({ countOnly: false, owners: [] });
     expect(result.current.items[0].severity).toBe("blocking");
     expect(result.current.blocking).toBe(1);
     expect(result.current.stale).toBe(false);
@@ -56,7 +56,7 @@ describe("useNeedsYou", () => {
     const spy = vi.spyOn(landingApi, "needsYou").mockResolvedValue({ ...response(), items: [] });
     const { result } = renderHook(() => useNeedsYou({ countOnly: true }));
     await waitFor(() => expect(result.current.count).toBe(3));
-    expect(spy).toHaveBeenCalledWith({ countOnly: true });
+    expect(spy).toHaveBeenCalledWith({ countOnly: true, owners: [] });
   });
 
   it("keeps the last good data and flags stale when a read fails (404/502)", async () => {

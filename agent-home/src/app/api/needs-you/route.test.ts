@@ -112,8 +112,8 @@ describe("GET /api/needs-you", () => {
     const keys = unstableCache.mock.calls.map((c) => c[1]);
     const hash = createHash("sha256").update("secret-token").digest("hex");
     expect(keys).toEqual([
-      ["needs-you", hash, "admin", "items"],
-      ["needs-you", hash, "admin", "count"],
+      ["needs-you", hash, "admin", "items", ""],
+      ["needs-you", hash, "admin", "count", ""],
     ]);
     expect(JSON.stringify(keys)).not.toContain("secret-token");
   });

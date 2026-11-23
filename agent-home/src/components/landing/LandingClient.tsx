@@ -34,6 +34,7 @@ import { useLandingPanels } from "./useLandingPanels";
 import { LandingWorkPanel, type NeedsYouFeed } from "./work";
 import { needsYouCount, tallyOf } from "./work/NeedsYouPanel";
 import { useSuggestedTasks } from "@/components/suggested-tasks/useSuggestedTasks";
+import { readViewing } from "@/lib/viewing";
 
 /** What the row or hit that opened a chat already knew about it. */
 interface OpenedChat {
@@ -217,7 +218,7 @@ export function LandingClient({
     userChatsOnly: true,
     highlightLatest: true,
     messageSearch: (q: string, signal: AbortSignal) =>
-      chatsApi.searchMessages(q, signal, currentProfile),
+      chatsApi.searchMessages(q, signal, currentProfile, readViewing()),
     onOpenMessageHit: openMessageHit,
     onOpenChat: openSession,
     onRenamed: (s: LandingSession, title: string) => setRenamed({ id: s.id, title }),

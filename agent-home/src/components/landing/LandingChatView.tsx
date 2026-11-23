@@ -11,6 +11,7 @@ import { useT } from "@/i18n";
 
 import { chatHref, chatsApi } from "./chats/chatsApi";
 import { displayTitle, type LandingSession } from "./chats/model";
+import { readViewing, useOnViewingChange } from "@/lib/viewing";
 
 /** A plain left click (no modifier): handled in place, not as a page load. */
 export function isPlainClick(e: MouseEvent): boolean {
@@ -49,12 +50,13 @@ export function LandingChatView({
   const t = useT("chatPage");
   const [sessions, setSessions] = useState<LandingSession[] | null>(null);
   const refresh = useCallback(async () => {
-    const list = await chatsApi.sessions(profile, { force: true });
+    const list = await chatsApi.sessions(profile, { force: true, owners: readViewing() });
     if (list) setSessions(list);
   }, [profile]);
+  useOnViewingChange(() => void refresh());
   useEffect(() => {
     let cancelled = false;
-    void chatsApi.sessions(profile).then((list) => {
+    void chatsApi.sessions(profile, { owners: readViewing() }).then((list) => {
       if (!cancelled && list) setSessions(list);
     });
     return () => {

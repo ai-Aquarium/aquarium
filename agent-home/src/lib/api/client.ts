@@ -1053,6 +1053,8 @@ export class HermesApiClient {
       tagMatch?: string;
       /** `only` = just the caller's pinned chats, whatever their age. */
       pinned?: "only";
+      /** "Whose data": other people's chats too (the server re-checks). */
+      owners?: string;
     } = {},
   ): Promise<SessionsResponse> {
     const params = new URLSearchParams();
@@ -1066,6 +1068,7 @@ export class HermesApiClient {
     if (opts.excludeTags) params.set("exclude_tags", opts.excludeTags);
     if (opts.tagMatch) params.set("tag_match", opts.tagMatch);
     if (opts.pinned) params.set("pinned", opts.pinned);
+    if (opts.owners) params.set("owners", opts.owners);
     return this.request(`/api/sessions?${params.toString()}`);
   }
 
@@ -1255,6 +1258,7 @@ export class HermesApiClient {
   async searchSessions(
     query: string,
     limit = 20,
+    owners?: string,
   ): Promise<{
     results: Array<{
       session_id: string;
@@ -1267,6 +1271,7 @@ export class HermesApiClient {
     }>;
   }> {
     const params = new URLSearchParams({ q: query, limit: String(limit) });
+    if (owners) params.set("owners", owners);
     return this.request(`/api/sessions/search?${params.toString()}`);
   }
 
@@ -2148,12 +2153,13 @@ export class HermesApiClient {
       include_snoozed?: boolean;
       limit?: number;
       cursor?: string;
+      owners?: string;
     } = {},
   ): Promise<TodosResponse> {
     const p = new URLSearchParams();
     for (const key of [
       "q", "stage", "priority", "source_kind", "source_ref", "due_before",
-      "cursor",
+      "cursor", "owners",
     ] as const) {
       const value = opts[key];
       if (value) p.set(key, String(value));
@@ -2164,8 +2170,9 @@ export class HermesApiClient {
   }
 
   /** Stages, priorities and sources the caller actually has. */
-  async todosFacets(): Promise<TodosFacets> {
-    return this.request("/api/registry/todos/facets");
+  async todosFacets(owners?: string): Promise<TodosFacets> {
+    const q = owners ? `?owners=${encodeURIComponent(owners)}` : "";
+    return this.request(`/api/registry/todos/facets${q}`);
   }
 
   /** One to-do with its history and the arrival behind it. */
@@ -2360,13 +2367,15 @@ export class HermesApiClient {
   }
 
   /** Chats, project runs, cards and cron jobs running now (activity bar). */
-  async activityRunning(): Promise<ActivityItem[]> {
-    return this.request("/api/activity/running");
+  async activityRunning(owners?: string): Promise<ActivityItem[]> {
+    const q = owners ? `?owners=${encodeURIComponent(owners)}` : "";
+    return this.request(`/api/activity/running${q}`);
   }
 
   /** How much is set to start later (the landing page's Scheduled button). */
-  async activityScheduled(): Promise<ScheduledSummary> {
-    return this.request("/api/activity/scheduled");
+  async activityScheduled(owners?: string): Promise<ScheduledSummary> {
+    const q = owners ? `?owners=${encodeURIComponent(owners)}` : "";
+    return this.request(`/api/activity/scheduled${q}`);
   }
 
   /** The instance's project categories, in column order, with project counts. */
