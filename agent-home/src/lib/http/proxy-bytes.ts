@@ -21,8 +21,12 @@ import "server-only";
 import {
   applyFileSafetyHeaders,
   applyHtmlViewHeaders,
+  essenceOf,
+  inlineTypeForName,
   withNewTabLinks,
 } from "@/lib/http/file-headers";
+
+const UNTYPED = new Set(["", "application/octet-stream", "binary/octet-stream"]);
 
 /** Conditional/partial-read headers that must reach the storage backend. */
 const FORWARDED_REQUEST_HEADERS = [
@@ -66,6 +70,10 @@ export async function proxyBytes(
     if (value) out.set(name, value);
   }
   if (!out.has("accept-ranges")) out.set("accept-ranges", "bytes");
+  if (upstream.ok && UNTYPED.has(essenceOf(out.get("content-type")))) {
+    const guessed = inlineTypeForName(opts.filename);
+    if (guessed) out.set("content-type", guessed);
+  }
   // The bytes are per-principal: a shared cache must never keep them, and the
   // signed URL behind them expires anyway.
   out.set("cache-control", "private, no-store");

@@ -51,6 +51,41 @@ const INLINE_SAFE_TYPES = new Set([
   "text/plain",
 ]);
 
+/** Extension → type for the {@link INLINE_SAFE_TYPES} a file name can name. */
+const INLINE_SAFE_EXTENSIONS: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+  bmp: "image/bmp",
+  heic: "image/heic",
+  heif: "image/heif",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  mp3: "audio/mpeg",
+  m4a: "audio/x-m4a",
+  aac: "audio/aac",
+  ogg: "audio/ogg",
+  opus: "audio/opus",
+  wav: "audio/wav",
+  flac: "audio/flac",
+  pdf: "application/pdf",
+  txt: "text/plain",
+};
+
+/**
+ * The inline-safe type a file name implies, or null. Used only when the stored
+ * type is missing or `application/octet-stream`, so a chart PNG saved without
+ * a type still opens as an image instead of downloading as `file`.
+ */
+export function inlineTypeForName(filename: string | null | undefined): string | null {
+  const ext = /\.([A-Za-z0-9]+)$/.exec(filename ?? "")?.[1]?.toLowerCase();
+  return (ext && INLINE_SAFE_EXTENSIONS[ext]) || null;
+}
+
 /** `image/PNG; charset=x` → `image/png`; empty when absent. */
 export function essenceOf(contentType: string | null | undefined): string {
   return (contentType ?? "").split(";")[0].trim().toLowerCase();

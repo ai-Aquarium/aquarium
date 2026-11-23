@@ -40,3 +40,23 @@ export function mediaRefPath(value: string): string | null {
   const path = new URLSearchParams(query).get("path");
   return path || null;
 }
+
+/** The content URL that always downloads (`Content-Disposition: attachment`). */
+export function mediaDownloadRef(path: string): string {
+  return `${mediaContentRef(path)}&download=1`;
+}
+
+/**
+ * The human file name inside an object key: the last segment without the
+ * uniqueness prefix the writers add — `<16hex>-` (Python file registry,
+ * `<user>/files/<2hex>/<16hex>-<name>`) or `<uuid>-` (chat uploads,
+ * `<user>/<session>/<uuid>-<name>`).
+ */
+export function mediaFileName(path: string): string {
+  const last = path.split("/").pop() || "";
+  const name = last.replace(
+    /^(?:[0-9a-f]{16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-(?=.)/i,
+    "",
+  );
+  return name || "file";
+}

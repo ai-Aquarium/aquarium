@@ -20,6 +20,7 @@ import {
   createMediaSignedUrl,
   storageAvailable,
 } from "@/lib/supabase/storage";
+import { mediaFileName } from "@/lib/chat/media-ref";
 import { mediaSignedUrlTtlSeconds } from "@/lib/env";
 
 export async function GET(request: Request): Promise<Response> {
@@ -52,7 +53,7 @@ export async function GET(request: Request): Promise<Response> {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
     return await proxyBytes(request, signed.url, {
-      filename: path.split("/").pop() || "file",
+      filename: mediaFileName(path),
       download: url.searchParams.get("download") === "1",
     });
   } catch (err) {
