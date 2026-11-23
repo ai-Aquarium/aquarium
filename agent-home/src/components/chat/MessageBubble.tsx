@@ -28,7 +28,8 @@ interface Segment {
  */
 function segment(content: string): Segment[] {
   const out: Segment[] = [];
-  const re = /(!?)\[([^\]]*)\]\((\S+?)\)/g;
+  // A name may hold a bracketed part (`draft [v2].pdf`): not escaped on send.
+  const re = /(!?)\[((?:[^[\]]|\[[^[\]]*\])*)\]\((\S+?)\)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {

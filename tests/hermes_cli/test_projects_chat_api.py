@@ -747,3 +747,50 @@ def test_a_file_named_inside_an_attached_document_stays_private(env, project):
     assert _media(env, slug, "leo/s-leo/u1-notes.txt").status_code == 200
     assert _media(env, slug, "leo/s-leo/u2-draft_v2.pdf").status_code == 200
     assert _media(env, slug, "leo/s-x/u9-secret.png").status_code == 403
+
+
+def test_a_merged_turn_with_a_part_sent_as_a_viewer_stays_hidden(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    env[1]["actor"] = MEMBER_P
+    ada = _session(env, "research", "s-ada", user="ada")
+    _turn(env, slug, "research", ada, "Hello", "Hi.")
+    with projects_db.connect_closing() as conn:
+        projects_db.remove_project_member(conn, project["id"], "ada")
+    _join(project, "ada", role="viewer")
+    as_viewer = time.time()
+    time.sleep(0.01)
+    with projects_db.connect_closing() as conn:
+        projects_db.remove_project_member(conn, project["id"], "ada")
+    _join(project, "ada")
+    time.sleep(0.01)
+    reinstated = time.time()
+    # Two steers the turn never read, merged into one follow-up turn.
+    with projects_db.connect_closing() as conn:
+        for sent in (as_viewer, reinstated):
+            projects_db.record_chat_input(conn, ada, sent)
+    time.sleep(0.01)
+    _say(env, "research", ada, "user", "sent as a viewer\nsent as a member")
+    _say(env, "research", ada, "assistant", "Merged.")
+
+    env[1]["actor"] = OWNER
+    assert [m["content"] for m in _timeline(env, slug)["messages"]] == ["Hello", "Hi."]
+
+
+def test_a_line_of_several_links_shares_none_of_them(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    leo = _session(env, "research", "s-leo")
+    out = _prepare(env, slug, "research", leo, "See these")
+    stored = (
+        out["message"]
+        + "\n\n[a](/api/chat/media?path=leo%2Fs-x%2Fu9-secret.png) and "
+        + "[b](/api/chat/media?path=leo%2Fs-leo%2Fu1-b.pdf)"
+        + "\n[c.pdf](/api/chat/media?path=leo%2Fs-leo%2Fu3-c.pdf)"
+    )
+    _say(env, "research", leo, "user", stored)
+    _say(env, "research", leo, "assistant", "Seen.")
+    env[1]["actor"] = MEMBER_P
+    assert _media(env, slug, "leo/s-leo/u3-c.pdf").status_code == 200
+    assert _media(env, slug, "leo/s-x/u9-secret.png").status_code == 403
+    assert _media(env, slug, "leo/s-leo/u1-b.pdf").status_code == 403

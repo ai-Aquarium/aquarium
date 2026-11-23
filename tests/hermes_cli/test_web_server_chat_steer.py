@@ -1097,9 +1097,9 @@ def test_a_project_chat_records_when_a_queued_input_was_sent(base, chat, turns):
     assert ordinary == []
 
 
-def test_merged_leftover_steers_are_dated_by_the_last_one_sent():
-    """The project chat judges a merged steer by its latest part, so one sent
-    after a demotion never rides on an earlier one's permission."""
+def test_merged_leftover_steers_keep_each_send_time():
+    """The project chat shows a merged steer only if its person could post
+    when each part was sent."""
     from hermes_cli.web_server import _close_chat_run_inputs
 
     steers = [
@@ -1115,4 +1115,4 @@ def test_merged_leftover_steers_are_dated_by_the_last_one_sent():
     (merged, source), = chain
     assert source == "steer_leftover"
     assert merged["text"] == "before\nafter"
-    assert merged["sent_at"] == 20.0
+    assert merged["sent_ats"] == [10.0, 20.0]

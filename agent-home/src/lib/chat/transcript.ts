@@ -88,7 +88,7 @@ export function stripUiContextLine(content: string): string {
  */
 const ATTACHMENT_NOTE = /^\[The user (?:sent (?:a text document|a document|an image): '|attached ')/;
 const NOTE_START = /\n\n\[The user (?:sent (?:a text document|a document|an image): '|attached ')/;
-const LINK_LINE = /^!?\[[^\]\n]*\]\([^)\s]+\)$/;
+const LINK_LINE = /^!?\[(?:[^[\]\n]|\[[^[\]\n]*\])*\]\([^)\s]+\)$/;
 
 /** Where the trailing block of attachment links (`withAttachments`) starts. */
 function trailingLinksStart(text: string): number {
