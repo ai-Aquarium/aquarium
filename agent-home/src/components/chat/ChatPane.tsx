@@ -7,6 +7,8 @@ import { useAction } from "@/lib/use-action";
 import { ChatsDrawer, ChatsSidebar } from "@/components/landing/chats";
 import { chatHref, chatsApi } from "@/components/landing/chats/chatsApi";
 import { highlightTermOf } from "@/components/landing/chats/MessageSearch";
+import { PanelCollapseButton, PanelRail } from "@/components/landing/LandingLayout";
+import { useLandingPanels } from "@/components/landing/useLandingPanels";
 import { ArchivedModal } from "@/components/chat/ArchivedModal";
 import {
   CHAT_FILTERS_OPEN_STORAGE_KEY,
@@ -143,6 +145,10 @@ export function ChatPane({
   const [detailsSession, setDetailsSession] = useState<SessionSummary | null>(null);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Shares the landing page's remembered state: a collapsed chats panel stays collapsed here.
+  const { chatsCollapsed, setChatsCollapsed } = useLandingPanels();
+  const tLanding = useT("landing");
+  const openAllChats = () => router.push("/chats");
   // Set when the search shortcut opened the drawer, so it focuses its search.
   const [drawerFocusSearch, setDrawerFocusSearch] = useState(false);
   const closeDrawer = useCallback(() => {
@@ -449,7 +455,7 @@ export function ChatPane({
       const active = sessions.find((s) => s.id === sessionId);
       if (active) void onOpenDetails(active);
     };
-    chatHeaderActionsRef.current.openChats = () => setDrawerOpen(true);
+    chatHeaderActionsRef.current.openChats = openAllChats;
     chatHeaderActionsRef.current.toggleFilters = () => setFiltersOpen(!filtersOpen);
     chatHeaderActionsRef.current.copyChat = () => {
       const live = conv.liveActivity[conv.selKey];
@@ -502,23 +508,48 @@ export function ChatPane({
 
   return (
     <div data-component="ChatPane" className="flex min-h-0 flex-1 gap-6">
-      <aside
-        ref={sidebarRef}
-        data-component="chat-sidebar"
-        aria-label="Chats"
-        className={`hidden w-[288px] shrink-0 overflow-y-auto border-r border-[var(--color-border)] pr-3 ${compact ? "" : "lg:flex lg:flex-col"}`}
+      <div
+        data-component="chat-sidebar-frame"
+        data-collapsed={chatsCollapsed || undefined}
+        className={`relative hidden shrink-0 border-r border-[var(--color-border)] ${chatsCollapsed ? "w-12" : "w-[288px]"} ${compact ? "" : "lg:flex"}`}
       >
-        <ChatsSidebar
-          profile={profile}
-          activeSessionId={sessionId}
-          initialSessions={sessions}
-          categoryFilter
-          searchShortcut="hint"
-          messageSearch={crossSessionSearch}
-          onOpenMessageHit={jumpToSearchResult}
-          onAllChats={() => setDrawerOpen(true)}
-        />
-      </aside>
+        {chatsCollapsed ? (
+          <PanelRail
+            side="left"
+            label={tLanding("panels.chats")}
+            title={tLanding("panels.expandChats")}
+            controls="chat-sidebar"
+            onExpand={() => setChatsCollapsed(false)}
+          />
+        ) : (
+          <>
+            <aside
+              ref={sidebarRef}
+              id="chat-sidebar"
+              data-component="chat-sidebar"
+              aria-label="Chats"
+              className="flex min-h-0 w-full flex-col overflow-y-auto pr-3"
+            >
+              <ChatsSidebar
+                profile={profile}
+                activeSessionId={sessionId}
+                initialSessions={sessions}
+                categoryFilter
+                searchShortcut="hint"
+                messageSearch={crossSessionSearch}
+                onOpenMessageHit={jumpToSearchResult}
+                onAllChats={openAllChats}
+              />
+            </aside>
+            <PanelCollapseButton
+              side="left"
+              title={tLanding("panels.collapseChats")}
+              controls="chat-sidebar"
+              onCollapse={() => setChatsCollapsed(true)}
+            />
+          </>
+        )}
+      </div>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {compact ? (
         <div className="flex justify-end pb-1">

@@ -26,7 +26,7 @@ const EDGE_BUTTON =
  * A collapsed desktop panel: a slim rail whose button (and vertical label)
  * expands it again.
  */
-function PanelRail({
+export function PanelRail({
   side,
   label,
   title,
@@ -77,6 +77,35 @@ function PanelRail({
       <span aria-hidden className="text-[11px] font-semibold uppercase tracking-[0.06em] [writing-mode:vertical-rl]">
         {label}
       </span>
+    </button>
+  );
+}
+
+/** The round edge button that collapses a desktop side panel into its rail. */
+export function PanelCollapseButton({
+  side,
+  title,
+  controls,
+  onCollapse,
+}: {
+  side: "left" | "right";
+  title: string;
+  controls: string;
+  onCollapse: () => void;
+}) {
+  const Icon = side === "left" ? ChevronLeftIcon : ChevronRightIcon;
+  return (
+    <button
+      type="button"
+      data-action={side === "left" ? "collapse-chats" : "collapse-tasks"}
+      aria-label={title}
+      aria-expanded
+      aria-controls={controls}
+      title={title}
+      onClick={onCollapse}
+      className={`${EDGE_BUTTON} ${side === "left" ? "-right-3" : "-left-3"}`}
+    >
+      <Icon size={14} />
     </button>
   );
 }
@@ -152,18 +181,12 @@ export function LandingLayout({
               {sidebar}
             </aside>
             {chats && !chatsCollapsed ? (
-              <button
-                type="button"
-                data-action="collapse-chats"
-                aria-label={t("panels.collapseChats")}
-                aria-expanded
-                aria-controls="landing-sidebar"
+              <PanelCollapseButton
+                side="left"
                 title={t("panels.collapseChats")}
-                onClick={() => chats.onCollapsedChange(true)}
-                className={`${EDGE_BUTTON} -right-3`}
-              >
-                <ChevronLeftIcon size={14} />
-              </button>
+                controls="landing-sidebar"
+                onCollapse={() => chats.onCollapsedChange(true)}
+              />
             ) : null}
           </div>
         ) : (
@@ -196,18 +219,12 @@ export function LandingLayout({
               {aside}
             </aside>
             {tasks && !tasksCollapsed ? (
-              <button
-                type="button"
-                data-action="collapse-tasks"
-                aria-label={t("panels.collapseTasks")}
-                aria-expanded
-                aria-controls="landing-aside"
+              <PanelCollapseButton
+                side="right"
                 title={t("panels.collapseTasks")}
-                onClick={() => tasks.onCollapsedChange(true)}
-                className={`${EDGE_BUTTON} -left-3`}
-              >
-                <ChevronRightIcon size={14} />
-              </button>
+                controls="landing-aside"
+                onCollapse={() => tasks.onCollapsedChange(true)}
+              />
             ) : null}
           </div>
         ) : null}

@@ -80,7 +80,7 @@ interface AppUrls {
 
 export const APP_URLS: Record<string, AppUrls> = {
   todos: { pages: [{ path: "/todos" }], apis: [{ path: "/api/todos" }] },
-  chat: { pages: [{ path: "/chat" }], apis: [] },
+  chat: { pages: [{ path: "/chat" }, { path: "/chats", exact: true }], apis: [] },
   inbox: {
     pages: [{ path: "/inbox", exact: true }],
     apis: [

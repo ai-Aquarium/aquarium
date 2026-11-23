@@ -22,6 +22,7 @@ export const PAGE_MARKERS: Record<string, string> = {
   "/skills": "SkillsView",
   "/todos": "TodosList",
   "/chat": "ChatPane",
+  "/chats": "AllChatsView",
   "/inbox": "InboxView",
   "/memory": "MemoryView",
   "/projects": "ProjectsList",
