@@ -5,8 +5,10 @@ import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode }
 import { ChatFile } from "@/components/chat/ChatFile";
 import { ChatMedia } from "@/components/chat/ChatMedia";
 import { DataAnswerFooter } from "@/components/chat/DataAnswerFooter";
+import { ProjectCard } from "@/components/chat/ProjectCard";
 import { RichText } from "@/components/chat/RichText";
 import { splitDataAnswer } from "@/lib/chat/data-answer";
+import { splitProjectCards } from "@/lib/chat/project-card";
 import { mediaRefPath, unescapeLinkLabel } from "@/lib/chat/media-ref";
 import {
   splitCompactionContent,
@@ -221,13 +223,13 @@ export const MessageBubble = memo(function MessageBubble({
   const isUser = message.role === "user";
   const split = splitCompactionContent(message.content ?? "");
   const data = isUser ? null : splitDataAnswer(split.display);
-  const content = isUser
-    ? stripRefMentions(stripInjectedContext(split.display))
-    : (data?.text ?? split.display);
+  const reply = isUser ? null : splitProjectCards(data?.text ?? split.display);
+  const content = reply ? reply.text : stripRefMentions(stripInjectedContext(split.display));
+  const projectCards = reply?.cards ?? [];
   const dataAnswer = data?.answer ?? null;
   const reasoning = isUser ? "" : (message.reasoning ?? "").trim();
 
-  if (content === "" && reasoning === "" && !dataAnswer) {
+  if (content === "" && reasoning === "" && !dataAnswer && projectCards.length === 0) {
     // Summary-only row (or a user turn that was just the context line): no
     // bubble at all — at most the compaction divider.
     return split.hadCompaction ? <CompactionDivider /> : null;
@@ -269,7 +271,10 @@ export const MessageBubble = memo(function MessageBubble({
                   <div className="mt-1 whitespace-pre-wrap">{reasoning}</div>
                 </details>
               ) : null}
-              <RichText content={content} />
+              {content !== "" ? <RichText content={content} /> : null}
+              {projectCards.map((card) => (
+                <ProjectCard key={card.slug} card={card} />
+              ))}
               {dataAnswer ? <DataAnswerFooter answer={dataAnswer} onMaximizedChange={setMaximized} /> : null}
             </>
           )}

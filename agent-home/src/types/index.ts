@@ -399,6 +399,8 @@ export interface ChatMessage {
   catchUp?: number;
   /** Project chat: this user turn carried the seeded project context. */
   seeded?: boolean;
+  /** Project chat: the note a project started from a private chat opens with. */
+  seedNote?: ProjectChatSeed;
 }
 
 /**
@@ -2762,6 +2764,8 @@ export interface ProjectDirectivesResponse {
 
 /** The whole record in one read (`GET /{slug}`). */
 export interface ProjectDetail extends Project {
+  /** The caller may change the record and make a playbook active. */
+  can_write?: boolean;
   /**
    * Optional in practice: the Python payload pops `folders` out of the base
    * row and the detail read does not re-attach it yet. Read defensively.
@@ -3752,6 +3756,17 @@ export interface AskProjectResponse {
 // ── Projects redesign: project chat ──
 
 /** One turn of the merged project chat timeline (`GET …/chat/timeline`). */
+/**
+ * A project started from a private chat: the agent's summary and the
+ * creator's own messages that asked for it, quoted as typed. `origin` (the
+ * private chat) is only sent to the creator.
+ */
+export interface ProjectChatSeed {
+  summary: string;
+  quotes: { text: string; timestamp?: number | null }[];
+  origin?: { ref?: string | null; url: string };
+}
+
 export interface ProjectChatTurn {
   /** A members-only message's id is a string (`m12`). */
   id?: number | string | null;
@@ -3770,6 +3785,8 @@ export interface ProjectChatTurn {
   private?: boolean;
   catch_up?: number;
   seeded?: boolean;
+  /** The note a project started from a private chat opens with. */
+  seed?: ProjectChatSeed;
   /** A steer delivered mid-turn, shown as the person's own row. */
   sent_while_working?: boolean;
 }
