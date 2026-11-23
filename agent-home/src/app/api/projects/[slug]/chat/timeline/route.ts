@@ -1,8 +1,8 @@
 /**
- * GET /api/projects/:slug/chat/timeline — the project chat: the caller's own
- * per-profile conversations in this project merged into one time-ordered
- * list, each turn labelled with its profile, plus the playbook revisions
- * proposed while it ran (2026-11-22 plan, stage 2). Read permission only.
+ * GET /api/projects/:slug/chat/timeline — the project group chat: every
+ * member's per-profile conversations and members-only messages merged into
+ * one time-ordered list, each turn labelled with its person and profile, plus
+ * the playbook revisions proposed while it ran. Read permission only.
  */
 import { NextResponse } from "next/server";
 

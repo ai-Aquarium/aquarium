@@ -33,7 +33,13 @@ export function ChatConversationView({
   renderAround,
   emptyState,
   onComposerTextChange,
+  readOnly,
+  isFromOther,
 }: {
+  /** A group chat's other people's messages (shown on the left). */
+  isFromOther?: (message: ChatMessage) => boolean;
+  /** Shown instead of the composer: the reader may not post here. */
+  readOnly?: ReactNode;
   /** The composer's text changed. */
   onComposerTextChange?: (text: string) => void;
   /** Rows shown before / after a message (the project chat's labels and cards). */
@@ -126,6 +132,7 @@ export function ChatConversationView({
                   message={m}
                   msgIndex={i}
                   highlightTerm={highlightTerm}
+                  fromOther={isFromOther?.(m) ?? false}
                 />
               );
               const around = renderAround?.(m, i);
@@ -184,6 +191,7 @@ export function ChatConversationView({
       ) : null}
 
       {aboveComposer}
+      {readOnly ?? (
       <Composer
         sending={selBusy}
         storageEnabled={storageEnabled}
@@ -199,6 +207,7 @@ export function ChatConversationView({
         launcherClearance={composerLauncherClearance && compactOnPhone ? "desktop" : composerLauncherClearance}
         tall={compactOnPhone}
       />
+      )}
     </>
   );
 }

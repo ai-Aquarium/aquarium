@@ -106,6 +106,11 @@ export interface ChatConversationOptions {
   hidden?: boolean;
   /** Project chat: every turn joins this project's chat timeline. */
   projectSlug?: string;
+  /**
+   * Take a new `initialMessages` whenever nothing is in flight (the project
+   * chat's live timeline: other members' turns arrive by re-reading it).
+   */
+  followInitialMessages?: boolean;
 }
 
 /**
@@ -125,6 +130,7 @@ export function useChatConversation({
   hidden = false,
   onSessionsStale,
   projectSlug,
+  followInitialMessages = false,
 }: ChatConversationOptions) {
   const path = (p: string) =>
     projectSlug ? withTargetProfileQuery(p, profile) : withProfileQuery(p, profile);
@@ -148,6 +154,11 @@ export function useChatConversation({
   // so the user can switch conversations at any time without cancelling or
   // cross-contaminating an in-flight turn.
   const [sendingKeys, setSendingKeys] = useState<string[]>([]);
+  const [seenInitial, setSeenInitial] = useState(initialMessages);
+  if (followInitialMessages && initialMessages !== seenInitial && sendingKeys.length === 0) {
+    setSeenInitial(initialMessages);
+    setMessages(visibleTurns(initialMessages));
+  }
   const [error, setError] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<Record<string, ChatApprovalRequest>>({});
   const [decisions, setDecisions] = useState<Record<string, string>>({});

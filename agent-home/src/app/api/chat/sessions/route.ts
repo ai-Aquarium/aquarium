@@ -42,7 +42,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   // an explicit (even empty) value lets a caller opt in to seeing it.
   const rawExcludeSources = url.searchParams.get("exclude_sources");
   const excludeSources =
-    rawExcludeSources === null ? "cron" : rawExcludeSources || undefined;
+    rawExcludeSources === null ? "cron,project_chat" : rawExcludeSources || undefined;
   const filters = {
     source: url.searchParams.get("source") || undefined,
     excludeSources,

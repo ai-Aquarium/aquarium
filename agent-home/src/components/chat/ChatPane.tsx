@@ -191,7 +191,8 @@ export function ChatPane({
       // The strip groups cron sessions into their own "Scheduled" row
       // instead of hiding them — opt in to seeing them (see the BFF
       // route's doc comment for the empty-string-vs-absent distinction).
-      params.set("exclude_sources", "");
+      // A project's chats stay in the project.
+      params.set("exclude_sources", "project_chat");
       if (includeTags.length > 0) params.set("tags", includeTags.join(","));
       if (excludeTags.length > 0) params.set("exclude_tags", excludeTags.join(","));
       params.set("tag_match", matchMode);

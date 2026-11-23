@@ -97,4 +97,42 @@ describe("project chat timeline", () => {
       "finance",
     ]);
   });
+
+  it("labels every member's turn and counts their turns and notes as missed", () => {
+    const group: ProjectChatTimeline = {
+      me: "leo",
+      can_post: true,
+      sessions: [{ profile: "research", session_id: "s-leo" }],
+      messages: [
+        { ...turn("research", "user", "Find sources", 10), session_id: "s-leo", person: "leo", person_name: "Leo" },
+        { ...turn("research", "assistant", "Found three", 11), session_id: "s-leo", person: "leo", person_name: "Leo" },
+        { ...turn("research", "user", "Which?", 20), session_id: "s-ada", person: "ada", person_name: "Ada" },
+        { ...turn("research", "assistant", "The second", 21), session_id: "s-ada", person: "ada", person_name: "Ada" },
+        {
+          id: "m7",
+          role: "user",
+          content: "Check FX",
+          timestamp: 22,
+          profile: null,
+          session_id: null,
+          person: "ada",
+          person_name: "Ada",
+          member_only: true,
+        },
+      ],
+      truncated: false,
+      proposals: [],
+      last_profile: "research",
+    };
+    const rows = timelineMessages(group);
+    expect(rows.map((m) => m.personName)).toEqual(["Leo", "Leo", "Ada", "Ada", "Ada"]);
+    expect(rows[4]).toMatchObject({ memberOnly: true, clientKey: "m7" });
+    expect(rows[4].profile).toBeUndefined();
+    expect(rows[4].id).toBeUndefined();
+    // Leo's research conversation missed Ada's two turns and her note; the
+    // same profile's turns in Ada's conversation are not his own.
+    expect(missedCount(rows, "research", "leo")).toBe(3);
+    expect(missedCount(rows, "research", "ada")).toBe(1);
+    expect(missedCount(rows, "finance", "leo")).toBe(5);
+  });
 });

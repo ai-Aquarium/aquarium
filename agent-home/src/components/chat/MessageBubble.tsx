@@ -178,10 +178,13 @@ export const MessageBubble = memo(function MessageBubble({
   message,
   msgIndex,
   highlightTerm,
+  fromOther = false,
 }: {
   message: ChatMessage;
   msgIndex?: number;
   highlightTerm?: string;
+  /** Another person's message in a group chat: on the left, not in the accent. */
+  fromOther?: boolean;
 }) {
   // A maximized panel inside the row must escape it: content-visibility
   // containment would make the row its containing block and clip it.
@@ -209,14 +212,17 @@ export const MessageBubble = memo(function MessageBubble({
         data-msg-index={msgIndex}
         data-role={message.role}
         data-sent-while-working={isUser && message.sentWhileWorking ? "true" : undefined}
+        data-from-other={isUser && fromOther ? "true" : undefined}
         style={maximized ? undefined : ROW_STYLE}
-        className={`group flex gap-1 ${isUser ? "justify-end" : "justify-start"}`}
+        className={`group flex gap-1 ${isUser && !fromOther ? "justify-end" : "justify-start"}`}
       >
         <div
           className={`max-w-[85%] break-words rounded-2xl px-3 py-2 text-sm ${
-            isUser
-              ? "whitespace-pre-wrap bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
-              : "bg-[var(--color-surface-2)] text-[var(--color-fg)]"
+            isUser && fromOther
+              ? "whitespace-pre-wrap border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg)]"
+              : isUser
+                ? "whitespace-pre-wrap bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
+                : "bg-[var(--color-surface-2)] text-[var(--color-fg)]"
           }`}
         >
           {isUser ? (

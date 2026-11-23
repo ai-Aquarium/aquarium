@@ -388,6 +388,11 @@ export interface ChatMessage {
   sentWhileWorking?: boolean;
   /** Project chat: the profile whose conversation holds this turn. */
   profile?: string;
+  /** Project chat: the member who sent (or was answered by) this turn. */
+  person?: string;
+  personName?: string;
+  /** Project chat: a message to the other members, the agent left out. */
+  memberOnly?: boolean;
   /** Project chat: how many missed turns this user turn's catch-up covered. */
   catchUp?: number;
   /** Project chat: this user turn carried the seeded project context. */
@@ -3746,13 +3751,20 @@ export interface AskProjectResponse {
 
 /** One turn of the merged project chat timeline (`GET …/chat/timeline`). */
 export interface ProjectChatTurn {
-  id?: number | null;
+  /** A members-only message's id is a string (`m12`). */
+  id?: number | string | null;
   role: "user" | "assistant";
   content: string;
   /** Unix seconds (fractional). */
   timestamp: number;
-  profile: string;
-  session_id: string;
+  /** Null on a members-only message. */
+  profile: string | null;
+  session_id: string | null;
+  /** The member whose conversation holds the turn (or who sent the note). */
+  person?: string;
+  person_name?: string;
+  /** "Ask agent" off: a message to the other members, no agent reply. */
+  member_only?: boolean;
   catch_up?: number;
   seeded?: boolean;
   /** A steer delivered mid-turn, shown as the person's own row. */
@@ -3774,7 +3786,12 @@ export interface ProjectChatProposal {
 }
 
 export interface ProjectChatTimeline {
-  /** The conversation each profile keeps in this project (one per profile). */
+  /** The caller's user id; their own turns are the ones with this `person`. */
+  me?: string;
+  people?: { user_id: string; name: string }[];
+  /** False for a viewer: they read the group chat but never post. */
+  can_post?: boolean;
+  /** The caller's own conversation per profile in this project. */
   sessions: { profile: string; session_id: string }[];
   messages: ProjectChatTurn[];
   truncated: boolean;

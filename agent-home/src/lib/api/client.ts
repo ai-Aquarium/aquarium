@@ -1121,10 +1121,13 @@ export class HermesApiClient {
    * Create a new conversation (owner-attributed) via `POST /api/sessions`.
    * Idempotent server-side: a supplied id that already exists is a 409.
    */
-  async createSession(sessionId?: string): Promise<SessionCreateResponse> {
+  async createSession(
+    sessionId?: string,
+    opts: { source?: "project_chat" } = {},
+  ): Promise<SessionCreateResponse> {
     return this.request("/api/sessions", {
       method: "POST",
-      json: sessionId ? { session_id: sessionId } : {},
+      json: { ...(sessionId ? { session_id: sessionId } : {}), ...opts },
     });
   }
 
@@ -4142,6 +4145,17 @@ export class HermesApiClient {
   ): Promise<import("@/types").ProjectChatTimeline> {
     return this.request(
       `/api/registry/projects/${encodeURIComponent(slug)}/chat/timeline`,
+    );
+  }
+
+  /** A members-only project chat message ("Ask agent" off): no model call. */
+  async postProjectChatMessage(
+    slug: string,
+    content: string,
+  ): Promise<import("@/types").ProjectChatTurn> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/chat/messages`,
+      { method: "POST", json: { content } },
     );
   }
 
