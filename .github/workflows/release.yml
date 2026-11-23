@@ -120,9 +120,16 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # the newest stable release strictly older than this tag (a hotfix below the
+          # latest line rehearses from its own predecessor, never a downgrade)
           PREV=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases \
-            --limit 30 --json tagName --jq '.[].tagName' | grep -vx "$TAG" | head -1)
-          [ -n "$PREV" ] || { echo "no previous published release"; exit 1; }
+            --limit 100 --json tagName --jq '.[].tagName' | python3 -c '
+          import re, sys
+          num = lambda t: tuple(int(x) for x in re.match(r"v(\d+)\.(\d+)\.(\d+)", t).groups())
+          target = num(sys.argv[1])
+          tags = [t for t in sys.stdin.read().split() if re.fullmatch(r"v\d+\.\d+\.\d+", t) and num(t) < target]
+          print(max(tags, key=num) if tags else "")' "$TAG")
+          [ -n "$PREV" ] || { echo "no published release older than $TAG"; exit 1; }
           echo "previous release: $PREV"
           mkdir prev
           gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --dir prev \
@@ -141,7 +148,10 @@ jobs:
         with:
           command: uv sync --locked --python 3.11 --extra all --extra dev
       - name: Rehearse previous release -> this tag (tarballs), then rollback
-        run: scripts/run_tests.sh tests/deploy/test_aquarium_upgrade_rehearsal.py
+        run: |
+          set -euo pipefail
+          test -f "$AQUARIUM_REHEARSAL_FROM" && test -f "$AQUARIUM_REHEARSAL_TO"
+          scripts/run_tests.sh tests/deploy/test_aquarium_upgrade_rehearsal.py
       - name: Rehearse v0.2.7 and the newest tag -> this tree
         run: |
           unset AQUARIUM_REHEARSAL_FROM AQUARIUM_REHEARSAL_TO

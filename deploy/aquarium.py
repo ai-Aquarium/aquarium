@@ -38,6 +38,8 @@ import fcntl
 import gzip
 import hashlib
 import hmac
+import importlib.machinery
+import importlib.util
 import http.client
 import io
 import json
@@ -1045,17 +1047,37 @@ def terminal_users(cfg: Dict[str, str]) -> List[str]:
     return users
 
 
+#: Read-only allowlisted leaves the probe can run without a chat's requester ticket.
+TERMINAL_PROBES = (["memory", "status", "--help"], ["cron", "list", "--help"])
+
+
+def probe_words(src: Path) -> List[str]:
+    """The first of TERMINAL_PROBES the release's own allowlist (its real parser) accepts
+    and runs without a requester ticket."""
+    allowlist = src / "deploy/hermes-tools-cli"
+    try:
+        loader = importlib.machinery.SourceFileLoader("hermes_tools_cli_probe", str(allowlist))
+        mod = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+        loader.exec_module(mod)
+    except (OSError, SyntaxError, ImportError):
+        return TERMINAL_PROBES[0]
+    for words in TERMINAL_PROBES:
+        try:
+            path = mod.check(list(words))
+        except Exception:  # noqa: BLE001 - Refused, or an allowlist that changed shape
+            continue
+        if path[0] not in getattr(mod, "AS_REQUESTER", {}):
+            return list(words)
+    return TERMINAL_PROBES[0]
+
+
 def terminal_probe(cfg: Dict[str, str], src: Path) -> List[str]:
     """Run an allowlisted ``hermes`` command the way the agent's terminal does when it runs as
     another user: hermes → sudo → hermes-tools-exec → the hermes shim → hermes-tools-cli."""
     users = terminal_users(cfg)
     if not users:
         return []
-    allowlist = src / "deploy/hermes-tools-cli"
-    words = ["projects", "--help"]
-    if allowlist.is_file() and '"projects":' not in allowlist.read_text(errors="replace"):
-        words = ["memory", "status", "--help"]
-    command = "hermes " + " ".join(words)
+    command = "hermes " + " ".join(probe_words(src))
     failed = []
     for user in users:
         proc = run([shutil.which("sudo") or "/usr/bin/sudo", "-n", "-u", user, "/usr/local/sbin/hermes-tools-exec",
@@ -3577,6 +3599,15 @@ def git_root_sources(cfg: Dict[str, str], ref: str) -> Optional[Path]:
     A checkout is the service user's to write, so root copies never come from it. None when
     ``ref`` is not a release with a server package (the root copies then stay as they are)."""
     if not VERSION_RE.match(ref):
+        return None
+    if not find_cosign():
+        say(f"  note: cosign is not installed, so {ref}'s signed package can't be checked and the "
+            "system helpers are left as they are. To update them, run as root from the checkout:")
+        for inst, source, _label, kind in ROOT_COPIES:
+            if P(inst).exists():
+                mode = "0440" if kind == "sudoers" else "0755"
+                check = f"visudo -cf {source} && " if kind == "sudoers" else ""
+                say(f"        {check}install -m {mode} -o root -g root {source} {inst}")
         return None
     folder = P(f"{UPGRADE_DOWNLOADS}/{ref}")
     tarball = verified_package(cfg, ref, folder)

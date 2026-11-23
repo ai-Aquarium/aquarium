@@ -231,6 +231,24 @@ def preflight_view(raw: Any, busy: List[str]) -> Dict[str, Any]:
             "checks": checks, "busy": busy}
 
 
+def _gateway_homes() -> List[Path]:
+    """The default home and every profile's: the upgrade restarts all their gateways."""
+    try:
+        from hermes_constants import get_default_hermes_root
+
+        root = Path(get_default_hermes_root())
+    except Exception:  # noqa: BLE001
+        return []
+    return [root, *sorted(p for p in (root / "profiles").glob("*") if p.is_dir())]
+
+
+def _gateway_running(home: Path, runtime: Dict[str, Any]) -> bool:
+    from gateway.status import get_running_pid, get_runtime_status_running_pid
+
+    return (get_running_pid(home / "gateway.pid", cleanup_stale=False) is not None
+            or get_runtime_status_running_pid(runtime, expected_home=home) is not None)
+
+
 def work_in_progress() -> List[str]:
     """Plain-language list of work a restart would interrupt: agent turns (chat here and the
     messaging gateway) and project runs. Best effort: a source that can't be read is skipped."""
@@ -243,16 +261,20 @@ def work_in_progress() -> List[str]:
             found.append(f"{chats} chat {'reply is' if chats == 1 else 'replies are'} being written")
     except Exception:  # noqa: BLE001
         pass
-    try:
-        from gateway.status import derive_gateway_busy, get_running_pid, parse_active_agents, read_runtime_status
+    agents = 0
+    for home in _gateway_homes():
+        try:
+            from gateway.status import derive_gateway_busy, parse_active_agents, read_runtime_status
 
-        rt = read_runtime_status() or {}
-        agents = parse_active_agents(rt.get("active_agents"))
-        if derive_gateway_busy(gateway_running=get_running_pid() is not None,
-                               gateway_state=rt.get("gateway_state"), active_agents=agents):
-            found.append(f"{agents} messaging {'conversation is' if agents == 1 else 'conversations are'} mid-turn")
-    except Exception:  # noqa: BLE001
-        pass
+            rt = read_runtime_status(home / "gateway_state.json") or {}
+            busy = parse_active_agents(rt.get("active_agents"))
+            if derive_gateway_busy(gateway_running=_gateway_running(home, rt),
+                                   gateway_state=rt.get("gateway_state"), active_agents=busy):
+                agents += busy
+        except Exception:  # noqa: BLE001
+            pass
+    if agents:
+        found.append(f"{agents} messaging {'conversation is' if agents == 1 else 'conversations are'} mid-turn")
     try:
         from hermes_cli import projects_db
 

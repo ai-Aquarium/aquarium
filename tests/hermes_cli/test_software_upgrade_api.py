@@ -284,6 +284,21 @@ def test_work_in_progress_counts_live_chat_turns(monkeypatch):
     assert "1 chat reply is being written" in su.work_in_progress()
 
 
+def test_work_in_progress_counts_every_profiles_gateway(monkeypatch, tmp_path):
+    import json as _json
+
+    from hermes_cli import web_server as ws
+
+    monkeypatch.setattr(ws, "_CHAT_RUNS", {})
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    for home, agents in ((tmp_path, 0), (tmp_path / "profiles/sales", 2), (tmp_path / "profiles/ops", 1)):
+        home.mkdir(parents=True, exist_ok=True)
+        (home / "gateway_state.json").write_text(_json.dumps({"gateway_state": "running", "active_agents": agents}))
+    (tmp_path / "profiles/idle").mkdir()
+    monkeypatch.setattr(su, "_gateway_running", lambda home, rt: home.name != "ops")
+    assert "2 messaging conversations are mid-turn" in su.work_in_progress()
+
+
 # --------------------------------------------------------------------------- password re-check
 
 

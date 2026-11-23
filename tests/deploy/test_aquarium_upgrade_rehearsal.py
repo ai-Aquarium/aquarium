@@ -67,22 +67,42 @@ def _tree_files() -> dict[str, str]:
     return {src: (REPO / src).read_text() for src in SOURCES if (REPO / src).exists()}
 
 
-def _newest_tag() -> str | None:
-    got = subprocess.run(["git", "-C", str(REPO), "tag", "--list", "v*", "--sort=-v:refname"],
-                         capture_output=True, text=True)
-    tags = [t for t in got.stdout.split() if re.fullmatch(r"v\d+\.\d+\.\d+", t)]
-    return tags[0] if tags else None
+def _numbers(version: str) -> tuple[int, int, int]:
+    m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", version)
+    assert m, f"not a release version: {version!r}"
+    return int(m.group(1)), int(m.group(2)), int(m.group(3))
+
+
+def _target() -> tuple[int, int, int]:
+    return _numbers((REPO / "VERSION").read_text().strip())
+
+
+def _newest_tag_below(target: tuple[int, int, int]) -> str | None:
+    """The newest stable tag strictly older than the release being built: never the target
+    tag itself (its root copies match this tree) and never a newer line (a hotfix)."""
+    got = subprocess.run(["git", "-C", str(REPO), "tag", "--list", "v*"], capture_output=True, text=True)
+    tags = [t for t in got.stdout.split() if re.fullmatch(r"v\d+\.\d+\.\d+", t) and _numbers(t) < target]
+    return max(tags, key=_numbers) if tags else None
 
 
 def _bump(version: str) -> str:
-    major, minor, patch = (int(x) for x in version.lstrip("v").split("."))
+    major, minor, patch = _numbers(version)
     return f"v{major}.{minor}.{patch + 1}"
 
 
+REHEARSAL_ENV = ("AQUARIUM_REHEARSAL_FROM", "AQUARIUM_REHEARSAL_TO")
+
+
 def _cases():
-    if os.environ.get("AQUARIUM_REHEARSAL_FROM"):
+    given = [os.environ.get(k, "") for k in REHEARSAL_ENV]
+    if any(given):
+        # the release workflow's publish gate: never fall back to tags silently
+        missing = [k for k, v in zip(REHEARSAL_ENV, given) if not v or not Path(v).is_file()]
+        if missing:
+            raise RuntimeError(f"rehearsal tarball missing: {', '.join(missing)} = {given}")
         return ["published"]
-    return sorted({HSD_RELEASE, _newest_tag() or HSD_RELEASE})
+    target = _target()
+    return sorted({t for t in (HSD_RELEASE, _newest_tag_below(target)) if t and _numbers(t) < target})
 
 
 def _load(path: Path, name: str):
@@ -134,8 +154,9 @@ def test_first_upgrade_with_the_old_job_code_then_finish_then_rollback(box, monk
         os.symlink(shutil.which("visudo", path="/usr/sbin:/usr/bin:/sbin"), b.bin / "visudo")
     else:
         fakes(b, "visudo")
+    assert _numbers(old_version) < _numbers(new_version), (old_version, new_version)
+    # a release that changes no root copy still upgrades; there is just nothing to finish
     stale = [inst for inst, src in installed.items() if old[src] != new.get(src)]
-    assert stale, "the rehearsal needs a release whose root copies changed"
 
     # 1. the Upgrade click, handled by the OLD release's own command
     old_cmd = _load(b.p("/usr/local/sbin/aquarium"), "aquarium_old")
@@ -146,7 +167,7 @@ def test_first_upgrade_with_the_old_job_code_then_finish_then_rollback(box, monk
     assert os.readlink(b.p("/opt/aquarium/current")) == f"releases/{new_version}"
     assert b.p("/usr/local/sbin/aquarium").read_text() == new["deploy/aquarium.py"]
     left = [i for i in stale if i != "/usr/local/sbin/aquarium" and b.p(i).read_text() != new[installed[i]]]
-    if not hasattr(old_cmd, "finish_needed"):
+    if not hasattr(old_cmd, "finish_needed") and any(i != "/usr/local/sbin/aquarium" for i in stale):
         assert left, "the old job code is expected to leave root copies stale"
 
     # 2. the page's next poll runs the NEW command: it starts the finish job by itself
@@ -161,7 +182,7 @@ def test_first_upgrade_with_the_old_job_code_then_finish_then_rollback(box, monk
         f = b.p(inst)
         assert f.read_text() == new[src], inst
         assert f.stat().st_mode & 0o777 == (0o440 if inst.startswith("/etc/sudoers.d/") else 0o755), inst
-    assert "hermes-tools-exec bash -c hermes projects --help" in b.log()
+    assert "hermes-tools-exec bash -c hermes memory status --help" in b.log()
     _, st = _cli(new_cmd, monkeypatch, capsys, "status")  # done: nothing more starts
     assert st["job"]["kind"] in ("finish", "upgrade") and st["finish"] is None
     assert len([ln for ln in b.log().splitlines() if ln.startswith("systemd-run")]) == launched + bool(left)
