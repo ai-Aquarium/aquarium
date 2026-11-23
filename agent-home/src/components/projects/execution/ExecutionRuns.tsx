@@ -285,11 +285,15 @@ function RunScoreRow({
   const t = useT("execution");
   const action = useProjectAction();
   const [saved, setSaved] = useState(false);
-  const save = (score: number) => {
+  const save = async (score: number) => {
+    if (action.busy) return;
     setSaved(false);
+    // Re-scoring overwrites the note too: carry over the note as saved now
+    // (it may have been edited or cleared on the run page since this loaded).
+    const fresh = await readRun(slug, run.run_no).catch(() => null);
+    const note = (fresh ?? run).score_note;
     void action.run(`${runPath(slug, run.run_no)}/score`, {
-      // Re-scoring overwrites the note too, so carry the saved one over.
-      body: { score, note: run.score_note ?? undefined },
+      body: { score, note: note ?? undefined },
       onSuccess: () => {
         onScored(score);
         setSaved(true);
@@ -313,7 +317,7 @@ function RunScoreRow({
               type="button"
               disabled={archived || action.busy}
               aria-pressed={run.score_user === n}
-              onClick={() => save(n)}
+              onClick={() => void save(n)}
               className={`h-11 w-11 rounded-xl border text-sm disabled:opacity-50 ${
                 run.score_user === n
                   ? "border-[var(--color-accent)] bg-[var(--color-accent)] font-medium text-[var(--color-accent-fg)]"
