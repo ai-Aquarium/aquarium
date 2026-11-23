@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from hermes_cli import web_server
 from hermes_cli.dashboard_auth import clear_providers, register_provider
+from hermes_cli.dashboard_auth.base import RefreshExpiredError
 from tests.hermes_cli.conftest_dashboard_auth import StubAuthProvider
 
 
@@ -71,3 +72,32 @@ def test_refresh_without_a_live_refresh_token_is_401(stub, cookie):
     resp = client.post("/auth/refresh", headers={"cookie": cookie} if cookie else {})
     assert resp.status_code == 401
     assert "hermes_session_at" not in {k for k, v in _set_cookies(resp).items() if _value(v)}
+
+
+class _ForeignRefusingProvider(StubAuthProvider):
+    """A provider registered first that refuses every RT it did not issue."""
+
+    name = "other"
+    display_name = "Other"
+
+    def refresh_session(self, *, refresh_token: str):
+        raise RefreshExpiredError("not my refresh token")
+
+
+def test_refresh_reaches_the_issuing_provider_past_one_that_refuses(stub):
+    # Production registers ``basic`` ahead of ``supabase``; a Supabase RT must
+    # not be declared dead just because ``basic`` (asked first) refuses it.
+    clear_providers()
+    register_provider(_ForeignRefusingProvider())
+    register_provider(stub)
+    session = _login(stub)
+    client = TestClient(web_server.app, base_url="http://127.0.0.1")
+
+    resp = client.post(
+        "/auth/refresh",
+        headers={"cookie": f"hermes_session_rt={session.refresh_token}"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    at = _value(_set_cookies(resp)["hermes_session_at"])
+    assert stub.verify_session(access_token=at) is not None

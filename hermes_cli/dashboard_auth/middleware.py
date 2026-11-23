@@ -427,42 +427,40 @@ def _attempt_refresh(request: Request, *, refresh_token):
     """Try to rotate an expired session via the refresh token.
 
     Returns ``(new_session, provider_name)`` on success, or ``None`` if
-    there's no RT or every provider's ``refresh_session`` failed with
-    ``RefreshExpiredError`` (dead/revoked/reuse-detected RT → force re-login).
+    there's no RT or no provider could refresh it.
 
-    A ``ProviderError`` (Portal unreachable) is NOT swallowed into a re-login
-    here — re-raising would 500 the request; instead we log and return None so
-    the caller forces a clean re-login, which is the safer UX than a hard
-    error on a transient network blip during the narrow refresh window.
+    The RT does not say which provider issued it, so every session provider
+    is asked in turn: with ``basic`` registered ahead of ``supabase``, the
+    first refusal is usually just "not mine". Only when all refuse is it a
+    dead/revoked RT (-> force re-login). A ``ProviderError`` (IdP unreachable)
+    is logged and counts as a refusal rather than a 500: a clean re-login is
+    the safer UX for a transient blip in the narrow refresh window.
     """
     if not refresh_token:
         return None
+    failures = []
     for provider in list_session_providers():
         try:
             new_session = provider.refresh_session(refresh_token=refresh_token)
         except RefreshExpiredError:
-            # This provider owns the RT but it's dead — stop trying others
-            # (an RT belongs to exactly one provider) and force re-login.
-            audit_log(
-                AuditEvent.REFRESH_FAILURE,
-                provider=provider.name,
-                reason="refresh_expired",
-                ip=_client_ip(request),
-            )
-            return None
+            failures.append((provider.name, "refresh_expired"))
+            continue
         except ProviderError as e:
             _log.warning(
                 "dashboard-auth: provider %r unreachable during refresh: %s",
                 provider.name, e,
             )
-            audit_log(
-                AuditEvent.REFRESH_FAILURE,
-                provider=provider.name,
-                reason="provider_unreachable",
-                ip=_client_ip(request),
-            )
-            return None
+            failures.append((provider.name, "provider_unreachable"))
+            continue
         if new_session is not None:
             return new_session, provider.name
+    for name, reason in failures:
+        audit_log(
+            AuditEvent.REFRESH_FAILURE,
+            provider=name,
+            reason=reason,
+            ip=_client_ip(request),
+        )
     return None
+
 
