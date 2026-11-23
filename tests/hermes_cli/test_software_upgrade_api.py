@@ -28,7 +28,8 @@ VIEWER = SimpleNamespace(user_id="tom", display="Tom", role="viewer", is_owner=F
 READS = [("GET", "/api/software-upgrade", None), ("GET", "/api/software-upgrade/job", None),
          ("POST", "/api/software-upgrade/check", None)]
 WRITES = [("POST", "/api/software-upgrade/start", {"version": "v1.1.0", "password": "pw"}),
-          ("POST", "/api/software-upgrade/rollback", {"password": "pw"})]
+          ("POST", "/api/software-upgrade/rollback", {"password": "pw"}),
+          ("POST", "/api/software-upgrade/finish", None)]
 
 STATUS = {
     "ok": True,
@@ -78,6 +79,7 @@ def helper(monkeypatch):
     answers = {"status": STATUS, "releases": RELEASES, "check": RELEASES,
                "start": {"ok": True, "started": True, "status": STATUS},
                "rollback": {"ok": True, "started": True, "status": STATUS}}
+    monkeypatch.setattr(su, "work_in_progress", lambda: [])
 
     def fake(verb, payload=None, timeout=60):
         calls.append((verb, payload))
@@ -221,6 +223,65 @@ def test_real_helper_status_on_an_empty_box(client, tmp_path, monkeypatch):
     body = client.get("/api/software-upgrade/job").json()
     assert body["available"] is True and body["job"] is None and body["history"] == []
     assert str(tmp_path) not in json.dumps(body)
+
+
+PREFLIGHT = {"version": "v1.1.0", "checks": [
+    {"key": "disk", "status": "ok", "message": "40 GB of disk space is free."},
+    {"key": "backup", "status": "fail", "message": "The backup folder /var/backups/aquarium can't be written to."},
+    {"key": "services", "status": "ok", "message": "All services are running and answer."},
+    {"key": "release", "status": "ok", "message": "v1.1.0 can be downloaded and its signature is valid."}]}
+
+
+def test_check_with_a_version_returns_the_preflight(client, helper, monkeypatch):
+    helper.answers["check"] = {**RELEASES, "preflight": PREFLIGHT}
+    monkeypatch.setattr(su, "work_in_progress", lambda: ["1 project run is in progress"])
+    body = client.post("/api/software-upgrade/check", json={"version": "v1.1.0"}).json()
+    assert ("check", {"version": "v1.1.0"}) in helper.calls
+    pf = body["preflight"]
+    assert pf["ok"] is False and pf["busy"] == ["1 project run is in progress"]
+    assert [c["key"] for c in pf["checks"] if not c["ok"]] == ["backup"]
+    assert "/var" not in json.dumps(pf)
+
+
+def test_check_without_a_version_only_refreshes(client, helper):
+    body = client.post("/api/software-upgrade/check").json()
+    assert ("check", None) in helper.calls and "preflight" not in body
+
+
+def test_preflight_missing_a_check_is_not_ok():
+    pf = su.preflight_view({"checks": PREFLIGHT["checks"][:1]}, [])
+    assert pf["ok"] is False
+
+
+def test_start_while_work_runs_needs_a_confirm(client, helper, password_ok, monkeypatch):
+    monkeypatch.setattr(su, "work_in_progress", lambda: ["2 chat replies are being written"])
+    resp = client.post("/api/software-upgrade/start", json={"version": "v1.1.0", "password": "pw"})
+    assert resp.status_code == 409 and "2 chat replies" in resp.json()["detail"]
+    assert [c for c in helper.calls if c[0] == "start"] == []
+    resp = client.post("/api/software-upgrade/start",
+                       json={"version": "v1.1.0", "password": "pw", "confirm_busy": True})
+    assert resp.status_code == 202
+
+
+def test_finish_try_again_starts_the_finish_job(client, helper):
+    resp = client.post("/api/software-upgrade/finish")
+    assert resp.status_code == 202
+    assert helper.calls == [("start", {"finish": True, "by": "Owner"})]
+
+
+def test_finish_failure_and_kind_are_shown():
+    view = su.status_view({**STATUS, "job": {**STATUS["job"], "kind": "finish"},
+                           "finish": {"failed": True, "error": "visudo refused /etc/sudoers.d/x", "at": "t"}})
+    assert view["job"]["kind"] == "finish"
+    assert view["finish"] == {"failed": True, "error": "visudo refused …", "at": "t"}
+
+
+def test_work_in_progress_counts_live_chat_turns(monkeypatch):
+    from hermes_cli import web_server as ws
+
+    monkeypatch.setattr(ws, "_CHAT_RUNS", {"a": {"done": False}, "b": {"done": True},
+                                           "c": {"done": False, "next_run_id": "d"}})
+    assert "1 chat reply is being written" in su.work_in_progress()
 
 
 # --------------------------------------------------------------------------- password re-check
