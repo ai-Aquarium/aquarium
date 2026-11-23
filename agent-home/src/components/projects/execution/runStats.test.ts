@@ -125,7 +125,12 @@ describe("compareRows", () => {
     expect(gather.slowest).toBe(0);
     expect(rows[1].cells[1]).toEqual({ state: null, seconds: null });
     expect(rows[2].cells[1].state).toBe("needs");
-    // A tie or a single timed cell names no slowest run.
+    // A single timed cell names no slowest run, nor does a near-tie.
     expect(rows[1].slowest).toBeNull();
+    const near = compareRows([
+      run(1, [card({ status: "done", started_at: 0, completed_at: 600 })]),
+      run(2, [card({ status: "done", started_at: 0, completed_at: 630 })]),
+    ]);
+    expect(near[0].slowest).toBeNull();
   });
 });

@@ -105,7 +105,7 @@ describe("ExecutionRuns", () => {
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(3);
     expect(within(rows[0]).getByText("#3")).toBeTruthy();
-    expect(within(rows[0]).getByText("v2")).toBeTruthy();
+    expect(within(rows[0]).getAllByText("v2").length).toBeGreaterThan(0);
     expect(within(rows[0]).getByText("4/5")).toBeTruthy();
     expect(within(rows[0]).getByText("15m")).toBeTruthy();
   });

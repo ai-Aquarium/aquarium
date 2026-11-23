@@ -90,7 +90,10 @@ export interface CompareRow {
   key: string;
   title: string;
   cells: CompareCell[];
-  /** Index of the clearly slowest run for this step, if there is one. */
+  /**
+   * Index of the clearly slowest run for this step: at least a minute and
+   * a fifth longer than the next one, so near-ties are not flagged.
+   */
   slowest: number | null;
 }
 
@@ -124,7 +127,8 @@ export function compareRows(runs: readonly ProjectRun[]): CompareRow[] {
     let slowest: number | null = null;
     if (timed.length >= 2) {
       const sorted = [...timed].sort((a, b) => b[0] - a[0]);
-      if (sorted[0][0] > sorted[1][0]) slowest = sorted[0][1];
+      const [first, second] = [sorted[0][0], sorted[1][0]];
+      if (first - second >= 60 && first >= second * 1.2) slowest = sorted[0][1];
     }
     return { key, title: titles.get(key) ?? key, cells, slowest };
   });

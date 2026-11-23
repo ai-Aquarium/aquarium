@@ -214,7 +214,7 @@ function CurrentRun({
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {live && !archived ? (
           <div className="-mx-3 -mb-2 flex-1">
-            <RunRowActions slug={slug} runNo={brief.run_no} status={status} />
+            <RunRowActions slug={slug} runNo={brief.run_no} status={status} large />
           </div>
         ) : null}
         <Link
@@ -314,7 +314,7 @@ function RunsTable({
   const t = useT("execution");
   const timeLabel = useTimeLabel();
   const full = selected.length >= COMPARE_MAX;
-  const th = "px-2 py-2 text-left text-xs font-medium text-[var(--color-muted)]";
+  const th = "px-1.5 py-2 sm:px-2 text-left text-xs font-medium text-[var(--color-muted)]";
   return (
     <section data-component="RunsTable" className={CARD} aria-labelledby="runs-table-heading">
       <div className="flex flex-wrap items-center gap-2">
@@ -348,7 +348,7 @@ function RunsTable({
                   <span className="sr-only">{t("table.compareCol")}</span>
                 </th>
                 <th className={th}>{t("table.run")}</th>
-                <th className={th}>{t("table.version")}</th>
+                <th className={`${th} max-sm:hidden`}>{t("table.version")}</th>
                 <th className={`${th} max-sm:hidden`}>{t("table.started")}</th>
                 <th className={th}>{t("table.duration")}</th>
                 <th className={th}>{t("table.status")}</th>
@@ -379,25 +379,28 @@ function RunsTable({
                         />
                       </label>
                     </td>
-                    <td className="px-2 py-1">
+                    <td className="px-1.5 py-1 sm:px-2">
                       <Link
                         href={`/projects/${encodeURIComponent(slug)}/runs/${run.run_no}`}
                         className="inline-flex min-h-11 items-center font-medium text-[var(--color-accent)]"
                       >
                         #{run.run_no}
                       </Link>
+                      <span className="ml-1 text-xs text-[var(--color-muted)] sm:hidden">
+                        {versionLabel(run.playbook_rev)}
+                      </span>
                     </td>
-                    <td className="px-2 py-1 text-[var(--color-muted)]">
+                    <td className="px-1.5 py-1 sm:px-2 text-[var(--color-muted)] max-sm:hidden">
                       {versionLabel(run.playbook_rev)}
                     </td>
-                    <td className="px-2 py-1 text-[var(--color-muted)] max-sm:hidden">
+                    <td className="px-1.5 py-1 sm:px-2 text-[var(--color-muted)] max-sm:hidden">
                       {timeLabel(run.started_at)}
                     </td>
-                    <td className="px-2 py-1 tabular-nums">{durationLabel(run.duration_seconds)}</td>
-                    <td className="px-2 py-1">
+                    <td className="px-1.5 py-1 sm:px-2 tabular-nums">{durationLabel(run.duration_seconds)}</td>
+                    <td className="px-1.5 py-1 sm:px-2">
                       <Pill tone={RUN_TONE[run.status]}>{t(`status.${run.status}`)}</Pill>
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums">
+                    <td className="px-1.5 py-1 sm:px-2 text-right tabular-nums">
                       {run.score_user != null ? `${run.score_user}/5` : t("table.unscored")}
                     </td>
                   </tr>
@@ -517,7 +520,9 @@ function ComparePanel({
   const runs = state.key === key ? state.runs : undefined;
   const rows = useMemo(() => (runs ? compareRows(runs) : []), [runs]);
   const label = runNos.join(", ");
-  const cols = { gridTemplateColumns: `minmax(6rem, 1fr) repeat(${runNos.length}, minmax(6.5rem, 1fr))` };
+  const cols = {
+    gridTemplateColumns: `minmax(4rem, 1.2fr) repeat(${runNos.length}, minmax(5rem, 1fr))`,
+  };
 
   const discuss = () => {
     if (!runs || !onDiscuss) return;
@@ -544,7 +549,12 @@ function ComparePanel({
     const cell = "px-2 py-2 text-sm";
     body = (
       <div className="mt-2 overflow-x-auto">
-        <div role="table" aria-label={t("compare.heading", { runs: label })} className="min-w-max">
+        <div
+          role="table"
+          aria-label={t("compare.heading", { runs: label })}
+          className="w-full"
+          style={{ minWidth: `${4 + runNos.length * 5}rem` }}
+        >
           <div role="row" className="grid border-b border-[var(--color-border)]" style={cols}>
             <span role="columnheader" className={cell} />
             {runs.map((r) => (
@@ -578,7 +588,11 @@ function ComparePanel({
               className="grid border-b border-[var(--color-border)]"
               style={cols}
             >
-              <span role="rowheader" className={`${cell} truncate`} title={row.title}>
+              <span
+                role="rowheader"
+                className={`${cell} truncate max-sm:col-span-full max-sm:pb-0 max-sm:font-medium`}
+                title={row.title}
+              >
                 {row.title}
               </span>
               {row.cells.map((c, i) => (
@@ -586,7 +600,7 @@ function ComparePanel({
                   role="cell"
                   key={i}
                   data-slowest={row.slowest === i || undefined}
-                  className={`${cell} flex items-center gap-1 ${
+                  className={`${cell} flex flex-wrap items-center gap-1 ${i === 0 ? "max-sm:col-start-2" : ""} ${
                     c.state ? STATE_CLASS[c.state] : "text-[var(--color-muted)]"
                   }`}
                 >
