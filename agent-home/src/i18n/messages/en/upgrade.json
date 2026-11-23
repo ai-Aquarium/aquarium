@@ -132,5 +132,7 @@
   "finishedHelpers": "System helpers updated for {tag}.",
   "finishFailedTitle": "Finishing the upgrade to {tag} failed.",
   "finishFailedBody": "{tag} is running, but its system helpers couldn't be installed, so the previous ones were put back. The agent's terminal may be missing new commands until this succeeds.",
-  "tryAgain": "Try again"
+  "tryAgain": "Try again",
+  "stepFinishInstall": "Install system helpers",
+  "stepFinishInstallHint": "Terminal, VPN and sudo rules from the verified release"
 }
