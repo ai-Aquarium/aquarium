@@ -388,3 +388,17 @@ def test_git_upgrade_without_cosign_leaves_helpers_and_says_how(box, monkeypatch
     assert "cosign is not installed" in out
     assert ("visudo -cf deploy/sudoers.d/hermes-tools && install -m 0440 -o root -g root "
             "deploy/sudoers.d/hermes-tools /etc/sudoers.d/hermes-tools") in out
+
+
+def test_git_preflight_without_cosign_lets_the_upgrade_start(box, monkeypatch, capsys):  # noqa: F811
+    git_box(box, monkeypatch)
+    box.releases.clear()
+    box.make_release("v1.0.0")
+    box.make_release("v1.1.0", extra=NEW)
+    releases(box)
+    monkeypatch.setattr(aq, "find_cosign", lambda: None)
+    code, answer = call(box, monkeypatch, capsys, "check", {"version": "v1.1.0"})
+    assert code == 0
+    release = {c["key"]: c for c in answer["preflight"]["checks"]}["release"]
+    assert release["status"] == "ok", release
+    assert "cosign isn't installed" in release["message"]
