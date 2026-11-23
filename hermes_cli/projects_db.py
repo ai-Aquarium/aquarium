@@ -177,7 +177,11 @@ CREATE TABLE IF NOT EXISTS project_chat_messages (
     user_id     TEXT NOT NULL,
     person      TEXT,
     content     TEXT NOT NULL,
-    created_at  REAL NOT NULL
+    created_at  REAL NOT NULL,
+    -- 'seed': the note a project started from a private chat opens with;
+    -- meta is its JSON (summary, the creator's quoted turns, the origin).
+    kind        TEXT,
+    meta        TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_project_chat_messages
@@ -665,6 +669,11 @@ _PLAYBOOK_COLUMN_MIGRATIONS = (
     ("discarded_at", "discarded_at INTEGER"),
 )
 
+_CHAT_MESSAGE_COLUMN_MIGRATIONS = (
+    ("kind", "kind TEXT"),
+    ("meta", "meta TEXT"),
+)
+
 
 def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
     """Add columns introduced after v1 to legacy DBs (safe on every open)."""
@@ -693,6 +702,12 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
     for col, ddl in _PLAYBOOK_COLUMN_MIGRATIONS:
         if col not in pcols:
             _add_column_if_missing(conn, "project_playbook", col, ddl)
+    mcols = {
+        row["name"] for row in conn.execute("PRAGMA table_info(project_chat_messages)")
+    }
+    for col, ddl in _CHAT_MESSAGE_COLUMN_MIGRATIONS:
+        if col not in mcols:
+            _add_column_if_missing(conn, "project_chat_messages", col, ddl)
     # Created here, not in SCHEMA_SQL: a legacy DB only has the column once
     # the ADD COLUMN above has run.
     conn.execute(
@@ -2165,15 +2180,20 @@ def add_chat_message(
     user_id: str,
     content: str,
     person: Optional[str] = None,
+    kind: Optional[str] = None,
+    meta: Optional[dict] = None,
 ) -> dict:
     """Write a members-only ``project_chat_messages`` row and return it."""
     now = time.time()
     with write_txn(conn):
         cur = conn.execute(
             """INSERT INTO project_chat_messages
-               (project_id, user_id, person, content, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (project_id, user_id, person, content, now),
+               (project_id, user_id, person, content, created_at, kind, meta)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_id, user_id, person, content, now, kind,
+                json.dumps(meta) if meta is not None else None,
+            ),
         )
     return dict(
         conn.execute(
@@ -2213,6 +2233,16 @@ def get_chat_prepares(
             (project_id, session_id),
         ).fetchall()
     ]
+
+
+def conversation_in_project_chat(conn: sqlite3.Connection, ref: str) -> bool:
+    """Whether conversation ``ref`` is linked to any project as its chat."""
+    row = conn.execute(
+        "SELECT 1 FROM project_links WHERE kind = 'conversation' AND ref = ? "
+        "AND label IN ('project chat', 'project group chat') LIMIT 1",
+        (ref,),
+    ).fetchone()
+    return row is not None
 
 
 def get_chat_messages(conn: sqlite3.Connection, project_id: str) -> List[dict]:

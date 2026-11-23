@@ -27,20 +27,36 @@ to do it. Decide which record it is, create it with the `terminal` tool, and sto
 | The request is… | Create | Then |
 |---|---|---|
 | one decision or reply the user must make | a to-do (`hermes todos add`, see the `todos` skill) | stop |
-| work with steps, outputs, other people or more than one sitting | a project (`hermes projects create`) | stop: it starts in `planning` |
+| work with steps, outputs, other people or more than one sitting | a project (`hermes projects create --from-chat N`) | propose playbook v1, then stop: it starts in `planning` |
 | one step of an existing project | a card (`hermes projects card add <slug>`) | stop |
 
 Do not start the work in the chat, do not run the project, and do not use
 the `todo` tool (your private checklist for this chat), `project_create`
 (a desktop folder workspace) or `kanban_create` (fan-out inside a run) for
 these requests. Reply with the new item's short ref (see Short refs) and
-say that activating it and starting the first run happen on /projects. Only do
+say that activating it and starting the first run happen on its project page. Only do
 the work now when the user explicitly asks you to do it in this chat.
 
 Fill the brief from the conversation: the goal sentence, a description
 (`--description -` reads stdin), at least one `--output`, and
 `--host-profile` set to the profile this chat runs on. If the goal or the
 expected output is unclear, ask one short question before creating.
+
+For a project asked for in this chat:
+
+1. `--from-chat N` (1-5): N = how many of the user's own messages, counting
+   back from their latest, ask for this project. Count only from the message
+   that started the request; leave out earlier turns about something else.
+   They are quoted word for word in the project's shared chat (never your
+   replies), so before creating, say in one line that project members will
+   see them. Add `--chat-summary "<one or two sentences>"`.
+2. Propose playbook v1: `hermes projects playbook <slug> save v1.json` with
+   `{"body": "…", "steps": [{"key": "pull", "title": "…"}, …]}` (3-8 steps,
+   `"depends_on": ["key"]` where order matters). Never activate it and never
+   start a run: a person does both.
+3. End your reply with the `[project card: …]` line `create` printed, on its
+   own line; the app draws it as the project card (Open project, Make active
+   & run 1).
 
 ## Commands
 

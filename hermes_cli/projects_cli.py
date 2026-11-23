@@ -503,6 +503,85 @@ def _cmd_delete(api: _Api, args) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _session_env(name: str) -> str:
+    try:
+        from gateway.session_context import get_session_env
+
+        value = get_session_env(name, "")
+    except Exception:  # noqa: BLE001 - outside the gateway: the plain env
+        value = ""
+    return (value or os.environ.get(name, "")).strip()
+
+
+def _ticket_user(ticket: str):
+    """The ticket's person. The gateway signs with its own home's key; a chat
+    on another profile runs this terminal under that profile's home, so the
+    installation root's key is tried too (both are keys only hermes reads)."""
+    from hermes_cli import principal_ticket
+    from hermes_constants import get_default_hermes_root
+
+    return principal_ticket.verify(ticket) or principal_ticket.verify(
+        ticket, home=get_default_hermes_root()
+    )
+
+
+async def _from_chat(args) -> dict:
+    """The chat this command runs in, its owner and the owner's last
+    ``--from-chat`` messages. The project is created as that owner (the
+    person who asked), never as someone else."""
+    from hermes_cli import chat_refs, principal_ticket, projects_chat_api
+
+    session_id = _session_env("HERMES_SESSION_ID")
+    if not session_id:
+        raise ValueError("no chat: run it from the chat that asked for the project")
+    profile = _session_env("HERMES_SESSION_PROFILE") or chat_refs.acting_profile_name()
+    db = projects_chat_api._session_db(profile)  # noqa: SLF001 - same package
+    if db is None:
+        raise ValueError(f"no chats on profile {profile!r}")
+    try:
+        owner = db.session_owner_user_id(session_id)
+    finally:
+        db.close()
+    if not owner:
+        raise ValueError("this chat has no owner to quote")
+    ticket = os.environ.get(principal_ticket.ENV_VAR, "").strip()
+    if ticket and _ticket_user(ticket) != owner:
+        raise PermissionError("this turn does not run for the chat's owner")
+    if args.actor and args.actor != owner:
+        raise PermissionError("--actor must be the chat's owner")
+    request = await asyncio.to_thread(
+        projects_chat_api.chat_request,
+        profile=profile, session_id=session_id, user_id=owner, count=args.from_chat,
+    )
+    name = await projects_chat_api._display_name(owner) or owner  # noqa: SLF001
+    return {"user_id": owner, "name": name, "request": request}
+
+
+def _seed_project(slug: str, args) -> dict:
+    from hermes_cli import projects_chat_api, projects_db
+
+    chat = args.chat
+    with projects_db.connect_closing() as conn:
+        project = projects_db.get_project(conn, slug)
+    return projects_chat_api.write_seed(
+        project,
+        user_id=chat["user_id"],
+        name=chat["name"],
+        summary=args.chat_summary or project.goal or "",
+        request=chat["request"],
+    )
+
+
+def project_card_line(project: dict, *, quoted: bool) -> str:
+    """The line an agent ends its reply with; agent-home draws the card."""
+    parts = [str(project.get("slug"))]
+    if project.get("ref"):
+        parts.append(str(project["ref"]))
+    if quoted:
+        parts.append("quoted")
+    return f"[project card: {' '.join(parts)}]"
+
+
 def _cmd_create(api: _Api, args) -> int:
     try:
         description = _read_description(args.description)
@@ -527,12 +606,36 @@ def _cmd_create(api: _Api, args) -> int:
     if resp.status_code != 200:
         return _fail(resp)
     project = resp.json()
+    chat = getattr(args, "chat", None)
+    quoted = 0
+    if chat:
+        try:
+            _seed_project(project["slug"], args)
+            quoted = len(chat["request"]["quotes"])
+        except Exception as exc:  # noqa: BLE001 - the project stands either way
+            print(f"projects: could not quote the chat: {exc}", file=sys.stderr)
+    card = project_card_line(project, quoted=bool(quoted))
     if args.json:
-        _print_json(project)
-    else:
+        _print_json({**project, "quoted_messages": quoted, "card": card})
+        return 0
+    ref = project.get("ref")
+    print(
+        f"Created project {project.get('slug')}"
+        + (f" ({ref})" if ref else "")
+        + f" [{project.get('status')}]"
+    )
+    if chat:
+        if quoted:
+            print(
+                f"Quoted {quoted} of {chat['name']}'s messages in its project chat: "
+                "every project member can read them."
+            )
         print(
-            f"Created project {project.get('slug')} [{project.get('status')}]"
+            "Next: save playbook v1 (`hermes projects playbook "
+            f"{project.get('slug')} save v1.json`), then end your reply with:"
         )
+        print(card)
+    else:
         print(
             "It starts in planning — activate it on /projects or with "
             "`hermes projects` once the record is complete."
@@ -1293,7 +1396,15 @@ def _cmd_propose_send(args) -> int:
 async def _dispatch(args: argparse.Namespace) -> int:
     if args.projects_command == "propose-send":
         return _cmd_propose_send(args)
-    principal = await _resolve_principal(args.actor)
+    actor = args.actor
+    if args.projects_command == "create" and getattr(args, "from_chat", None):
+        try:
+            args.chat = await _from_chat(args)
+        except (ValueError, PermissionError) as exc:
+            print(f"projects: --from-chat: {exc}", file=sys.stderr)
+            return 2
+        actor = args.chat["user_id"]
+    principal = await _resolve_principal(actor)
     api = _Api(principal, as_human=getattr(args, "as_human", False))
     try:
         verb = args.projects_command
@@ -1419,6 +1530,15 @@ def register_projects_subparser(
     )
     create.add_argument("--audience", default=None, help="Who the outputs are for")
     create.add_argument("--goal-id", default=None, help="Linked FG-29 goal id")
+    create.add_argument(
+        "--from-chat", type=int, default=None, metavar="N",
+        help="Started in this chat: quote its owner's last N messages (1-5) "
+        "in the project chat, verbatim, and create it as that owner",
+    )
+    create.add_argument(
+        "--chat-summary", default=None,
+        help="With --from-chat: one or two sentences on what was asked",
+    )
     create.add_argument("--json", **json_flag)
 
     link = sub.add_parser("link", help="Attach a pointer to a project")

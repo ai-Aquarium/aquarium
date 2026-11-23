@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import glob
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -25,6 +26,7 @@ from hermes_cli import access, db_pool  # noqa: E402
 from hermes_cli.access import PrincipalStore  # noqa: E402
 from hermes_cli.datastore import (  # noqa: E402
     SupabaseAppStore,
+    active_profile_slug,
     ensure_app_schema,
     get_store,
     initialize_supabase_app,
@@ -319,9 +321,14 @@ def test_cached_lookups_never_cross_principals_or_profiles(pooled: str, monkeypa
 
     asyncio.run(_run())
     # Keys are hashes: no subject, schema-independent secret or DSN in clear.
-    flat = " ".join(" ".join(key) for key in access._principal_cache)
-    for raw in ("ada", "bob", "leo", pooled):
-        assert raw not in flat.replace("app_prod", "")
+    digest = re.compile(r"[0-9a-f]{64}")
+    slug = active_profile_slug()
+    assert access._principal_cache
+    for dsn, schema, profile, home, kind, value in access._principal_cache:
+        assert all(digest.fullmatch(d) for d in (dsn, home, value))
+        assert schema in {prod.schema, alt.schema}
+        assert profile == slug
+        assert kind in {"get", "alias", "owner"}
 
 
 def test_role_and_membership_changes_invalidate_the_cache(pooled: str) -> None:
