@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
@@ -134,7 +135,6 @@ export function ProjectChatDock({
   children: (onMessageCount: (count: number) => void) => ReactNode;
 }) {
   const t = useT("projects");
-  const desktop = useIsDesktop();
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const width = dragWidth ?? saved.width;
   const mode = saved.mode;
@@ -220,10 +220,14 @@ export function ProjectChatDock({
         data-component="ProjectChatDock"
         data-mode={mode}
         aria-label={t("dock.aria")}
-        style={mode === "open" && desktop ? { width } : undefined}
+        /* The saved width applies only at the desktop breakpoint, in CSS, so
+           no render (the first one included) puts it on a phone. */
+        style={mode === "open" ? ({ "--dock-w": `${width}px` } as CSSProperties) : undefined}
         className={`relative min-h-0 min-w-0 flex-col max-lg:h-[calc(100dvh-13rem)] max-lg:w-full max-lg:min-h-[420px] lg:sticky lg:top-4 lg:h-[calc(100dvh-11rem)] ${
           phoneOpen ? "flex" : "max-lg:hidden lg:flex"
-        } ${mode === "max" ? "lg:flex-1" : "lg:shrink-0"} ${mode === "min" ? "lg:w-12" : ""}`}
+        } ${mode === "max" ? "lg:flex-1" : "lg:shrink-0"} ${mode === "min" ? "lg:w-12" : ""} ${
+          mode === "open" ? "lg:w-[var(--dock-w)]" : ""
+        }`}
       >
         {mode === "open" ? (
           <div
