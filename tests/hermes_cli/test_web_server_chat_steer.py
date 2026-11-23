@@ -1095,3 +1095,24 @@ def test_a_project_chat_records_when_a_queued_input_was_sent(base, chat, turns):
         ordinary = projects_db.get_chat_inputs(conn, [chat])
     assert len(accepted) == 1 and accepted[0][1] <= sent <= accepted[0][0]
     assert ordinary == []
+
+
+def test_merged_leftover_steers_are_dated_by_the_last_one_sent():
+    """The project chat judges a merged steer by its latest part, so one sent
+    after a demotion never rides on an earlier one's permission."""
+    from hermes_cli.web_server import _close_chat_run_inputs
+
+    steers = [
+        {"item_id": "a", "mode": "steer", "text": "before", "created_at": 10.0},
+        {"item_id": "b", "mode": "steer", "text": "after", "created_at": 20.0},
+    ]
+    entry = {
+        "input_lock": threading.Lock(), "inputs_closed": False, "agent": None,
+        "steer_held": list(steers), "steer_inflight": [], "queued": [],
+        "cancel_requested": False,
+    }
+    chain, _deferred, _removed = _close_chat_run_inputs(entry, {})
+    (merged, source), = chain
+    assert source == "steer_leftover"
+    assert merged["text"] == "before\nafter"
+    assert merged["sent_at"] == 20.0

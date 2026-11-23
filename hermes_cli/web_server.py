@@ -12837,6 +12837,10 @@ def _close_chat_run_inputs(entry: dict, result) -> tuple:
             "mode": "steer",
             "text": leftover_text,
             "created_at": leftover[0]["created_at"] if leftover else time.time(),
+            # When the last of the merged steers was sent: the project chat
+            # judges who could post by it, so a later one can't ride on an
+            # earlier one's permission.
+            "sent_at": max((i["created_at"] for i in leftover), default=time.time()),
             # Waits in the successor's queue behind an interrupt item.
             "source": "steer_leftover",
         }
@@ -13131,15 +13135,21 @@ def _start_chat_run(run_id, run_entry, loop, principal, profile, sid, user_messa
         run_entry["next_run_id"] = next_run_id
         if project_chat:
             # The group chat judges who could post when this was sent.
-            try:
-                from hermes_cli import projects_db
+            sent_at = float(item.get("sent_at") or item.get("created_at") or time.time())
+            launched_at = time.time()
 
-                with projects_db.connect_closing() as conn:
-                    projects_db.record_chat_input(
-                        conn, next_sid, float(item.get("created_at") or time.time())
+            def _record_input() -> None:
+                try:
+                    from hermes_cli import projects_db
+
+                    with projects_db.connect_closing() as conn:
+                        projects_db.record_chat_input(conn, next_sid, sent_at, launched_at)
+                except Exception:
+                    _log.warning(
+                        "[agent-home] recording a project chat input failed", exc_info=True
                     )
-            except Exception:
-                _log.warning("[agent-home] recording a project chat input failed", exc_info=True)
+
+            loop.run_in_executor(None, _record_input)
         payload = {
             "next_run_id": next_run_id,
             "item_id": item["item_id"],
