@@ -571,12 +571,16 @@ describe("LeadChatHost: sends that do not get through", () => {
 
   const steerBox = () => screen.findByPlaceholderText(/steer the agent/i) as Promise<HTMLTextAreaElement>;
 
-  it("fits the panel while working: the actions wrap below a full-width input", async () => {
+  it("fits the panel while working: a full-width input with the actions on a row below it", async () => {
     leadFetch();
     await startTurn();
     const box = await steerBox();
-    expect(box.classList.contains("basis-full")).toBe(true);
-    expect((box.parentElement as HTMLElement).classList.contains("flex-wrap")).toBe(true);
+    expect(box.classList.contains("w-full")).toBe(true);
+    const card = box.parentElement as HTMLElement;
+    expect(card.dataset.panelCard).toBe("true");
+    const actions = card.querySelector('[data-component="ComposerActions"]') as HTMLElement;
+    expect(actions.contains(screen.getByRole("button", { name: /stop the agent/i }))).toBe(true);
+    expect(actions.contains(screen.getByRole("button", { name: /choose how to send/i }))).toBe(true);
   });
 
   it("keeps the composer controls above the corner resize grip", async () => {

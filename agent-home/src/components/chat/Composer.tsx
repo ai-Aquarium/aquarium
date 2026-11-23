@@ -117,11 +117,18 @@ function PendingInputs({
  * Uploads route through the `agent-home` BFF so the browser never holds a
  * storage key; attachment chips are included on the next send.
  */
-/** The lead chat panel's composer: one bordered card holding the input and its actions. */
+/** The composer card: the input on its own row, the actions on one row below it. */
+const CARD =
+  "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 transition-colors focus-within:border-[var(--color-accent)]";
+/** The lead chat panel's card sits on the panel's surface, so it takes the page colour. */
 const PANEL_CARD =
   "rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-1.5 transition-colors focus-within:border-[var(--color-accent)]";
-const PANEL_ICON_BUTTON =
-  "flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]";
+/**
+ * Three lines tall (20px lines + padding), growing to about eight before it
+ * scrolls — never past 40% of the visible height above a phone keyboard.
+ */
+const TEXTAREA =
+  "block min-h-[72px] max-h-[min(172px,calc(var(--vv-height,100dvh)*0.4))] w-full resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-5 focus:outline-none";
 
 function SendArrowIcon() {
   return (
@@ -179,17 +186,13 @@ export function Composer({
   /** Take back a queued message before it starts. */
   onRemovePending?: (itemId: string) => void;
   /**
-   * The composer sits in a narrow panel (the lead chat), so while working it
-   * uses the phone layout at every screen width: actions below the input.
+   * The composer sits in a narrow panel (the lead chat): compact actions, no
+   * status hint, and Stop shows its icon only at every screen width.
    */
   narrow?: boolean;
   /** The mode menu opened or closed (the host may need to lift itself too). */
   onMenuOpenChange?: (open: boolean) => void;
-  /**
-   * Below `lg` (the chat page): the input takes the full width, starts at
-   * three lines and grows to 40% of the visible height (`--vv-height`, above
-   * the keyboard) before it scrolls; the actions sit in one row under it.
-   */
+  /** Below `lg` (the chat page): touch-sized (44px) actions. */
   tall?: boolean;
 }) {
   const [text, setText] = useState(initialText);
@@ -235,7 +238,7 @@ export function Composer({
     });
   }, []);
 
-  // Grow the input to fit its content (starting at one row) up to a max height,
+  // Grow the input to fit its content (from three rows) up to a max height,
   // then let it scroll. Runs on every text change and after clearing on send.
   useLayoutEffect(() => {
     const el = textRef.current;
@@ -257,19 +260,23 @@ export function Composer({
   const attachmentsWait = sending && attachments.length > 0;
   const menuShown = sending && menuOpen;
   useEffect(() => onMenuOpenChange?.(menuShown), [menuShown, onMenuOpenChange]);
-  // In a narrow panel (always) or on a phone while working, the actions wrap
-  // below a full-width input; the left-launcher reserve then moves onto that row.
+  // The left-edge launcher sits beside the composer on desktop; on a phone
+  // (and always in a narrow panel) the input takes the full width and the
+  // reserve moves onto the action row below it.
   const reserve = launcherClearance === "desktop"
     ? " lg:ml-14"
     : launcherClearance
     ? narrow
       ? ""
-      : !sending
-        ? " ml-14"
-        : " ml-14 max-sm:ml-0"
+      : " ml-14 max-sm:ml-0"
     : "";
   const actionReserve =
-    launcherClearance === true ? (narrow ? " ml-14" : sending ? " max-sm:ml-14" : "") : "";
+    launcherClearance === true ? (narrow ? " ml-14" : " max-sm:ml-14") : "";
+  // Touch-sized (44px) actions on a phone, and on the chat page below lg.
+  const actionHeight = narrow ? "h-9" : `h-10 max-sm:h-11${tall ? " max-lg:h-11" : ""}`;
+  const iconButton = `flex shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)] ${
+    narrow ? "h-9 w-9" : `h-10 w-10 max-sm:h-11 max-sm:w-11${tall ? " max-lg:h-11 max-lg:w-11" : ""}`
+  }`;
   const canSend =
     !uploading &&
     (sending ? text.trim() !== "" : text.trim() !== "" || attachments.length > 0);
@@ -512,47 +519,17 @@ export function Composer({
           </div>
         </div>
       ) : null}
-      {/* On a phone while working, the input takes the full width and the actions wrap below it. */}
+      {/*
+        One card: the input spans the full width on its own row (three lines,
+        growing to about eight before it scrolls), and every action sits on
+        one row below it — the same layout idle and working, so the box never
+        jumps when the agent starts or stops.
+      */}
       <div
+        data-component="ComposerCard"
         data-panel-card={narrow || undefined}
-        className={`flex gap-2${
-          tall ? " items-end max-lg:flex-wrap" : narrow ? ` flex-wrap items-center gap-y-1 ${PANEL_CARD}` : sending ? " items-end max-sm:flex-wrap" : " items-end"
-        }`}
+        className={narrow ? PANEL_CARD : CARD}
       >
-        {storageEnabled ? (
-          <>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                const files = Array.from(e.target.files ?? []);
-                if (files.length > 0) void pickFiles(files);
-              }}
-            />
-            <button
-              type="button"
-              aria-label="Attach file"
-              title="Attach a file (image, PDF, DOC, XLS, …)"
-              disabled={uploading}
-              onClick={() => fileRef.current?.click()}
-              className={`${narrow ? `${PANEL_ICON_BUTTON} text-lg` : "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm"}${tall ? " max-lg:min-w-11" : ""} disabled:opacity-60${actionReserve}`}
-            >
-              {uploading ? "…" : "+"}
-            </button>
-          </>
-        ) : null}
-        <button
-          type="button"
-          data-component="SecretLockButton"
-          aria-label={ts("composer.lock")}
-          title={ts("composer.lock")}
-          onClick={openSecretBox}
-          className={`${narrow ? PANEL_ICON_BUTTON : "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm"}${tall ? " max-lg:min-w-11" : ""}${!storageEnabled ? actionReserve : ""}`}
-        >
-          <LockIcon />
-        </button>
         <textarea
           ref={textRef}
           value={text}
@@ -563,126 +540,151 @@ export function Composer({
               void sendOnce();
             }
           }}
-          rows={1}
+          rows={3}
           placeholder={
             sending
               ? "Steer the agent, or queue a follow-up…"
               : "Message your agent… (Shift+Enter for a new line)"
           }
           data-tall={tall || undefined}
-          className={`max-h-48 flex-1 resize-none overflow-y-auto text-sm${
-            narrow
-              ? " min-h-[44px] bg-transparent px-2 py-2 focus:outline-none"
-              : " min-h-[46px] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3"
-          }${
-            tall ? " max-lg:order-first max-lg:max-h-[calc(var(--vv-height,100dvh)*0.4)] max-lg:min-h-[86px] max-lg:basis-full" : ""
-          }${
-            narrow ? " order-first basis-full" : sending ? " max-sm:order-first max-sm:basis-full" : ""
-          }`}
+          className={TEXTAREA}
         />
-        {sending ? (
-          <>
-            <span
-              className={`hidden self-center whitespace-nowrap text-xs text-[var(--color-muted)]${
-                narrow ? "" : " lg:inline"
-              }`}
-            >
-              Agent is working · {modeInfo(mode).enter}
-            </span>
-            <ActionButton
-              key="stop"
-              onAction={() => onStop?.()}
-              busy={stopping}
-              busyLabel="Stopping…"
-              aria-label={stopping ? "Stopping the agent" : "Stop the agent"}
-              title={stopping ? "Stopping the agent" : "Stop the agent"}
-              className={`flex items-center gap-1.5 bg-red-600 text-sm font-semibold text-white disabled:opacity-60 ${narrow ? "rounded-lg py-2" : "rounded-xl py-3"} ${
-                narrow ? "ml-auto px-3" : `px-4 max-sm:ml-auto max-sm:px-3${tall ? " max-lg:ml-auto" : ""}`
-              }`}
-            >
-              <span aria-hidden="true" className="h-3 w-3 rounded-[3px] bg-white" />
-              <span className={narrow ? "sr-only" : "max-sm:sr-only"}>Stop</span>
-            </ActionButton>
-            <div ref={splitRef} data-component="SendSplit" className="relative flex">
-              <ActionButton
-                key="send-mode"
-                onAction={sendOnce}
-                disabled={!canSend}
-                busyLabel="Sending…"
-                title={modeInfo(mode).hint}
-                className={`bg-[var(--color-accent)] px-4 text-sm font-semibold text-[var(--color-accent-fg)] disabled:opacity-60 ${
-                  narrow ? "rounded-l-lg py-2" : "rounded-l-xl py-3"
-                }`}
-              >
-                {modeInfo(mode).label}
-              </ActionButton>
+        <div data-component="ComposerActions" className="mt-1 flex items-center gap-2">
+          {storageEnabled ? (
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  if (files.length > 0) void pickFiles(files);
+                }}
+              />
               <button
                 type="button"
-                aria-label="Choose how to send"
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                onClick={() => setMenuOpen((cur) => !cur)}
-                className={`border-l border-[color-mix(in_srgb,var(--color-accent-fg)_30%,transparent)] bg-[var(--color-accent)] px-2 text-xs text-[var(--color-accent-fg)] ${
-                  narrow ? "rounded-r-lg py-2" : "rounded-r-xl py-3"
-                }${tall ? " max-lg:min-w-11" : ""}`}
+                aria-label="Attach file"
+                title="Attach a file (image, PDF, DOC, XLS, …)"
+                disabled={uploading}
+                onClick={() => fileRef.current?.click()}
+                className={`${iconButton} text-lg disabled:opacity-60${actionReserve}`}
               >
-                ▾
+                {uploading ? "…" : "+"}
               </button>
-              {menuOpen ? (
-                <>
-                  <div
-                    aria-hidden="true"
-                    data-component="SendModeBackdrop"
-                    className="fixed inset-0 z-40 bg-black/40 sm:hidden"
-                    onClick={() => setMenuOpen(false)}
-                  />
-                  <div
-                    role="menu"
-                    aria-label="Send mode"
-                    data-component="SendModeMenu"
-                    className="z-50 flex flex-col gap-1 border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-lg max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:rounded-t-2xl max-sm:pb-[calc(var(--safe-bottom)+0.75rem)] sm:absolute sm:bottom-full sm:right-0 sm:mb-2 sm:w-80 sm:rounded-xl"
-                  >
-                    {INPUT_MODES.map((m) => (
-                      <button
-                        key={m.mode}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={mode === m.mode}
-                        onClick={() => {
-                          setMode(m.mode);
-                          setMenuOpen(false);
-                          textRef.current?.focus();
-                        }}
-                        className={`flex flex-col items-start rounded-lg px-3 py-2 text-left max-sm:py-3 ${
-                          mode === m.mode ? "bg-[var(--color-surface-2)]" : ""
-                        }`}
-                      >
-                        <span className="flex items-center gap-1.5 text-sm font-semibold">
-                          <ModeIcon mode={m.mode} />
-                          {m.label}
-                        </span>
-                        <span className="text-xs text-[var(--color-muted)]">{m.hint}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : null}
-            </div>
-          </>
-        ) : (
-          <ActionButton
-            key="send"
-            onAction={sendOnce}
-            disabled={!canSend}
-            busyLabel="Sending…"
-            className={`bg-[var(--color-accent)] text-sm font-semibold text-[var(--color-accent-fg)] disabled:opacity-60${
-              narrow ? " ml-auto flex items-center gap-1.5 rounded-lg px-3 py-2" : " rounded-xl px-4 py-3"
-            }${tall ? " max-lg:ml-auto" : ""}`}
+            </>
+          ) : null}
+          <button
+            type="button"
+            data-component="SecretLockButton"
+            aria-label={ts("composer.lock")}
+            title={ts("composer.lock")}
+            onClick={openSecretBox}
+            className={`${iconButton}${!storageEnabled ? actionReserve : ""}`}
           >
-            Send
-            {narrow ? <SendArrowIcon /> : null}
-          </ActionButton>
-        )}
+            <LockIcon />
+          </button>
+          <span
+            data-component="ComposerHint"
+            className={narrow ? "hidden" : "min-w-0 truncate text-xs text-[var(--color-muted)] max-sm:hidden"}
+          >
+            {sending
+              ? `Agent is working · ${modeInfo(mode).enter}`
+              : "Enter to send · Shift+Enter for a new line"}
+          </span>
+          {sending ? (
+            <>
+              <ActionButton
+                key="stop"
+                onAction={() => onStop?.()}
+                busy={stopping}
+                busyLabel="Stopping…"
+                aria-label={stopping ? "Stopping the agent" : "Stop the agent"}
+                title={stopping ? "Stopping the agent" : "Stop the agent"}
+                className={`ml-auto flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-red-600 text-sm font-semibold text-white disabled:opacity-60 ${actionHeight} ${
+                  narrow ? "px-3" : "px-4 max-sm:min-w-11 max-sm:px-3"
+                }`}
+              >
+                <span aria-hidden="true" className="h-3 w-3 rounded-[3px] bg-white" />
+                <span className={narrow ? "sr-only" : "max-sm:sr-only"}>Stop</span>
+              </ActionButton>
+              <div ref={splitRef} data-component="SendSplit" className="relative flex shrink-0">
+                <ActionButton
+                  key="send-mode"
+                  onAction={sendOnce}
+                  disabled={!canSend}
+                  busyLabel="Sending…"
+                  title={modeInfo(mode).hint}
+                  className={`rounded-l-lg bg-[var(--color-accent)] px-4 text-sm font-semibold text-[var(--color-accent-fg)] disabled:opacity-60 ${actionHeight}`}
+                >
+                  {modeInfo(mode).label}
+                </ActionButton>
+                <button
+                  type="button"
+                  aria-label="Choose how to send"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  onClick={() => setMenuOpen((cur) => !cur)}
+                  className={`border-l border-[color-mix(in_srgb,var(--color-accent-fg)_30%,transparent)] bg-[var(--color-accent)] rounded-r-lg px-2 text-xs text-[var(--color-accent-fg)] ${actionHeight}${narrow ? "" : " max-sm:min-w-11"}`}
+                >
+                  ▾
+                </button>
+                {menuOpen ? (
+                  <>
+                    <div
+                      aria-hidden="true"
+                      data-component="SendModeBackdrop"
+                      className="fixed inset-0 z-40 bg-black/40 sm:hidden"
+                      onClick={() => setMenuOpen(false)}
+                    />
+                    <div
+                      role="menu"
+                      aria-label="Send mode"
+                      data-component="SendModeMenu"
+                      className="z-50 flex flex-col gap-1 border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-lg max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:rounded-t-2xl max-sm:pb-[calc(var(--safe-bottom)+0.75rem)] sm:absolute sm:bottom-full sm:right-0 sm:mb-2 sm:w-80 sm:rounded-xl"
+                    >
+                      {INPUT_MODES.map((m) => (
+                        <button
+                          key={m.mode}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={mode === m.mode}
+                          onClick={() => {
+                            setMode(m.mode);
+                            setMenuOpen(false);
+                            textRef.current?.focus();
+                          }}
+                          className={`flex flex-col items-start rounded-lg px-3 py-2 text-left max-sm:py-3 ${
+                            mode === m.mode ? "bg-[var(--color-surface-2)]" : ""
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5 text-sm font-semibold">
+                            <ModeIcon mode={m.mode} />
+                            {m.label}
+                          </span>
+                          <span className="text-xs text-[var(--color-muted)]">{m.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <ActionButton
+              key="send"
+              onAction={sendOnce}
+              disabled={!canSend}
+              busyLabel="Sending…"
+              className={`ml-auto flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--color-accent)] text-sm font-semibold text-[var(--color-accent-fg)] disabled:opacity-60 ${actionHeight} ${
+                narrow ? "px-3" : "px-4"
+              }`}
+            >
+              Send
+              {narrow ? <SendArrowIcon /> : null}
+            </ActionButton>
+          )}
+        </div>
       </div>
     </div>
   );
