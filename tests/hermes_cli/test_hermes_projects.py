@@ -617,4 +617,3 @@ def test_playbook_draft_verbs_edit_only_the_actors_draft(env, tmp_path, capsys):
 
     assert run("playbook", slug, "draft", "discard") == 1
     assert "no working draft" in capsys.readouterr().err
-||||||| a80b44852
