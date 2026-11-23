@@ -909,6 +909,105 @@ def _cmd_card_add(api: _Api, args) -> int:
     return 0
 
 
+def _read_json_arg(value: str) -> Any:
+    """Inline JSON (``{...}``), ``-`` for stdin, or a file path."""
+    text = value.strip()
+    if text == "-":
+        return json.load(sys.stdin)
+    if text.startswith("{") or text.startswith("["):
+        return json.loads(text)
+    with open(os.path.expanduser(text), encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _print_draft(draft: Optional[dict]) -> None:
+    if not draft:
+        print("No working draft. `draft set` or `draft patch-step` starts one "
+              "from the active revision.")
+        return
+    base = draft.get("base_rev") or 0
+    print(f"Draft · {draft.get('user_id')} (from "
+          f"{'v' + str(base) if base else 'scratch'}) · version {draft.get('version')}")
+    if draft.get("body"):
+        print(draft["body"])
+    for step in draft.get("steps") or []:
+        deps = step.get("depends_on") or []
+        after = f"  after {','.join(deps)}" if deps else ""
+        assignee = f"  [{step['assignee']}]" if step.get("assignee") else ""
+        print(f"  - {step.get('key')}: {step.get('title')}{assignee}{after}")
+
+
+def _cmd_playbook_draft(api: _Api, args) -> int:
+    """``playbook <slug> draft [show|set|patch-step|remove-step|discard|save]``
+    — the acting person's working draft (co-create in the project chat)."""
+    slug = args.slug
+    extra = list(args.extra or [])
+    verb = args.file_or_rev or "show"
+    base = f"/{slug}/playbook/drafts/me"
+    payload: dict[str, Any] = {}
+    if args.expected_version is not None:
+        payload["expected_version"] = args.expected_version
+    try:
+        if verb == "show":
+            resp = api.request("GET", base)
+        elif verb == "set":
+            if not extra:
+                print("projects: draft set needs a JSON spec ({body, steps, note})",
+                      file=sys.stderr)
+                return 2
+            spec = _read_json_arg(extra[0])
+            if not isinstance(spec, dict):
+                print("projects: draft set expects a JSON object", file=sys.stderr)
+                return 2
+            for k in ("body", "steps", "note"):
+                if k in spec:
+                    payload[k] = spec[k]
+            if args.from_rev:
+                payload["base_rev"] = args.from_rev
+            resp = api.request("PUT", base, json_body=payload)
+        elif verb == "patch-step":
+            if len(extra) < 2:
+                print("projects: draft patch-step needs <key> <json>",
+                      file=sys.stderr)
+                return 2
+            payload["step"] = _read_json_arg(extra[1])
+            if args.after:
+                payload["after"] = args.after
+            resp = api.request("PATCH", f"{base}/steps/{extra[0]}", json_body=payload)
+        elif verb == "remove-step":
+            if not extra:
+                print("projects: draft remove-step needs <key>", file=sys.stderr)
+                return 2
+            resp = api.request("DELETE", f"{base}/steps/{extra[0]}", json_body=payload)
+        elif verb == "discard":
+            resp = api.request("DELETE", f"/{slug}/playbook/drafts/me")
+        elif verb == "save":
+            if args.note:
+                payload["note"] = args.note
+            resp = api.request("POST", f"{base}/save", json_body=payload)
+        else:
+            print(f"projects: unknown draft action {verb!r} (show, set, "
+                  "patch-step, remove-step, discard, save)", file=sys.stderr)
+            return 2
+    except (OSError, ValueError) as exc:
+        print(f"projects: cannot read the JSON: {exc}", file=sys.stderr)
+        return 2
+    if resp.status_code != 200:
+        return _fail(resp)
+    data = resp.json()
+    if args.json:
+        _print_json(data)
+        return 0
+    if verb == "discard":
+        print("Discarded your working draft.")
+    elif verb == "save":
+        print(f"Saved your draft as playbook revision {data.get('rev')} — a "
+              "proposal. A person makes it active.")
+    else:
+        _print_draft(data.get("draft"))
+    return 0
+
+
 def _cmd_playbook(api: _Api, args) -> int:
     slug = args.slug
     action = args.playbook_action or "show"
@@ -996,6 +1095,8 @@ def _cmd_playbook(api: _Api, args) -> int:
             return _fail(resp)
         print(f"Playbook revision {rev} is now active.")
         return 0
+    if action == "draft":
+        return _cmd_playbook_draft(api, args)
     if action == "toolsets":
         resp = api.request("POST", f"/{slug}/playbook/toolsets", json_body={})
         if resp.status_code != 200:
@@ -1557,10 +1658,25 @@ def register_projects_subparser(
     playbook.add_argument("slug")
     playbook.add_argument(
         "playbook_action", nargs="?", default="show",
-        choices=["show", "save", "activate", "toolsets"],
+        choices=["show", "save", "activate", "toolsets", "draft"],
     )
     playbook.add_argument("file_or_rev", nargs="?", default="")
+    playbook.add_argument(
+        "extra", nargs="*", default=[],
+        help="draft: patch-step <key> <json>, remove-step <key>, set <json>",
+    )
     playbook.add_argument("--note", default=None)
+    playbook.add_argument(
+        "--after", default=None, help="draft patch-step: add a new step after KEY"
+    )
+    playbook.add_argument(
+        "--from-rev", type=int, default=None,
+        help="draft set: start a new draft from this revision (default: active)",
+    )
+    playbook.add_argument(
+        "--expected-version", type=int, default=None,
+        help="draft: refuse the write if the draft changed since this version",
+    )
     playbook.add_argument("--json", **json_flag)
 
     guidance = sub.add_parser("guidance", help="Standing instructions (§5)")

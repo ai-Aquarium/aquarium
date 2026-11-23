@@ -3479,6 +3479,28 @@ def _playbook_edit_base(conn, project_id: str, base_rev: Any) -> Optional[dict]:
     return revs[0] if revs else None
 
 
+def _checked_steps(steps: Any, profiles, accessible) -> list[dict]:
+    """Validate a steps array for a new revision (422 names the problem):
+    the §7.1 shape and DAG, and every ``assignee`` one of the project's
+    profiles or one the caller may attach (FG-34 decision 1)."""
+    profile_names = {p["profile"] for p in profiles} | set(accessible)
+    try:
+        cleaned = projects_db.validate_playbook_steps(steps)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    for step in cleaned:
+        assignee = step.get("assignee")
+        if assignee and profile_names and assignee not in profile_names:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"step {step['key']!r}: assignee {assignee!r} is not "
+                    f"a profile you can assign {sorted(profile_names)}"
+                ),
+            )
+    return cleaned
+
+
 @router.post("/{slug}/playbook")
 async def save_playbook_route(request: Request) -> dict[str, Any]:
     """Propose revision N+1 with ``active=0`` (§7.2).
@@ -3498,21 +3520,7 @@ async def save_playbook_route(request: Request) -> dict[str, Any]:
     accessible = await _accessible_profiles(principal, project)
 
     def _save_sync() -> dict:
-        profile_names = {p["profile"] for p in profiles} | set(accessible)
-        try:
-            cleaned = projects_db.validate_playbook_steps(steps)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
-        for step in cleaned:
-            assignee = step.get("assignee")
-            if assignee and profile_names and assignee not in profile_names:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"step {step['key']!r}: assignee {assignee!r} is not "
-                        f"a profile you can assign {sorted(profile_names)}"
-                    ),
-                )
+        cleaned = _checked_steps(steps, profiles, accessible)
         with projects_db.connect_closing() as conn:
             base = _playbook_edit_base(conn, project.id, body.get("base_rev"))
             if base is not None:
@@ -4314,6 +4322,255 @@ async def rebase_playbook_route(request: Request, rev: int) -> dict[str, Any]:
         return result
 
     return await asyncio.to_thread(_rebase_sync)
+
+
+# ---------------------------------------------------------------------------
+# /{slug}/playbook/drafts — working drafts, one per member (co-create)
+# ---------------------------------------------------------------------------
+#
+# A member and their own agent shape the next revision together in the
+# project chat. Every reader sees every draft; only its owner (the person,
+# or their agent acting as them) edits or saves it, and a lead may also
+# discard anyone's. Save turns it into an ordinary proposed revision, so
+# the human-only Make active still decides. Writes may carry
+# ``expected_version`` (409 with the current draft when it moved on).
+
+
+def _draft_payload(draft: dict, project, role, principal) -> dict:
+    mine = draft["user_id"] == principal.user_id
+    can_act = _can_member_act(project, role, principal)
+    return {
+        **draft,
+        "mine": mine,
+        "can_edit": mine and can_act,
+        "can_discard": (mine and can_act) or _can_write(project, role, principal),
+    }
+
+
+def _draft_conflict(exc: projects_db.DraftConflict) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "message": "the draft changed since you read it; read it again",
+            "current": exc.current,
+        },
+    )
+
+
+def _expected_version(body: dict) -> Optional[int]:
+    value = body.get("expected_version")
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="expected_version must be a number")
+
+
+async def _draft_writer(request: Request, act: str):
+    project, role, profiles, principal = await _require_write(
+        request, judgement=True
+    )
+    _refuse_if_archived(project, act)
+    subject = await _interactive_subject(request)
+    return project, role, profiles, principal, (principal.user_id if subject else "agent")
+
+
+@router.get("/{slug}/playbook/drafts")
+async def list_playbook_drafts_route(request: Request) -> dict[str, Any]:
+    """Every member's working draft (viewers included: read-only)."""
+    project, role, _profiles, principal = await _require_read(request)
+
+    def _list_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            drafts = projects_db.list_playbook_drafts(conn, project.id)
+        return {
+            "drafts": [_draft_payload(d, project, role, principal) for d in drafts],
+            "me": principal.user_id,
+            "can_draft": _can_member_act(project, role, principal)
+            and not project.archived,
+        }
+
+    return await asyncio.to_thread(_list_sync)
+
+
+@router.get("/{slug}/playbook/drafts/me")
+async def get_my_playbook_draft_route(request: Request) -> dict[str, Any]:
+    """The caller's own working draft (``draft: null`` when none)."""
+    project, role, _profiles, principal = await _require_read(request)
+
+    def _get_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            draft = projects_db.get_playbook_draft(conn, project.id, principal.user_id)
+        return {
+            "draft": _draft_payload(draft, project, role, principal) if draft else None
+        }
+
+    return await asyncio.to_thread(_get_sync)
+
+
+@router.put("/{slug}/playbook/drafts/me")
+async def put_my_playbook_draft_route(request: Request) -> dict[str, Any]:
+    """Write the caller's draft: any of ``body`` / ``steps`` / ``note``.
+    A new draft starts from ``base_rev`` (default: the active revision)."""
+    project, role, _profiles, principal, writer = await _draft_writer(
+        request, "editing its plan"
+    )
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="expected a JSON object")
+    expected = _expected_version(body)
+    base_rev = body.get("base_rev")
+
+    def _put_sync() -> dict:
+        try:
+            with projects_db.connect_closing() as conn:
+                draft = projects_db.put_playbook_draft(
+                    conn,
+                    project_id=project.id,
+                    user_id=principal.user_id,
+                    body=body.get("body"),
+                    steps=body.get("steps"),
+                    note=body["note"] if "note" in body else projects_db._MISSING,
+                    base_rev=int(base_rev) if base_rev else None,
+                    updated_by=writer,
+                    expected_version=expected,
+                )
+        except projects_db.DraftConflict as exc:
+            raise _draft_conflict(exc)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {"draft": _draft_payload(draft, project, role, principal)}
+
+    return await asyncio.to_thread(_put_sync)
+
+
+async def _patch_draft_step(request: Request, key: str, *, remove: bool) -> dict:
+    project, role, _profiles, principal, writer = await _draft_writer(
+        request, "editing its plan"
+    )
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="expected a JSON object")
+    expected = _expected_version(body)
+    fields = None
+    if not remove:
+        fields = body.get("step")
+        if not isinstance(fields, dict):
+            raise HTTPException(status_code=422, detail="step must be an object")
+
+    def _patch_sync() -> dict:
+        try:
+            with projects_db.connect_closing() as conn:
+                draft = projects_db.patch_playbook_draft_step(
+                    conn,
+                    project_id=project.id,
+                    user_id=principal.user_id,
+                    key=key,
+                    fields=fields,
+                    after=body.get("after") or None,
+                    updated_by=writer,
+                    expected_version=expected,
+                )
+        except projects_db.DraftConflict as exc:
+            raise _draft_conflict(exc)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc).strip("'\""))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {"draft": _draft_payload(draft, project, role, principal)}
+
+    return await asyncio.to_thread(_patch_sync)
+
+
+@router.patch("/{slug}/playbook/drafts/me/steps/{key}")
+async def patch_my_playbook_draft_step_route(request: Request, key: str) -> dict[str, Any]:
+    """Change step ``key`` of the caller's draft, or add it (after
+    ``after``, default last) — body ``{"step": {...fields}}``."""
+    return await _patch_draft_step(request, key, remove=False)
+
+
+@router.delete("/{slug}/playbook/drafts/me/steps/{key}")
+async def remove_my_playbook_draft_step_route(request: Request, key: str) -> dict[str, Any]:
+    """Remove step ``key`` from the caller's draft (and from others' deps)."""
+    return await _patch_draft_step(request, key, remove=True)
+
+
+@router.post("/{slug}/playbook/drafts/me/save")
+async def save_my_playbook_draft_route(request: Request) -> dict[str, Any]:
+    """Save the caller's draft as a proposed revision (§7.2) and drop the
+    draft. The revision is the caller's; a human still makes it active."""
+    project, _role, profiles, principal, _writer = await _draft_writer(
+        request, "revising its plan"
+    )
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    expected = _expected_version(body)
+    accessible = await _accessible_profiles(principal, project)
+
+    def _save_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            draft = projects_db.get_playbook_draft(conn, project.id, principal.user_id)
+            if draft is None:
+                raise HTTPException(status_code=404, detail="you have no working draft")
+            if not draft["steps"]:
+                raise HTTPException(
+                    status_code=422, detail="the draft has no steps yet"
+                )
+            cleaned = _checked_steps(draft["steps"], profiles, accessible)
+            base = projects_db.get_playbook(
+                conn, project.id, int(draft.get("base_rev") or 0) or None,
+                include_discarded=True,
+            ) if draft.get("base_rev") else None
+            if base is not None:
+                cleaned = projects_db.carry_step_assignments(cleaned, base.get("steps"))
+            try:
+                rev = projects_db.save_playbook_draft(
+                    conn,
+                    project_id=project.id,
+                    user_id=principal.user_id,
+                    steps=cleaned,
+                    note=body.get("note"),
+                    expected_version=expected,
+                )
+            except projects_db.DraftConflict as exc:
+                raise _draft_conflict(exc)
+        if rev is None:
+            raise HTTPException(status_code=404, detail="you have no working draft")
+        return {"rev": rev, "active": False, "base_rev": draft.get("base_rev") or None}
+
+    return await asyncio.to_thread(_save_sync)
+
+
+@router.delete("/{slug}/playbook/drafts/{user_id}")
+async def discard_playbook_draft_route(request: Request, user_id: str) -> dict[str, Any]:
+    """Discard a working draft: your own (``me``), or as a lead anyone's.
+    Open on an archived project: removing is not growth (§13)."""
+    project, role, _profiles, principal = await _require_write(
+        request, judgement=True
+    )
+    owner = principal.user_id if user_id == "me" else user_id
+    if owner != principal.user_id and not _can_write(project, role, principal):
+        raise HTTPException(
+            status_code=403,
+            detail="members can discard only their own draft; ask a lead",
+        )
+
+    def _discard_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            gone = projects_db.discard_playbook_draft(conn, project.id, owner)
+        if not gone:
+            raise HTTPException(status_code=404, detail="no working draft to discard")
+        return {"user_id": owner, "discarded": True}
+
+    return await asyncio.to_thread(_discard_sync)
 
 
 @router.delete("/{slug}/playbook/{rev}")

@@ -79,6 +79,8 @@ hermes projects members   <slug> [--add <user> --role lead|member|viewer] [--jso
 hermes projects cards     <slug> [--status s] [--json]
 hermes projects card add  <slug> "<title>" [--assignee <profile>] [--from-todo <id>] [--json]
 hermes projects playbook  <slug> [show|save <file.json> [--note "…"]|activate <rev> [--note "…"]] [--json]
+hermes projects --actor <user> playbook <slug> draft [show|set <json>|patch-step <key> <json> [--after <key>]
+                                 |remove-step <key>|discard] [--expected-version N] [--json]
 hermes projects guidance  <slug> [list|add "<body>" [--kind directive|feedback]|retire <id>|activate <id>] [--json]
 hermes projects run       <slug> [--trigger schedule|manual|event|review]
                                  [--playbook-rev N] [--dry-run] [--json]
@@ -223,6 +225,37 @@ you, showing recipient, account, subject, body and attachment. Then call
 means draft a revised message and propose again; `Partly sent: …` means the
 text went but the file did not (say so; don't resend the text); `Denied: …`
 means do not send it any other way. One proposal per message — each approval sends once.
+
+### 4c. Co-create the plan in the person's draft — they press Save
+
+When someone in the project chat asks about the plan or wants advice on
+its steps, work in **their** working draft, not a new revision. Each member
+has one draft per project (`Draft · Leo (from v5)`), everyone can see it,
+and only that person — or you, acting as them with `--actor <their user id>`
+from the project context — may change it. Never edit another member's
+draft; a viewer has none.
+
+1. Read it first: `draft show` (none yet → your first `set`/`patch-step`
+   starts one from the active revision).
+2. If the ask is open, ask back one short question, and offer 2-3 concrete
+   approaches as a fenced block the chat renders as cards to pick from:
+
+   ````
+   ```options
+   [{"label": "A", "title": "Wait for the CRM export", "pros": ["…"], "cons": ["…"]},
+    {"label": "B", "title": "…", "pros": ["…"], "cons": ["…"]}]
+   ```
+   ````
+
+3. When they pick or reply, make the smallest change: `patch-step <key>
+   '{"title": "…", "body": "…", "depends_on": ["…"]}'` changes or adds one
+   step (`--after <key>` places a new one); `set '{"body": "…"}'` rewrites
+   the prose; `remove-step <key>` drops one. The page highlights what
+   changed against the draft's base revision. Pass `--expected-version`
+   from your last read; on a 409 read again and redo the change.
+4. Tell them what you changed in a sentence. Saving is theirs: **Save**
+   turns the draft into a proposed revision, and Make active stays a human
+   act (rule 4).
 
 ### 5. Read the last run's retro and score before starting work
 

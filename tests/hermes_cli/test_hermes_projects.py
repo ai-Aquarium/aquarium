@@ -566,3 +566,54 @@ def test_create_from_chat_refuses_a_ticket_for_someone_else(env, tmp_path, monke
     assert "does not run for the chat's owner" in capsys.readouterr().err
     with projects_db.connect_closing() as conn:
         assert projects_db.list_projects(conn) == []
+
+# ---------------------------------------------------------------------------
+# playbook draft — the agent co-creates the plan in the person's draft
+# ---------------------------------------------------------------------------
+
+
+def test_playbook_draft_verbs_edit_only_the_actors_draft(env, tmp_path, capsys):
+    run, _capsys = env
+    slug = _create(run, capsys, tmp_path)
+
+    assert run("playbook", slug, "draft") == 0
+    assert "No working draft" in capsys.readouterr().out
+
+    assert run("playbook", slug, "draft", "set", '{"body": "Compile, then send."}') == 0
+    assert run(
+        "playbook", slug, "draft", "patch-step", "send", '{"title": "Send it"}'
+    ) == 0
+    assert run(
+        "playbook", slug, "draft", "patch-step", "compile",
+        '{"title": "Compile the items"}', "--after", "ghost",
+    ) == 1
+    assert "no step 'ghost'" in capsys.readouterr().err
+    spec = tmp_path / "step.json"
+    spec.write_text(json.dumps({"title": "Compile the items"}))
+    assert run("playbook", slug, "draft", "patch-step", "compile", str(spec)) == 0
+    capsys.readouterr()
+
+    assert run("playbook", slug, "draft", "show") == 0
+    out = capsys.readouterr().out
+    assert "Draft · leo (from scratch)" in out
+    assert "send: Send it" in out and "compile: Compile the items" in out
+
+    assert run("playbook", slug, "draft", "show", "--expected-version", "1") == 0
+    capsys.readouterr()
+    assert run(
+        "playbook", slug, "draft", "remove-step", "send", "--expected-version", "1"
+    ) == 1
+    assert "changed since you read it" in capsys.readouterr().err
+
+    assert run("playbook", slug, "draft", "save", "--json") == 0
+    saved = json.loads(capsys.readouterr().out)
+    assert saved["active"] is False
+    assert run("playbook", slug, "--json") == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["active"] is None
+    (rev,) = data["revisions"]
+    assert rev["rev"] == saved["rev"] and rev["created_by"] == "leo"
+    assert [s["key"] for s in rev["steps"]] == ["send", "compile"]
+
+    assert run("playbook", slug, "draft", "discard") == 1
+    assert "no working draft" in capsys.readouterr().err

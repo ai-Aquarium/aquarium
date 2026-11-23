@@ -319,6 +319,24 @@ CREATE TABLE IF NOT EXISTS project_playbook (
     PRIMARY KEY (project_id, rev)
 );
 
+-- Working drafts of the next playbook revision, one per member: what a
+-- person and their own agent are co-creating in the project chat. Every
+-- member sees every draft; only its owner (or their agent) edits or saves
+-- it. Save turns it into an ordinary proposed revision and drops the row.
+CREATE TABLE IF NOT EXISTS project_playbook_drafts (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL,
+    base_rev   INTEGER NOT NULL DEFAULT 0,  -- the revision it is written from (0: none)
+    body       TEXT NOT NULL DEFAULT '',
+    steps      TEXT NOT NULL DEFAULT '[]',
+    note       TEXT,
+    updated_by TEXT,                        -- the last writer: the person, or agent:<profile>
+    version    INTEGER NOT NULL DEFAULT 1,  -- bumped on every write (stale-write check)
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (project_id, user_id)
+);
+
 -- The method: guidance the user gives over time. A directive is a standing
 -- instruction; feedback is a judgement about a run or a card. Both are
 -- durable and compiled into future run prompts; neither is ever injected
@@ -3307,6 +3325,229 @@ def list_playbook_revs(conn: sqlite3.Connection, project_id: str) -> List[dict]:
             d["steps"] = []
         out.append(d)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Working drafts (co-create the playbook in chat): one per member
+# ---------------------------------------------------------------------------
+
+
+class DraftConflict(Exception):
+    """The draft changed since the writer read it (``version`` moved on)."""
+
+    def __init__(self, current: Optional[dict]):
+        super().__init__("the draft changed since you read it")
+        self.current = current
+
+
+def _draft_row(row: Optional[sqlite3.Row]) -> Optional[dict]:
+    if row is None:
+        return None
+    d = dict(row)
+    try:
+        d["steps"] = json.loads(d.get("steps") or "[]")
+    except (TypeError, ValueError):
+        d["steps"] = []
+    return d
+
+
+def get_playbook_draft(
+    conn: sqlite3.Connection, project_id: str, user_id: str
+) -> Optional[dict]:
+    return _draft_row(conn.execute(
+        "SELECT * FROM project_playbook_drafts WHERE project_id = ? AND user_id = ?",
+        (project_id, user_id),
+    ).fetchone())
+
+
+def list_playbook_drafts(conn: sqlite3.Connection, project_id: str) -> List[dict]:
+    """Every member's draft, most recently edited first."""
+    rows = conn.execute(
+        "SELECT * FROM project_playbook_drafts WHERE project_id = ? "
+        "ORDER BY updated_at DESC, user_id",
+        (project_id,),
+    ).fetchall()
+    return [d for d in (_draft_row(r) for r in rows) if d is not None]
+
+
+def put_playbook_draft(
+    conn: sqlite3.Connection,
+    *,
+    project_id: str,
+    user_id: str,
+    body: Optional[str] = None,
+    steps: Any = None,
+    note: Any = _MISSING,
+    base_rev: Optional[int] = None,
+    updated_by: Optional[str] = None,
+    expected_version: Optional[int] = None,
+) -> dict:
+    """Write *user_id*'s draft and return it.
+
+    Only the given parts change (``None`` keeps ``body`` / ``steps``). A
+    new draft starts from ``base_rev`` (default: the active revision, else
+    none), copying what it does not set. ``expected_version`` refuses a
+    stale write with :class:`DraftConflict`. A draft may have no steps yet;
+    the steps it has are validated like a revision's.
+    """
+    with write_txn(conn):
+        return _put_draft(
+            conn, project_id=project_id, user_id=user_id, body=body,
+            steps=steps, note=note, base_rev=base_rev, updated_by=updated_by,
+            expected_version=expected_version,
+        )
+
+
+def _put_draft(
+    conn: sqlite3.Connection,
+    *,
+    project_id: str,
+    user_id: str,
+    body: Optional[str],
+    steps: Any,
+    note: Any,
+    base_rev: Optional[int],
+    updated_by: Optional[str],
+    expected_version: Optional[int],
+) -> dict:
+    """``put_playbook_draft`` inside the caller's transaction."""
+    current = get_playbook_draft(conn, project_id, user_id)
+    if expected_version is not None and (
+        current is None or int(current["version"]) != int(expected_version)
+    ):
+        raise DraftConflict(current)
+    if current is None:
+        base = (
+            get_playbook(conn, project_id, base_rev)
+            if base_rev else get_playbook(conn, project_id)
+        )
+        if base_rev and base is None:
+            raise ValueError(f"playbook revision {base_rev} not found")
+        start_body = str(base.get("body") or "") if base else ""
+        start_steps = list(base.get("steps") or []) if base else []
+        new_body = start_body if body is None else str(body)
+        new_steps = start_steps if steps is None else steps
+        cleaned = validate_playbook_steps(new_steps)
+        now = _now()
+        conn.execute(
+            """INSERT INTO project_playbook_drafts
+               (project_id, user_id, base_rev, body, steps, note,
+                updated_by, version, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+            (project_id, user_id, int(base["rev"]) if base else 0,
+             new_body, json.dumps(cleaned),
+             None if note is _MISSING else note,
+             updated_by or user_id, now, now),
+        )
+    else:
+        new_body = current["body"] if body is None else str(body)
+        cleaned = validate_playbook_steps(
+            current["steps"] if steps is None else steps
+        )
+        conn.execute(
+            """UPDATE project_playbook_drafts SET body = ?, steps = ?,
+               note = ?, updated_by = ?, version = version + 1,
+               updated_at = ? WHERE project_id = ? AND user_id = ?""",
+            (new_body, json.dumps(cleaned),
+             current.get("note") if note is _MISSING else note,
+             updated_by or user_id, _now(), project_id, user_id),
+        )
+    out = get_playbook_draft(conn, project_id, user_id)
+    assert out is not None
+    return out
+
+
+def patch_playbook_draft_step(
+    conn: sqlite3.Connection,
+    *,
+    project_id: str,
+    user_id: str,
+    key: str,
+    fields: Optional[dict],
+    after: Optional[str] = None,
+    updated_by: Optional[str] = None,
+    expected_version: Optional[int] = None,
+) -> dict:
+    """Change, add or (``fields=None``) remove one step of the draft.
+
+    A step that exists is updated in place with ``fields``; a new one is
+    added after ``after`` (default: at the end). Removing a step also drops
+    it from the others' ``depends_on``. Starts the draft from the active
+    revision when there is none.
+    """
+    with write_txn(conn):
+        current = get_playbook_draft(conn, project_id, user_id)
+        if current is None:
+            if expected_version is not None:
+                raise DraftConflict(None)
+            active = get_playbook(conn, project_id)
+            steps = list(active.get("steps") or []) if active else []
+        else:
+            steps = list(current["steps"])
+        index = next((i for i, s in enumerate(steps) if s.get("key") == key), None)
+        if fields is None:
+            if index is None:
+                raise LookupError(f"no step {key!r} in the draft")
+            steps.pop(index)
+            for s in steps:
+                s["depends_on"] = [d for d in s.get("depends_on") or [] if d != key]
+        elif index is not None:
+            steps[index] = {**steps[index], **fields, "key": key}
+        else:
+            step = {**fields, "key": key}
+            at = len(steps)
+            if after:
+                pos = next((i for i, s in enumerate(steps) if s.get("key") == after), None)
+                if pos is None:
+                    raise LookupError(f"no step {after!r} in the draft")
+                at = pos + 1
+            steps.insert(at, step)
+        return _put_draft(
+            conn, project_id=project_id, user_id=user_id, body=None,
+            steps=steps, note=_MISSING, base_rev=None, updated_by=updated_by,
+            expected_version=expected_version,
+        )
+
+
+def save_playbook_draft(
+    conn: sqlite3.Connection,
+    *,
+    project_id: str,
+    user_id: str,
+    steps: List[dict],
+    note: Optional[str] = None,
+    expected_version: Optional[int] = None,
+) -> Optional[int]:
+    """Turn *user_id*'s draft into a proposed revision (``steps`` are the
+    caller's checked copy of the draft's steps) and drop the draft, in one
+    transaction. Returns the new rev, or ``None`` when there is no draft."""
+    with write_txn(conn):
+        draft = get_playbook_draft(conn, project_id, user_id)
+        if draft is None:
+            return None
+        if expected_version is not None and int(draft["version"]) != int(expected_version):
+            raise DraftConflict(draft)
+        rev = _insert_playbook_rev(
+            conn, project_id=project_id, body=draft["body"], steps=steps,
+            created_by=user_id, note=note if note is not None else draft.get("note"),
+            base_rev=int(draft.get("base_rev") or 0),
+        )
+        conn.execute(
+            "DELETE FROM project_playbook_drafts WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id),
+        )
+    return rev
+
+
+def discard_playbook_draft(
+    conn: sqlite3.Connection, project_id: str, user_id: str
+) -> bool:
+    with write_txn(conn):
+        cur = conn.execute(
+            "DELETE FROM project_playbook_drafts WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id),
+        )
+    return cur.rowcount > 0
 
 
 # ---------------------------------------------------------------------------
