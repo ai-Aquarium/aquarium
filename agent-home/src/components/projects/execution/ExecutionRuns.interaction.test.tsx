@@ -61,14 +61,24 @@ function detail(b: ProjectRunBrief): ProjectRun {
   } as ProjectRun;
 }
 
+let history: ProjectRunBrief[] | null = null;
+let detailOver: Partial<ProjectRun> = {};
+
 function setup(runs: ProjectRunBrief[], extra: Partial<ProjectTabProps> = {}) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/runs")) {
+      return history
+        ? new Response(JSON.stringify({ runs: history }), { status: 200 })
+        : new Response("{}", { status: 503 });
+    }
     const m = /\/runs\/(\d+)(\/score)?$/.exec(url);
     if (m && m[2] && init?.method === "POST") {
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }
-    const b = runs.find((r) => r.run_no === Number(m?.[1]));
-    return new Response(JSON.stringify(b ? detail(b) : {}), { status: b ? 200 : 404 });
+    const b = [...runs, ...(history ?? [])].find((r) => r.run_no === Number(m?.[1]));
+    return new Response(JSON.stringify(b ? { ...detail(b), ...detailOver } : {}), {
+      status: b ? 200 : 404,
+    });
   });
   vi.stubGlobal("fetch", fetchMock);
   const props = {
@@ -80,6 +90,8 @@ function setup(runs: ProjectRunBrief[], extra: Partial<ProjectTabProps> = {}) {
 }
 
 afterEach(() => {
+  history = null;
+  detailOver = {};
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -145,17 +157,34 @@ describe("ExecutionRuns", () => {
   });
 
   it("scores the finished current run 1–5 through the existing score route", async () => {
+    // Re-scoring keeps the saved note: the route overwrites both.
+    detailOver = { score_note: "tight" };
     const fetchMock = setup([brief(1)]);
     const group = await screen.findByRole("group", { name: "Score run 1 from 1 to 5" });
     fireEvent.click(within(group).getByRole("button", { name: "4" }));
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/runs/1/score"));
       expect(call).toBeTruthy();
-      expect(JSON.parse(String(call![1]!.body))).toEqual({ score: 4 });
+      expect(JSON.parse(String(call![1]!.body))).toEqual({ score: 4, note: "tight" });
     });
     await waitFor(() =>
       expect(within(group).getByRole("button", { name: "4" }).getAttribute("aria-pressed")).toBe("true"),
     );
+  });
+
+  it("offers Continue while a running run is held at a supervised checkpoint", async () => {
+    detailOver = { status: "running", awaiting_continue: true };
+    setup([brief(2, { status: "running", ended_at: null })]);
+    const current = await screen.findByRole("region", { name: "Current run" });
+    expect(await within(current).findByRole("button", { name: "Continue" })).toBeTruthy();
+  });
+
+  it("lists runs older than the project read's recent window from the run record", async () => {
+    history = [1, 2, 3, 4, 5, 6, 7].map((n) => brief(n, { score_user: 3 }));
+    setup([3, 4, 5, 6, 7].map((n) => brief(n)));
+    const table = screen.getByRole("table");
+    await waitFor(() => expect(within(table).getAllByRole("row").slice(1)).toHaveLength(7));
+    expect(within(table).getByText("#1")).toBeTruthy();
   });
 
   it("shows the trend only from scored runs", () => {

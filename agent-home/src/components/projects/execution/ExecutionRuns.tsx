@@ -10,6 +10,7 @@ import {
   cardState,
   compareRows,
   currentRunNo,
+  mergeRunHistory,
   scoreTrend,
   toggleCompare,
   type CardState,
@@ -71,6 +72,16 @@ async function readRun(slug: string, runNo: number): Promise<ProjectRun> {
   return (await res.json()) as ProjectRun;
 }
 
+/** The run record (newest 50); the project read carries only the last few. */
+async function readRunHistory(slug: string): Promise<ProjectRunBrief[]> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/runs`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(String(res.status));
+  const body = (await res.json()) as { runs?: ProjectRunBrief[] };
+  return Array.isArray(body.runs) ? body.runs : [];
+}
+
 function versionLabel(rev: number | null | undefined): string {
   return rev != null ? `v${rev}` : "—";
 }
@@ -81,9 +92,26 @@ function versionLabel(rev: number | null | undefined): string {
  * 1–5 score), the score trend, and 2–3 runs side by side.
  */
 export function ExecutionRuns({ project, onDiscussInChat }: ProjectTabProps) {
+  const [history, setHistory] = useState<ProjectRunBrief[]>([]);
+  // Re-read the record whenever the polled project read shows a run moved.
+  const listKey = project.runs
+    .map((r) => `${r.run_no}:${r.status}:${r.score_user ?? ""}`)
+    .join(",");
+  useEffect(() => {
+    let live = true;
+    readRunHistory(project.slug).then(
+      (next) => {
+        if (live) setHistory(next);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [project.slug, listKey]);
   const runs = useMemo(
-    () => [...project.runs].sort((a, b) => b.run_no - a.run_no),
-    [project.runs],
+    () => mergeRunHistory(history, project.runs),
+    [history, project.runs],
   );
   const current = currentRunNo(runs);
   const brief = runs.find((r) => r.run_no === current) ?? null;
@@ -214,7 +242,13 @@ function CurrentRun({
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {live && !archived ? (
           <div className="-mx-3 -mb-2 flex-1">
-            <RunRowActions slug={slug} runNo={brief.run_no} status={status} large />
+            <RunRowActions
+              slug={slug}
+              runNo={brief.run_no}
+              status={status}
+              canContinue={status === "waiting" || run?.awaiting_continue === true}
+              large
+            />
           </div>
         ) : null}
         <Link
@@ -254,7 +288,8 @@ function RunScoreRow({
   const save = (score: number) => {
     setSaved(false);
     void action.run(`${runPath(slug, run.run_no)}/score`, {
-      body: { score },
+      // Re-scoring overwrites the note too, so carry the saved one over.
+      body: { score, note: run.score_note ?? undefined },
       onSuccess: () => {
         onScored(score);
         setSaved(true);

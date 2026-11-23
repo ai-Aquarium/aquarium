@@ -102,6 +102,27 @@ export interface CompareRow {
  * steps first appear), one cell per run. A step a run did not have is an
  * empty cell, so a playbook change between versions stays visible.
  */
+/**
+ * The full record joined with the project read's recent runs, newest first.
+ * The project read is polled, so its row wins for a run both carry.
+ */
+export function mergeRunHistory(
+  history: readonly ProjectRunBrief[],
+  recent: readonly ProjectRunBrief[],
+): ProjectRunBrief[] {
+  const byNo = new Map<number, ProjectRunBrief>();
+  for (const run of history) byNo.set(run.run_no, run);
+  for (const run of recent) {
+    const older = byNo.get(run.run_no);
+    byNo.set(run.run_no, {
+      ...older,
+      ...run,
+      playbook_rev: run.playbook_rev ?? older?.playbook_rev ?? null,
+    });
+  }
+  return [...byNo.values()].sort((a, b) => b.run_no - a.run_no);
+}
+
 export function compareRows(runs: readonly ProjectRun[]): CompareRow[] {
   const order: string[] = [];
   const titles = new Map<string, string>();
@@ -116,7 +137,10 @@ export function compareRows(runs: readonly ProjectRun[]): CompareRow[] {
   }
   return order.map((key) => {
     const cells = runs.map((run) => {
-      const card = (run.cards ?? []).find((c) => (c.step_key ?? c.task_id) === key);
+      // A replan archives the old card and adds a replacement under the
+      // same step: the replacement is the step's outcome.
+      const matches = (run.cards ?? []).filter((c) => (c.step_key ?? c.task_id) === key);
+      const card = matches.find((c) => c.status !== "archived") ?? matches[0];
       return card
         ? { state: cardState(card, run), seconds: cardSeconds(card) }
         : { state: null, seconds: null };

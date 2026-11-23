@@ -579,6 +579,7 @@ def _runs_brief(
             "ref": short_refs.run_ref(project_ref, r["run_no"]),
             "status": r["status"],
             "trigger": r["trigger"],
+            "playbook_rev": r.get("playbook_rev"),
             "started_at": r.get("started_at"),
             "ended_at": r.get("ended_at"),
             "duration_seconds": duration,

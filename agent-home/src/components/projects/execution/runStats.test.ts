@@ -8,6 +8,7 @@ import {
   cardState,
   compareRows,
   currentRunNo,
+  mergeRunHistory,
   scoreTrend,
   toggleCompare,
 } from "./runStats";
@@ -132,5 +133,30 @@ describe("compareRows", () => {
       run(2, [card({ status: "done", started_at: 0, completed_at: 630 })]),
     ]);
     expect(near[0].slowest).toBeNull();
+  });
+
+  it("a replanned step reads as its replacement, not the archived original", () => {
+    const rows = compareRows([
+      run(8, [
+        card({ task_id: "old", status: "archived" }),
+        card({ task_id: "new", status: "done", started_at: 0, completed_at: 90 }),
+      ]),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cells[0]).toEqual({ state: "done", seconds: 90 });
+  });
+});
+
+describe("mergeRunHistory", () => {
+  it("keeps older runs from the record and lets the polled read win", () => {
+    const history = [brief(1, { playbook_rev: 1 }), brief(2, { status: "running", playbook_rev: 2 })];
+    const recent = [brief(2, { status: "done", score_user: 4 }), brief(3, { playbook_rev: 2 })];
+    const merged = mergeRunHistory(history, recent);
+    expect(merged.map((r) => r.run_no)).toEqual([3, 2, 1]);
+    const two = merged[1];
+    expect(two.status).toBe("done");
+    expect(two.score_user).toBe(4);
+    // A brief without the version keeps the record's.
+    expect(two.playbook_rev).toBe(2);
   });
 });
