@@ -393,6 +393,8 @@ export interface ChatMessage {
   personName?: string;
   /** Project chat: a message to the other members, the agent left out. */
   memberOnly?: boolean;
+  /** A project chat from before the group chat: only its owner sees it. */
+  privateHistory?: boolean;
   /** Project chat: how many missed turns this user turn's catch-up covered. */
   catchUp?: number;
   /** Project chat: this user turn carried the seeded project context. */
@@ -3765,6 +3767,7 @@ export interface ProjectChatTurn {
   person_name?: string;
   /** "Ask agent" off: a message to the other members, no agent reply. */
   member_only?: boolean;
+  private?: boolean;
   catch_up?: number;
   seeded?: boolean;
   /** A steer delivered mid-turn, shown as the person's own row. */

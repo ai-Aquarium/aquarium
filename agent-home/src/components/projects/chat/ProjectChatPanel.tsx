@@ -274,6 +274,10 @@ function ProjectChatPane({
     attachments: ChatAttachment[],
   ): Promise<ChatSendResult> => {
     setNoteError(null);
+    if (attachments.length) {
+      setNoteError(t("dock.chat.memberNoFiles"));
+      return false;
+    }
     const res = await note.run(`/api/projects/${encodeURIComponent(slug)}/chat/messages`, {
       body: { content: text },
       skipRefresh: true,
@@ -283,7 +287,7 @@ function ProjectChatPane({
       return false;
     }
     onStaleRef.current();
-    return attachments.length ? "attachments_kept" : true;
+    return true;
   };
   const view = askAgent ? conv : { ...conv, send: sendToMembers };
 
@@ -363,6 +367,7 @@ function ProjectChatPane({
         profile={who}
         person={mine(m) ? undefined : personOf(m)}
         memberOnly={m.memberOnly}
+        privateHistory={m.privateHistory}
       />,
     );
     const after = (cards.get(i) ?? []).map((p) => (
@@ -493,16 +498,21 @@ function TurnLabel({
   profile,
   person,
   memberOnly,
+  privateHistory,
 }: {
   role: string;
   profile: string;
   /** Another member's turn (unset on the caller's own). */
   person?: string;
   memberOnly?: boolean;
+  /** The owner's project chat from before the group chat. */
+  privateHistory?: boolean;
 }) {
   const t = useT("projects");
   if (role === "user") {
-    const text = memberOnly
+    const text = privateHistory
+      ? t("dock.chat.privateTo", { profile })
+      : memberOnly
       ? t("dock.chat.toMembers", { person: person ?? t("dock.chat.you") })
       : person
         ? t("dock.chat.fromTo", { person, profile })

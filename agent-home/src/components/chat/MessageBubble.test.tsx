@@ -281,4 +281,12 @@ describe("MessageBubble in a group chat", () => {
     expect(own).toContain("justify-end");
     expect(own).toContain("bg-[var(--color-accent)]");
   });
+
+  it("never loads an outside image from another person's message until clicked", () => {
+    const msg = { role: "user" as const, content: "look ![chart](https://evil.example/p.png)" };
+    const other = renderToStaticMarkup(<MessageBubble message={msg} fromOther />);
+    expect(other).not.toContain("<img");
+    expect(other).toContain('href="https://evil.example/p.png"');
+    expect(renderToStaticMarkup(<MessageBubble message={msg} />)).toContain("<img");
+  });
 });

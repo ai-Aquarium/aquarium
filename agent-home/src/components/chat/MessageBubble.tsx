@@ -52,7 +52,17 @@ function segment(content: string): Segment[] {
  * via `![alt](ref)`, other files (PDF/DOC/XLS/…) render as `[name](ref)`
  * download chips.
  */
-function UserContent({ content, highlightTerm }: { content: string; highlightTerm?: string }) {
+function UserContent({
+  content,
+  highlightTerm,
+  remoteImages = true,
+}: {
+  content: string;
+  highlightTerm?: string;
+  /** Off for another person's message: an outside image becomes a link, so
+   * opening the chat never calls a host they chose. */
+  remoteImages?: boolean;
+}) {
   return (
     <>
       {segment(content).map((s, i) => {
@@ -66,6 +76,13 @@ function UserContent({ content, highlightTerm }: { content: string; highlightTer
           );
         }
         const path = mediaRefPath(s.value);
+        if (!path && !remoteImages) {
+          return (
+            <a key={i} href={s.value} target="_blank" rel="noopener noreferrer" className="underline">
+              {s.alt || s.value}
+            </a>
+          );
+        }
         return path ? (
           <ChatMedia key={i} path={path} alt={s.alt || "attachment"} />
         ) : (
@@ -230,7 +247,7 @@ export const MessageBubble = memo(function MessageBubble({
               {message.sentWhileWorking ? (
                 <div className="mb-0.5 text-[11px] font-medium opacity-80">Sent while working</div>
               ) : null}
-              <UserContent content={content} highlightTerm={highlightTerm} />
+              <UserContent content={content} highlightTerm={highlightTerm} remoteImages={!fromOther} />
             </>
           ) : (
             <>

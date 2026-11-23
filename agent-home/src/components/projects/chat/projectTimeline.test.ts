@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isOwnTurn,
   missedCount,
   pickerProfiles,
   placeProposals,
@@ -134,5 +135,23 @@ describe("project chat timeline", () => {
     expect(missedCount(rows, "research", "leo")).toBe(3);
     expect(missedCount(rows, "research", "ada")).toBe(1);
     expect(missedCount(rows, "finance", "leo")).toBe(5);
+  });
+
+  it("keeps an earlier private chat out of the caller's own turns and the missed count", () => {
+    const rows = timelineMessages({
+      me: "leo",
+      sessions: [],
+      messages: [
+        { ...turn("research", "user", "Old draft", 5), session_id: "s-old", person: "leo", private: true },
+        { ...turn("research", "assistant", "Old reply", 6), session_id: "s-old", person: "leo", private: true },
+        { ...turn("finance", "user", "New", 10), session_id: "s-ada", person: "ada" },
+      ],
+      truncated: false,
+      proposals: [],
+      last_profile: null,
+    });
+    expect(rows[0].privateHistory).toBe(true);
+    expect(isOwnTurn(rows[0], "research", "leo")).toBe(false);
+    expect(missedCount(rows, "research", "leo")).toBe(1);
   });
 });

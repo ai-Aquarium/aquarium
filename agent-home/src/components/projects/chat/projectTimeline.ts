@@ -20,6 +20,7 @@ export function timelineMessages(timeline: ProjectChatTimeline | null): ChatMess
     if (m.person) row.person = m.person;
     if (m.person_name) row.personName = m.person_name;
     if (m.member_only) row.memberOnly = true;
+    if (m.private) row.privateHistory = true;
     if (m.catch_up) row.catchUp = m.catch_up;
     if (m.seeded) row.seeded = true;
     if (m.sent_while_working) row.sentWhileWorking = true;
@@ -37,7 +38,7 @@ export function sessionFor(
 
 /** A stored turn of the caller's own `profile` conversation. */
 export function isOwnTurn(m: ChatMessage, profile: string, me?: string): boolean {
-  if (m.memberOnly || m.profile !== profile) return false;
+  if (m.memberOnly || m.privateHistory || m.profile !== profile) return false;
   return !me || !m.person || m.person === me;
 }
 
@@ -54,7 +55,8 @@ export function missedCount(messages: ChatMessage[], profile: string, me?: strin
   });
   return messages
     .slice(last + 1)
-    .filter((m) => (m.profile || m.memberOnly) && !isOwnTurn(m, profile, me)).length;
+    .filter((m) => (m.profile || m.memberOnly) && !m.privateHistory && !isOwnTurn(m, profile, me))
+    .length;
 }
 
 function seconds(ts: ChatMessage["timestamp"]): number | null {
