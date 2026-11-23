@@ -330,6 +330,15 @@ describe("stripInjectedContext (attachment notes the backend prepends)", () => {
     expect(stripInjectedContext(content)).toBe(link);
   });
 
+  it("keeps an older unescaped link whose name ends in a backslash, never the file text", () => {
+    const link = "[back\\](/api/chat/media?path=u%2Fback.txt)";
+    const content =
+      "[The user sent a text document: 'back\\'. It is saved at: /c/back.]" +
+      "\n\n--- back\\ ---\nfile text\n\n" +
+      link;
+    expect(stripInjectedContext(content)).toBe(link);
+  });
+
   it("never shows inlined file text when there is no context line to tell it from the user's", () => {
     expect(stripInjectedContext(`${NOTE}\n\n${FILE}\n\nsummarise it\n\n${REF}`)).toBe(REF);
     expect(stripInjectedContext(`${NOTE}\n\n${FILE}\n\n${REF}`)).toBe(REF);

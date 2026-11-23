@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import glob
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -320,8 +321,10 @@ def test_cached_lookups_never_cross_principals_or_profiles(pooled: str, monkeypa
     asyncio.run(_run())
     # Keys are hashes: no subject, schema-independent secret or DSN in clear.
     flat = " ".join(" ".join(key) for key in access._principal_cache)
+    flat = flat.replace("app_prod", "")
     for raw in ("ada", "bob", "leo", pooled):
-        assert raw not in flat.replace("app_prod", "")
+        # Whole words only: a random hex digest can spell "ada" by chance.
+        assert not re.search(rf"(?<![0-9A-Za-z]){re.escape(raw)}(?![0-9A-Za-z])", flat), raw
 
 
 def test_role_and_membership_changes_invalidate_the_cache(pooled: str) -> None:
