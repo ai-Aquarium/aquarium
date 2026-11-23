@@ -247,6 +247,7 @@ def _change_draft_job(
     profile_names: set[str],
     created_by: Optional[str],
     roster: Optional[list[dict]] = None,
+    base_rev: Optional[int] = None,
 ) -> None:
     def _set(**fields: Any) -> None:
         with projects_api._PLAN_DRAFTS_LOCK:
@@ -271,6 +272,7 @@ def _change_draft_job(
                 steps=steps,
                 created_by=created_by,
                 note=f"drafted by the agent for change {change_id}",
+                base_rev=base_rev,
             )
             _update_meta(conn, change_id, draft_rev=rev, reading=reading)
         _set(status="done", rev=rev, reading=reading, finished_at=int(time.time()))
@@ -350,6 +352,9 @@ def _start_change_draft(
             "profile_names": profile_names,
             "created_by": user_id,
             "roster": roster,
+            # The plan the prompt was written from, not whatever is active
+            # when the model answers.
+            "base_rev": plan.get("rev") if plan else None,
         },
         name=f"change-draft-{project.slug}",
         daemon=True,

@@ -2692,6 +2692,9 @@ def validate_playbook_steps(steps: Any) -> List[dict]:
     return cleaned
 
 
+_ACTIVE_REV: Any = object()
+
+
 def save_playbook_rev(
     conn: sqlite3.Connection,
     *,
@@ -2700,7 +2703,7 @@ def save_playbook_rev(
     steps: Any,
     created_by: Optional[str] = None,
     note: Optional[str] = None,
-    base_rev: Optional[int] = None,
+    base_rev: Any = _ACTIVE_REV,
 ) -> int:
     """Create playbook revision N+1 with ``active=0`` (design §7.2).
 
@@ -2709,7 +2712,9 @@ def save_playbook_rev(
     Several proposals may wait at once; each records ``base_rev``, the
     revision it was written from (the active one when not given), so a
     proposal written before another was activated reads as based on an
-    older version. Returns the new rev number.
+    older version. ``base_rev=None`` means written from no revision and is
+    stored as ``0``; ``NULL`` is left for rows older than the column.
+    Returns the new rev number.
     """
     cleaned = validate_playbook_steps(steps)
     with write_txn(conn):
@@ -2719,12 +2724,14 @@ def save_playbook_rev(
             (project_id,),
         ).fetchone()
         rev = int(row["m"]) + 1
-        if base_rev is None:
+        if base_rev is _ACTIVE_REV:
             active = conn.execute(
                 "SELECT rev FROM project_playbook WHERE project_id = ? AND active = 1",
                 (project_id,),
             ).fetchone()
-            base_rev = int(active["rev"]) if active else None
+            base_rev = int(active["rev"]) if active else 0
+        elif base_rev is None:
+            base_rev = 0
         conn.execute(
             """INSERT INTO project_playbook
                (project_id, rev, body, steps, active, created_by, created_at,
@@ -2803,18 +2810,48 @@ def merge_playbook_onto(
     return body, steps, conflicts
 
 
-def rebase_playbook_rev(
-    conn: sqlite3.Connection, project_id: str, rev: int
-) -> dict:
-    """Update a proposal onto the active revision: its own changes are
-    re-applied there (``merge_playbook_onto``) and ``base_rev`` becomes the
-    active rev. The proposal keeps its number.
+def _settled_base(
+    conn: sqlite3.Connection, project_id: str, proposal: dict
+) -> Optional[dict]:
+    """The revision ``proposal`` really builds on: its ``base_rev``, or —
+    when that is itself still a proposal — that one's base, and so on up to
+    a revision that is or was active. Revisions are never edited after they
+    are saved, so this is the exact content the chain started from. None
+    when the chain breaks (no recorded base, written from nothing, or a
+    revision on the way was discarded)."""
+    seen: set[int] = set()
+    rev = proposal.get("base_rev")
+    while rev and rev not in seen:
+        seen.add(rev)
+        row = get_playbook(conn, project_id, rev)
+        if row is None:
+            return None
+        if row.get("active") or row.get("activated_at"):
+            return row
+        rev = row.get("base_rev")
+    return None
 
-    Returns ``{"rev", "base_rev", "conflicts"}``, or ``{"refused": …}`` with
-    ``"not_found"``, ``"active"`` (active now or once — not a proposal),
-    ``"no_active"``, ``"current"`` (already
-    based on the active rev), ``"no_base"`` (an old proposal that never
-    recorded one), ``"pinned:<run_no>"`` or ``"invalid:<reason>"``.
+
+def rebase_playbook_rev(
+    conn: sqlite3.Connection,
+    project_id: str,
+    rev: int,
+    *,
+    created_by: Optional[str] = None,
+) -> dict:
+    """Update a proposal onto the active revision: its changes since the
+    revision it builds on (``_settled_base``) are re-applied to the active
+    one (``merge_playbook_onto``) and saved as a **new** proposal based on
+    the active rev. Revisions stay immutable, so proposals written from this
+    one keep a true base; the old proposal is removed only when nothing
+    builds on it and no run pinned it.
+
+    Returns ``{"rev", "from_rev", "base_rev", "conflicts", "kept"}``, or
+    ``{"refused": …}`` with ``"not_found"``, ``"active"`` (active now or
+    once — not a proposal), ``"no_active"``, ``"current"`` (already builds
+    on the active rev), ``"no_base"`` (no recoverable revision it was
+    written from) or ``"invalid:<reason>"`` (including a merge that leaves
+    no steps).
     """
     with write_txn(conn):
         proposal = get_playbook(conn, project_id, rev)
@@ -2825,30 +2862,49 @@ def rebase_playbook_rev(
         active = get_playbook(conn, project_id)
         if active is None:
             return {"refused": "no_active"}
-        base_rev = proposal.get("base_rev")
-        if base_rev == active["rev"]:
-            return {"refused": "current"}
-        base = get_playbook(conn, project_id, base_rev) if base_rev is not None else None
+        base = _settled_base(conn, project_id, proposal)
         if base is None:
             return {"refused": "no_base"}
-        pinned = conn.execute(
-            "SELECT run_no FROM project_runs "
-            "WHERE project_id = ? AND playbook_rev = ? LIMIT 1",
-            (project_id, rev),
-        ).fetchone()
-        if pinned is not None:
-            return {"refused": f"pinned:{pinned['run_no']}"}
+        if base["rev"] == active["rev"]:
+            return {"refused": "current"}
         body, steps, conflicts = merge_playbook_onto(base, proposal, active)
+        if not steps:
+            return {
+                "refused": "invalid:updating would leave no steps; "
+                "keep at least one step in this proposal"
+            }
         try:
-            cleaned = validate_playbook_steps(steps)
+            validate_playbook_steps(steps)
         except ValueError as exc:
             return {"refused": f"invalid:{exc}"}
-        conn.execute(
-            "UPDATE project_playbook SET body = ?, steps = ?, base_rev = ? "
-            "WHERE project_id = ? AND rev = ?",
-            (body, json.dumps(cleaned), active["rev"], project_id, rev),
-        )
-    return {"rev": rev, "base_rev": active["rev"], "conflicts": conflicts}
+    new_rev = save_playbook_rev(
+        conn,
+        project_id=project_id,
+        body=body,
+        steps=steps,
+        created_by=created_by,
+        note=proposal.get("note"),
+        base_rev=active["rev"],
+    )
+    with write_txn(conn):
+        kept = conn.execute(
+            "SELECT 1 FROM project_playbook WHERE project_id = ? AND base_rev = ? "
+            "UNION ALL SELECT 1 FROM project_runs WHERE project_id = ? "
+            "AND playbook_rev = ? LIMIT 1",
+            (project_id, rev, project_id, rev),
+        ).fetchone() is not None
+        if not kept:
+            conn.execute(
+                "DELETE FROM project_playbook WHERE project_id = ? AND rev = ?",
+                (project_id, rev),
+            )
+    return {
+        "rev": new_rev,
+        "from_rev": rev,
+        "base_rev": active["rev"],
+        "conflicts": conflicts,
+        "kept": kept,
+    }
 
 
 def activate_playbook_rev(

@@ -103,13 +103,27 @@ describe("several proposals at once", () => {
     expect(revisionState(r(8), 7)).toBe("proposed");
   });
 
-  it("is outdated only when its base is neither the active version nor a pending proposal", () => {
-    const revs = [r(4, { activated_at: 1 }), r(5, { active: 1, activated_at: 2, base_rev: 4 }), r(6, { base_rev: 4 }), r(7, { base_rev: 6 }), r(8, { base_rev: 5 })];
-    expect(proposalBase(revs[2], revs, 5)).toEqual({ base: 4, outdated: true, canUpdate: true });
-    expect(proposalBase(revs[3], revs, 5)).toEqual({ base: 6, outdated: false, canUpdate: false });
-    expect(proposalBase(revs[4], revs, 5)).toEqual({ base: 5, outdated: false, canUpdate: false });
-    // The base was discarded: still outdated, but there is nothing to re-apply from.
-    expect(proposalBase(r(9, { base_rev: 2 }), revs, 5)).toEqual({ base: 2, outdated: true, canUpdate: false });
-    expect(proposalBase(revs[1], revs, 5).outdated).toBe(false);
+  it("is outdated when the version it really builds on, through pending proposals, isn't active", () => {
+    const revs = [
+      r(4, { activated_at: 1 }),
+      r(5, { active: 1, activated_at: 2, base_rev: 4 }),
+      r(6, { base_rev: 4 }),
+      r(7, { base_rev: 6 }),
+      r(8, { base_rev: 5 }),
+      r(9, { base_rev: 8 }),
+    ];
+    const at = (n: number) => revs.find((x) => x.rev === n)!;
+    expect(proposalBase(at(6), revs, 5)).toMatchObject({ base: 4, from: 4, outdated: true, canUpdate: true, why: "older" });
+    // Written from the pending v6, whose own base v4 is no longer active.
+    expect(proposalBase(at(7), revs, 5)).toMatchObject({ base: 6, from: 4, outdated: true, canUpdate: true });
+    expect(proposalBase(at(8), revs, 5)).toMatchObject({ outdated: false, canUpdate: false });
+    // Written from the pending v8, which builds on the active v5.
+    expect(proposalBase(at(9), revs, 5)).toMatchObject({ base: 8, from: 5, outdated: false });
+    // A revision on the way was discarded: outdated, nothing to re-apply from.
+    expect(proposalBase(r(10, { base_rev: 2 }), revs, 5)).toMatchObject({ from: 2, outdated: true, canUpdate: false, why: "missing" });
+    // Written from nothing before anything was active.
+    expect(proposalBase(r(3, { base_rev: 0 }), revs, 5)).toMatchObject({ base: 0, outdated: true, canUpdate: false, why: "root" });
+    expect(revisionState(r(3, { base_rev: 0 }), 5)).toBe("proposed");
+    expect(proposalBase(at(5), revs, 5).outdated).toBe(false);
   });
 });

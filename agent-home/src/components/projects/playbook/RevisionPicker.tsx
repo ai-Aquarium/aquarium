@@ -76,7 +76,7 @@ export function RevisionMeta({ rev }: { rev: PlaybookRev }) {
   const parts = [
     rev.note?.trim() ? t("metaNote", { rev: rev.rev, note: rev.note.trim() }) : t("metaPlain", { rev: rev.rev }),
     rev.created_by ? t("by", { who: rev.created_by }) : null,
-    rev.base_rev != null && !rev.active && rev.activated_at == null ? t("basedOn", { base: rev.base_rev }) : null,
+    rev.base_rev && !rev.active && rev.activated_at == null ? t("basedOn", { base: rev.base_rev }) : null,
     rev.activated_at != null
       ? t("activated", { when: timeLabel(rev.activated_at) })
       : rev.created_at != null
