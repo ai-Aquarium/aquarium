@@ -598,3 +598,16 @@ def test_a_proposal_beyond_a_discarded_once_active_rev_is_current(conn):
     pdb.activate_playbook_rev(conn, pid, v1)
     assert pdb.discard_playbook_rev(conn, pid, v2) is None
     assert pdb.rebase_playbook_rev(conn, pid, v3) == {"refused": "current"}
+
+
+def test_a_proposal_the_active_rev_builds_on_has_nothing_to_update(conn):
+    pid = pdb.create_project(conn, name="Included", folders=["/tmp/included"])
+    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("collect", "Collect")))
+    v2 = pdb.save_playbook_rev(
+        conn, project_id=pid, steps=_steps(("collect", "Collect"), ("send", "Send")), base_rev=v1
+    )
+    v3 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("collect", "Collect")), base_rev=v2)
+    pdb.activate_playbook_rev(conn, pid, v3)
+    assert pdb.discard_playbook_rev(conn, pid, v1) is None
+    # v3 removed Send on purpose: updating v2 must not bring it back.
+    assert pdb.rebase_playbook_rev(conn, pid, v2) == {"refused": "included"}

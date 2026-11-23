@@ -902,6 +902,8 @@ function RevisionDecision({
         <p data-component="ProposalOutdated" className="text-[var(--color-warn-text)]">
           {why === "root"
             ? t("outdatedRoot", { active: activeRev })
+            : why === "included"
+            ? t("outdatedIncluded", { active: activeRev })
             : t(why === "older" ? "outdated" : "outdatedNoBase", { base: from ?? base ?? 0, active: activeRev })}
         </p>
       ) : null}

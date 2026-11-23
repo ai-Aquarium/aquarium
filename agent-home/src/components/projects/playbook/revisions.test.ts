@@ -141,6 +141,14 @@ describe("several proposals at once", () => {
     expect(proposalBase(revs[1], revs, 2, discarded)).toMatchObject({ from: 1, outdated: true, canUpdate: true });
   });
 
+  it("has nothing to update when the active version builds on it", () => {
+    // v2 written from v1, v3 from v2; v3 made active, v1 discarded.
+    const revs = [r(2, { base_rev: 1 }), r(3, { active: 1, activated_at: 2, base_rev: 2 })];
+    const discarded = [{ rev: 1, base_rev: 0, activated_at: null }];
+    expect(proposalBase(revs[0], revs, 3, discarded)).toMatchObject({ outdated: true, canUpdate: false, why: "included" });
+    expect(proposalBase(revs[0], revs, 3)).toMatchObject({ outdated: true, canUpdate: false, why: "included" });
+  });
+
   it("is current when the active version sits beyond a discarded one that was active", () => {
     // v1 active, then v2, then v3 written from v2; v1 active again, v2 discarded.
     const revs = [r(1, { active: 1, activated_at: 3 }), r(3, { base_rev: 2 })];

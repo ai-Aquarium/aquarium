@@ -30,7 +30,8 @@ export type ProposalBase = {
   outdated: boolean;
   /** Its changes can be re-applied onto the active version. */
   canUpdate: boolean;
-  why: "older" | "missing" | "root" | null;
+  /** "included": the active version already builds on this one, so there is nothing to re-apply. */
+  why: "older" | "missing" | "root" | "included" | null;
 };
 
 /**
@@ -70,6 +71,7 @@ export function proposalBase(
   const mine = lineage(base);
   if (mine.out.some((r) => r.rev === activeRev)) return { ...settled, from: activeRev };
   const onActive = new Set(lineage(activeRev).out.map((r) => r.rev));
+  if (onActive.has(rev.rev)) return { base, from: rev.rev, outdated: true, canUpdate: false, why: "included" };
   const shared =
     mine.out.find((r) => onActive.has(r.rev)) ??
     mine.out.find((r) => ("active" in r && r.active) || r.activated_at != null);

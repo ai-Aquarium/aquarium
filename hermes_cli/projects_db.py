@@ -2874,7 +2874,8 @@ def rebase_playbook_rev(
     Returns ``{"rev", "from_rev", "base_rev", "conflicts"}``, or
     ``{"refused": …}`` with ``"not_found"``, ``"active"`` (active now or
     once — not a proposal), ``"no_active"``, ``"current"`` (already builds
-    on the active rev), ``"no_base"`` (no recoverable revision it was
+    on the active rev), ``"included"`` (the active rev builds on it, so
+    there is nothing to re-apply), ``"no_base"`` (no recoverable revision it was
     written from) or ``"invalid:<reason>"`` (including a merge that leaves
     no steps).
     """
@@ -2891,6 +2892,8 @@ def rebase_playbook_rev(
         if any(r["rev"] == active["rev"] for r in ancestors):
             return {"refused": "current"}
         on_active = {r["rev"] for r in _lineage(conn, project_id, active["rev"])}
+        if rev in on_active:
+            return {"refused": "included"}
         base = next((r for r in ancestors if r["rev"] in on_active), None)
         if base is None:
             base = next(
