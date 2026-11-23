@@ -10,6 +10,7 @@ import {
   assignmentOf,
   useAssignableProfiles,
 } from "@/components/projects/plan/StepAssignment";
+import { AskAboutButton } from "@/components/projects/playbook/AskAbout";
 import { Sheet } from "@/components/ui/Sheet";
 import { useT } from "@/i18n";
 import type { PlaybookRev } from "@/types";
@@ -32,6 +33,8 @@ export function StepEditSheet({
   nextRev,
   onClose,
   onSaved,
+  askWhere,
+  onAsk,
 }: {
   slug: string;
   rev: PlaybookRev;
@@ -44,6 +47,9 @@ export function StepEditSheet({
   onClose: () => void;
   /** The new proposal's number, once saved. */
   onSaved?: (rev: number) => void;
+  /** Where "Ask about this" says the quoted step comes from, e.g. "v5". */
+  askWhere?: string;
+  onAsk?: (quote: string) => void;
 }) {
   const t = useT("playbookCards");
   const steps = rev.steps ?? [];
@@ -102,6 +108,18 @@ export function StepEditSheet({
       component="StepEditSheet"
       footer={
         <div className="flex flex-wrap items-center justify-end gap-2">
+          {onAsk ? (
+            <span className="mr-auto">
+              <AskAboutButton
+                where={[askWhere, t("edit.title", { n: index + 1 })].filter(Boolean).join(" · ")}
+                text={[step.title, step.body ?? ""].filter(Boolean).join("\n")}
+                onAsk={(quote) => {
+                  onClose();
+                  onAsk(quote);
+                }}
+              />
+            </span>
+          ) : null}
           <button
             type="button"
             onClick={onClose}

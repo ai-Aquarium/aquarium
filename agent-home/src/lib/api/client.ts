@@ -131,6 +131,7 @@ import type {
   ProjectLogResponse,
   ProjectLink,
   ProjectOutput,
+  PlaybookDraftsResponse,
   ProjectPlaybookDraftState,
   ProjectPlaybookResponse,
   AssignableProfilesResponse,
@@ -2916,6 +2917,33 @@ export class HermesApiClient {
 
   /** Discard a proposed revision — the paired judgement to activation.
    *  Refused (409) for the active rev or one a run has pinned. */
+  /** Every member's working draft, readable by the whole project. */
+  async listProjectPlaybookDrafts(slug: string): Promise<PlaybookDraftsResponse> {
+    return this.request(`/api/registry/projects/${encodeURIComponent(slug)}/playbook/drafts`);
+  }
+
+  /** Save the caller's own draft as a proposed revision (never active). */
+  async saveMyProjectPlaybookDraft(
+    slug: string,
+    payload: { note?: string; expected_version?: number },
+  ): Promise<{ rev: number; active: false; base_rev: number }> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/playbook/drafts/me/save`,
+      { method: "POST", json: payload },
+    );
+  }
+
+  /** Discard a member's draft: the owner's own, or anyone's for a lead. */
+  async discardProjectPlaybookDraft(
+    slug: string,
+    userId: string,
+  ): Promise<{ discarded: true }> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/playbook/drafts/${encodeURIComponent(userId)}`,
+      { method: "DELETE" },
+    );
+  }
+
   async discardProjectPlaybook(
     slug: string,
     rev: number,

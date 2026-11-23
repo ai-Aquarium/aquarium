@@ -2714,6 +2714,37 @@ export interface PlaybookRev {
   base_rev?: number | null;
 }
 
+/**
+ * One member's working draft of the playbook (one per member per project).
+ * Everyone in the project can read it; only its owner (or their agent)
+ * edits or saves it, and a lead may also discard it. It has no number
+ * until it is saved as a proposed revision.
+ */
+export interface PlaybookDraft {
+  project_id: string;
+  user_id: string;
+  /** The revision it was started from; 0 when started from scratch. */
+  base_rev: number;
+  body: string;
+  steps: PlaybookStep[];
+  note: string | null;
+  /** Who wrote it last: the owner, or "agent". */
+  updated_by: string | null;
+  /** Bumped on every write; a stale write is refused (409). */
+  version: number;
+  created_at: number;
+  updated_at: number;
+  mine: boolean;
+  can_edit: boolean;
+  can_discard: boolean;
+}
+
+export interface PlaybookDraftsResponse {
+  drafts: PlaybookDraft[];
+  me: string;
+  can_draft: boolean;
+}
+
 /** A discarded revision, kept only so proposals written from it can trace their base. */
 export type PlaybookAncestor = Pick<PlaybookRev, "rev" | "base_rev" | "activated_at">;
 

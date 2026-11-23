@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/i18n";
-import type { PlaybookAncestor, PlaybookRev } from "@/types";
+import type { PlaybookAncestor, PlaybookDraft, PlaybookRev } from "@/types";
 import { useTimeLabel } from "@/components/projects/useTimeLabel";
 import { proposalBase, revisionState } from "@/components/projects/playbook/revisions";
 
@@ -17,12 +17,20 @@ export function RevisionPicker({
   activeRev,
   selected,
   onSelect,
+  drafts = [],
+  selectedDraft = null,
+  onSelectDraft,
 }: {
   revisions: PlaybookRev[];
   discarded?: PlaybookAncestor[];
   activeRev: number | null;
   selected: PlaybookRev;
   onSelect: (rev: number) => void;
+  /** Members' working drafts, shown after the versions (no number yet). */
+  drafts?: PlaybookDraft[];
+  /** The owner of the draft shown instead of a version. */
+  selectedDraft?: string | null;
+  onSelectDraft?: (userId: string) => void;
 }) {
   const t = useT("playbook");
   return (
@@ -30,7 +38,7 @@ export function RevisionPicker({
       <div role="group" aria-label={t("versions")} className="flex flex-wrap items-center gap-1.5">
         {revisions.map((rev) => {
           const state = revisionState(rev, activeRev);
-          const picked = rev.rev === selected.rev;
+          const picked = selectedDraft == null && rev.rev === selected.rev;
           const { outdated } = proposalBase(rev, revisions, activeRev, discarded);
           return (
             <button
@@ -65,8 +73,30 @@ export function RevisionPicker({
             </button>
           );
         })}
+        {drafts.map((draft) => {
+          const picked = draft.user_id === selectedDraft;
+          return (
+            <button
+              key={`draft:${draft.user_id}`}
+              type="button"
+              data-draft={draft.user_id}
+              aria-pressed={picked}
+              onClick={() => onSelectDraft?.(draft.user_id)}
+              className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border border-dashed px-3 text-xs font-medium ${
+                picked
+                  ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
+                  : "border-[var(--color-warn)] text-[var(--color-warn-text)]"
+              }`}
+            >
+              {t("draft.chip", { who: draft.user_id })}
+              <span className="font-normal">
+                {draft.base_rev > 0 ? t("draft.from", { rev: draft.base_rev }) : t("draft.fromScratch")}
+              </span>
+            </button>
+          );
+        })}
       </div>
-      <RevisionMeta rev={selected} />
+      {selectedDraft == null ? <RevisionMeta rev={selected} /> : null}
     </div>
   );
 }
