@@ -168,6 +168,21 @@ CREATE TABLE IF NOT EXISTS project_links (
 CREATE INDEX IF NOT EXISTS idx_project_links_kind
     ON project_links(project_id, kind, added_at DESC);
 
+-- Project group chat: a message one member sends to the other members with
+-- the agent left out ("Ask agent" off). Agent turns live in each member's own
+-- per-profile session; these reach those sessions only through catch-up.
+CREATE TABLE IF NOT EXISTS project_chat_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL,
+    person      TEXT,
+    content     TEXT NOT NULL,
+    created_at  REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_chat_messages
+    ON project_chat_messages(project_id, created_at);
+
 -- ── Projects feature (design §2.2) ───────────────────────────────────────────────
 
 -- People. A member is a *person* (box-wide user id); a participant profile is
@@ -1985,6 +2000,42 @@ def add_project_link(
             (project_id, kind, profile, ref, label, added_by, now),
         )
     return cur.rowcount > 0
+
+
+def add_chat_message(
+    conn: sqlite3.Connection,
+    *,
+    project_id: str,
+    user_id: str,
+    content: str,
+    person: Optional[str] = None,
+) -> dict:
+    """Write a members-only ``project_chat_messages`` row and return it."""
+    now = time.time()
+    with write_txn(conn):
+        cur = conn.execute(
+            """INSERT INTO project_chat_messages
+               (project_id, user_id, person, content, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (project_id, user_id, person, content, now),
+        )
+    return dict(
+        conn.execute(
+            "SELECT * FROM project_chat_messages WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+    )
+
+
+def get_chat_messages(conn: sqlite3.Connection, project_id: str) -> List[dict]:
+    """A project's members-only chat messages, oldest first."""
+    return [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM project_chat_messages WHERE project_id = ? "
+            "ORDER BY created_at, id",
+            (project_id,),
+        ).fetchall()
+    ]
 
 
 def get_project_links(

@@ -1,25 +1,32 @@
-"""The project chat: one timeline over per-profile sessions (2026-11-22 plan, stage 2).
+"""The project chat: one group timeline over per-person, per-profile sessions.
 
-Each profile that talks in a project keeps **its own** conversation in its own
-``state.db`` (profiles are separate ``HERMES_HOME``s, so memory and prompt
-caching stay per profile). A conversation joins the project chat through a
-``project_links`` row of kind ``conversation`` carrying its profile.
+Every member of a project sees one chat. Behind it, each person keeps **their
+own** conversation per profile they talk to, in that profile's ``state.db``
+(profiles are separate ``HERMES_HOME``s, so memory and prompt caching stay per
+profile, and two members' turns run in parallel). A conversation joins the
+chat through a ``project_links`` row of kind ``conversation`` labelled
+``project chat``, added by its owner. A message a member sends with the agent
+left out ("Ask agent" off) lives in ``project_chat_messages``.
 
-* ``GET /{slug}/chat/timeline`` — the caller's linked conversations merged
-  into one time-ordered list, each turn labelled with its profile, plus the
-  playbook revisions proposed while the chat ran.
+* ``GET /{slug}/chat/timeline`` — every member's linked conversations and
+  members-only messages merged into one time-ordered list, each turn
+  labelled with its person and profile, plus the playbook revisions
+  proposed while the chat ran.
 * ``POST /{slug}/chat/prepare`` — called by agent-home right before a turn is
   streamed: links a new conversation and returns the text to send. The
-  project context (first turn only) and a catch-up digest of what this
-  profile missed go **at the top of that same user turn**, never the system
-  prompt and never as an extra message, so the cached prefix and strict
-  user/assistant alternation are untouched (AGENTS.md).
+  project context (first turn only) and a catch-up digest of everything the
+  group said since this conversation's last turn go **at the top of that
+  same user turn**, never the system prompt and never as an extra message,
+  so the cached prefix and strict user/assistant alternation are untouched
+  (AGENTS.md).
+* ``POST /{slug}/chat/messages`` — a members-only message; no model call.
 
-A project chat is private to the person who has it, like every chat: only
-conversations the caller owns, in profiles they are actively enrolled in, are
-read or linked. Each person has one canonical conversation per profile (the
-oldest ``project chat`` link they made); a conversation attached to the
-project as a reference never becomes where the chat's turns go.
+Members (viewers included), the project's creator and instance admins read
+the whole group; a viewer never posts. A conversation is only ever written
+by its owner, in a profile they are actively enrolled in; each person has one
+canonical conversation per profile (the oldest ``project chat`` link they
+made), and a conversation attached to the project as a reference never
+becomes where the chat's turns go.
 """
 
 from __future__ import annotations
@@ -141,26 +148,114 @@ def _text(content: Any) -> str:
 
 
 async def _chat_profiles(user_id: str) -> set[str]:
-    """Profiles the caller is actively enrolled in (suspended ones excluded)."""
+    """Profiles *user_id* is actively enrolled in (suspended ones excluded)."""
     return set(await projects_api._enrolled_profiles(user_id))
 
 
-def _chat_links(project_id: str, user_id: str) -> list[dict]:
-    """*user_id*'s project-chat links, oldest first (the canonical one leads)."""
+async def _display_name(user_id: str) -> Optional[str]:
+    try:
+        from hermes_cli.source_registry import display_name_for
+
+        return await display_name_for(user_id)
+    except Exception:  # noqa: BLE001 - a missing name falls back to the id
+        return None
+
+
+def _member_ids(project) -> set[str]:
+    with projects_db.connect_closing() as conn:
+        ids = {m["user_id"] for m in projects_db.get_project_members(conn, project.id)}
+    if project.owner_user_id:
+        ids.add(project.owner_user_id)
+    return ids
+
+
+async def _group(project, role, principal) -> tuple[dict[str, set[str]], dict[str, str]]:
+    """Who the group chat spans: each person's active profiles and name.
+
+    Members (any role, viewers included), the project's creator and instance
+    admins see everyone's turns; anybody else who can read the project sees
+    only their own.
+    """
+    caller = principal.user_id
+    ids = {caller}
+    if (
+        role is not None
+        or project.owner_user_id == caller
+        or projects_api._instance_admin(principal)
+    ):
+        ids |= await asyncio.to_thread(_member_ids, project)
+    people = sorted(ids)
+    profiles, names = await asyncio.gather(
+        asyncio.gather(*(_chat_profiles(u) for u in people)),
+        asyncio.gather(*(_display_name(u) for u in people)),
+    )
+    enrolled = dict(zip(people, profiles))
+    shown = {u: (n or u) for u, n in zip(people, names)}
+    if getattr(principal, "display", None):
+        shown[caller] = str(principal.display)
+    return enrolled, {u: _short(n, 60) for u, n in shown.items()}
+
+
+def _chat_links(project_id: str, user_id: Optional[str] = None) -> list[dict]:
+    """Project-chat links, oldest first (each person's canonical one leads);
+    only *user_id*'s when given."""
     with projects_db.connect_closing() as conn:
         rows = projects_db.get_project_links(conn, project_id, kind=LINK_KIND)
-    mine = [r for r in rows if r.get("label") == CHAT_LABEL and r.get("added_by") == user_id]
+    mine = [
+        r
+        for r in rows
+        if r.get("label") == CHAT_LABEL and (user_id is None or r.get("added_by") == user_id)
+    ]
     return sorted(mine, key=lambda r: (r.get("added_at") or 0, r.get("ref") or ""))
 
 
-def _owned_sessions(links: list[dict], user_id: str, enrolled: set[str]) -> list[dict]:
-    """The linked conversations *user_id* owns in a profile they are enrolled
-    in, oldest link first, with their visible turns: user/assistant rows and
-    each steer delivered inside a tool result, as the user's own row."""
+def _session_rows(db, sid: str) -> list[dict]:
+    """A conversation's visible turns: user/assistant rows and each steer
+    delivered inside a tool result, as the person's own row."""
+    chain = [sid]
+    tail = db.resolve_resume_session_id(sid)
+    if tail and tail != sid:
+        chain.append(tail)
+    rows: list[dict] = []
+    for part in chain:
+        for m in db.get_messages(part):
+            if m.get("role") == "tool":
+                steers = split_steers(_text(m.get("content")))
+                if steers:
+                    rows.append(
+                        {
+                            "id": m.get("id"),
+                            "role": "user",
+                            "content": "\n\n".join(steers),
+                            "timestamp": float(m.get("timestamp") or 0),
+                            "sent_while_working": True,
+                        }
+                    )
+                continue
+            if m.get("role") not in ("user", "assistant"):
+                continue
+            text = _text(m.get("content"))
+            if not text.strip():
+                continue
+            rows.append(
+                {
+                    "id": m.get("id"),
+                    "role": m["role"],
+                    "content": text,
+                    "timestamp": float(m.get("timestamp") or 0),
+                }
+            )
+    return rows
+
+
+def _group_sessions(links: list[dict], enrolled: dict[str, set[str]]) -> list[dict]:
+    """Each linked conversation whose linker owns it and is still in the
+    group and actively enrolled in its profile, with its visible turns."""
     out: list[dict] = []
     for link in links:
+        person = link.get("added_by")
         profile = link.get("profile") or "default"
-        if profile not in enrolled:
+        if person not in enrolled or profile not in enrolled[person]:
             continue
         try:
             db = _session_db(profile)
@@ -168,43 +263,16 @@ def _owned_sessions(links: list[dict], user_id: str, enrolled: set[str]) -> list
             continue
         try:
             sid = db.resolve_session_id(link["ref"])
-            if not sid or db.session_owner_user_id(sid) != user_id:
+            if not sid or db.session_owner_user_id(sid) != person:
                 continue
-            chain = [sid]
-            tail = db.resolve_resume_session_id(sid)
-            if tail and tail != sid:
-                chain.append(tail)
-            rows: list[dict] = []
-            for part in chain:
-                for m in db.get_messages(part):
-                    if m.get("role") == "tool":
-                        steers = split_steers(_text(m.get("content")))
-                        if steers:
-                            rows.append(
-                                {
-                                    "id": m.get("id"),
-                                    "role": "user",
-                                    "content": "\n\n".join(steers),
-                                    "timestamp": float(m.get("timestamp") or 0),
-                                    "sent_while_working": True,
-                                }
-                            )
-                        continue
-                    if m.get("role") not in ("user", "assistant"):
-                        continue
-                    text = _text(m.get("content"))
-                    if not text.strip():
-                        continue
-                    rows.append(
-                        {
-                            "id": m.get("id"),
-                            "role": m["role"],
-                            "content": text,
-                            "timestamp": float(m.get("timestamp") or 0),
-                        }
-                    )
             out.append(
-                {"profile": profile, "session_id": sid, "linked_at": link.get("added_at"), "messages": rows}
+                {
+                    "profile": profile,
+                    "person": person,
+                    "session_id": sid,
+                    "linked_at": link.get("added_at"),
+                    "messages": _session_rows(db, sid),
+                }
             )
         except Exception:  # noqa: BLE001 - one unreadable profile never blanks the chat
             logger.warning("project chat: reading %s/%s failed", profile, link.get("ref"), exc_info=True)
@@ -213,49 +281,93 @@ def _owned_sessions(links: list[dict], user_id: str, enrolled: set[str]) -> list
     return out
 
 
-def merge_timeline(sessions: list[dict]) -> list[dict]:
-    """Every session's turns in time order, each labelled with its profile."""
+def _owned_sessions(links: list[dict], user_id: str, enrolled: set[str]) -> list[dict]:
+    """:func:`_group_sessions` for one person."""
+    return _group_sessions(links, {user_id: enrolled})
+
+
+def _member_notes(project_id: str, people: set[str]) -> list[dict]:
+    """The members-only messages ("Ask agent" off) of people still in the group."""
+    with projects_db.connect_closing() as conn:
+        rows = projects_db.get_chat_messages(conn, project_id)
+    return [
+        {
+            "id": f"m{r['id']}",
+            "role": "user",
+            "content": r["content"],
+            "timestamp": float(r["created_at"]),
+            "person": r["user_id"],
+            "member_only": True,
+        }
+        for r in rows
+        if r["user_id"] in people
+    ]
+
+
+def merge_timeline(
+    sessions: list[dict], notes: list[dict] = (), names: Optional[dict[str, str]] = None
+) -> list[dict]:
+    """Every session's turns and every members-only note in time order, each
+    labelled with its person and (for agent turns) its profile."""
+    names = names or {}
     merged: list[dict] = []
     for s in sessions:
         for m in s["messages"]:
             row = {**m, "profile": s["profile"], "session_id": s["session_id"]}
+            if s.get("person"):
+                row["person"] = s["person"]
             if m["role"] == "user":
                 shown, meta = split_block(m["content"])
                 row["content"] = shown
                 row["typed"] = m["content"] if m.get("sent_while_working") else typed_text(m["content"])
                 row.update(meta)
             merged.append(row)
-    merged.sort(key=lambda r: (r["timestamp"], r["session_id"], r.get("id") or 0))
+    for n in notes:
+        merged.append({**n, "profile": None, "session_id": None, "typed": n["content"]})
+    for row in merged:
+        if row.get("person"):
+            row["person_name"] = names.get(row["person"], row["person"])
+    # Stable: rows of one session keep their stored order on a timestamp tie.
+    merged.sort(key=lambda r: (r["timestamp"], r["session_id"] or ""))
     return merged
 
 
-def missed_turns(timeline: list[dict], profile: str) -> list[dict]:
-    """Turns of the other profiles after *profile*'s own last turn."""
+def missed_turns(timeline: list[dict], session_id: str) -> list[dict]:
+    """Everything in the group chat after *session_id*'s own last turn:
+    other members' messages and other conversations' replies."""
     last = max(
-        (r["timestamp"] for r in timeline if r["profile"] == profile), default=None
+        (r["timestamp"] for r in timeline if r["session_id"] == session_id), default=None
     )
     return [
         r
         for r in timeline
-        if r["profile"] != profile and (last is None or r["timestamp"] > last)
+        if r["session_id"] != session_id and (last is None or r["timestamp"] > last)
     ]
 
 
-def catch_up_digest(missed: list[dict], profile: str, person: str = "the user") -> str:
+def _who(r: dict) -> str:
+    name = r.get("person_name") or r.get("person") or "the user"
+    if r.get("member_only"):
+        return f"{name} → members"
+    if r["role"] == "user":
+        return f"{name} → {r['profile']}"
+    return f"{r['profile']} → {name}"
+
+
+def catch_up_digest(missed: list[dict]) -> str:
     """A short, deterministic digest of *missed* (newest turns kept)."""
     if not missed:
         return ""
     shown = missed[-CATCH_UP_MAX_TURNS:]
     lines = [
-        f"{CATCH_UP_HEADER} {len(missed)} messages in this project chat went to "
-        f"other profiles since your last turn"
+        f"{CATCH_UP_HEADER} {len(missed)} messages in this project chat "
+        f"since your last turn"
         + (f" (the last {len(shown)} below)" if len(shown) < len(missed) else "")
         + ":"
     ]
     for r in shown:
-        who = f"{person} → {r['profile']}" if r["role"] == "user" else r["profile"]
         said = r.get("typed", r["content"]) if r["role"] == "user" else r["content"]
-        lines.append(f"- {who}: {_short(said, CATCH_UP_TURN_CHARS) or '(attachments)'}")
+        lines.append(f"- {_who(r)}: {_short(said, CATCH_UP_TURN_CHARS) or '(attachments)'}")
     return "\n".join(lines)
 
 
@@ -361,19 +473,27 @@ def proposals_since(conn, project_id: str, since: Optional[float]) -> list[dict]
     return out
 
 
-def _timeline_sync(project, user_id: str, enrolled: set[str]) -> dict:
-    sessions = _owned_sessions(_chat_links(project.id, user_id), user_id, enrolled)
-    timeline = merge_timeline(sessions)
+def _group_timeline(project, enrolled: dict[str, set[str]], names: dict[str, str]) -> list[dict]:
+    sessions = _group_sessions(_chat_links(project.id), enrolled)
+    return merge_timeline(sessions, _member_notes(project.id, set(enrolled)), names)
+
+
+def _timeline_sync(project, user_id: str, enrolled: dict[str, set[str]], names: dict[str, str]) -> dict:
+    timeline = _group_timeline(project, enrolled, names)
     since = timeline[0]["timestamp"] if timeline else None
     with projects_db.connect_closing() as conn:
         proposals = proposals_since(conn, project.id, since)
     latest: dict[str, str] = {}
-    for s in sessions:
+    for s in _owned_sessions(_chat_links(project.id, user_id), user_id, enrolled.get(user_id, set())):
         latest.setdefault(s["profile"], s["session_id"])
     last_profile = next(
-        (r["profile"] for r in reversed(timeline)), None
+        (r["profile"] for r in reversed(timeline) if r.get("person") == user_id and r["profile"]),
+        None,
     )
+    people = sorted({r["person"] for r in timeline if r.get("person")} | {user_id})
     return {
+        "me": user_id,
+        "people": [{"user_id": u, "name": names.get(u, u)} for u in people],
         "sessions": [{"profile": p, "session_id": sid} for p, sid in latest.items()],
         "messages": [
             {k: v for k, v in r.items() if k != "typed"}
@@ -387,9 +507,11 @@ def _timeline_sync(project, user_id: str, enrolled: set[str]) -> dict:
 
 @router.get("/{slug}/chat/timeline")
 async def chat_timeline(request: Request) -> dict[str, Any]:
-    project, _role, _profiles, principal = await _require_read(request)
-    enrolled = await _chat_profiles(principal.user_id)
-    return await asyncio.to_thread(_timeline_sync, project, principal.user_id, enrolled)
+    project, role, _profiles, principal = await _require_read(request)
+    enrolled, names = await _group(project, role, principal)
+    out = await asyncio.to_thread(_timeline_sync, project, principal.user_id, enrolled, names)
+    out["can_post"] = projects_api._can_member_act(project, role, principal)
+    return out
 
 
 def _project_ref(project) -> Optional[str]:
@@ -416,9 +538,15 @@ def _canonical_sid(db, links: list[dict], profile: str, user_id: str) -> Optiona
 
 
 def _prepare_sync(
-    project, user_id: str, enrolled: set[str], profile: str, session_id: str, message: str, person: str
+    project,
+    user_id: str,
+    enrolled: dict[str, set[str]],
+    names: dict[str, str],
+    profile: str,
+    session_id: str,
+    message: str,
 ) -> dict:
-    if profile not in enrolled:
+    if profile not in enrolled.get(user_id, set()):
         raise HTTPException(status_code=403, detail="Not enrolled in that profile")
     db = _session_db(profile)
     try:
@@ -448,9 +576,8 @@ def _prepare_sync(
         )
     finally:
         db.close()
-    timeline = merge_timeline(_owned_sessions(links, user_id, enrolled))
-    missed = missed_turns(timeline, profile)
-    digest = catch_up_digest(missed, profile, person)
+    missed = missed_turns(_group_timeline(project, enrolled, names), sid)
+    digest = catch_up_digest(missed)
     context = ""
     if empty:
         with projects_db.connect_closing() as conn:
@@ -463,16 +590,19 @@ def _prepare_sync(
     }
 
 
-@router.post("/{slug}/chat/prepare")
-async def chat_prepare(request: Request) -> dict[str, Any]:
-    project, _role, _profiles, principal = await _require_write(request, judgement=True)
-    projects_api_refuse_archived(project)
+async def _body(request: Request) -> dict:
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
         body = {}
-    if not isinstance(body, dict):
-        body = {}
+    return body if isinstance(body, dict) else {}
+
+
+@router.post("/{slug}/chat/prepare")
+async def chat_prepare(request: Request) -> dict[str, Any]:
+    project, role, _profiles, principal = await _require_write(request, judgement=True)
+    projects_api_refuse_archived(project)
+    body = await _body(request)
     profile = str(body.get("profile") or "default").strip() or "default"
     session_id = str(body.get("session_id") or "").strip()
     message = str(body.get("message") or "")
@@ -480,11 +610,49 @@ async def chat_prepare(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="session_id and message are required")
     if len(message) > MESSAGE_MAX_CHARS * 5:
         raise HTTPException(status_code=413, detail="message is too long")
-    person = _short(getattr(principal, "display", None) or "the user", 60)
-    enrolled = await _chat_profiles(principal.user_id)
+    enrolled, names = await _group(project, role, principal)
     return await asyncio.to_thread(
-        _prepare_sync, project, principal.user_id, enrolled, profile, session_id, message, person
+        _prepare_sync, project, principal.user_id, enrolled, names, profile, session_id, message
     )
+
+
+def _post_note_sync(project, user_id: str, person: str, content: str) -> dict:
+    with projects_db.connect_closing() as conn:
+        row = projects_db.add_chat_message(
+            conn, project_id=project.id, user_id=user_id, person=person, content=content
+        )
+    return {
+        "id": f"m{row['id']}",
+        "role": "user",
+        "content": row["content"],
+        "timestamp": float(row["created_at"]),
+        "person": user_id,
+        "person_name": person,
+        "member_only": True,
+        "profile": None,
+        "session_id": None,
+    }
+
+
+@router.post("/{slug}/chat/messages")
+async def chat_post_message(request: Request) -> dict[str, Any]:
+    """A message to the other members with the agent left out ("Ask agent"
+    off). No model call: each member's conversations see it in their next
+    catch-up."""
+    project, role, _profiles, principal = await _require_write(request, judgement=True)
+    projects_api_refuse_archived(project)
+    content = str((await _body(request)).get("content") or "").strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="content is required")
+    if len(content) > MESSAGE_MAX_CHARS:
+        raise HTTPException(status_code=413, detail="message is too long")
+    person = _short(
+        getattr(principal, "display", None)
+        or await _display_name(principal.user_id)
+        or principal.user_id,
+        60,
+    )
+    return await asyncio.to_thread(_post_note_sync, project, principal.user_id, person, content)
 
 
 def projects_api_refuse_archived(project) -> None:

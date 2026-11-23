@@ -1,8 +1,9 @@
-"""The project chat: one timeline over per-profile sessions.
+"""The project chat: one group timeline over per-person, per-profile sessions.
 
-Contracts: each profile keeps its own conversation (its own state.db); the
-timeline merges only the caller's linked conversations, time-ordered and
-labelled by profile; the project context and the catch-up digest ride at
+Contracts: each person keeps their own conversation per profile (in that
+profile's state.db); the timeline merges every member's linked conversations
+and members-only messages, time-ordered and labelled by person and profile;
+a viewer reads but never posts; the project context and the catch-up digest ride at
 the top of the *same* user turn (never a system prompt edit, never an
 extra message); the context is seeded once per conversation; a stranger's
 session can never be linked; playbook revisions saved during the chat come
@@ -22,6 +23,7 @@ from hermes_cli import projects_api, projects_chat_api, projects_db
 from hermes_state import SessionDB
 
 from tests.hermes_cli.test_projects_api import (  # noqa: F401
+    MEMBER_P,
     OWNER,
     STRANGER,
     _activate,
@@ -57,7 +59,13 @@ def env(tmp_path, monkeypatch):
     state["chat_profiles"] = {"default", "research", "finance"}
 
     async def _chat_profiles(user_id):
-        return set(state["chat_profiles"])
+        v = state["chat_profiles"]
+        return set(v.get(user_id, set()) if isinstance(v, dict) else v)
+
+    async def _name(user_id):
+        return {"ada": "Ada", "leo": "Leo"}.get(user_id)
+
+    monkeypatch.setattr(projects_chat_api, "_display_name", _name)
 
     monkeypatch.setattr(projects_chat_api, "_chat_profiles", _chat_profiles)
 
@@ -274,7 +282,7 @@ def test_catch_up_digest_is_bounded():
         {"role": "assistant", "profile": "p", "content": "x" * 5000, "timestamp": i}
         for i in range(40)
     ]
-    digest = projects_chat_api.catch_up_digest(missed, "q")
+    digest = projects_chat_api.catch_up_digest(missed)
     assert digest.startswith(f"{projects_chat_api.CATCH_UP_HEADER} 40 ")
     assert len(digest.splitlines()) == projects_chat_api.CATCH_UP_MAX_TURNS + 1
     assert len(digest) < (projects_chat_api.CATCH_UP_TURN_CHARS + 20) * 10
@@ -329,3 +337,132 @@ def test_attachment_notes_and_steers_reach_the_timeline_and_catch_up(env, projec
     digest = _prepare(env, slug, "finance", f, "Cost it")["message"]
     assert "Compare the last two entries" in digest and "Only this year" in digest
     assert "a.png" not in digest
+
+
+def _join(project, user_id, role="member"):
+    with projects_db.connect_closing() as conn:
+        projects_db.add_project_member(
+            conn, project_id=project["id"], user_id=user_id, role=role, added_by="leo"
+        )
+
+
+def _note(env, slug, content):
+    return env[0].post(f"/api/registry/projects/{slug}/chat/messages", json={"content": content})
+
+
+def test_every_members_turns_share_one_timeline_and_reach_each_catch_up(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    leo = _session(env, "research", "s-leo")
+    _turn(env, slug, "research", leo, "Find sources", "Found three.")
+
+    env[1]["actor"] = MEMBER_P
+    ada = _session(env, "research", "s-ada", user="ada")
+    out = _prepare(env, slug, "research", ada, "Which is best?")
+    # Ada's own conversation in the same profile, catching up on Leo's turn.
+    assert out["session_id"] == ada and out["catch_up"] == 2
+    assert "- Leo → research: Find sources" in out["message"]
+    assert "- research → Leo: Found three." in out["message"]
+    _say(env, "research", ada, "user", out["message"])
+    _say(env, "research", ada, "assistant", "The second one.")
+
+    tl = _timeline(env, slug)
+    assert [(m["person_name"], m["profile"], m["content"]) for m in tl["messages"]] == [
+        ("Leo", "research", "Find sources"),
+        ("Leo", "research", "Found three."),
+        ("Ada", "research", "Which is best?"),
+        ("Ada", "research", "The second one."),
+    ]
+    assert tl["me"] == "ada" and tl["can_post"] is True
+    assert tl["sessions"] == [{"profile": "research", "session_id": ada}]
+    assert tl["last_profile"] == "research"
+
+    # Back as Leo: his conversation missed exactly Ada's two turns.
+    env[1]["actor"] = OWNER
+    back = _prepare(env, slug, "research", leo, "Thanks")
+    assert back["catch_up"] == 2
+    assert "Ada → research: Which is best?" in back["message"]
+    assert "Find sources" not in back["message"]
+    assert _timeline(env, slug)["sessions"] == [{"profile": "research", "session_id": leo}]
+
+
+def test_a_members_only_message_reaches_catch_up_but_no_session(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    leo = _session(env, "finance", "s-leo")
+    _turn(env, slug, "finance", leo, "Cost it", "About $40.")
+
+    env[1]["actor"] = MEMBER_P
+    resp = _note(env, slug, "Leo, can you check the FX rate?")
+    assert resp.status_code == 200, resp.text
+    row = resp.json()
+    assert row["member_only"] is True and row["person_name"] == "Ada" and row["profile"] is None
+    assert _note(env, slug, "   ").status_code == 422
+
+    env[1]["actor"] = OWNER
+    shown = _timeline(env, slug)["messages"]
+    assert shown[-1]["content"] == "Leo, can you check the FX rate?" and shown[-1]["member_only"]
+    out = _prepare(env, slug, "finance", leo, "Use the FX rate")
+    assert out["catch_up"] == 1
+    assert "- Ada → members: Leo, can you check the FX rate?" in out["message"]
+    db = env[1]["db"]("finance")
+    try:
+        stored = [m["content"] for m in db.get_messages(leo)]
+    finally:
+        db.close()
+    assert not any("FX rate?" in c for c in stored)
+
+
+def test_a_viewer_reads_the_group_chat_but_never_posts(env, project):
+    slug = project["slug"]
+    _join(project, "ada", role="viewer")
+    leo = _session(env, "research", "s-leo")
+    _turn(env, slug, "research", leo, "Find sources", "Found three.")
+
+    env[1]["actor"] = MEMBER_P
+    tl = _timeline(env, slug)
+    assert [m["content"] for m in tl["messages"]] == ["Find sources", "Found three."]
+    assert tl["can_post"] is False and tl["sessions"] == []
+    ada = _session(env, "research", "s-ada", user="ada")
+    resp = env[0].post(
+        f"/api/registry/projects/{slug}/chat/prepare",
+        json={"profile": "research", "session_id": ada, "message": "hi"},
+    )
+    assert resp.status_code == 403
+    assert _note(env, slug, "hi").status_code == 403
+
+
+def test_a_member_only_asks_profiles_they_are_enrolled_in(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    env[1]["chat_profiles"] = {"leo": {"research", "finance"}, "ada": {"finance"}}
+    leo = _session(env, "research", "s-leo")
+    _turn(env, slug, "research", leo, "Find sources", "Found three.")
+
+    env[1]["actor"] = MEMBER_P
+    ada = _session(env, "research", "s-ada", user="ada")
+    resp = env[0].post(
+        f"/api/registry/projects/{slug}/chat/prepare",
+        json={"profile": "research", "session_id": ada, "message": "hi"},
+    )
+    assert resp.status_code == 403
+    # She still sees Leo's research turns: membership, not enrolment, gates reading.
+    assert len(_timeline(env, slug)["messages"]) == 2
+
+
+def test_a_former_members_turns_leave_the_group_chat(env, project):
+    slug = project["slug"]
+    _join(project, "ada")
+    env[1]["actor"] = MEMBER_P
+    ada = _session(env, "research", "s-ada", user="ada")
+    _turn(env, slug, "research", ada, "Hello", "Hi.")
+    assert _note(env, slug, "ping").status_code == 200
+    with projects_db.connect_closing() as conn:
+        projects_db.remove_project_member(conn, project["id"], "ada")
+    env[1]["actor"] = OWNER
+    assert _timeline(env, slug)["messages"] == []
+
+
+def test_a_stranger_cannot_post_to_the_group_chat(env, project):
+    env[1]["actor"] = STRANGER
+    assert _note(env, project["slug"], "hi").status_code == 404

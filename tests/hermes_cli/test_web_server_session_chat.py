@@ -224,6 +224,11 @@ def test_create_session_returns_id(client):
     assert data["source"] == "agent_home"
 
 
+def test_create_session_takes_only_the_project_chat_source(client):
+    assert client.post("/api/sessions", json={"source": "project_chat"}).json()["source"] == "project_chat"
+    assert client.post("/api/sessions", json={"source": "cron"}).json()["source"] == "agent_home"
+
+
 def test_create_session_rejects_unsafe_id(client):
     resp = client.post("/api/sessions", json={"id": "../etc/passwd"})
     assert resp.status_code == 400
