@@ -16,7 +16,10 @@ caching stay per profile). A conversation joins the project chat through a
   user/assistant alternation are untouched (AGENTS.md).
 
 A project chat is private to the person who has it, like every chat: only
-conversations the caller owns are read or linked.
+conversations the caller owns, in profiles they are actively enrolled in, are
+read or linked. Each person has one canonical conversation per profile (the
+oldest ``project chat`` link they made); a conversation attached to the
+project as a reference never becomes where the chat's turns go.
 """
 
 from __future__ import annotations
@@ -28,7 +31,8 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
-from hermes_cli import projects_db
+from agent.prompt_builder import STEER_MARKER_CLOSE, STEER_MARKER_OPEN
+from hermes_cli import projects_api, projects_db
 from hermes_cli.projects_api import _require_read, _require_write
 
 logger = logging.getLogger(__name__)
@@ -36,6 +40,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/registry/projects")
 
 LINK_KIND = "conversation"
+CHAT_LABEL = "project chat"
 BLOCK_OPEN = "[project chat:"
 BLOCK_CLOSE = "[/project chat]"
 CATCH_UP_HEADER = "Catch-up:"
@@ -48,13 +53,19 @@ CONTEXT_FIELD_CHARS = 600
 CONTEXT_MAX_STEPS = 20
 MESSAGE_MAX_CHARS = 20_000
 
+# At the top of the turn, or right after the attachment notes the web server
+# prepends (each note ends in a blank line).
 _BLOCK_RE = re.compile(
-    r"^(?P<lead>(?:\[app context:[^\n]*\][ \t]*\r?\n)?)"
+    r"(?:\A|(?<=\n\n))(?P<lead>(?:\[app context:[^\n]*\][ \t]*\r?\n)?)"
     + re.escape(BLOCK_OPEN)
     + r"[^\n]*\n(?P<body>.*?)\n"
     + re.escape(BLOCK_CLOSE)
     + r"[ \t]*(?:\r?\n){0,2}",
     re.DOTALL,
+)
+_APP_CONTEXT_RE = re.compile(r"^\[app context:[^\n]*\][ \t]*\r?\n?")
+_ATTACHMENT_NOTE_RE = re.compile(
+    r"^\[The user (?:sent (?:a text document|a document|an image): '|attached ')"
 )
 _CATCH_UP_COUNT_RE = re.compile(r"^" + re.escape(CATCH_UP_HEADER) + r" (\d+) ", re.MULTILINE)
 
@@ -66,7 +77,7 @@ def _short(text: Any, limit: int) -> str:
 
 def split_block(content: str) -> tuple[str, dict]:
     """``(what the person typed, {seeded, catch_up})`` for a stored user turn."""
-    m = _BLOCK_RE.match(content or "")
+    m = _BLOCK_RE.search(content or "")
     if not m:
         return content, {"seeded": False, "catch_up": 0}
     body = m.group("body")
@@ -75,7 +86,40 @@ def split_block(content: str) -> tuple[str, dict]:
         "seeded": CONTEXT_HEADER in body,
         "catch_up": int(count.group(1)) if count else 0,
     }
-    return m.group("lead") + content[m.end():], meta
+    return content[: m.start()] + m.group("lead") + content[m.end():], meta
+
+
+def typed_text(content: str) -> str:
+    """Only what the person typed: no attachment notes (or inlined file
+    text), app-context line or project block. Feeds the catch-up digest."""
+    content = content or ""
+    m = _BLOCK_RE.search(content)
+    if m:
+        return content[m.end():]
+    if _ATTACHMENT_NOTE_RE.match(content):
+        ctx = content.find("\n\n[app context:")
+        if ctx < 0:
+            # Nothing marks where inlined file text ends: say nothing rather
+            # than quote the file.
+            return ""
+        content = content[ctx + 2 :]
+    return _APP_CONTEXT_RE.sub("", content, count=1)
+
+
+def split_steers(content: str) -> list[str]:
+    """Steers delivered mid-turn, appended to a tool result (oldest first)."""
+    steers: list[str] = []
+    rest = (content or "").rstrip()
+    while rest.endswith(STEER_MARKER_CLOSE):
+        body = rest[: -len(STEER_MARKER_CLOSE)].rstrip()
+        at = body.rfind(STEER_MARKER_OPEN)
+        if at < 0 or (at > 0 and body[at - 1] != "\n"):
+            break
+        text = body[at + len(STEER_MARKER_OPEN):].strip()
+        if text:
+            steers.insert(0, text)
+        rest = body[:at].rstrip()
+    return steers
 
 
 def _session_db(profile: str):
@@ -96,17 +140,28 @@ def _text(content: Any) -> str:
     return ""
 
 
-def _linked_conversations(project_id: str) -> list[dict]:
+async def _chat_profiles(user_id: str) -> set[str]:
+    """Profiles the caller is actively enrolled in (suspended ones excluded)."""
+    return set(await projects_api._enrolled_profiles(user_id))
+
+
+def _chat_links(project_id: str, user_id: str) -> list[dict]:
+    """*user_id*'s project-chat links, oldest first (the canonical one leads)."""
     with projects_db.connect_closing() as conn:
-        return projects_db.get_project_links(conn, project_id, kind=LINK_KIND)
+        rows = projects_db.get_project_links(conn, project_id, kind=LINK_KIND)
+    mine = [r for r in rows if r.get("label") == CHAT_LABEL and r.get("added_by") == user_id]
+    return sorted(mine, key=lambda r: (r.get("added_at") or 0, r.get("ref") or ""))
 
 
-def _owned_sessions(links: list[dict], user_id: str) -> list[dict]:
-    """The linked conversations *user_id* owns, oldest link first, with
-    their visible turns (``role`` user/assistant, non-empty)."""
+def _owned_sessions(links: list[dict], user_id: str, enrolled: set[str]) -> list[dict]:
+    """The linked conversations *user_id* owns in a profile they are enrolled
+    in, oldest link first, with their visible turns: user/assistant rows and
+    each steer delivered inside a tool result, as the user's own row."""
     out: list[dict] = []
-    for link in sorted(links, key=lambda r: r.get("added_at") or 0):
+    for link in links:
         profile = link.get("profile") or "default"
+        if profile not in enrolled:
+            continue
         try:
             db = _session_db(profile)
         except HTTPException:
@@ -122,6 +177,19 @@ def _owned_sessions(links: list[dict], user_id: str) -> list[dict]:
             rows: list[dict] = []
             for part in chain:
                 for m in db.get_messages(part):
+                    if m.get("role") == "tool":
+                        steers = split_steers(_text(m.get("content")))
+                        if steers:
+                            rows.append(
+                                {
+                                    "id": m.get("id"),
+                                    "role": "user",
+                                    "content": "\n\n".join(steers),
+                                    "timestamp": float(m.get("timestamp") or 0),
+                                    "sent_while_working": True,
+                                }
+                            )
+                        continue
                     if m.get("role") not in ("user", "assistant"):
                         continue
                     text = _text(m.get("content"))
@@ -154,6 +222,7 @@ def merge_timeline(sessions: list[dict]) -> list[dict]:
             if m["role"] == "user":
                 shown, meta = split_block(m["content"])
                 row["content"] = shown
+                row["typed"] = m["content"] if m.get("sent_while_working") else typed_text(m["content"])
                 row.update(meta)
             merged.append(row)
     merged.sort(key=lambda r: (r["timestamp"], r["session_id"], r.get("id") or 0))
@@ -185,7 +254,8 @@ def catch_up_digest(missed: list[dict], profile: str, person: str = "the user") 
     ]
     for r in shown:
         who = f"{person} → {r['profile']}" if r["role"] == "user" else r["profile"]
-        lines.append(f"- {who}: {_short(r['content'], CATCH_UP_TURN_CHARS)}")
+        said = r.get("typed", r["content"]) if r["role"] == "user" else r["content"]
+        lines.append(f"- {who}: {_short(said, CATCH_UP_TURN_CHARS) or '(attachments)'}")
     return "\n".join(lines)
 
 
@@ -288,21 +358,24 @@ def proposals_since(conn, project_id: str, since: Optional[float]) -> list[dict]
     return out
 
 
-def _timeline_sync(project, user_id: str) -> dict:
-    sessions = _owned_sessions(_linked_conversations(project.id), user_id)
+def _timeline_sync(project, user_id: str, enrolled: set[str]) -> dict:
+    sessions = _owned_sessions(_chat_links(project.id, user_id), user_id, enrolled)
     timeline = merge_timeline(sessions)
     since = timeline[0]["timestamp"] if timeline else None
     with projects_db.connect_closing() as conn:
         proposals = proposals_since(conn, project.id, since)
     latest: dict[str, str] = {}
     for s in sessions:
-        latest[s["profile"]] = s["session_id"]
+        latest.setdefault(s["profile"], s["session_id"])
     last_profile = next(
         (r["profile"] for r in reversed(timeline)), None
     )
     return {
         "sessions": [{"profile": p, "session_id": sid} for p, sid in latest.items()],
-        "messages": timeline[-TIMELINE_MAX_MESSAGES:],
+        "messages": [
+            {k: v for k, v in r.items() if k != "typed"}
+            for r in timeline[-TIMELINE_MAX_MESSAGES:]
+        ],
         "truncated": len(timeline) > TIMELINE_MAX_MESSAGES,
         "proposals": proposals,
         "last_profile": last_profile,
@@ -312,7 +385,8 @@ def _timeline_sync(project, user_id: str) -> dict:
 @router.get("/{slug}/chat/timeline")
 async def chat_timeline(request: Request) -> dict[str, Any]:
     project, _role, _profiles, principal = await _require_read(request)
-    return await asyncio.to_thread(_timeline_sync, project, principal.user_id)
+    enrolled = await _chat_profiles(principal.user_id)
+    return await asyncio.to_thread(_timeline_sync, project, principal.user_id, enrolled)
 
 
 def _project_ref(project) -> Optional[str]:
@@ -324,32 +398,54 @@ def _project_ref(project) -> Optional[str]:
         return None
 
 
-def _prepare_sync(project, user_id: str, profile: str, session_id: str, message: str, person: str) -> dict:
+def _owned_sid(db, ref: str, user_id: str) -> Optional[str]:
+    sid = db.resolve_session_id(ref)
+    return sid if sid and db.session_owner_user_id(sid) == user_id else None
+
+
+def _canonical_sid(db, links: list[dict], profile: str, user_id: str) -> Optional[str]:
+    for link in links:
+        if link["profile"] == profile:
+            sid = _owned_sid(db, link["ref"], user_id)
+            if sid:
+                return sid
+    return None
+
+
+def _prepare_sync(
+    project, user_id: str, enrolled: set[str], profile: str, session_id: str, message: str, person: str
+) -> dict:
+    if profile not in enrolled:
+        raise HTTPException(status_code=403, detail="Not enrolled in that profile")
     db = _session_db(profile)
     try:
-        sid = db.resolve_session_id(session_id)
-        if not sid or db.session_owner_user_id(sid) != user_id:
+        if not _owned_sid(db, session_id, user_id):
             raise HTTPException(status_code=404, detail="Session not found")
+        # One conversation per person and profile: a turn sent from a second
+        # page (or with a fresh session) still lands in the canonical one.
+        links = _chat_links(project.id, user_id)
+        sid = _canonical_sid(db, links, profile, user_id)
+        if sid is None:
+            with projects_db.connect_closing() as conn:
+                projects_db.add_project_link(
+                    conn,
+                    project_id=project.id,
+                    kind=LINK_KIND,
+                    profile=profile,
+                    ref=db.resolve_session_id(session_id),
+                    label=CHAT_LABEL,
+                    added_by=user_id,
+                )
+            links = _chat_links(project.id, user_id)
+            # Two pages racing both link; the oldest link wins for both.
+            sid = _canonical_sid(db, links, profile, user_id)
         empty = not any(
             m.get("role") in ("user", "assistant")
             for m in db.get_messages(db.resolve_resume_session_id(sid) or sid)
         )
     finally:
         db.close()
-    links = _linked_conversations(project.id)
-    if not any(l["profile"] == profile and l["ref"] == sid for l in links):
-        with projects_db.connect_closing() as conn:
-            projects_db.add_project_link(
-                conn,
-                project_id=project.id,
-                kind=LINK_KIND,
-                profile=profile,
-                ref=sid,
-                label="project chat",
-                added_by=user_id,
-            )
-        links = _linked_conversations(project.id)
-    timeline = merge_timeline(_owned_sessions(links, user_id))
+    timeline = merge_timeline(_owned_sessions(links, user_id, enrolled))
     missed = missed_turns(timeline, profile)
     digest = catch_up_digest(missed, profile, person)
     context = ""
@@ -382,8 +478,9 @@ async def chat_prepare(request: Request) -> dict[str, Any]:
     if len(message) > MESSAGE_MAX_CHARS * 5:
         raise HTTPException(status_code=413, detail="message is too long")
     person = _short(getattr(principal, "display", None) or "the user", 60)
+    enrolled = await _chat_profiles(principal.user_id)
     return await asyncio.to_thread(
-        _prepare_sync, project, principal.user_id, profile, session_id, message, person
+        _prepare_sync, project, principal.user_id, enrolled, profile, session_id, message, person
     )
 
 
