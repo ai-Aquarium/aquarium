@@ -394,3 +394,19 @@ async def test_someone_else_s_todo_is_view_only_for_a_signed_in_owner(wired, mon
     with pytest.raises(HTTPException) as excinfo:
         await todos_api.set_todo_stage(request=request, todo_id="ada-1")
     assert excinfo.value.status_code == 404 and acting == ["member"]
+
+
+@pytest.mark.asyncio
+async def test_someone_else_s_todo_opens_marked_view_only(wired, monkeypatch):
+    from hermes_cli import web_server
+
+    monkeypatch.setattr(web_server, "_comms_session_subject", lambda request: "leo")
+
+    async def get(principal, todo_id, **kwargs):
+        return None if principal.role == "member" else _todo()
+
+    monkeypatch.setattr(wired, "get", get)
+    request = _request({})
+    request.state = SimpleNamespace()
+    assert (await todos_api.get_todo(request=request, todo_id="ada-1"))["editable"] is False
+    assert (await todos_api.get_todo(request=None, todo_id="ada-1"))["editable"] is True

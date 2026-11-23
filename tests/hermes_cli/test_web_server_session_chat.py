@@ -609,3 +609,22 @@ def test_run_approval_is_answered_only_by_whoever_asked(client, monkeypatch):
     monkeypatch.setattr(web_server, "_comms_session_subject", lambda request: "leo")
     resp = client.post("/v1/runs/run_abc/approval", json={"choice": "approve"})
     assert resp.status_code == 403
+
+
+def test_run_approval_resolves_only_the_signed_in_caller_s_own(client, monkeypatch):
+    """An approval queued after the check is still bound to whoever asked."""
+    from hermes_cli import web_server
+    from tools import approval as _ap
+
+    calls: dict = {}
+
+    def _fake_resolve(session_key, choice, resolve_all=False, **bound):
+        calls.update(bound)
+        return 1
+
+    monkeypatch.setattr(_ap, "resolve_gateway_approval", _fake_resolve)
+    monkeypatch.setattr(_ap, "list_pending_gateway_approvals", lambda keys: [])
+    monkeypatch.setattr(web_server, "_comms_session_subject", lambda request: "leo")
+    resp = client.post("/v1/runs/run_abc/approval", json={"choice": "approve"})
+    assert resp.status_code == 200
+    assert calls.get("approver_user_id")
