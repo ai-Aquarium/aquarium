@@ -12,6 +12,7 @@ import {
   AssignmentDetails,
   ProfileFacts,
   WhoDoesWhat,
+  ASSIGNMENT_FIELDS,
   assignmentForSave,
   assignmentOf,
   hasAssignment,
@@ -51,6 +52,11 @@ interface StepDraft {
   /** The step's C-3 assignment fields as loaded, and the assignee they explain. */
   assignment: StepAssignment | null;
   origAssignee: string;
+  /** The stored step this draft edits (and its `after` as loaded): what the
+   * editor does not show — body, mode, toolsets, extra dependencies — is
+   * saved back unchanged. */
+  orig?: PlaybookStep;
+  origAfter?: string;
 }
 
 const EMPTY_STEP: StepDraft = {
@@ -78,19 +84,39 @@ export function stepKey(title: string, index: number, taken: Set<string>): strin
 }
 
 function stepsToPayload(drafts: StepDraft[]): PlaybookStep[] {
+  const kept = drafts.filter((d) => d.title.trim());
   const taken = new Set<string>();
-  const keyed = drafts
-    .filter((d) => d.title.trim())
-    .map((d, i) => ({ draft: d, key: stepKey(d.title.trim(), i, taken) }));
+  const storedKey = new Map<StepDraft, string>();
+  for (const d of kept) {
+    if (d.orig?.key && !taken.has(d.orig.key)) {
+      taken.add(d.orig.key);
+      storedKey.set(d, d.orig.key);
+    }
+  }
+  const keyed = kept.map((d, i) => ({ draft: d, key: storedKey.get(d) ?? stepKey(d.title.trim(), i, taken) }));
   const byTitle = new Map(keyed.map((k) => [k.draft.title.trim(), k.key]));
-  return keyed.map(({ draft, key }) => ({
-    key,
-    title: draft.title.trim(),
-    assignee: draft.assignee || null,
-    depends_on: draft.after && byTitle.has(draft.after) ? [byTitle.get(draft.after)!] : [],
-    checkpoint: draft.checkpoint,
-    ...assignmentForSave(draft.assignment, draft.origAssignee, draft.assignee),
-  }));
+  const live = new Set(keyed.map((k) => k.key));
+  return keyed.map(({ draft, key }) => {
+    const { orig } = draft;
+    const stored: Record<string, unknown> = { ...(orig ?? {}) };
+    for (const field of ASSIGNMENT_FIELDS) delete stored[field];
+    delete stored.needs;
+    const depends_on =
+      orig && draft.after === draft.origAfter
+        ? (orig.depends_on ?? orig.needs ?? []).filter((k) => live.has(k))
+        : draft.after && byTitle.has(draft.after)
+          ? [byTitle.get(draft.after)!]
+          : [];
+    return {
+      ...stored,
+      key,
+      title: draft.title.trim(),
+      assignee: draft.assignee || null,
+      depends_on,
+      checkpoint: draft.checkpoint,
+      ...assignmentForSave(draft.assignment, draft.origAssignee, draft.assignee),
+    };
+  });
 }
 
 /**
@@ -116,14 +142,19 @@ function draftsFromRev(rev: PlaybookRev | null): StepDraft[] {
   const steps = rev?.steps ?? [];
   if (steps.length === 0) return [{ ...EMPTY_STEP }];
   const titleByKey = new Map(steps.map((s) => [s.key, s.title]));
-  return steps.map((s) => ({
-    title: s.title,
-    assignee: s.assignee ?? "",
-    after: titleByKey.get((s.depends_on ?? s.needs ?? [])[0] ?? "") ?? "",
-    checkpoint: Boolean(s.checkpoint),
-    assignment: assignmentOf(s),
-    origAssignee: s.assignee ?? "",
-  }));
+  return steps.map((s) => {
+    const after = titleByKey.get((s.depends_on ?? s.needs ?? [])[0] ?? "") ?? "";
+    return {
+      title: s.title,
+      assignee: s.assignee ?? "",
+      after,
+      checkpoint: Boolean(s.checkpoint),
+      assignment: assignmentOf(s),
+      origAssignee: s.assignee ?? "",
+      orig: s,
+      origAfter: after,
+    };
+  });
 }
 
 /** True when any step of these revisions says why it got its profile. */

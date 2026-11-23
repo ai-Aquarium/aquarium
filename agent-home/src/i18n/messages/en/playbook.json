@@ -54,6 +54,7 @@
     "assignee": "now done by {who}",
     "anyProfile": "any profile",
     "mode": "now runs as {mode}",
+    "toolsets": "tools changed",
     "position": "moved in the order",
     "identical": "v{from} and v{to} are the same."
   }

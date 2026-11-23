@@ -1,4 +1,5 @@
 import type { PlaybookRev, PlaybookStep, ProjectPlaybookResponse } from "@/types";
+import { planDiff, type PlanDiffKind } from "@/components/projects/changes/planDiff";
 
 /**
  * Where a revision stands: the one runs use, a proposal written after it
@@ -60,6 +61,7 @@ export type StepChange =
   | { kind: "startsFirst" }
   | { kind: "assignee"; to: string | null }
   | { kind: "mode"; to: string }
+  | { kind: "toolsets" }
   /** Set by the caller: the step changed and also moved in the order. */
   | { kind: "position" };
 
@@ -68,25 +70,74 @@ function depsOf(step: PlaybookStep): string[] {
 }
 
 /**
- * What changed in one step, for the Compare list. `titleOf` names a
- * dependency by its title in the newer version (falling back to its key).
+ * What changed in one step, for the Compare list. Dependencies compare by
+ * the titles they name on each side (`beforeTitleOf` / `afterTitleOf`), so
+ * a re-keyed step that still waits on the same predecessor is no change.
  */
 export function stepChanges(
   before: PlaybookStep,
   after: PlaybookStep,
-  titleOf: (key: string) => string = (key) => key,
+  afterTitleOf: (key: string) => string = (key) => key,
+  beforeTitleOf: (key: string) => string = afterTitleOf,
 ): StepChange[] {
   const out: StepChange[] = [];
   if (before.title.trim() !== after.title.trim()) out.push({ kind: "title", from: before.title.trim() });
   if ((before.body ?? "").trim() !== (after.body ?? "").trim()) out.push({ kind: "body" });
   if (!before.checkpoint && after.checkpoint) out.push({ kind: "checkpointOn" });
   if (before.checkpoint && !after.checkpoint) out.push({ kind: "checkpointOff" });
-  const da = depsOf(before);
-  const db = depsOf(after);
-  if (da.join(",") !== db.join(",")) {
-    out.push(db.length ? { kind: "after", titles: db.map(titleOf) } : { kind: "startsFirst" });
+  const da = depsOf(before).map(beforeTitleOf).sort();
+  const db = depsOf(after).map(afterTitleOf).sort();
+  if (da.join("\n") !== db.join("\n")) {
+    out.push(db.length ? { kind: "after", titles: db } : { kind: "startsFirst" });
   }
   if ((before.assignee ?? null) !== (after.assignee ?? null)) out.push({ kind: "assignee", to: after.assignee ?? null });
   if ((before.mode ?? "card") !== (after.mode ?? "card")) out.push({ kind: "mode", to: after.mode ?? "card" });
+  if (toolsetsOf(before) !== toolsetsOf(after)) out.push({ kind: "toolsets" });
   return out;
+}
+
+function toolsetsOf(step: PlaybookStep): string {
+  return step.toolsets ? [...step.toolsets].sort().join(",") : "";
+}
+
+export interface StepCompareRow {
+  kind: PlanDiffKind;
+  key: string;
+  step: PlaybookStep;
+  changes: StepChange[];
+}
+
+export interface StepCompare {
+  rows: StepCompareRow[];
+  added: number;
+  changed: number;
+  removed: number;
+  moved: number;
+  unchanged: boolean;
+}
+
+/**
+ * Two versions' steps for Compare: `planDiff`'s matching, with each matched
+ * step re-judged by `stepChanges` (which also sees assignee and toolsets,
+ * and reads dependencies by title).
+ */
+export function compareSteps(from: readonly PlaybookStep[], to: readonly PlaybookStep[]): StepCompare {
+  const beforeTitles = new Map(from.map((s) => [s.key, s.title]));
+  const afterTitles = new Map(to.map((s) => [s.key, s.title]));
+  const rows = planDiff(from, to).rows.map((row): StepCompareRow => {
+    if (!row.before) return { kind: row.kind, key: row.key, step: row.step, changes: [] };
+    const moved = row.kind === "moved" || Boolean(row.moved);
+    const changes = stepChanges(
+      row.before,
+      row.step,
+      (key) => afterTitles.get(key) ?? key,
+      (key) => beforeTitles.get(key) ?? key,
+    );
+    if (changes.length === 0) return { kind: moved ? "moved" : "same", key: row.key, step: row.step, changes };
+    if (moved) changes.push({ kind: "position" });
+    return { kind: "changed", key: row.key, step: row.step, changes };
+  });
+  const count = (kind: PlanDiffKind) => rows.filter((r) => r.kind === kind).length;
+  const out = { rows, added: count("added"), changed: count("changed"), removed: count("removed"), moved: count("moved") };
+  return { ...out, unchanged: out.added + out.changed + out.removed + out.moved === 0 };
 }

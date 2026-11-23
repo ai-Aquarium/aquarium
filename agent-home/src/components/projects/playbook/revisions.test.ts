@@ -6,6 +6,7 @@ import {
   defaultRevision,
   revisionState,
   revisionsAscending,
+  compareSteps,
   stepChanges,
 } from "@/components/projects/playbook/revisions";
 
@@ -68,5 +69,23 @@ describe("playbook revisions", () => {
     expect(
       stepChanges({ ...before, depends_on: [] }, before, (k) => (k === "pull" ? "Pull the export" : k)),
     ).toEqual([{ kind: "after", titles: ["Pull the export"] }]);
+  });
+
+  it("Compare counts an assignee- or toolset-only change, not a re-keyed dependency", () => {
+    const from = [
+      { key: "pull", title: "Pull the export" },
+      { key: "clean", title: "Clean the rows", depends_on: ["pull"], assignee: "default" },
+    ];
+    const reassigned = compareSteps(from, [from[0], { ...from[1], assignee: "finance", toolsets: ["web"] }]);
+    expect(reassigned.unchanged).toBe(false);
+    expect(reassigned.changed).toBe(1);
+    expect(reassigned.rows[1].changes.map((c) => c.kind)).toEqual(["assignee", "toolsets"]);
+
+    const rekeyed = compareSteps(from, [
+      { key: "pull-the-export", title: "Pull the export" },
+      { key: "clean", title: "Clean the rows", depends_on: ["pull-the-export"], assignee: "default" },
+    ]);
+    expect(rekeyed.unchanged).toBe(true);
+    expect(rekeyed.rows.every((r) => r.kind === "same" && r.changes.length === 0)).toBe(true);
   });
 });

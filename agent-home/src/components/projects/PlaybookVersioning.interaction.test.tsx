@@ -226,6 +226,28 @@ describe("PlanPanel — make active and version notes", () => {
     expect(chip(container, 6).getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("a note-only save keeps what the editor does not show", async () => {
+    const fetchMock = server((url, init) =>
+      init?.method === "POST" && url === `${BASE}/playbook` ? jsonResponse(200, { rev: 6, active: false }) : null,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const steps = [
+      { key: "pull", title: "Pull the CRM export", body: "Use the Q3 filter.", toolsets: ["web"], mode: "inline" as const },
+      { key: "fx", title: "Fetch FX rates" },
+      { key: "clean", title: "Clean the rows", depends_on: ["pull", "fx"], assignee: "finance" },
+    ];
+    const v4 = rev(4, { active: 1, steps });
+    const { container, getByText } = render(<PlanPanel {...PROPS} playbook={{ active: v4, revisions: [v4] }} />);
+    fireEvent.click(getByText("Edit"));
+    fireEvent.change(container.querySelector('[data-component="VersionNote"]')!, { target: { value: "Just a note" } });
+    fireEvent.click(getByText("Save as revision"));
+    await vi.waitFor(() => expect(router.refresh).toHaveBeenCalled());
+    const [, init] = fetchMock.mock.calls.find(([url, i]) => url === `${BASE}/playbook` && i?.method === "POST")!;
+    const sent = JSON.parse(String(init!.body)) as { steps: Record<string, unknown>[] };
+    expect(sent.steps).toHaveLength(steps.length);
+    steps.forEach((step, i) => expect(sent.steps[i]).toMatchObject(step));
+  });
+
   it("an empty note is not sent", async () => {
     const fetchMock = server((url, init) =>
       init?.method === "POST" && url === `${BASE}/playbook` ? jsonResponse(200, { rev: 6, active: false }) : null,

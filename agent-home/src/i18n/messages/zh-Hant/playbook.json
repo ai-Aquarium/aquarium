@@ -54,6 +54,7 @@
     "assignee": "現在由 {who} 負責",
     "anyProfile": "任何設定檔",
     "mode": "現在以 {mode} 方式執行",
+    "toolsets": "工具有改動",
     "position": "次序有變",
     "identical": "v{from} 與 v{to} 相同。"
   }

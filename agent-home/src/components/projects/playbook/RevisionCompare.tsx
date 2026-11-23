@@ -2,10 +2,10 @@
 
 import { useT } from "@/i18n";
 import type { PlaybookRev } from "@/types";
-import { planDiff, type PlanDiffKind } from "@/components/projects/changes/planDiff";
+import type { PlanDiffKind } from "@/components/projects/changes/planDiff";
 import { XIcon } from "@/components/ui/icons";
 import { SwapIcon } from "@/components/projects/playbook/icons";
-import { revisionState, stepChanges, type StepChange } from "@/components/projects/playbook/revisions";
+import { compareSteps, revisionState, type StepChange } from "@/components/projects/playbook/revisions";
 import { textDiff, type TextDiffRow } from "@/components/projects/playbook/textDiff";
 
 const TEXT_ROW: Record<TextDiffRow["kind"], string> = {
@@ -49,8 +49,7 @@ export function RevisionCompare({
 }) {
   const t = useT("playbook");
   const text = textDiff(from.body, to.body);
-  const steps = planDiff(from.steps ?? [], to.steps ?? []);
-  const titleByKey = new Map((to.steps ?? []).map((s) => [s.key, s.title]));
+  const steps = compareSteps(from.steps ?? [], to.steps ?? []);
   const identical = text.unchanged && steps.unchanged;
 
   const optionLabel = (rev: PlaybookRev) => {
@@ -92,6 +91,8 @@ export function RevisionCompare({
         return t("diff.assignee", { who: change.to ?? t("diff.anyProfile") });
       case "mode":
         return t("diff.mode", { mode: change.to });
+      case "toolsets":
+        return t("diff.toolsets");
       case "position":
         return t("diff.position");
     }
@@ -170,11 +171,7 @@ export function RevisionCompare({
         ) : (
           <ol className="mt-1.5 flex flex-col gap-1">
             {steps.rows.map((row) => {
-              const changes =
-                row.kind === "changed" && row.before
-                  ? stepChanges(row.before, row.step, (key) => titleByKey.get(key) ?? key)
-                  : [];
-              if (row.kind === "changed" && row.moved) changes.push({ kind: "position" });
+              const { changes } = row;
               return (
                 <li
                   key={`${row.kind}-${row.key}`}
