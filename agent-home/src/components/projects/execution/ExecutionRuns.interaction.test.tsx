@@ -172,6 +172,20 @@ describe("ExecutionRuns", () => {
     );
   });
 
+  it("re-scoring sends the note as saved now, not as first loaded", async () => {
+    detailOver = { score_note: "tight" };
+    const fetchMock = setup([brief(1)]);
+    const group = await screen.findByRole("group", { name: "Score run 1 from 1 to 5" });
+    // The note is cleared on the run page while this view stays mounted.
+    detailOver = { score_note: null };
+    fireEvent.click(within(group).getByRole("button", { name: "2" }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/runs/1/score"));
+      expect(call).toBeTruthy();
+      expect(JSON.parse(String(call![1]!.body))).toEqual({ score: 2 });
+    });
+  });
+
   it("offers Continue while a running run is held at a supervised checkpoint", async () => {
     detailOver = { status: "running", awaiting_continue: true };
     setup([brief(2, { status: "running", ended_at: null })]);
