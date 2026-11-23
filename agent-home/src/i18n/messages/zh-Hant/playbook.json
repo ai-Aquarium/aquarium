@@ -62,9 +62,11 @@
   "chipOutdated": "基礎較舊",
   "outdated": "以較舊的版本為基礎：v{base}，而現在使用中的是 v{active}。直接啟用會撤銷兩者之間的改動；請先更新到 v{active}，保留雙方的改動。",
   "outdatedNoBase": "以較舊的版本為基礎：v{base}，該版本已不存在。啟用前請先與 v{active} 比較。",
+  "outdatedRoot": "此版本在沒有使用中版本時從頭撰寫，而現在使用中的是 v{active}。啟用前請先與 v{active} 比較。",
   "updateOntoActive": "更新到使用中版本",
   "updating": "正在更新…",
-  "updatedNotice": "v{rev} 現在以 v{active} 為基礎，仍是建議版本。",
-  "updatedConflicts": "v{rev} 現在以 v{active} 為基礎。雙方都改動了 {what}；已保留 v{rev} 的版本。啟用前請先比較。",
+  "updatedNotice": "v{from} 已更新到 v{active}，存為 v{rev}，仍是建議版本。",
+  "updatedConflicts": "v{from} 已更新到 v{active}，存為 v{rev}。雙方都改動了 {what}；已保留 v{from} 的版本。啟用前請先比較。",
+  "updatedKept": "v{from} 保持不變，仍在列表中。",
   "conflictText": "文字說明"
 }

@@ -343,7 +343,10 @@ def proposals_since(conn, project_id: str, since: Optional[float]) -> list[dict]
         # created_at is whole seconds; message stamps are fractional.
         if (r.get("created_at") or 0) < int(since):
             continue
-        base = by_rev.get(r["rev"] - 1)
+        # The revision it was written from; base 0 = written from nothing,
+        # NULL (older rows) = assume the one saved just before.
+        base_rev = r.get("base_rev")
+        base = by_rev.get(r["rev"] - 1 if base_rev is None else base_rev)
         out.append(
             {
                 "rev": r["rev"],

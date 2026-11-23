@@ -290,10 +290,13 @@ def test_update_onto_active_rebases_a_proposal_written_from_an_older_version(env
     ).status_code == 200
     resp = client.post(f"{PREFIX}/{slug}/playbook/{mine}/rebase", json={})
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"rev": mine, "base_rev": agent, "conflicts": []}
+    updated = resp.json()
+    assert updated["from_rev"] == mine and updated["base_rev"] == agent
+    assert updated["conflicts"] == [] and updated["rev"] > mine
     listed = client.get(f"{PREFIX}/{slug}/playbook").json()
     assert listed["active"]["rev"] == agent  # still a proposal, nothing activated
-    rebased = next(r for r in listed["revisions"] if r["rev"] == mine)
+    assert mine in [r["rev"] for r in listed["revisions"]]  # left as it was
+    rebased = next(r for r in listed["revisions"] if r["rev"] == updated["rev"])
     assert [s["title"] for s in rebased["steps"]] == [
         "Collect arrivals (3h)", "Owner reviews", "Send it",
     ]

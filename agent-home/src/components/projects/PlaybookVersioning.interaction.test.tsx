@@ -277,9 +277,9 @@ describe("PlanPanel — several proposals at once", () => {
     expect(chip(container, 6).getAttribute("data-state")).toBe("proposed");
     expect(chip(container, 7).getAttribute("data-state")).toBe("proposed");
     expect(chip(container, 4).getAttribute("data-state")).toBe("earlier");
-    // v6 was written from v4, v7 from the pending v6 (it carries v6's change).
+    // v6 was written from v4; v7 from the pending v6, so it lacks v5's changes too.
     expect(chip(container, 6).getAttribute("data-outdated")).toBe("true");
-    expect(chip(container, 7).getAttribute("data-outdated")).toBeNull();
+    expect(chip(container, 7).getAttribute("data-outdated")).toBe("true");
     expect(chip(container, 6).textContent).toContain("older base");
 
     fireEvent.click(chip(container, 6));
@@ -290,18 +290,26 @@ describe("PlanPanel — several proposals at once", () => {
     expect(within(decision).getByRole("button", { name: "Update onto active" })).toBeTruthy();
   });
 
-  it("Update onto active POSTs the rebase and names what both sides changed", async () => {
+  it("Update onto active POSTs the rebase, follows the new proposal and names what both sides changed", async () => {
     const fetchMock = server((url, init) =>
       init?.method === "POST" && url === `${BASE}/playbook/6/rebase`
-        ? jsonResponse(200, { rev: 6, base_rev: 5, conflicts: ["clean", "body"] })
+        ? jsonResponse(200, { rev: 8, from_rev: 6, base_rev: 5, conflicts: ["clean", "body"] })
         : null,
     );
     vi.stubGlobal("fetch", fetchMock);
-    const { container, getByRole, findByText } = render(<PlanPanel {...PROPS} playbook={MANY} />);
+    const { container, getByRole, findByText, rerender } = render(<PlanPanel {...PROPS} playbook={MANY} />);
     fireEvent.click(chip(container, 6));
     fireEvent.click(getByRole("button", { name: "Update onto active" }));
-    expect(await findByText(/v6 now builds on v5\. Both changed clean, the text; v6's version was kept/)).toBeTruthy();
+    await vi.waitFor(() => expect(router.refresh).toHaveBeenCalled());
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/activate"))).toBe(false);
+
+    const V8 = rev(8, { base_rev: 5, note: "Wait 3h for the export" });
+    rerender(<PlanPanel {...PROPS} playbook={{ ...MANY, revisions: [V8, ...MANY.revisions] }} />);
+    expect(chip(container, 8).getAttribute("aria-pressed")).toBe("true");
+    expect(chip(container, 8).getAttribute("data-outdated")).toBeNull();
+    expect(
+      await findByText(/v6 was updated onto v5 as v8\. Both changed clean, the text; v6's version was kept\..*v6 is unchanged/),
+    ).toBeTruthy();
   });
 
   it("a member can update a proposal onto active but not make it active", () => {

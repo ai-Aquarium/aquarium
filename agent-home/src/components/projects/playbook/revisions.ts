@@ -19,23 +19,48 @@ export function revisionState(rev: PlaybookRev, activeRev: number | null | undef
   return "earlier";
 }
 
+export type ProposalBase = {
+  /** The revision it was written from: null on old rows, 0 when written from none. */
+  base: number | null;
+  /**
+   * The version it really builds on: up its chain of pending proposals to
+   * one that is or was active; or the revision missing from that chain.
+   */
+  from: number | null;
+  outdated: boolean;
+  /** Its changes can be re-applied onto the active version. */
+  canUpdate: boolean;
+  why: "older" | "missing" | "root" | null;
+};
+
 /**
- * A proposal written from a version that is no longer the active one (or
- * a pending proposal): "based on an older version". `canUpdate` when that
- * base still exists, so "Update onto active" can re-apply its changes.
+ * A proposal that doesn't build on the active version is "based on an
+ * older version", including one written from a pending proposal whose own
+ * base is no longer active: making it active would undo what changed in
+ * between. Revisions are never edited once saved, so the chain stays true.
  */
 export function proposalBase(
   rev: PlaybookRev,
   revisions: readonly PlaybookRev[],
   activeRev: number | null | undefined,
-): { base: number | null; outdated: boolean; canUpdate: boolean } {
+): ProposalBase {
   const base = rev.base_rev ?? null;
-  if (base == null || activeRev == null || revisionState(rev, activeRev) !== "proposed") {
-    return { base, outdated: false, canUpdate: false };
+  const settled: ProposalBase = { base, from: null, outdated: false, canUpdate: false, why: null };
+  if (base == null || activeRev == null || revisionState(rev, activeRev) !== "proposed") return settled;
+  const seen = new Set<number>();
+  let cur: number | null = base;
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const at = revisions.find((r) => r.rev === cur);
+    if (!at) return { base, from: cur, outdated: true, canUpdate: false, why: "missing" };
+    if (at.active || at.rev === activeRev || at.activated_at != null) {
+      return at.rev === activeRev
+        ? { ...settled, from: at.rev }
+        : { base, from: at.rev, outdated: true, canUpdate: true, why: "older" };
+    }
+    cur = at.base_rev ?? null;
   }
-  const baseRev = revisions.find((r) => r.rev === base);
-  const outdated = base !== activeRev && !(baseRev && revisionState(baseRev, activeRev) === "proposed");
-  return { base, outdated, canUpdate: outdated && baseRev != null };
+  return { base, from: null, outdated: true, canUpdate: false, why: cur == null ? "missing" : "root" };
 }
 
 /** Oldest first, the order the version chips read in. */

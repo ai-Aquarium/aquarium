@@ -392,6 +392,14 @@ export function PlanPanel({
     setSavedRev(rev);
   };
 
+  /** Update onto active saves a new proposal; follow it there. */
+  const [updated, setUpdated] = useState<ProposalUpdate | null>(null);
+  const updatedHere = (update: ProposalUpdate) => {
+    setPicked(update.rev);
+    setActivatedRev(null);
+    setUpdated(update);
+  };
+
   const inputClass =
     "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]";
   const toolClass =
@@ -514,7 +522,9 @@ export function PlanPanel({
               canPropose={canPropose}
               archived={archived}
               justSaved={savedRev === selected.rev}
+              updated={updated}
               onActivated={setActivatedRev}
+              onUpdated={updatedHere}
             />
           ) : null}
 
@@ -830,7 +840,9 @@ function RevisionDecision({
   canPropose,
   archived,
   justSaved,
+  updated,
   onActivated,
+  onUpdated,
 }: {
   slug: string;
   rev: PlaybookRev;
@@ -842,12 +854,15 @@ function RevisionDecision({
   archived: boolean;
   /** Saved from this panel a moment ago: confirm it, then offer Make active. */
   justSaved: boolean;
+  /** The proposal this one was just updated from (its notice shows here). */
+  updated: ProposalUpdate | null;
   onActivated: (rev: number) => void;
+  onUpdated: (update: ProposalUpdate) => void;
 }) {
   const t = useT("playbook");
   const [note, setNote] = useState("");
   const addsNote = !archived && canActivate && !rev.note?.trim();
-  const { base, outdated, canUpdate } = proposalBase(rev, revisions, activeRev);
+  const { base, from, outdated, canUpdate, why } = proposalBase(rev, revisions, activeRev);
   return (
     <div
       data-component="RevisionDecision"
@@ -860,13 +875,28 @@ function RevisionDecision({
       }`}
     >
       <p role={justSaved ? "status" : undefined} data-component={justSaved ? "ProposalSaved" : undefined}>
-        {justSaved && base != null
+        {justSaved && base
           ? t("savedBanner", { rev: rev.rev, base })
           : t(state === "proposed" ? "proposedBanner" : "earlierBanner", { rev: rev.rev })}
       </p>
-      {outdated && base != null && activeRev != null ? (
+      {outdated && activeRev != null ? (
         <p data-component="ProposalOutdated" className="text-[var(--color-warn-text)]">
-          {t(canUpdate ? "outdated" : "outdatedNoBase", { base, active: activeRev })}
+          {why === "root"
+            ? t("outdatedRoot", { active: activeRev })
+            : t(why === "older" ? "outdated" : "outdatedNoBase", { base: from ?? base ?? 0, active: activeRev })}
+        </p>
+      ) : null}
+      {updated?.rev === rev.rev ? (
+        <p role="status" data-component="ProposalUpdated" className="text-xs">
+          {updated.conflicts.length > 0
+            ? t("updatedConflicts", {
+                rev: rev.rev,
+                from: updated.from,
+                active: updated.active,
+                what: updated.conflicts.map((key) => (key === "body" ? t("conflictText") : key)).join(", "),
+              })
+            : t("updatedNotice", { rev: rev.rev, from: updated.from, active: updated.active })}
+          {` ${t("updatedKept", { from: updated.from })}`}
         </p>
       ) : null}
       {addsNote ? (
@@ -887,7 +917,7 @@ function RevisionDecision({
           <ActivateRevision slug={slug} rev={rev.rev} note={note} onActivated={onActivated} />
         ) : null}
         {!archived && canPropose && canUpdate && activeRev != null ? (
-          <UpdateOntoActive slug={slug} rev={rev.rev} activeRev={activeRev} />
+          <UpdateOntoActive slug={slug} rev={rev.rev} activeRev={activeRev} onUpdated={onUpdated} />
         ) : null}
         {!archived && canActivate ? <DiscardRevision slug={slug} rev={rev.rev} /> : null}
         {!archived && !canActivate ? (
@@ -903,11 +933,21 @@ function RevisionDecision({
  * proposal). When both changed the same step, the proposal's version is
  * kept and named, so nothing is dropped silently.
  */
-function UpdateOntoActive({ slug, rev, activeRev }: { slug: string; rev: number; activeRev: number }) {
+type ProposalUpdate = { rev: number; from: number; active: number; conflicts: string[] };
+
+function UpdateOntoActive({
+  slug,
+  rev,
+  activeRev,
+  onUpdated,
+}: {
+  slug: string;
+  rev: number;
+  activeRev: number;
+  onUpdated: (update: ProposalUpdate) => void;
+}) {
   const t = useT("playbook");
-  const action = useProjectAction<{ conflicts?: string[] }>();
-  const [conflicts, setConflicts] = useState<string[] | null>(null);
-  const titleOf = (key: string) => (key === "body" ? t("conflictText") : key);
+  const action = useProjectAction<{ rev?: number; base_rev?: number; conflicts?: string[] }>();
   return (
     <>
       <ActionButton
@@ -917,7 +957,15 @@ function UpdateOntoActive({ slug, rev, activeRev }: { slug: string; rev: number;
         onClick={() =>
           void action.run(`/api/projects/${encodeURIComponent(slug)}/playbook/${rev}/rebase`, {
             body: {},
-            onSuccess: (data) => setConflicts(data?.conflicts ?? []),
+            onSuccess: (data) => {
+              if (typeof data?.rev !== "number") return;
+              onUpdated({
+                rev: data.rev,
+                from: rev,
+                active: data.base_rev ?? activeRev,
+                conflicts: data.conflicts ?? [],
+              });
+            },
           })
         }
         className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--color-accent)] px-3 text-sm font-medium text-[var(--color-accent)] disabled:opacity-50"
@@ -925,13 +973,6 @@ function UpdateOntoActive({ slug, rev, activeRev }: { slug: string; rev: number;
         <RebaseIcon size={16} />
         {t("updateOntoActive")}
       </ActionButton>
-      {conflicts != null ? (
-        <p role="status" data-component="ProposalUpdated" className="w-full text-xs">
-          {conflicts.length > 0
-            ? t("updatedConflicts", { rev, active: activeRev, what: conflicts.map(titleOf).join(", ") })
-            : t("updatedNotice", { rev, active: activeRev })}
-        </p>
-      ) : null}
       <ActionError
         action={action}
         className="flex w-full flex-wrap items-center gap-2 text-xs text-[var(--color-danger)]"
