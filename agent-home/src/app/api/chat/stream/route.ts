@@ -13,7 +13,7 @@
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
 import { profileFromBody, targetProfileFromBody } from "@/lib/chat/profile";
-import { mediaRef } from "@/lib/chat/media-ref";
+import { attachmentLink } from "@/lib/chat/media-ref";
 import { withUiContext } from "@/lib/chat/ui-context";
 import { canReadMediaPath, createMediaSignedUrl } from "@/lib/supabase/storage";
 import type { AgentAttachmentPayload, ChatAttachment, Principal } from "@/types";
@@ -45,8 +45,7 @@ function withAttachments(message: string, attachments: ChatAttachment[]): string
       // Images embed inline (`![]`) for a preview; any other file type
       // (PDF/DOC/XLS/…) is a download link (`[]`) so it isn't treated as a
       // broken image.
-      const marker = a.content_type.startsWith("image/") ? "!" : "";
-      return `${marker}[${a.name}](${mediaRef(a.path)})`;
+      return attachmentLink(a.name, a.path, a.content_type.startsWith("image/"));
     })
     .join("\n");
   return message ? `${message}\n\n${refs}` : refs;

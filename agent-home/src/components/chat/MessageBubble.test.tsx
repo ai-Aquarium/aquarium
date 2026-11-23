@@ -137,6 +137,21 @@ describe("MessageBubble", () => {
     expect(html).toContain('alt="shot"');
   });
 
+  it("shows an escaped file name unescaped in its download chip", () => {
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        message={{
+          role: "user",
+          content:
+            "see [\\[Q4\\]\\(final copy\\).pdf](/api/chat/media?path=mia_member%2Fhome_2%2Fu1-q4.pdf)",
+        }}
+      />,
+    );
+    expect(html).toContain('data-component="ChatFile"');
+    expect(html).toContain("[Q4](final copy).pdf");
+    expect(html).not.toContain("\\[");
+  });
+
   it("keeps a bracketed file name in one download chip", () => {
     const html = renderToStaticMarkup(
       <MessageBubble

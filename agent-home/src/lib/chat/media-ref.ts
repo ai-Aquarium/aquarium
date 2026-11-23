@@ -20,6 +20,22 @@ export const MEDIA_ROUTE = "/api/chat/media";
  */
 export const MEDIA_CONTENT_ROUTE = "/api/chat/media/content";
 
+/** A file name made safe as Markdown link text: `\ [ ] ( )` are escaped. */
+export function escapeLinkLabel(name: string): string {
+  return name.replace(/[\\[\]()]/g, (c) => `\\${c}`);
+}
+
+/** The file name in link text, escaped or (turns stored before) not. */
+export function unescapeLinkLabel(label: string): string {
+  return label.replace(/\\([\\[\]()])/g, "$1");
+}
+
+/** The link a turn carries for an attached file: `![name](ref)` for an
+ * image (shown inline), `[name](ref)` for anything else (a download chip). */
+export function attachmentLink(name: string, path: string, image: boolean): string {
+  return `${image ? "!" : ""}[${escapeLinkLabel(name)}](${mediaRef(path)})`;
+}
+
 /** The in-transcript reference for one object path. */
 export function mediaRef(path: string, project?: string): string {
   return `${MEDIA_ROUTE}?path=${encodeURIComponent(path)}${projectParam(project)}`;

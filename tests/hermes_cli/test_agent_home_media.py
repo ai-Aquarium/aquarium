@@ -444,3 +444,10 @@ def test_member_attaches_a_screenshot_from_the_hermes_cache():
     out, storage = _rewrite_as(MIA, f"MEDIA:{shot}")
     assert out.startswith("![shot.png](/api/chat/media?path=mia%2Ffiles%2F")
     assert len(storage.uploads) == 1
+
+
+def test_a_link_label_escapes_what_would_end_it():
+    from hermes_cli.agent_home_media import _label
+
+    assert _label("[Q4](final copy).pdf") == "\\[Q4\\]\\(final copy\\).pdf"
+    assert _label("a\\b.txt") == "a\\\\b.txt"

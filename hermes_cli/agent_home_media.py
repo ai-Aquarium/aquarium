@@ -128,7 +128,7 @@ def _in_managed_root(path: str) -> bool:
 def _label(name: str) -> str:
     """A file name made safe for Markdown link/alt text."""
     flat = " ".join(name.split()) or "file"
-    return flat.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+    return re.sub(r"([\\\[\]()])", r"\\\1", flat)
 
 
 def _note(name: str, reason: str) -> str:

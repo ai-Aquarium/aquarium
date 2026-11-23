@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import { HermesApiError } from "@/lib/api/client";
 import { apiClientForRequest, getPrincipal } from "@/lib/auth/principal";
 import { profileFromBody } from "@/lib/chat/profile";
-import { mediaRef } from "@/lib/chat/media-ref";
+import { attachmentLink } from "@/lib/chat/media-ref";
 import { withUiContext } from "@/lib/chat/ui-context";
 import { canReadMediaPath, createMediaSignedUrl } from "@/lib/supabase/storage";
 import type { AgentAttachmentPayload, ChatAttachment, Principal } from "@/types";
@@ -35,7 +35,7 @@ interface SendBody {
 function withAttachments(message: string, attachments: ChatAttachment[]): string {
   if (attachments.length === 0) return message;
   const refs = attachments
-    .map((a) => `![${a.name}](${mediaRef(a.path)})`)
+    .map((a) => attachmentLink(a.name, a.path, true))
     .join("\n");
   return message ? `${message}\n\n${refs}` : refs;
 }

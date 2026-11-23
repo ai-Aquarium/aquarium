@@ -321,6 +321,15 @@ describe("stripInjectedContext (attachment notes the backend prepends)", () => {
     );
   });
 
+  it("keeps the link of a file whose escaped name holds brackets and parentheses", () => {
+    const link = "[\\[Q4\\]\\(final copy\\).txt](/api/chat/media?path=u%2Fq4.txt)";
+    const content =
+      "[The user sent a text document: '[Q4](final copy).txt'. It is saved at: /c/q4.txt.]" +
+      "\n\n--- [Q4](final copy).txt ---\nfile text\n\n" +
+      link;
+    expect(stripInjectedContext(content)).toBe(link);
+  });
+
   it("never shows inlined file text when there is no context line to tell it from the user's", () => {
     expect(stripInjectedContext(`${NOTE}\n\n${FILE}\n\nsummarise it\n\n${REF}`)).toBe(REF);
     expect(stripInjectedContext(`${NOTE}\n\n${FILE}\n\n${REF}`)).toBe(REF);

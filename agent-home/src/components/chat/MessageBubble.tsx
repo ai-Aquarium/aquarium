@@ -7,7 +7,7 @@ import { ChatMedia } from "@/components/chat/ChatMedia";
 import { DataAnswerFooter } from "@/components/chat/DataAnswerFooter";
 import { RichText } from "@/components/chat/RichText";
 import { splitDataAnswer } from "@/lib/chat/data-answer";
-import { mediaRefPath } from "@/lib/chat/media-ref";
+import { mediaRefPath, unescapeLinkLabel } from "@/lib/chat/media-ref";
 import {
   splitCompactionContent,
   stripInjectedContext,
@@ -28,8 +28,9 @@ interface Segment {
  */
 function segment(content: string): Segment[] {
   const out: Segment[] = [];
-  // A name may hold a bracketed part (`draft [v2].pdf`): not escaped on send.
-  const re = /(!?)\[((?:[^[\]]|\[[^[\]]*\])*)\]\((\S+?)\)/g;
+  // Names are escaped on send (`\[Q4\].pdf`); turns stored before that may
+  // hold one bracketed part (`draft [v2].pdf`).
+  const re = /(!?)\[((?:\\.|[^[\]\\]|\[[^[\]]*\])*)\]\((\S+?)\)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
@@ -39,7 +40,7 @@ function segment(content: string): Segment[] {
     if (m.index > last) {
       out.push({ kind: "text", value: content.slice(last, m.index) });
     }
-    out.push({ kind: isImage ? "image" : "file", value: m[3], alt: m[2] });
+    out.push({ kind: isImage ? "image" : "file", value: m[3], alt: unescapeLinkLabel(m[2]) });
     last = re.lastIndex;
   }
   if (last < content.length) {
