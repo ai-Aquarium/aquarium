@@ -132,5 +132,7 @@
   "finishedHelpers": "已為 {tag} 更新系統輔助程式。",
   "finishFailedTitle": "完成升級至 {tag} 失敗。",
   "finishFailedBody": "{tag} 正在運行，但無法安裝其系統輔助程式，已放回先前的版本。在成功之前，代理的終端機可能缺少新指令。",
-  "tryAgain": "再試一次"
+  "tryAgain": "再試一次",
+  "stepFinishInstall": "安裝系統輔助程式",
+  "stepFinishInstallHint": "從已驗證的版本安裝終端機、VPN 及 sudo 規則"
 }
