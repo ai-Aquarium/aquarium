@@ -74,7 +74,7 @@ def bucket(monkeypatch):
     class _Registry:
         async def register(self, principal, **kwargs):
             state.registered.append({"owner": principal.user_id, **kwargs})
-            return SimpleNamespace(**kwargs)
+            return SimpleNamespace(id=f"f-{len(state.registered)}", **kwargs)
 
     monkeypatch.setattr(SupabaseStorage, "from_env", classmethod(lambda cls: _Storage()))
     monkeypatch.setattr(file_registry, "default_registry", lambda mode=None: _Registry())
@@ -212,6 +212,24 @@ def test_streaming_turn_completes_with_the_rewritten_reply(client, bucket, model
     # Untitled conversations are filed under their id.
     _assert_delivered(content, bucket, "q3 report.pdf", image=False, title="s-stream")
     assert _stored_assistant("s-stream")[-1] == content
+
+
+def test_interactive_html_chart_opens_in_the_page_viewer(client, bucket, model, tmp_path):
+    page = tmp_path / "workspaces" / "sales.html"
+    page.parent.mkdir()
+    page.write_text("<html><head></head><body><script>draw()</script></body></html>")
+    _session("s-html", title="Sales")
+    model.replies[:] = [f"Interactive chart:\n\nMEDIA:{page}\n"]
+
+    resp = client.post("/api/sessions/s-html/chat/stream", json={"message": "chart"})
+
+    assert resp.status_code == 200
+    content = _completed(resp.text)
+    assert "[sales.html](/view/f-1)" in content and "MEDIA:" not in content, content
+    reg = bucket.registered[-1]
+    assert reg["filename"] == "sales.html" and reg["content_type"] == "text/html"
+    assert reg["owner"] == OWNER.user_id and reg["storage_path"] == bucket.uploads[-1][0]
+    assert _stored_assistant("s-html")[-1] == content
 
 
 def test_failed_upload_leaves_a_note_and_the_turn_succeeds(client, bucket, model, tmp_path):

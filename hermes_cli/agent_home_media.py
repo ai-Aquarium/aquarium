@@ -7,6 +7,8 @@ to fall back to links the browser cannot open (the dashboard's
 reply is uploaded into the turn principal's Files (``store_and_register``,
 surface ``agent_home``) and replaced with the private-bucket reference
 agent-home's chat renders: ``![name](/api/chat/media?path=<key>)`` for images,
+``[name](/view/<file id>)`` for HTML pages (an interactive chart opens in the
+app's isolated viewer, the same one Files uses), and
 ``[name](/api/chat/media?path=<key>)`` for anything else — the exact shape of
 ``mediaRef()`` in ``agent-home/src/lib/chat/media-ref.ts``.
 
@@ -35,6 +37,11 @@ MEDIA_ROUTE = "/api/chat/media"
 #: Shown inline; everything else is a link.
 IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"})
 
+#: Opened in agent-home's isolated HTML viewer (``viewerHref()`` in
+#: agent-home/src/lib/nav/viewer-back.ts), where its script may run.
+HTML_EXTS = frozenset({".html", ".htm"})
+VIEW_ROUTE = "/view"
+
 #: Bound on uploads per reply, so one runaway answer can't fill a bucket.
 MAX_FILES_PER_REPLY = 20
 
@@ -45,6 +52,11 @@ _URI_COMPONENT_SAFE = "-_.!~*'()"
 def media_ref(key: str) -> str:
     """``mediaRef(key)`` from media-ref.ts, byte for byte."""
     return f"{MEDIA_ROUTE}?path={quote(key, safe=_URI_COMPONENT_SAFE)}"
+
+
+def viewer_ref(file_id: str) -> str:
+    """``viewerHref(id)`` from viewer-back.ts, byte for byte."""
+    return f"{VIEW_ROUTE}/{quote(str(file_id), safe=_URI_COMPONENT_SAFE)}"
 
 
 _FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})[^\n]*$", re.MULTILINE)
@@ -258,6 +270,9 @@ class _Uploader:
         )
         if asset is None:
             return _note(name, "upload failed")
+        file_id = getattr(asset, "id", None)
+        if ext in HTML_EXTS and file_id:
+            return f"[{_label(name)}]({viewer_ref(file_id)})"
         ref = media_ref(asset.storage_path)
         if ext in IMAGE_EXTS:
             return f"![{_label(name)}]({ref})"

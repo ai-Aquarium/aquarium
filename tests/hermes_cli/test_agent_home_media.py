@@ -76,7 +76,7 @@ class _Registry:
 
     async def register(self, principal, **kwargs):
         self.calls.append({"owner": principal.user_id, **kwargs})
-        return SimpleNamespace(**kwargs)
+        return SimpleNamespace(id=f"file {len(self.calls)}", **kwargs)
 
 
 def _rewrite(content, **kw):
@@ -171,6 +171,16 @@ def test_image_and_document_tags_become_media_refs(tmp_path):
     assert [c["filename"] for c in registry.calls] == ["sales chart.png", "a..b.pdf"]
     assert {c["conversation"] for c in registry.calls} == {"Q3 charts"}
     assert {c["owner"] for c in registry.calls} == {ADA.user_id}
+
+
+def test_html_page_opens_in_the_viewer(tmp_path):
+    page = tmp_path / "sales.html"
+    page.write_text("<html><body><script>plot()</script></body></html>")
+    out, _, storage, registry = _rewrite(f"Interactive:\nMEDIA:{page}")
+
+    assert out == "Interactive:\n[sales.html](/view/file%201)", out
+    assert registry.calls[0]["filename"] == "sales.html"
+    assert storage.uploads[0][2] == "text/html"
 
 
 def test_same_file_twice_uploads_once(tmp_path):
