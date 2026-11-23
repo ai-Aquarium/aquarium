@@ -89,27 +89,19 @@ export function ProjectCard({ card }: { card: ProjectCardRef }) {
     if (!loaded || rev == null || busy) return;
     setBusy(true);
     setError(null);
-    const steps: { path: string; method?: "PATCH"; body: Record<string, unknown> }[] = [
-      { path: `${base}/playbook/${rev}/activate`, body: {} },
-    ];
-    if (loaded.project.status === "planning") {
-      steps.push({ path: base, method: "PATCH", body: { status: "active" } });
-    }
-    steps.push({ path: `${base}/runs`, body: { playbook_rev: rev } });
     try {
-      let runNo: number | null = null;
-      for (const step of steps) {
-        const res = await sendProjectAction<{ run_no?: number }>(step.path, newIdempotencyKey(), {
-          method: step.method,
-          body: step.body,
-        });
-        if (!res.ok) {
-          setError(res.error);
-          return;
-        }
-        if (step.path.endsWith("/runs")) runNo = res.data?.run_no ?? null;
+      // One server act (make active, project active, run 1); a second click
+      // or tab gets the same run 1 back, never a second run.
+      const res = await sendProjectAction<{ run?: { run_no?: number } }>(
+        `${base}/playbook/${rev}/first-run`,
+        newIdempotencyKey(),
+        { body: {} },
+      );
+      if (!res.ok) {
+        setError(res.error);
+        return;
       }
-      setStarted({ runNo });
+      setStarted({ runNo: res.data?.run?.run_no ?? null });
       setLoaded({ ...loaded, activeRev: rev, proposed: null, project: { ...loaded.project, status: "active" } });
     } finally {
       setBusy(false);
