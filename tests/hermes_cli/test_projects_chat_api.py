@@ -574,3 +574,38 @@ def test_an_outsized_catch_up_count_never_breaks_the_chat():
     )
     shown, meta = projects_chat_api.split_block(stored)
     assert shown == "hi" and meta["catch_up"] == 0
+
+
+def test_a_digest_the_turn_never_carried_still_reaches_the_next_turn():
+    from hermes_cli.projects_chat_api import missed_turns
+
+    def row(sid, role, at, **kw):
+        return {"session_id": sid, "role": role, "timestamp": at, **kw}
+
+    note = row(None, "user", 15.0, member_only=True, content="Ada's note")
+    timeline = [
+        row("s-leo", "user", 10.0),
+        row("s-leo", "assistant", 11.0),
+        note,
+        # A second tab's send was prepared with the note at 20, but went in as a
+        # plain follow-up turn without the digest.
+        row("s-leo", "user", 21.0),
+        row("s-leo", "assistant", 22.0),
+    ]
+    prepares = [(9.0, 0), (20.0, 1)]
+    assert missed_turns(timeline, "s-leo", prepares) == [note]
+    # Once a turn carries it, it is delivered.
+    timeline.append(row("s-leo", "user", 31.0, catch_up=1))
+    assert missed_turns(timeline, "s-leo", [*prepares, (30.0, 1)]) == []
+
+
+def test_a_member_cannot_label_a_conversation_into_the_group_chat(env, project):
+    convo = _session(env, "research", "s-mine")
+    _say(env, "research", convo, "user", "Something private")
+    resp = env[0].post(
+        f"/api/registry/projects/{project['slug']}/links",
+        json={"kind": "conversation", "ref": convo, "profile": "research",
+              "label": "Project Group Chat"},
+    )
+    assert resp.status_code == 422
+    assert _timeline(env, project["slug"])["messages"] == []

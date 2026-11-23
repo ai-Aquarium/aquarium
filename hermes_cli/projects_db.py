@@ -190,7 +190,8 @@ CREATE TABLE IF NOT EXISTS project_chat_prepares (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     session_id  TEXT NOT NULL,
-    snapshot_at REAL NOT NULL
+    snapshot_at REAL NOT NULL,
+    digest_size INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_project_chat_prepares
@@ -2040,24 +2041,32 @@ def add_chat_message(
 
 
 def add_chat_prepare(
-    conn: sqlite3.Connection, *, project_id: str, session_id: str, snapshot_at: float
+    conn: sqlite3.Connection,
+    *,
+    project_id: str,
+    session_id: str,
+    snapshot_at: float,
+    digest_size: int = 0,
 ) -> None:
     """Record that a turn for *session_id* was prepared with a catch-up read at
     *snapshot_at*."""
     with write_txn(conn):
         conn.execute(
-            "INSERT INTO project_chat_prepares (project_id, session_id, snapshot_at) "
-            "VALUES (?, ?, ?)",
-            (project_id, session_id, snapshot_at),
+            "INSERT INTO project_chat_prepares "
+            "(project_id, session_id, snapshot_at, digest_size) VALUES (?, ?, ?, ?)",
+            (project_id, session_id, snapshot_at, digest_size),
         )
 
 
-def get_chat_prepares(conn: sqlite3.Connection, project_id: str, session_id: str) -> List[float]:
-    """The catch-up snapshot times of *session_id*'s prepared turns, oldest first."""
+def get_chat_prepares(
+    conn: sqlite3.Connection, project_id: str, session_id: str
+) -> List[tuple]:
+    """``(snapshot time, messages in its digest)`` of *session_id*'s prepared
+    turns, oldest first."""
     return [
-        float(r[0])
+        (float(r[0]), int(r[1] or 0))
         for r in conn.execute(
-            "SELECT snapshot_at FROM project_chat_prepares "
+            "SELECT snapshot_at, digest_size FROM project_chat_prepares "
             "WHERE project_id = ? AND session_id = ? ORDER BY snapshot_at",
             (project_id, session_id),
         ).fetchall()

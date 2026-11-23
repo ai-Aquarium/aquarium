@@ -359,26 +359,34 @@ def merge_timeline(
 
 
 def missed_turns(
-    timeline: list[dict], session_id: str, snapshots: Iterable[float] = ()
+    timeline: list[dict], session_id: str, prepares: Iterable[tuple[float, int]] = ()
 ) -> list[dict]:
     """Everything in the group chat that *session_id* has not been sent yet:
     other members' messages and other conversations' replies after the
     catch-up of its last sent turn.
 
-    *snapshots* are the times its turns' digests were read. A turn's digest
-    covers the chat up to its snapshot, so anything posted while that turn
-    ran still reaches the next one; with no snapshot on record, the turn's
+    *prepares* are ``(snapshot time, digest size)`` of its prepared turns. A
+    sent turn's digest covers the chat up to the snapshot of the prepare just
+    before it, so anything posted while that turn ran still reaches the next
+    one. A prepared digest the turn does not carry (the send became a steer
+    or was dropped) delivered nothing. With no prepare on record, the turn's
     own time stands in.
     """
-    sent = [
-        r["timestamp"]
+    sent = sorted(
+        (r["timestamp"], int(r.get("catch_up") or 0))
         for r in timeline
         if r["session_id"] == session_id and r["role"] == "user" and not r.get("sent_while_working")
-    ]
+    )
+    marks = sorted(prepares)
     cutoff = None
-    if sent:
-        last = max(sent)
-        cutoff = max((t for t in snapshots if t <= last), default=last)
+    previous = float("-inf")
+    for at, carried in sent:
+        mark = next((m for m in reversed(marks) if previous < m[0] <= at), None)
+        if mark is None:
+            cutoff = at
+        elif carried or not mark[1]:
+            cutoff = mark[0]
+        previous = at
     return [
         r
         for r in timeline
@@ -653,11 +661,15 @@ def _prepare_sync(
         db.close()
     snapshot = time.time()
     with projects_db.connect_closing() as conn:
-        snapshots = projects_db.get_chat_prepares(conn, project.id, sid)
-    missed = missed_turns(_group_timeline(project, enrolled, names, posters), sid, snapshots)
+        prepares = projects_db.get_chat_prepares(conn, project.id, sid)
+    missed = missed_turns(_group_timeline(project, enrolled, names, posters), sid, prepares)
     with projects_db.connect_closing() as conn:
         projects_db.add_chat_prepare(
-            conn, project_id=project.id, session_id=sid, snapshot_at=snapshot
+            conn,
+            project_id=project.id,
+            session_id=sid,
+            snapshot_at=snapshot,
+            digest_size=len(missed),
         )
     digest = catch_up_digest(missed)
     context = ""
