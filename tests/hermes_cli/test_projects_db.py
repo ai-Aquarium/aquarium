@@ -523,18 +523,52 @@ def test_a_discarded_rev_number_is_never_reused(conn):
     assert again > draft
 
 
-def test_discarding_a_base_moves_its_proposals_onto_its_own_base(conn):
-    pid = pdb.create_project(conn, name="Withdraw", folders=["/tmp/withdraw"])
-    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A"), ("b", "B")))
+def test_a_discard_survives_an_upgraded_counter(conn):
+    pid = pdb.create_project(conn, name="Upgraded", folders=["/tmp/upgraded"])
+    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A")))
     pdb.activate_playbook_rev(conn, pid, v1)
-    parent = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A1"), ("b", "B")))
+    v2 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "B")))
+    # A project from before the counter existed.
+    conn.execute("UPDATE projects SET playbook_rev_seq = 0 WHERE id = ?", (pid,))
+    conn.commit()
+    assert pdb.discard_playbook_rev(conn, pid, v2) is None
+    assert pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "C"))) > v2
+
+
+def test_a_discarded_rev_is_hidden_but_stays_as_ancestry(conn):
+    pid = pdb.create_project(conn, name="Hidden", folders=["/tmp/hidden"])
+    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A")))
+    pdb.activate_playbook_rev(conn, pid, v1)
+    parent = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "B")))
     child = pdb.save_playbook_rev(
-        conn, project_id=pid, steps=_steps(("a", "A1"), ("b", "B1")), base_rev=parent
+        conn, project_id=pid, steps=_steps(("a", "C")), base_rev=parent
     )
-    other = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "A"), ("b", "B"), ("c", "C")))
-    pdb.activate_playbook_rev(conn, pid, other)
     assert pdb.discard_playbook_rev(conn, pid, parent) is None
-    assert pdb.get_playbook(conn, pid, child)["base_rev"] == v1
-    # The child keeps the withdrawn parent's change and can still be updated.
+    assert pdb.get_playbook(conn, pid, parent) is None
+    assert parent not in {r["rev"] for r in pdb.list_playbook_revs(conn, pid)}
+    assert pdb.activate_playbook_rev(conn, pid, parent) is False
+    assert pdb.discard_playbook_rev(conn, pid, parent) == "not_found"
+    assert pdb.rebase_playbook_rev(conn, pid, parent) == {"refused": "not_found"}
+    assert pdb.get_playbook(conn, pid, child)["base_rev"] == parent
+    assert pdb.list_discarded_playbook_ancestry(conn, pid) == [
+        {"rev": parent, "base_rev": v1, "activated_at": None}
+    ]
+
+
+def test_updating_past_a_discarded_shared_base_keeps_the_active_edit(conn):
+    pid = pdb.create_project(conn, name="Shared", folders=["/tmp/shared"])
+    v1 = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "Review"), ("b", "B")))
+    pdb.activate_playbook_rev(conn, pid, v1)
+    shared = pdb.save_playbook_rev(conn, project_id=pid, steps=_steps(("a", "Skip review"), ("b", "B")))
+    child = pdb.save_playbook_rev(
+        conn, project_id=pid, steps=_steps(("a", "Skip review"), ("b", "B1")), base_rev=shared
+    )
+    sibling = pdb.save_playbook_rev(
+        conn, project_id=pid, steps=_steps(("a", "Review"), ("b", "B")), base_rev=shared
+    )
+    pdb.activate_playbook_rev(conn, pid, sibling)
+    assert pdb.discard_playbook_rev(conn, pid, shared) is None
     up = pdb.rebase_playbook_rev(conn, pid, child)
-    assert [s["title"] for s in pdb.get_playbook(conn, pid, up["rev"])["steps"]] == ["A1", "B1", "C"]
+    assert up["conflicts"] == []
+    # The sibling's restored "Review" stays; the child only changed b.
+    assert [s["title"] for s in pdb.get_playbook(conn, pid, up["rev"])["steps"]] == ["Review", "B1"]

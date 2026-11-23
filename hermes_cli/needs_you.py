@@ -497,7 +497,7 @@ def project_entries(principal, enrolled: Iterable[str], covered: set[tuple]) -> 
         # A drafted plan with no active revision on a project that never ran.
         plans = [dict(r) for r in conn.execute(
             "SELECT p.project_id, MAX(p.rev) AS rev, MAX(p.created_at) AS created_at "
-            "FROM project_playbook p GROUP BY p.project_id "
+            "FROM project_playbook p WHERE p.discarded_at IS NULL GROUP BY p.project_id "
             "HAVING SUM(p.active) = 0 AND NOT EXISTS "
             "(SELECT 1 FROM project_runs r WHERE r.project_id = p.project_id) "
             f"LIMIT {_PER_SOURCE_LIMIT}"

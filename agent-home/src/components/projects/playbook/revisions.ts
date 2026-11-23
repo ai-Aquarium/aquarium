@@ -1,4 +1,4 @@
-import type { PlaybookRev, PlaybookStep, ProjectPlaybookResponse } from "@/types";
+import type { PlaybookAncestor, PlaybookRev, PlaybookStep, ProjectPlaybookResponse } from "@/types";
 import { planDiff, type PlanDiffKind } from "@/components/projects/changes/planDiff";
 
 /**
@@ -37,12 +37,14 @@ export type ProposalBase = {
  * A proposal that doesn't build on the active version is "based on an
  * older version", including one written from a pending proposal whose own
  * base is no longer active: making it active would undo what changed in
- * between. Revisions are never edited once saved, so the chain stays true.
+ * between. Revisions are never edited once saved, so the chain stays true;
+ * a discarded one on the way is followed through `discarded`.
  */
 export function proposalBase(
   rev: PlaybookRev,
   revisions: readonly PlaybookRev[],
   activeRev: number | null | undefined,
+  discarded: readonly PlaybookAncestor[] = [],
 ): ProposalBase {
   const base = rev.base_rev ?? null;
   const settled: ProposalBase = { base, from: null, outdated: false, canUpdate: false, why: null };
@@ -51,9 +53,10 @@ export function proposalBase(
   let cur: number | null = base;
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const at = revisions.find((r) => r.rev === cur);
+    const at: PlaybookAncestor | undefined =
+      revisions.find((r) => r.rev === cur) ?? discarded.find((r) => r.rev === cur);
     if (!at) return { base, from: cur, outdated: true, canUpdate: false, why: "missing" };
-    if (at.active || at.rev === activeRev || at.activated_at != null) {
+    if (("active" in at && at.active) || at.rev === activeRev || at.activated_at != null) {
       return at.rev === activeRev
         ? { ...settled, from: at.rev }
         : { base, from: at.rev, outdated: true, canUpdate: true, why: "older" };

@@ -20,6 +20,7 @@ import {
 } from "@/components/projects/plan/StepAssignment";
 import type {
   AssignableProfile,
+  PlaybookAncestor,
   PlaybookRev,
   PlaybookStep,
   ProjectPlaybookDraftState,
@@ -240,6 +241,7 @@ export function PlanPanel({
     active != null && !listed.some((r) => r.rev === active.rev)
       ? [...listed, active].sort((a, b) => a.rev - b.rev)
       : listed;
+  const discarded = playbook?.discarded ?? [];
 
   /** The version chip the user picked; falls back when it is discarded. */
   const [picked, setPicked] = useState<number | null>(null);
@@ -504,6 +506,7 @@ export function PlanPanel({
           {selected != null && !editing ? (
             <RevisionPicker
               revisions={revisions}
+              discarded={discarded}
               activeRev={activeRev}
               selected={selected}
               onSelect={selectRev}
@@ -519,6 +522,7 @@ export function PlanPanel({
               slug={slug}
               rev={selected}
               revisions={revisions}
+              discarded={discarded}
               activeRev={activeRev}
               state={selectedState ?? "proposed"}
               canActivate={canActivate}
@@ -844,6 +848,7 @@ function RevisionDecision({
   slug,
   rev,
   revisions,
+  discarded,
   activeRev,
   state,
   canActivate,
@@ -858,6 +863,7 @@ function RevisionDecision({
   slug: string;
   rev: PlaybookRev;
   revisions: PlaybookRev[];
+  discarded: PlaybookAncestor[];
   activeRev: number | null;
   state: RevisionState;
   canActivate: boolean;
@@ -875,7 +881,7 @@ function RevisionDecision({
   const t = useT("playbook");
   const [note, setNote] = useState("");
   const addsNote = !archived && canActivate && !rev.note?.trim();
-  const { base, from, outdated, canUpdate, why } = proposalBase(rev, revisions, activeRev);
+  const { base, from, outdated, canUpdate, why } = proposalBase(rev, revisions, activeRev, discarded);
   return (
     <div
       data-component="RevisionDecision"

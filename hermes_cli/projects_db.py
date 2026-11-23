@@ -256,6 +256,7 @@ CREATE TABLE IF NOT EXISTS project_playbook (
     activated_at INTEGER,
     note         TEXT,                        -- why this revision exists (often a retro id)
     base_rev     INTEGER,                     -- the revision a proposal was written from
+    discarded_at INTEGER,                     -- discarded: kept only as ancestry
     PRIMARY KEY (project_id, rev)
 );
 
@@ -586,7 +587,10 @@ _SKILL_CANDIDATE_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
 )
 
 
-_PLAYBOOK_COLUMN_MIGRATIONS = (("base_rev", "base_rev INTEGER"),)
+_PLAYBOOK_COLUMN_MIGRATIONS = (
+    ("base_rev", "base_rev INTEGER"),
+    ("discarded_at", "discarded_at INTEGER"),
+)
 
 
 def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
@@ -2859,12 +2863,14 @@ def _settled_base(
 def _lineage(conn: sqlite3.Connection, project_id: str, rev: int) -> List[dict]:
     """``rev`` and the revisions it was written from, nearest first, along
     ``base_rev`` until the chain ends (written from nothing, no recorded
-    base, or a discarded revision)."""
+    base, or a revision discarded before discards were kept). A discarded
+    revision stays on the chain: it is the true common base of what was
+    written from it."""
     out: List[dict] = []
     seen: set[int] = set()
     while rev and rev not in seen:
         seen.add(rev)
-        row = get_playbook(conn, project_id, rev)
+        row = get_playbook(conn, project_id, rev, include_discarded=True)
         if row is None:
             break
         out.append(row)
@@ -2884,7 +2890,7 @@ def rebase_playbook_rev(
     are re-applied to the active one (``merge_playbook_onto``) and saved as
     a **new** proposal based on the active rev. The old proposal is left as
     it was: revisions are immutable, so proposals written from it keep a
-    true base, and only a lead's Discard removes a revision.
+    true base, and only Discard retires a revision.
 
     Returns ``{"rev", "from_rev", "base_rev", "conflicts"}``, or
     ``{"refused": …}`` with ``"not_found"``, ``"active"`` (active now or
@@ -2948,7 +2954,8 @@ def activate_playbook_rev(
     """Human-only activation (§7.2): exactly one rev is active at a time."""
     with write_txn(conn):
         exists = conn.execute(
-            "SELECT 1 FROM project_playbook WHERE project_id = ? AND rev = ?",
+            "SELECT 1 FROM project_playbook WHERE project_id = ? AND rev = ? "
+            "AND discarded_at IS NULL",
             (project_id, rev),
         ).fetchone()
         if exists is None:
@@ -2974,7 +2981,7 @@ def discard_playbook_rev(
     *,
     proposer: Optional[str] = None,
 ) -> Optional[str]:
-    """Delete a proposed (inactive) playbook revision — the human deciding
+    """Discard a proposed (inactive) playbook revision — the human deciding
     this draft is wrong, paired with activation (§7.2).
 
     Returns ``None`` on success, else a refusal: ``"not_found"``,
@@ -2984,13 +2991,14 @@ def discard_playbook_rev(
     ``proposer`` (a member, not a lead) only that person's own proposal —
     never active — may go; anything else is ``"not_yours"``.
 
-    Proposals written from the discarded one now build on what it was
-    written from (its changes become theirs), so they can still be updated
-    onto the active rev. Its number is never reused (``playbook_rev_seq``)."""
+    The row is kept, marked ``discarded_at``, and hidden from listing,
+    reading and activation: proposals written from it keep their true base
+    (``_lineage``) so they can still be updated onto the active rev, and its
+    number is never handed out again."""
     with write_txn(conn):
         row = conn.execute(
-            "SELECT active, activated_at, created_by, base_rev FROM project_playbook "
-            "WHERE project_id = ? AND rev = ?",
+            "SELECT active, activated_at, created_by FROM project_playbook "
+            "WHERE project_id = ? AND rev = ? AND discarded_at IS NULL",
             (project_id, rev),
         ).fetchone()
         if row is None:
@@ -3009,13 +3017,9 @@ def discard_playbook_rev(
         if pinned is not None:
             return f"pinned:{pinned['run_no']}"
         conn.execute(
-            "UPDATE project_playbook SET base_rev = ? "
-            "WHERE project_id = ? AND base_rev = ?",
-            (row["base_rev"], project_id, rev),
-        )
-        conn.execute(
-            "DELETE FROM project_playbook WHERE project_id = ? AND rev = ?",
-            (project_id, rev),
+            "UPDATE project_playbook SET discarded_at = ? "
+            "WHERE project_id = ? AND rev = ?",
+            (_now(), project_id, rev),
         )
     return None
 
@@ -3024,8 +3028,11 @@ def get_playbook(
     conn: sqlite3.Connection,
     project_id: str,
     rev: Optional[int] = None,
+    *,
+    include_discarded: bool = False,
 ) -> Optional[dict]:
-    """One playbook revision; ``rev=None`` returns the active one."""
+    """One playbook revision; ``rev=None`` returns the active one. A
+    discarded revision reads as missing unless ``include_discarded``."""
     if rev is None:
         row = conn.execute(
             "SELECT * FROM project_playbook WHERE project_id = ? AND active = 1",
@@ -3033,7 +3040,8 @@ def get_playbook(
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT * FROM project_playbook WHERE project_id = ? AND rev = ?",
+            "SELECT * FROM project_playbook WHERE project_id = ? AND rev = ?"
+            + ("" if include_discarded else " AND discarded_at IS NULL"),
             (project_id, int(rev)),
         ).fetchone()
     if row is None:
@@ -3050,7 +3058,7 @@ def list_playbook_revs(conn: sqlite3.Connection, project_id: str) -> List[dict]:
     rows = conn.execute(
         "SELECT project_id, rev, body, steps, active, created_by, created_at, "
         "activated_at, note, base_rev FROM project_playbook WHERE project_id = ? "
-        "ORDER BY rev DESC",
+        "AND discarded_at IS NULL ORDER BY rev DESC",
         (project_id,),
     ).fetchall()
     out = []
@@ -3070,6 +3078,18 @@ def list_playbook_revs(conn: sqlite3.Connection, project_id: str) -> List[dict]:
 
 VALID_DIRECTIVE_KINDS = ("directive", "feedback")
 VALID_DIRECTIVE_SCOPES = ("project", "run", "card")
+
+
+def list_discarded_playbook_ancestry(
+    conn: sqlite3.Connection, project_id: str
+) -> List[dict]:
+    """Discarded revisions, as ancestry only (no body or steps): enough for
+    a proposal written from one to trace what it builds on."""
+    return [dict(r) for r in conn.execute(
+        "SELECT rev, base_rev, activated_at FROM project_playbook "
+        "WHERE project_id = ? AND discarded_at IS NOT NULL ORDER BY rev DESC",
+        (project_id,),
+    ).fetchall()]
 
 
 def add_project_directive(

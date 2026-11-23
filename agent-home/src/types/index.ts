@@ -2705,9 +2705,13 @@ export interface PlaybookRev {
   base_rev?: number | null;
 }
 
+/** A discarded revision, kept only so proposals written from it can trace their base. */
+export type PlaybookAncestor = Pick<PlaybookRev, "rev" | "base_rev" | "activated_at">;
+
 export interface ProjectPlaybookResponse {
   active: PlaybookRev | null;
   revisions: PlaybookRev[];
+  discarded?: PlaybookAncestor[];
 }
 
 /** Outcome of asking the agent to draft a plan (server-side job, polled). */

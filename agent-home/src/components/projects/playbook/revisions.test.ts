@@ -126,4 +126,11 @@ describe("several proposals at once", () => {
     expect(revisionState(r(3, { base_rev: 0 }), 5)).toBe("proposed");
     expect(proposalBase(at(5), revs, 5).outdated).toBe(false);
   });
+
+  it("traces a base through a discarded proposal instead of losing it", () => {
+    const revs = [r(4, { activated_at: 1 }), r(5, { active: 1, activated_at: 2, base_rev: 4 }), r(7, { base_rev: 6 })];
+    const discarded = [{ rev: 6, base_rev: 4, activated_at: null }];
+    expect(proposalBase(revs[2], revs, 5)).toMatchObject({ why: "missing", canUpdate: false });
+    expect(proposalBase(revs[2], revs, 5, discarded)).toMatchObject({ base: 6, from: 4, outdated: true, canUpdate: true, why: "older" });
+  });
 });
