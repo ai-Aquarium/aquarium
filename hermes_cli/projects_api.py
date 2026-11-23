@@ -4434,6 +4434,17 @@ def _draft_payload(draft: dict, project, role, principal) -> dict:
     }
 
 
+async def _with_owner_names(drafts: list[dict]) -> list[dict]:
+    """Each draft with its owner's ``display_name`` (None: show the id)."""
+    from hermes_cli import projects_chat_api
+
+    names = {
+        uid: await projects_chat_api._display_name(uid)  # noqa: SLF001 - same package
+        for uid in {d["user_id"] for d in drafts}
+    }
+    return [{**d, "display_name": names.get(d["user_id"])} for d in drafts]
+
+
 def _draft_conflict(exc: projects_db.DraftConflict) -> HTTPException:
     return HTTPException(
         status_code=409,
@@ -4478,7 +4489,9 @@ async def list_playbook_drafts_route(request: Request) -> dict[str, Any]:
             and not project.archived,
         }
 
-    return await asyncio.to_thread(_list_sync)
+    listing = await asyncio.to_thread(_list_sync)
+    listing["drafts"] = await _with_owner_names(listing["drafts"])
+    return listing
 
 
 @router.get("/{slug}/playbook/drafts/me")
@@ -4493,7 +4506,10 @@ async def get_my_playbook_draft_route(request: Request) -> dict[str, Any]:
             "draft": _draft_payload(draft, project, role, principal) if draft else None
         }
 
-    return await asyncio.to_thread(_get_sync)
+    mine = await asyncio.to_thread(_get_sync)
+    if mine["draft"]:
+        (mine["draft"],) = await _with_owner_names([mine["draft"]])
+    return mine
 
 
 @router.put("/{slug}/playbook/drafts/me")
