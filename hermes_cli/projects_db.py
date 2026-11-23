@@ -255,6 +255,7 @@ CREATE TABLE IF NOT EXISTS project_playbook (
     created_at   INTEGER NOT NULL,
     activated_at INTEGER,
     note         TEXT,                        -- why this revision exists (often a retro id)
+    base_rev     INTEGER,                     -- the revision a proposal was written from
     PRIMARY KEY (project_id, rev)
 );
 
@@ -582,6 +583,9 @@ _SKILL_CANDIDATE_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
 )
 
 
+_PLAYBOOK_COLUMN_MIGRATIONS = (("base_rev", "base_rev INTEGER"),)
+
+
 def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
     """Add columns introduced after v1 to legacy DBs (safe on every open)."""
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(projects)")}
@@ -605,6 +609,10 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
     for col, ddl in _SKILL_CANDIDATE_COLUMN_MIGRATIONS:
         if col not in ccols:
             _add_column_if_missing(conn, "project_skill_candidates", col, ddl)
+    pcols = {row["name"] for row in conn.execute("PRAGMA table_info(project_playbook)")}
+    for col, ddl in _PLAYBOOK_COLUMN_MIGRATIONS:
+        if col not in pcols:
+            _add_column_if_missing(conn, "project_playbook", col, ddl)
     # Created here, not in SCHEMA_SQL: a legacy DB only has the column once
     # the ADD COLUMN above has run.
     conn.execute(
@@ -2692,12 +2700,16 @@ def save_playbook_rev(
     steps: Any,
     created_by: Optional[str] = None,
     note: Optional[str] = None,
+    base_rev: Optional[int] = None,
 ) -> int:
     """Create playbook revision N+1 with ``active=0`` (design §7.2).
 
     A new revision is a proposal: it changes nothing until a human
     activates it, and a running run keeps its pinned rev either way.
-    Returns the new rev number.
+    Several proposals may wait at once; each records ``base_rev``, the
+    revision it was written from (the active one when not given), so a
+    proposal written before another was activated reads as based on an
+    older version. Returns the new rev number.
     """
     cleaned = validate_playbook_steps(steps)
     with write_txn(conn):
@@ -2707,14 +2719,136 @@ def save_playbook_rev(
             (project_id,),
         ).fetchone()
         rev = int(row["m"]) + 1
+        if base_rev is None:
+            active = conn.execute(
+                "SELECT rev FROM project_playbook WHERE project_id = ? AND active = 1",
+                (project_id,),
+            ).fetchone()
+            base_rev = int(active["rev"]) if active else None
         conn.execute(
             """INSERT INTO project_playbook
-               (project_id, rev, body, steps, active, created_by, created_at, note)
-               VALUES (?, ?, ?, ?, 0, ?, ?, ?)""",
+               (project_id, rev, body, steps, active, created_by, created_at,
+                note, base_rev)
+               VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)""",
             (project_id, rev, str(body or ""), json.dumps(cleaned),
-             created_by, _now(), note),
+             created_by, _now(), note, base_rev),
         )
     return rev
+
+
+def _merge_value(base: Any, mine: Any, theirs: Any) -> tuple[Any, bool]:
+    """Three-way pick for one value: whichever side changed it wins; when
+    both changed it differently, ``mine`` (the proposal) is kept and the
+    second item is True."""
+    if mine == base:
+        return theirs, False
+    if theirs == base or theirs == mine:
+        return mine, False
+    return mine, True
+
+
+_MISSING = object()
+
+
+def merge_playbook_onto(
+    base: dict, proposal: dict, active: dict
+) -> tuple[str, List[dict], List[str]]:
+    """Re-apply a proposal's own changes (``proposal`` vs ``base``) onto
+    ``active``, step by step (matched by key) and for the prose body.
+
+    Returns ``(body, steps, conflicts)``. A step or body both sides changed
+    differently keeps the proposal's version and is named in ``conflicts``
+    (``"body"`` or the step key) — nothing the proposal changed is dropped.
+    Dependencies on a step that no longer exists are dropped.
+    """
+    conflicts: List[str] = []
+    body, clash = _merge_value(
+        str(base.get("body") or ""),
+        str(proposal.get("body") or ""),
+        str(active.get("body") or ""),
+    )
+    if clash:
+        conflicts.append("body")
+
+    def by_key(rev: dict) -> dict:
+        return {s["key"]: s for s in (rev.get("steps") or []) if isinstance(s, dict) and s.get("key")}
+
+    b, p, a = by_key(base), by_key(proposal), by_key(active)
+    p_order = [s["key"] for s in proposal.get("steps") or [] if isinstance(s, dict) and s.get("key") in p]
+    a_order = [s["key"] for s in active.get("steps") or [] if isinstance(s, dict) and s.get("key") in a]
+    merged: dict = {}
+    for key in dict.fromkeys(p_order + a_order + list(b)):
+        value, clash = _merge_value(
+            b.get(key, _MISSING), p.get(key, _MISSING), a.get(key, _MISSING)
+        )
+        if clash:
+            conflicts.append(key)
+        if value is not _MISSING:
+            merged[key] = value
+
+    # The proposal's order, with steps only the active revision added placed
+    # after the step they follow there.
+    order = [k for k in p_order if k in merged]
+    for i, key in enumerate(a_order):
+        if key not in merged or key in order:
+            continue
+        prev = next((k for k in reversed(a_order[:i]) if k in order), None)
+        order.insert(order.index(prev) + 1 if prev else 0, key)
+    order += [k for k in merged if k not in order]
+    steps = []
+    for key in order:
+        step = dict(merged[key])
+        step["depends_on"] = [d for d in step.get("depends_on") or [] if d in merged]
+        steps.append(step)
+    return body, steps, conflicts
+
+
+def rebase_playbook_rev(
+    conn: sqlite3.Connection, project_id: str, rev: int
+) -> dict:
+    """Update a proposal onto the active revision: its own changes are
+    re-applied there (``merge_playbook_onto``) and ``base_rev`` becomes the
+    active rev. The proposal keeps its number.
+
+    Returns ``{"rev", "base_rev", "conflicts"}``, or ``{"refused": …}`` with
+    ``"not_found"``, ``"active"`` (active now or once — not a proposal),
+    ``"no_active"``, ``"current"`` (already
+    based on the active rev), ``"no_base"`` (an old proposal that never
+    recorded one), ``"pinned:<run_no>"`` or ``"invalid:<reason>"``.
+    """
+    with write_txn(conn):
+        proposal = get_playbook(conn, project_id, rev)
+        if proposal is None:
+            return {"refused": "not_found"}
+        if proposal.get("active") or proposal.get("activated_at"):
+            return {"refused": "active"}
+        active = get_playbook(conn, project_id)
+        if active is None:
+            return {"refused": "no_active"}
+        base_rev = proposal.get("base_rev")
+        if base_rev == active["rev"]:
+            return {"refused": "current"}
+        base = get_playbook(conn, project_id, base_rev) if base_rev is not None else None
+        if base is None:
+            return {"refused": "no_base"}
+        pinned = conn.execute(
+            "SELECT run_no FROM project_runs "
+            "WHERE project_id = ? AND playbook_rev = ? LIMIT 1",
+            (project_id, rev),
+        ).fetchone()
+        if pinned is not None:
+            return {"refused": f"pinned:{pinned['run_no']}"}
+        body, steps, conflicts = merge_playbook_onto(base, proposal, active)
+        try:
+            cleaned = validate_playbook_steps(steps)
+        except ValueError as exc:
+            return {"refused": f"invalid:{exc}"}
+        conn.execute(
+            "UPDATE project_playbook SET body = ?, steps = ?, base_rev = ? "
+            "WHERE project_id = ? AND rev = ?",
+            (body, json.dumps(cleaned), active["rev"], project_id, rev),
+        )
+    return {"rev": rev, "base_rev": active["rev"], "conflicts": conflicts}
 
 
 def activate_playbook_rev(
@@ -2733,8 +2867,9 @@ def activate_playbook_rev(
         if exists is None:
             return False
         conn.execute(
-            "UPDATE project_playbook SET active = 0, activated_at = NULL "
-            "WHERE project_id = ?",
+            # A superseded revision keeps ``activated_at``: it was in use once,
+            # so it reads as an earlier version, never as a pending proposal.
+            "UPDATE project_playbook SET active = 0 WHERE project_id = ?",
             (project_id,),
         )
         conn.execute(
@@ -2807,7 +2942,7 @@ def get_playbook(
 def list_playbook_revs(conn: sqlite3.Connection, project_id: str) -> List[dict]:
     rows = conn.execute(
         "SELECT project_id, rev, body, steps, active, created_by, created_at, "
-        "activated_at, note FROM project_playbook WHERE project_id = ? "
+        "activated_at, note, base_rev FROM project_playbook WHERE project_id = ? "
         "ORDER BY rev DESC",
         (project_id,),
     ).fetchall()

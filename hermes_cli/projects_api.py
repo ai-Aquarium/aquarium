@@ -3510,6 +3510,7 @@ async def save_playbook_route(request: Request) -> dict[str, Any]:
                 steps=cleaned,
                 created_by=principal.user_id,
                 note=body.get("note"),
+                base_rev=base.get("rev") if base is not None else None,
             )
         # A new revision is a proposal: nothing changes until a human
         # activates it, and a running run keeps its pinned rev either way.
@@ -4233,6 +4234,62 @@ async def activate_playbook_route(request: Request, rev: int) -> dict[str, Any]:
         return {"rev": rev, "active": True, "by": subject}
 
     return await asyncio.to_thread(_activate_sync)
+
+
+@router.post("/{slug}/playbook/{rev}/rebase")
+async def rebase_playbook_route(request: Request, rev: int) -> dict[str, Any]:
+    """Update a proposal written from an older revision onto the active
+    one: its own changes are re-applied there and it stays proposed (same
+    gate as proposing). A step both sides changed keeps the proposal's
+    version and is named in ``conflicts``."""
+    project, _role, _profiles, principal = await _require_write(
+        request, judgement=True
+    )
+    _refuse_if_archived(project, "revising its plan")
+
+    def _rebase_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            result = projects_db.rebase_playbook_rev(conn, project.id, rev)
+            if "refused" not in result:
+                projects_db.record_project_activity(
+                    conn, project.id, "playbook_rebased",
+                    actor=principal.user_id,
+                    detail={"rev": rev, "base_rev": result["base_rev"]},
+                )
+        refusal = result.get("refused")
+        if refusal == "not_found":
+            raise HTTPException(
+                status_code=404, detail=f"playbook revision {rev} not found"
+            )
+        if refusal == "active":
+            raise HTTPException(
+                status_code=409,
+                detail=f"revision {rev} is not a proposal (it has been active)",
+            )
+        if refusal == "no_active":
+            raise HTTPException(
+                status_code=409, detail="there is no active revision to update onto"
+            )
+        if refusal == "current":
+            raise HTTPException(
+                status_code=409,
+                detail=f"revision {rev} is already based on the active revision",
+            )
+        if refusal == "no_base":
+            raise HTTPException(
+                status_code=409,
+                detail=f"revision {rev} doesn't record the revision it was written from",
+            )
+        if refusal and refusal.startswith("pinned:"):
+            raise HTTPException(
+                status_code=409,
+                detail=f"revision {rev} is pinned by run {refusal.split(':', 1)[1]}",
+            )
+        if refusal and refusal.startswith("invalid:"):
+            raise HTTPException(status_code=422, detail=refusal.split(":", 1)[1])
+        return result
+
+    return await asyncio.to_thread(_rebase_sync)
 
 
 @router.delete("/{slug}/playbook/{rev}")

@@ -2,16 +2,40 @@ import type { PlaybookRev, PlaybookStep, ProjectPlaybookResponse } from "@/types
 import { planDiff, type PlanDiffKind } from "@/components/projects/changes/planDiff";
 
 /**
- * Where a revision stands: the one runs use, a proposal written after it
- * (awaiting Make active or Discard), or an earlier one that is history.
- * With no active revision every revision is a proposal.
+ * Where a revision stands: the one runs use, a proposal (awaiting Make
+ * active or Discard), or an earlier one that is history. Several proposals
+ * can wait at once: a revision that was never active and either is newer
+ * than the active one or records the revision it was written from stays a
+ * proposal when another is made active. One that was active once is
+ * history. With no active revision every revision is a proposal.
  */
 export type RevisionState = "active" | "proposed" | "earlier";
 
 export function revisionState(rev: PlaybookRev, activeRev: number | null | undefined): RevisionState {
   if (rev.active || rev.rev === activeRev) return "active";
-  if (activeRev == null || rev.rev > activeRev) return "proposed";
+  if (activeRev == null) return "proposed";
+  if (rev.activated_at != null) return "earlier";
+  if (rev.rev > activeRev || rev.base_rev != null) return "proposed";
   return "earlier";
+}
+
+/**
+ * A proposal written from a version that is no longer the active one (or
+ * a pending proposal): "based on an older version". `canUpdate` when that
+ * base still exists, so "Update onto active" can re-apply its changes.
+ */
+export function proposalBase(
+  rev: PlaybookRev,
+  revisions: readonly PlaybookRev[],
+  activeRev: number | null | undefined,
+): { base: number | null; outdated: boolean; canUpdate: boolean } {
+  const base = rev.base_rev ?? null;
+  if (base == null || activeRev == null || revisionState(rev, activeRev) !== "proposed") {
+    return { base, outdated: false, canUpdate: false };
+  }
+  const baseRev = revisions.find((r) => r.rev === base);
+  const outdated = base !== activeRev && !(baseRev && revisionState(baseRev, activeRev) === "proposed");
+  return { base, outdated, canUpdate: outdated && baseRev != null };
 }
 
 /** Oldest first, the order the version chips read in. */

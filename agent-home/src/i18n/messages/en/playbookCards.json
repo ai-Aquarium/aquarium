@@ -12,7 +12,8 @@
   },
   "showing": {
     "proposed": "Revision {rev} (proposed)",
-    "active": "Revision {rev} (active)"
+    "active": "Revision {rev} (active)",
+    "earlier": "Revision {rev} (earlier)"
   },
   "caption": {
     "run": "One card per step. Lanes = state in the latest run: run {run}.",
@@ -61,8 +62,7 @@
     "saving": "Saving…",
     "cancel": "Cancel",
     "close": "Close",
-    "hint": "Saving proposes revision {next}; it applies from the next run once a lead makes it active.",
-    "awaiting": "A proposed revision is waiting. Activate or discard it before you change a step.",
+    "hint": "Saving proposes revision {next}, based on revision {rev}. Other proposals stay as they are; it applies from the next run once it is made active.",
     "archived": "This project is archived, so its plan can't change.",
     "titleRequired": "A step needs a title.",
     "viewOnly": "You can view this step. Only project members can change it.",

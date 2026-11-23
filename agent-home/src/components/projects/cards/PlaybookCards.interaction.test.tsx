@@ -179,19 +179,74 @@ describe("Plan as cards", () => {
     expect(sent.steps[2]).toEqual(V4[2]);
   });
 
-  it("opens a step read-only while a proposal waits or the project is archived", () => {
+  it("opens a step read-only when the project is archived", () => {
     vi.stubGlobal("fetch", server());
-    const pending = { active: rev(4, V4, 1), revisions: [rev(4, V4, 1), rev(5, V4, 0)] };
-    for (const [pb, archived] of [[pending, false], [ACTIVE_ONLY, true]] as const) {
-      const r = mount(pb, { archived });
-      fireEvent.click(r.getByRole("button", { name: "Kanban" }));
-      fireEvent.click(r.getAllByRole("button", { name: "Open step: Pull" })[0]);
-      const sheet = document.querySelector('[data-component="StepEditSheet"]') as HTMLElement;
-      expect(sheet.querySelector('[data-component="StepEditLocked"]')).toBeTruthy();
-      expect(within(sheet).queryByRole("button", { name: "Save as a new revision" })).toBeNull();
-      expect((within(sheet).getByDisplayValue("Pull") as HTMLInputElement).disabled).toBe(true);
-      cleanup();
-    }
+    const r = mount(ACTIVE_ONLY, { archived: true });
+    fireEvent.click(r.getByRole("button", { name: "Kanban" }));
+    fireEvent.click(r.getByRole("button", { name: "Open step: Pull" }));
+    const sheet = document.querySelector('[data-component="StepEditSheet"]') as HTMLElement;
+    expect(sheet.querySelector('[data-component="StepEditLocked"]')).toBeTruthy();
+    expect(within(sheet).queryByRole("button", { name: "Save as a new revision" })).toBeNull();
+    expect((within(sheet).getByDisplayValue("Pull") as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("a card edit while a proposal waits is a new proposal on the shown version, with Make active", async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/projects/weekly/runs/8") return Promise.resolve(json(200, RUN));
+      if (url === "/api/projects/weekly/playbook" && init?.method === "POST") {
+        return Promise.resolve(json(200, { rev: 6, active: false }));
+      }
+      return Promise.resolve(json(200, { status: "idle", profiles: [] }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const v5 = { ...rev(5, V4.map((s) => (s.key === "pull" ? { ...s, title: "Pull (2h)" } : s)), 0), base_rev: 4 };
+    const pending = { active: rev(4, V4, 1), revisions: [v5, rev(4, V4, 1)] };
+    const r = mount(pending);
+    fireEvent.click(r.getByRole("button", { name: "Kanban" }));
+    expect(r.getByText("Revision 5 (proposed)")).toBeTruthy();
+    fireEvent.click(r.getByRole("button", { name: "Open step: Pull (2h)" }));
+    const sheet = within(document.querySelector('[data-component="StepEditSheet"]') as HTMLElement);
+    expect(sheet.getByText(/Saving proposes revision 6, based on revision 5/)).toBeTruthy();
+    fireEvent.change(sheet.getByDisplayValue("Pull (2h)"), { target: { value: "Pull (3h)" } });
+    fireEvent.click(sheet.getByRole("button", { name: "Save as a new revision" }));
+    await waitFor(() => expect(router.refresh).toHaveBeenCalled());
+    const [, init] = fetchMock.mock.calls.find(([u, i]) => u === "/api/projects/weekly/playbook" && i?.method === "POST")!;
+    const sent = JSON.parse(String(init!.body));
+    expect(sent.base_rev).toBe(5);
+    expect(sent.steps[0].title).toBe("Pull (3h)");
+
+    // The refreshed list has v6 next to v5; the cards follow it, and the
+    // confirmation leads with Make active — nothing was activated.
+    const v6 = { ...rev(6, sent.steps, 0), base_rev: 5 };
+    r.rerender(
+      <PlanPanel
+        slug="weekly"
+        playbook={{ active: rev(4, V4, 1), revisions: [v6, v5, rev(4, V4, 1)] }}
+        profiles={["ops", "finance"]}
+        hostProfile="ops"
+        canActivate
+        archived={false}
+        latestRunNo={8}
+      />,
+    );
+    expect(r.getByText("Revision 6 (proposed)")).toBeTruthy();
+    expect(r.getByText(/Saved as v6, a proposal based on v5/)).toBeTruthy();
+    expect(r.getByRole("button", { name: "Make active" })).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/activate"))).toBe(false);
+    expect(r.container.querySelector('[data-component="RevisionPicker"] [data-rev="5"]')?.getAttribute("data-state")).toBe(
+      "proposed",
+    );
+  });
+
+  it("cards follow the version picked in the picker", () => {
+    vi.stubGlobal("fetch", server());
+    const v5 = { ...rev(5, [...V4, step("extra")], 0), base_rev: 4 };
+    const r = mount({ active: rev(4, V4, 1), revisions: [v5, rev(4, V4, 1)] });
+    fireEvent.click(r.getByRole("button", { name: "Kanban" }));
+    expect(r.container.querySelectorAll('[data-component="StepCard"]')).toHaveLength(V4.length + 1);
+    fireEvent.click(r.container.querySelector('[data-component="RevisionPicker"] [data-rev="4"]')!);
+    expect(r.getByText("Revision 4 (active)")).toBeTruthy();
+    expect(r.container.querySelectorAll('[data-component="StepCard"]')).toHaveLength(V4.length);
   });
 
   it("opens a step read-only for a viewer who can't propose changes", () => {

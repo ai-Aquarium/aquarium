@@ -373,11 +373,10 @@ describe("detail panels", () => {
     expect(html).toContain("proposed by run 14");
     expect(html).toContain(">Make active<");
     expect(html).toContain('data-action="discard-revision"');
-    // A pending proposal is the only decision on the table — drafting or
-    // writing on top of it would just stack another undecided revision.
-    expect(html).toMatch(/data-component="DraftPlanWithAgent"[^>]*disabled=""/);
-    expect(html).toMatch(/data-component="EditPlaybook"[^>]*disabled=""/);
-    expect(html).toContain("make it active or discard it first");
+    // Several proposals can wait at once: drafting or writing another is
+    // never blocked by a pending one.
+    expect(html).not.toMatch(/data-component="DraftPlanWithAgent"[^>]*disabled=""/);
+    expect(html).not.toMatch(/data-component="EditPlaybook"[^>]*disabled=""/);
 
     const member = renderToStaticMarkup(
       <PlanPanel {...PLAN_PROPS} canActivate={false} playbook={playbook} />,

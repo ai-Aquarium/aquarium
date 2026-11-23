@@ -6,6 +6,8 @@ import { UserIcon } from "@/components/ui/icons";
 import { useT } from "@/i18n";
 import type { PlaybookRev, PlaybookStep, ProjectPlaybookResponse, ProjectRun } from "@/types";
 
+import { revisionState } from "@/components/projects/playbook/revisions";
+
 import { StepEditSheet } from "./StepEditSheet";
 import {
   NODE_H,
@@ -154,6 +156,8 @@ export function PlaybookCards({
   hostProfile,
   archived,
   canPropose = true,
+  rev: shown = null,
+  onProposed,
 }: {
   slug: string;
   playbook: ProjectPlaybookResponse;
@@ -164,12 +168,16 @@ export function PlaybookCards({
   archived: boolean;
   /** A member or lead; read-only viewers can open a step but not change it. */
   canPropose?: boolean;
+  /** The version picked above; the newest proposal (else the active one) when unset. */
+  rev?: PlaybookRev | null;
+  /** A step edit was saved as this new proposal. */
+  onProposed?: (rev: number) => void;
 }) {
   const t = useT("playbookCards");
   const [lanesBy, setLanesBy] = useState<LanesBy>("run");
   const [editKey, setEditKey] = useState<string | null>(null);
   const active = playbook.active ?? null;
-  const rev = cardsRev(playbook.revisions ?? [], active);
+  const rev = shown ?? cardsRev(playbook.revisions ?? [], active);
   const steps = useMemo(() => rev?.steps ?? [], [rev]);
   const needsRun = view === "graph" || lanesBy === "run";
   const runState = useLatestRun(slug, latestRunNo, needsRun);
@@ -185,18 +193,13 @@ export function PlaybookCards({
   }, [runState, steps, rev, playbook.revisions, active]);
 
   if (!rev) return null;
-  const proposed = !rev.active;
+  const state = revisionState(rev, active?.rev);
+  const proposed = state === "proposed";
   const nextRev =
     Math.max(rev.rev, active?.rev ?? 0, ...(playbook.revisions ?? []).map((r) => r.rev)) + 1;
-  // A pending proposal is a decision to make first: a change on top of it
-  // would only stack another undecided revision.
-  const lockedReason = archived
-    ? t("edit.archived")
-    : !canPropose
-      ? t("edit.viewOnly")
-      : proposed
-        ? t("edit.awaiting")
-        : null;
+  // A change from a card is always a new proposal based on the version
+  // shown — never blocked by (or folded into) another waiting proposal.
+  const lockedReason = archived ? t("edit.archived") : !canPropose ? t("edit.viewOnly") : null;
 
   const runCaption = () => {
     switch (runState.status) {
@@ -224,7 +227,7 @@ export function PlaybookCards({
               : "bg-[var(--color-surface-2)] text-[var(--color-muted)]"
           }`}
         >
-          {proposed ? t("showing.proposed", { rev: rev.rev }) : t("showing.active", { rev: rev.rev })}
+          {t(`showing.${state}`, { rev: rev.rev })}
         </span>
         {view === "kanban" ? (
           <div className="flex items-center gap-2">
@@ -299,6 +302,7 @@ export function PlaybookCards({
           lockedReason={lockedReason}
           nextRev={nextRev}
           onClose={() => setEditKey(null)}
+          onSaved={onProposed}
         />
       ) : null}
     </div>
