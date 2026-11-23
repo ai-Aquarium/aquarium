@@ -33,7 +33,10 @@ export function ChatConversationView({
   renderAround,
   emptyState,
   onComposerTextChange,
+  readOnly,
 }: {
+  /** Shown instead of the composer: the reader may not post here. */
+  readOnly?: ReactNode;
   /** The composer's text changed. */
   onComposerTextChange?: (text: string) => void;
   /** Rows shown before / after a message (the project chat's labels and cards). */
@@ -184,6 +187,7 @@ export function ChatConversationView({
       ) : null}
 
       {aboveComposer}
+      {readOnly ?? (
       <Composer
         sending={selBusy}
         storageEnabled={storageEnabled}
@@ -199,6 +203,7 @@ export function ChatConversationView({
         launcherClearance={composerLauncherClearance && compactOnPhone ? "desktop" : composerLauncherClearance}
         tall={compactOnPhone}
       />
+      )}
     </>
   );
 }

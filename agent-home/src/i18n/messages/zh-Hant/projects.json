@@ -223,7 +223,16 @@
         "activate": "設為生效",
         "activating": "設定中…",
         "failed": "無法設為生效。"
-      }
+      },
+      "you": "你",
+      "fromTo": "{person} 給 {profile}",
+      "toMembers": "{person} 給成員",
+      "replyFor": "回覆 {person}",
+      "askAgent": "詢問代理",
+      "askAgentOn": "{profile} 會回覆你的訊息",
+      "askAgentOff": "只有成員看得到；代理下次回覆時會讀到",
+      "viewerReadOnly": "你可以閱讀此聊天，但檢視者不能發言。",
+      "memberSendFailed": "傳送失敗，請再試一次。"
     }
   },
   "log": {

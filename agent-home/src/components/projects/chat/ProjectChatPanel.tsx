@@ -18,7 +18,9 @@ import { useProjectAction } from "@/components/projects/useProjectAction";
 import { stripInjectedContext } from "@/lib/chat/transcript";
 import { useT } from "@/i18n";
 import type {
+  ChatAttachment,
   ChatMessage,
+  ChatSendResult,
   ProfileSummary,
   ProjectChatProposal,
   ProjectChatTimeline,
@@ -37,11 +39,16 @@ export interface ProjectChatData {
   timeline: ProjectChatTimeline | null;
 }
 
+/** How often the open group chat re-reads the timeline for other members' turns. */
+export const TIMELINE_POLL_MS = 5000;
+
 /**
- * The docked project chat (2026-11-22 plan, stage 2): one timeline over the
- * per-profile conversations. Each profile keeps its own conversation (its own
- * prompt cache and memory); the picker sets who answers the next message, and
- * the server puts the project context / catch-up at the top of that turn.
+ * The docked project group chat: one timeline every member sees, over each
+ * person's own per-profile conversations (their own prompt cache and memory;
+ * members' turns run in parallel and land in arrival order). The picker sets
+ * who answers the caller's next message; the server puts the project context
+ * / catch-up of what the group said at the top of that turn. "Ask agent" off
+ * sends a message to the members only. A viewer reads but never posts.
  */
 export function ProjectChatPanel({
   slug,
@@ -66,6 +73,7 @@ export function ProjectChatPanel({
   const [profile, setProfile] = useState(chat?.profile ?? "default");
   const [timeline, setTimeline] = useState(chat?.timeline ?? null);
   const [busy, setBusy] = useState(false);
+  const [askAgent, setAskAgent] = useState(true);
   // A page refresh (a plan saved, discarded or made active) brings a new
   // timeline: take it, so no stale proposal card stays actionable.
   const [seenTimeline, setSeenTimeline] = useState(chat?.timeline);
@@ -104,11 +112,21 @@ export function ProjectChatPanel({
         { cache: "no-store" },
       );
       if (!res.ok) return;
-      setTimeline((await res.json()) as ProjectChatTimeline);
+      const next = (await res.json()) as ProjectChatTimeline;
+      // An unchanged poll keeps the same object: nothing re-renders.
+      setTimeline((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
     } catch {
       // Keep the timeline on screen; the next turn re-reads it.
     }
   }, [slug]);
+
+  // Live: other members' turns arrive while the chat is on screen and idle.
+  const polling = Boolean(chat?.timeline) && !hidden && !busy;
+  useEffect(() => {
+    if (!polling) return;
+    const timer = setInterval(() => void refresh(), TIMELINE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [polling, refresh]);
 
   const picker = (id: string) => (
     <ProjectChatProfilePicker
@@ -144,6 +162,8 @@ export function ProjectChatPanel({
               onStale={refresh}
               composerDraft={handoff}
               onComposerText={onComposerText}
+              askAgent={askAgent}
+              onAskAgent={setAskAgent}
             />
           </div>
         ) : (
@@ -210,7 +230,11 @@ function ProjectChatPane({
   onStale,
   composerDraft,
   onComposerText,
+  askAgent,
+  onAskAgent,
 }: {
+  askAgent: boolean;
+  onAskAgent: (on: boolean) => void;
   slug: string;
   profile: string;
   timeline: ProjectChatTimeline;
@@ -236,8 +260,32 @@ function ProjectChatPane({
     onSessionsStale: () => setStale((n) => n + 1),
     hidden,
     projectSlug: slug,
+    followInitialMessages: true,
   });
   const busy = conv.selBusy;
+  const me = timeline.me;
+  const canPost = timeline.can_post !== false;
+  const myName = timeline.people?.find((p) => p.user_id === me)?.name;
+  const note = useProjectAction();
+  const [noteError, setNoteError] = useState<string | null>(null);
+  // "Ask agent" off: the message goes to the members only, no agent turn.
+  const sendToMembers = async (
+    text: string,
+    attachments: ChatAttachment[],
+  ): Promise<ChatSendResult> => {
+    setNoteError(null);
+    const res = await note.run(`/api/projects/${encodeURIComponent(slug)}/chat/messages`, {
+      body: { content: text },
+      skipRefresh: true,
+    });
+    if (!res?.ok) {
+      setNoteError(t("dock.chat.memberSendFailed"));
+      return false;
+    }
+    onStaleRef.current();
+    return attachments.length ? "attachments_kept" : true;
+  };
+  const view = askAgent ? conv : { ...conv, send: sendToMembers };
 
   const onBusyRef = useRef(onBusy);
   useEffect(() => {
@@ -264,8 +312,11 @@ function ProjectChatPane({
   useEffect(() => onCountRef.current(count), [count]);
 
   // Live rows (the turn being typed/streamed) have no profile yet: they are
-  // the picked profile's.
+  // the picked profile's, and the caller's own.
   const labelled = (m: ChatMessage) => m.profile ?? profile;
+  const personOf = (m: ChatMessage) =>
+    m.profile || m.memberOnly ? (m.personName ?? m.person) : (myName ?? me);
+  const mine = (m: ChatMessage) => !m.person || m.person === me;
   // A live row gets its catch-up / context marks once the timeline re-read
   // has the stored turn.
   const marksFor = (m: ChatMessage): ChatMessage => {
@@ -274,7 +325,11 @@ function ProjectChatPane({
     const stored = [...timeline.messages]
       .reverse()
       .find(
-        (r) => r.role === "user" && r.profile === profile && stripInjectedContext(r.content) === typed,
+        (r) =>
+          r.role === "user" &&
+          r.profile === profile &&
+          (!me || r.person === me) &&
+          stripInjectedContext(r.content) === typed,
       );
     if (!stored) return m;
     return { ...m, catchUp: stored.catch_up || undefined, seeded: stored.seeded || undefined };
@@ -301,16 +356,24 @@ function ProjectChatPane({
     } else if (m.role === "user" && m.seeded) {
       before.push(<Note key="seed">{t("dock.chat.seeded", { profile: who })}</Note>);
     }
-    before.push(<TurnLabel key="label" role={m.role} profile={who} />);
+    before.push(
+      <TurnLabel
+        key="label"
+        role={m.role}
+        profile={who}
+        person={mine(m) ? undefined : personOf(m)}
+        memberOnly={m.memberOnly}
+      />,
+    );
     const after = (cards.get(i) ?? []).map((p) => (
       <ProposedPlaybookCard key={`p${p.rev}`} slug={slug} proposal={p} />
     ));
     return { before, after };
   };
 
-  const missed = missedCount(conv.messages, profile);
+  const missed = missedCount(conv.messages, profile, me);
   const hasSession = sessionFor(timeline, profile) !== null || conv.sessionId !== null;
-  const pending = busy ? null : missed > 0 ? (
+  const pending = !canPost || busy || !askAgent ? null : missed > 0 ? (
     <Note data-component="ProjectChatCatchUp" tone="accent">
       {t("dock.chat.catchUpNext", { profile, count: missed })}
     </Note>
@@ -321,7 +384,12 @@ function ProjectChatPane({
   return (
     <div data-component="ProjectChatPane" className="flex min-h-0 flex-1 flex-col">
       <ChatConversationView
-        conv={conv}
+        conv={view}
+        readOnly={
+          canPost ? undefined : (
+            <Note data-component="ProjectChatReadOnly">{t("dock.chat.viewerReadOnly")}</Note>
+          )
+        }
         storageEnabled={storageEnabled}
         composerLauncherClearance={false}
         composerDraft={composerDraft}
@@ -337,7 +405,19 @@ function ProjectChatPane({
             </p>
           </div>
         }
-        aboveComposer={pending ? <div className="pt-2">{pending}</div> : null}
+        aboveComposer={
+          canPost ? (
+            <div className="space-y-2 pt-2">
+              {pending}
+              {noteError ? (
+                <p role="alert" className="text-xs text-[var(--color-danger)]">
+                  {noteError}
+                </p>
+              ) : null}
+              <AskAgentToggle on={askAgent} profile={profile} onChange={onAskAgent} />
+            </div>
+          ) : null
+        }
       />
     </div>
   );
@@ -365,16 +445,75 @@ function Note({
   );
 }
 
-function TurnLabel({ role, profile }: { role: string; profile: string }) {
+/** "Ask agent": on, the picked profile answers; off, only the members read it. */
+export function AskAgentToggle({
+  on,
+  profile,
+  onChange,
+}: {
+  on: boolean;
+  profile: string;
+  onChange: (on: boolean) => void;
+}) {
+  const t = useT("projects");
+  return (
+    <div data-component="AskAgentToggle" className="flex items-center gap-2 text-xs">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        data-action="ask-agent"
+        onClick={() => onChange(!on)}
+        className="inline-flex min-h-[44px] items-center gap-2 rounded-[var(--radius-full)] px-1 font-medium text-[var(--color-fg)]"
+      >
+        <span
+          aria-hidden
+          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-[var(--radius-full)] transition-colors ${
+            on ? "bg-[var(--color-accent)]" : "bg-[var(--color-border)]"
+          }`}
+        >
+          <span
+            className={`absolute h-4 w-4 rounded-[var(--radius-full)] bg-[var(--color-surface)] shadow transition-transform ${
+              on ? "translate-x-[18px]" : "translate-x-0.5"
+            }`}
+          />
+        </span>
+        {t("dock.chat.askAgent")}
+      </button>
+      <span className="min-w-0 truncate text-[var(--color-muted)]">
+        {on ? t("dock.chat.askAgentOn", { profile }) : t("dock.chat.askAgentOff")}
+      </span>
+    </div>
+  );
+}
+
+function TurnLabel({
+  role,
+  profile,
+  person,
+  memberOnly,
+}: {
+  role: string;
+  profile: string;
+  /** Another member's turn (unset on the caller's own). */
+  person?: string;
+  memberOnly?: boolean;
+}) {
   const t = useT("projects");
   if (role === "user") {
+    const text = memberOnly
+      ? t("dock.chat.toMembers", { person: person ?? t("dock.chat.you") })
+      : person
+        ? t("dock.chat.fromTo", { person, profile })
+        : t("dock.chat.to", { profile });
     return (
       <p
         data-component="ProjectChatTurnLabel"
-        data-profile={profile}
+        data-profile={memberOnly ? undefined : profile}
+        data-person={person}
         className="-mb-1.5 pt-1 text-right text-[11px] text-[var(--color-muted)]"
       >
-        {t("dock.chat.to", { profile })}
+        {text}
       </p>
     );
   }
@@ -391,6 +530,11 @@ function TurnLabel({ role, profile }: { role: string; profile: string }) {
         {(profile.trim()[0] ?? "?").toUpperCase()}
       </span>
       {profile}
+      {person ? (
+        <span className="font-normal text-[var(--color-muted)]">
+          {t("dock.chat.replyFor", { person })}
+        </span>
+      ) : null}
     </p>
   );
 }

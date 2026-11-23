@@ -223,7 +223,16 @@
         "activate": "Make active",
         "activating": "Activating…",
         "failed": "Couldn't make it active."
-      }
+      },
+      "you": "You",
+      "fromTo": "{person} to {profile}",
+      "toMembers": "{person} to members",
+      "replyFor": "for {person}",
+      "askAgent": "Ask agent",
+      "askAgentOn": "{profile} answers your message",
+      "askAgentOff": "Only the members see it; agents read it next time they answer",
+      "viewerReadOnly": "You can read this chat. Viewers can't post.",
+      "memberSendFailed": "Couldn't send. Try again."
     }
   },
   "log": {

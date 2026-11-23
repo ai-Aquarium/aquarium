@@ -13,9 +13,13 @@ export function timelineMessages(timeline: ProjectChatTimeline | null): ChatMess
       role: m.role,
       content: m.content,
       timestamp: m.timestamp,
-      profile: m.profile,
     };
-    if (m.id != null) row.id = m.id;
+    if (m.profile) row.profile = m.profile;
+    if (typeof m.id === "number") row.id = m.id;
+    else if (m.id != null) row.clientKey = String(m.id);
+    if (m.person) row.person = m.person;
+    if (m.person_name) row.personName = m.person_name;
+    if (m.member_only) row.memberOnly = true;
     if (m.catch_up) row.catchUp = m.catch_up;
     if (m.seeded) row.seeded = true;
     if (m.sent_while_working) row.sentWhileWorking = true;
@@ -31,16 +35,26 @@ export function sessionFor(
   return timeline?.sessions.find((s) => s.profile === profile)?.session_id ?? null;
 }
 
+/** A stored turn of the caller's own `profile` conversation. */
+export function isOwnTurn(m: ChatMessage, profile: string, me?: string): boolean {
+  if (m.memberOnly || m.profile !== profile) return false;
+  return !me || !m.person || m.person === me;
+}
+
 /**
- * Turns of other profiles after `profile`'s own last turn: what its next
- * user turn's catch-up will cover (mirrors `missed_turns` in the API).
+ * Everything in the group chat after the caller's `profile` conversation's
+ * own last turn: other members' messages and other conversations' replies
+ * (mirrors `missed_turns` in the API). Live rows (no profile yet) are the
+ * turn being sent, never missed.
  */
-export function missedCount(messages: ChatMessage[], profile: string): number {
+export function missedCount(messages: ChatMessage[], profile: string, me?: string): number {
   let last = -1;
   messages.forEach((m, i) => {
-    if (m.profile === profile) last = i;
+    if (isOwnTurn(m, profile, me)) last = i;
   });
-  return messages.slice(last + 1).filter((m) => m.profile && m.profile !== profile).length;
+  return messages
+    .slice(last + 1)
+    .filter((m) => (m.profile || m.memberOnly) && !isOwnTurn(m, profile, me)).length;
 }
 
 function seconds(ts: ChatMessage["timestamp"]): number | null {

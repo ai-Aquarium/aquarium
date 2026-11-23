@@ -161,7 +161,11 @@ export async function POST(request: Request): Promise<Response> {
     let sessionId =
       typeof body.sessionId === "string" && body.sessionId ? body.sessionId : "";
     if (!sessionId) {
-      const created = await client.createSession();
+      // A project's conversations stay out of the ordinary chat lists.
+      const created = await client.createSession(
+        undefined,
+        projectSlug ? { source: "project_chat" } : {},
+      );
       sessionId = created.session_id;
     }
     let turn = message;
