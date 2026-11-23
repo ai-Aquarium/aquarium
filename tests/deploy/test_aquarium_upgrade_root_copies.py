@@ -7,13 +7,16 @@ test_aquarium_cli: fake root, fake systemctl/cosign/visudo/sudo, a local Release
 
 from __future__ import annotations
 
+import importlib.machinery
+import importlib.util
 import json
 import os
+import subprocess
 import sys
 
 import pytest
 
-from test_aquarium_cli import FAKE_LOGGER, Handler, aq, released_box, server  # noqa: F401
+from test_aquarium_cli import FAKE_LOGGER, REPO, Handler, aq, released_box, server  # noqa: F401
 from test_aquarium_upgrade import box, call, git_box, releases  # noqa: F401
 
 pytestmark = pytest.mark.live_system_guard_bypass
@@ -105,8 +108,8 @@ def test_restricted_terminal_failure_rolls_back_and_says_why(rbox, monkeypatch, 
     monkeypatch.setenv("FAKE_SUDO_EXIT", "1")
     code, job = upgrade(rbox, monkeypatch, capsys)
     assert code == 1 and job["result"] == "rolled back", job
-    assert "agent's terminal (hermes-tools) cannot run `hermes projects --help`" in job["error"]
-    assert "sudo -n -u hermes-tools /usr/local/sbin/hermes-tools-exec bash -c hermes projects --help" in rbox.log()
+    assert "agent's terminal (hermes-tools) cannot run `hermes memory status --help`" in job["error"]
+    assert "sudo -n -u hermes-tools /usr/local/sbin/hermes-tools-exec bash -c hermes memory status --help" in rbox.log()
     assert os.readlink(rbox.p("/opt/aquarium/current")) == "releases/v1.0.0"
     for path, (text, mode) in OLD.items():  # the old copies are back, same mode
         assert rbox.p(path).read_text() == text and rbox.p(path).stat().st_mode & 0o777 == mode, path
@@ -117,7 +120,7 @@ def test_restricted_terminal_probe_passes(rbox, monkeypatch, capsys):
     rbox.write("/opt/data/hermes-home/profiles/sales/config.yaml", "terminal:\n  run_as: 'hermes-tools'  # FG-38\n")
     code, job = upgrade(rbox, monkeypatch, capsys)
     assert code == 0 and job["result"] == "ok", job
-    assert "hermes-tools-exec bash -c hermes projects --help" in rbox.log()
+    assert "hermes-tools-exec bash -c hermes memory status --help" in rbox.log()
 
 
 def test_rollback_puts_the_saved_copies_back(rbox, monkeypatch, capsys):
@@ -338,3 +341,50 @@ def test_rollback_after_a_finish_restores_both_saved_sets(left_behind, monkeypat
     assert b.run("upgrade", "run") == 0
     rb = aq.rollback_target(aq.load_config())
     assert rb and rb["to"] == "v1.0.0" and len(rb["root_copies"]) == 1
+
+
+def test_terminal_probe_passes_the_real_allowlist_and_cli(tmp_path):
+    """The probe runs through the shipped allowlist's own parser, needs no chat ticket
+    (a `hermes projects` call is refused without one), and the real CLI answers it."""
+    words = aq.probe_words(REPO)
+    loader = importlib.machinery.SourceFileLoader("htc_real", str(REPO / "deploy/hermes-tools-cli"))
+    cli = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(cli)
+    path = cli.check(list(words))
+    assert path[0] not in cli.AS_REQUESTER
+    assert cli.as_requester(path, list(words), "", b"") == (list(words), "")
+    with pytest.raises(cli.Refused):
+        cli.check(["projects", "--help"])
+    got = subprocess.run([sys.executable, "-c", "import sys; from hermes_cli.main import main; "
+                          f"sys.argv = ['hermes', *{words!r}]; main()"],
+                         capture_output=True, text=True, timeout=120, cwd=REPO,
+                         env={"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", "/tmp"),
+                              "HERMES_HOME": str(tmp_path), "LANG": "C.UTF-8"})
+    assert got.returncode == 0, got.stderr[-2000:]
+    assert "usage: hermes" in got.stdout
+
+
+def test_terminal_probe_falls_back_when_the_allowlist_has_no_parser(tmp_path):
+    (tmp_path / "deploy").mkdir()
+    (tmp_path / "deploy/hermes-tools-cli").write_text("# not the real one\n")
+    assert aq.probe_words(tmp_path) == aq.TERMINAL_PROBES[0]
+
+
+def test_git_upgrade_without_cosign_leaves_helpers_and_says_how(box, monkeypatch, capsys):  # noqa: F811
+    git_box(box, monkeypatch)
+    box.releases.clear()
+    box.make_release("v1.0.0")
+    box.make_release("v1.1.0", extra=NEW)
+    releases(box)
+    fakes(box, "visudo", "sudo")
+    for path, (text, mode) in OLD.items():
+        box.write(path, text, mode=mode)
+    monkeypatch.setattr(aq, "find_cosign", lambda: None)
+    code, job = upgrade(box, monkeypatch, capsys)
+    assert code == 0 and job["result"] == "ok", job
+    for path, (text, _mode) in OLD.items():
+        assert box.p(path).read_text() == text, path
+    out = "\n".join(job.get("log") or []) + capsys.readouterr().out
+    assert "cosign is not installed" in out
+    assert ("visudo -cf deploy/sudoers.d/hermes-tools && install -m 0440 -o root -g root "
+            "deploy/sudoers.d/hermes-tools /etc/sudoers.d/hermes-tools") in out
