@@ -182,7 +182,15 @@ def test_first_upgrade_with_the_old_job_code_then_finish_then_rollback(box, monk
         f = b.p(inst)
         assert f.read_text() == new[src], inst
         assert f.stat().st_mode & 0o777 == (0o440 if inst.startswith("/etc/sudoers.d/") else 0o755), inst
-    assert "hermes-tools-exec bash -c hermes memory status --help" in b.log()
+    # The restricted terminal is probed by whichever job ran the new checks: the finish job,
+    # or the old job itself once the old release has them. A release older than the checks
+    # whose root copies already match has neither, so there is nothing to probe with.
+    prober = new_cmd if left else old_cmd if hasattr(old_cmd, "terminal_probe") else None
+    if prober is not None:
+        release = b.p("/opt/aquarium/current").resolve()
+        words = prober.probe_words(release) if hasattr(prober, "probe_words") else None
+        probe = "hermes-tools-exec bash -c hermes " + (" ".join(words) if words else "")
+        assert probe in b.log(), (probe, b.log()[-2000:])
     _, st = _cli(new_cmd, monkeypatch, capsys, "status")  # done: nothing more starts
     assert st["job"]["kind"] in ("finish", "upgrade") and st["finish"] is None
     assert len([ln for ln in b.log().splitlines() if ln.startswith("systemd-run")]) == launched + bool(left)
