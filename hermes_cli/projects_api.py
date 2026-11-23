@@ -3442,14 +3442,20 @@ from hermes_cli import projects_run  # noqa: E402
 
 @router.get("/{slug}/playbook")
 async def get_playbook_route(request: Request) -> dict[str, Any]:
-    """The method: the active revision (with steps) + the revision list."""
+    """The method: the active revision (with steps) + the revision list,
+    and ``discarded`` — discarded revisions as ancestry only (``rev``,
+    ``base_rev``, ``activated_at``) so proposals written from one can still
+    show what they build on."""
     project, _role, _profiles, _principal = await _require_read(request)
 
     def _get_sync() -> dict:
         with projects_db.connect_closing() as conn:
             active = projects_db.get_playbook(conn, project.id)
             revs = projects_db.list_playbook_revs(conn, project.id)
-        return {"active": active, "revisions": revs}
+            discarded = projects_db.list_discarded_playbook_ancestry(
+                conn, project.id
+            )
+        return {"active": active, "revisions": revs, "discarded": discarded}
 
     return await asyncio.to_thread(_get_sync)
 

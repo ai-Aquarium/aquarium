@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/i18n";
-import type { PlaybookRev } from "@/types";
+import type { PlaybookAncestor, PlaybookRev } from "@/types";
 import { useTimeLabel } from "@/components/projects/useTimeLabel";
 import { proposalBase, revisionState } from "@/components/projects/playbook/revisions";
 
@@ -13,11 +13,13 @@ import { proposalBase, revisionState } from "@/components/projects/playbook/revi
  */
 export function RevisionPicker({
   revisions,
+  discarded = [],
   activeRev,
   selected,
   onSelect,
 }: {
   revisions: PlaybookRev[];
+  discarded?: PlaybookAncestor[];
   activeRev: number | null;
   selected: PlaybookRev;
   onSelect: (rev: number) => void;
@@ -29,7 +31,7 @@ export function RevisionPicker({
         {revisions.map((rev) => {
           const state = revisionState(rev, activeRev);
           const picked = rev.rev === selected.rev;
-          const { outdated } = proposalBase(rev, revisions, activeRev);
+          const { outdated } = proposalBase(rev, revisions, activeRev, discarded);
           return (
             <button
               key={rev.rev}

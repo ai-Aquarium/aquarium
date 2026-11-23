@@ -187,8 +187,14 @@ def test_discard_removes_a_proposed_revision(env):
     assert resp.json() == {"rev": rev2, "discarded": True}
     listed = client.get(f"{PREFIX}/{slug}/playbook").json()
     assert all(r["rev"] != rev2 for r in listed["revisions"])
-    # Gone for good.
+    # Kept only as ancestry: never listed, activated or discarded again.
+    assert [d["rev"] for d in listed["discarded"]] == [rev2]
+    assert set(listed["discarded"][0]) == {"rev", "base_rev", "activated_at"}
     assert client.delete(f"{PREFIX}/{slug}/playbook/{rev2}").status_code == 404
+    assert client.post(
+        f"{PREFIX}/{slug}/playbook/{rev2}/activate", json={}
+    ).status_code == 404
+    assert client.post(f"{PREFIX}/{slug}/playbook/{rev2}/rebase").status_code == 404
 
 
 def test_discard_refuses_the_active_revision_and_pinned_revs(env):
