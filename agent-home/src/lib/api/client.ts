@@ -128,6 +128,7 @@ import type {
   ProjectDirectivesResponse,
   ProjectDoctorDetail,
   ProjectEventsResponse,
+  ProjectLogResponse,
   ProjectLink,
   ProjectOutput,
   ProjectPlaybookDraftState,
@@ -2554,6 +2555,21 @@ export class HermesApiClient {
     const query = since != null ? `?since=${encodeURIComponent(since)}` : "";
     return this.request(
       `/api/registry/projects/${encodeURIComponent(slug)}/events${query}`,
+    );
+  }
+
+  /** Stage 6: one page of the project Log, newest first. */
+  async projectLog(
+    slug: string,
+    params: { actor?: string; kind?: string; cursor?: string; limit?: number } = {},
+  ): Promise<ProjectLogResponse> {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value != null && value !== "") query.set(key, String(value));
+    }
+    const qs = query.toString();
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/log${qs ? `?${qs}` : ""}`,
     );
   }
 

@@ -63,6 +63,7 @@ from hermes_cli import (
     kanban_db,
     kanban_view,
     projects_db,
+    projects_log,
     projects_schedule,
     run_activity,
     short_refs,
@@ -1846,6 +1847,15 @@ async def patch_project(request: Request) -> dict[str, Any]:
                 projects_db.set_project_status(
                     conn, project.id, str(body["status"])
                 )
+            edited = sorted(
+                k for k in (*base_fields, *extra_fields, "category_id", "status")
+                if k in body
+            )
+            if edited:
+                projects_db.record_project_activity(
+                    conn, project.id, "brief_edited",
+                    actor=principal.user_id, detail={"fields": edited},
+                )
             fresh = projects_db.get_project(conn, project.id)
             return _project_payload(fresh)
 
@@ -2450,6 +2460,10 @@ async def remove_member(request: Request, user_id: str) -> dict[str, Any]:
                     "refusing to remove the last lead; promote another first"
                 )
             projects_db.remove_project_member(conn, project.id, user_id)
+            projects_db.record_project_activity(
+                conn, project.id, "member_removed",
+                actor=principal.user_id, detail={"user_id": user_id},
+            )
 
     try:
         await asyncio.to_thread(_remove_sync)
@@ -2506,6 +2520,10 @@ async def remove_profile(request: Request, name: str) -> dict[str, Any]:
                     "profiles has nowhere to run"
                 )
             projects_db.remove_project_profile(conn, project.id, name)
+            projects_db.record_project_activity(
+                conn, project.id, "profile_removed",
+                actor=principal.user_id, detail={"profile": name},
+            )
 
     try:
         await asyncio.to_thread(_remove_sync)
@@ -2573,6 +2591,10 @@ async def patch_contact(request: Request, contact_id: str) -> dict[str, Any]:
             )
             if row is None:
                 raise KeyError(contact_id)
+            projects_db.record_project_activity(
+                conn, project.id, "contact_edited",
+                actor=principal.user_id, detail={"name": row.get("name")},
+            )
             return dict(row)
 
     try:
@@ -2591,6 +2613,10 @@ async def delete_contact(request: Request, contact_id: str) -> dict[str, Any]:
         with projects_db.connect_closing() as conn:
             if not projects_db.remove_project_contact(conn, contact_id):
                 raise KeyError(contact_id)
+            projects_db.record_project_activity(
+                conn, project.id, "contact_removed",
+                actor=principal.user_id, detail={},
+            )
 
     try:
         await asyncio.to_thread(_delete_sync)
@@ -2657,6 +2683,10 @@ async def delete_link(request: Request) -> dict[str, Any]:
                 ref=ref,
             ):
                 raise KeyError(kind)
+            projects_db.record_project_activity(
+                conn, project.id, "link_removed",
+                actor=principal.user_id, detail={"kind": kind, "label": ref},
+            )
 
     try:
         await asyncio.to_thread(_delete_sync)
@@ -4181,6 +4211,11 @@ async def activate_playbook_route(request: Request, rev: int) -> dict[str, Any]:
             ok = projects_db.activate_playbook_rev(
                 conn, project.id, rev, note=body.get("note")
             )
+            if ok:
+                projects_db.record_project_activity(
+                    conn, project.id, "playbook_activated",
+                    actor=principal.user_id, detail={"rev": rev},
+                )
         if not ok:
             raise HTTPException(
                 status_code=404, detail=f"playbook revision {rev} not found"
@@ -4195,13 +4230,18 @@ async def discard_playbook_route(request: Request, rev: int) -> dict[str, Any]:
     """Discard a proposed revision — the paired human judgement to
     activation (§7.2). Refused for the active rev and for any rev a run
     pinned (it is that run's recorded plan and stays for history)."""
-    project, _role, _profiles, _principal = await _require_write(request)
+    project, _role, _profiles, principal = await _require_write(request)
     _refuse_if_archived(project, "discarding a plan revision")
     await _require_human(request, "discarding a playbook revision")
 
     def _discard_sync() -> dict:
         with projects_db.connect_closing() as conn:
             refusal = projects_db.discard_playbook_rev(conn, project.id, rev)
+            if refusal is None:
+                projects_db.record_project_activity(
+                    conn, project.id, "playbook_discarded",
+                    actor=principal.user_id, detail={"rev": rev},
+                )
         if refusal == "not_found":
             raise HTTPException(
                 status_code=404, detail=f"playbook revision {rev} not found"
@@ -4552,6 +4592,32 @@ def _run_payload(
     return payload
 
 
+@router.get("/{slug}/log")
+async def project_log_route(request: Request) -> dict[str, Any]:
+    """The project Log (Stage 6): people and agent activity, newest first.
+
+    ``actor=all|people|agents``, ``kind=playbook|runs|tools|outputs|
+    inputs|settings``, ``cursor`` from the previous page's
+    ``next_cursor``, ``limit`` (1–200). Same read gate as the project.
+    """
+    project, _role, _profiles, principal = await _require_read(request)
+    q = request.query_params
+    try:
+        cursor = projects_log.parse_cursor(q.get("cursor"))
+        limit = int(q.get("limit") or projects_log.DEFAULT_LIMIT)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    actor = q.get("actor") or "all"
+    kind = q.get("kind") or None
+    try:
+        return await asyncio.to_thread(
+            projects_log.build_log, project, principal,
+            actor=actor, kind=kind, cursor=cursor, limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.get("/{slug}/runs")
 async def list_runs_route(request: Request) -> dict[str, Any]:
     """The record (§12): duration, outcome, deliveries and status."""
@@ -4656,7 +4722,7 @@ async def start_run_route(request: Request) -> dict[str, Any]:
 async def continue_run_route(request: Request, run_no: int) -> dict[str, Any]:
     """The human passes a checkpoint or answers a budget stop (§12): the
     held successors move to ``todo`` and a ``waiting`` run resumes."""
-    project, _role, _profiles, _principal = await _require_write(
+    project, _role, _profiles, principal = await _require_write(
         request, judgement=True
     )
     _refuse_if_archived(project, "continuing a run")
@@ -4668,11 +4734,16 @@ async def continue_run_route(request: Request, run_no: int) -> dict[str, Any]:
                 raise KeyError(run_no)
             with _board_conn(project) as bconn:
                 try:
-                    return projects_run.continue_run(
+                    result = projects_run.continue_run(
                         conn, bconn, project=project, run=run
                     )
                 except ValueError as exc:
                     raise HTTPException(status_code=409, detail=str(exc))
+            projects_db.record_project_activity(
+                conn, project.id, "run_continued",
+                actor=principal.user_id, detail={"run_no": run_no},
+            )
+            return result
 
     try:
         return await asyncio.to_thread(_continue_sync)
@@ -4713,7 +4784,7 @@ async def resume_run_route(request: Request, run_no: int) -> dict[str, Any]:
 async def cancel_run_route(request: Request, run_no: int) -> dict[str, Any]:
     """Stop promoting and archive the run's un-started cards; a running
     worker is never killed (§12)."""
-    project, _role, _profiles, _principal = await _require_write(
+    project, _role, _profiles, principal = await _require_write(
         request, judgement=True
     )
 
@@ -4724,11 +4795,16 @@ async def cancel_run_route(request: Request, run_no: int) -> dict[str, Any]:
                 raise KeyError(run_no)
             with _board_conn(project) as bconn:
                 try:
-                    return projects_run.cancel_run(
+                    result = projects_run.cancel_run(
                         conn, bconn, project=project, run=run
                     )
                 except ValueError as exc:
                     raise HTTPException(status_code=409, detail=str(exc))
+            projects_db.record_project_activity(
+                conn, project.id, "run_cancelled",
+                actor=principal.user_id, detail={"run_no": run_no},
+            )
+            return result
 
     try:
         return await asyncio.to_thread(_cancel_sync)
@@ -4967,7 +5043,7 @@ def _sse(event: str, payload: dict) -> bytes:
 async def stop_run_route(request: Request, run_no: int) -> dict[str, Any]:
     """Stop the run now: terminate every live worker, archive what has not
     started, close the run. The verb Cancel deliberately is not (§12)."""
-    project, _role, _profiles, _principal = await _require_write(
+    project, _role, _profiles, principal = await _require_write(
         request, judgement=True
     )
 
@@ -4978,11 +5054,16 @@ async def stop_run_route(request: Request, run_no: int) -> dict[str, Any]:
                 raise KeyError(run_no)
             with _board_conn(project) as bconn:
                 try:
-                    return projects_run.stop_run(
+                    result = projects_run.stop_run(
                         conn, bconn, project=project, run=run
                     )
                 except ValueError as exc:
                     raise HTTPException(status_code=409, detail=str(exc))
+            projects_db.record_project_activity(
+                conn, project.id, "run_stopped",
+                actor=principal.user_id, detail={"run_no": run_no},
+            )
+            return result
 
     try:
         return await asyncio.to_thread(_stop_sync)
@@ -5235,7 +5316,7 @@ async def patch_tools_route(request: Request) -> dict[str, Any]:
     effective set is intersected with what the host profile enables (§4.1),
     and the response shows that intersection.
     """
-    project, _role, profiles, _principal = await _require_write(request)
+    project, _role, profiles, principal = await _require_write(request)
     _refuse_if_archived(project, "changing its tools")
     body = await request.json()
 
@@ -5287,6 +5368,10 @@ async def patch_tools_route(request: Request) -> dict[str, Any]:
             )
         with projects_db.connect_closing() as conn:
             projects_db.update_project_fields(conn, project.id, updates)
+            projects_db.record_project_activity(
+                conn, project.id, "tools_edited",
+                actor=principal.user_id, detail={"fields": sorted(updates)},
+            )
             fresh = projects_db.get_project(conn, project.slug)
             host = projects_run.host_profile_name(conn, project.id)
             enabled = projects_run._enabled_toolsets_for_profile(host or "")
@@ -5317,7 +5402,7 @@ async def patch_tools_route(request: Request) -> dict[str, Any]:
 async def patch_autonomy_route(request: Request) -> dict[str, Any]:
     """A separate route so the audit line and the permission check are
     unmistakable (§12). Lead/admin only — ``_can_write``."""
-    project, _role, _profiles, _principal = await _require_write(request)
+    project, _role, _profiles, principal = await _require_write(request)
     _refuse_if_archived(project, "changing its autonomy")
     body = await request.json()
     autonomy = body.get("autonomy")
@@ -5334,6 +5419,10 @@ async def patch_autonomy_route(request: Request) -> dict[str, Any]:
         with projects_db.connect_closing() as conn:
             projects_db.update_project_fields(
                 conn, project.id, {"autonomy": autonomy}
+            )
+            projects_db.record_project_activity(
+                conn, project.id, "autonomy_changed",
+                actor=principal.user_id, detail={"autonomy": autonomy},
             )
             fresh = projects_db.get_project(conn, project.slug)
         return {"slug": fresh.slug, "autonomy": fresh.autonomy}
@@ -5363,13 +5452,18 @@ async def put_schedule_route(request: Request) -> dict[str, Any]:
 
     def _put_sync() -> dict:
         with projects_db.connect_closing() as conn:
-            return projects_schedule.set_project_schedule(
+            result = projects_schedule.set_project_schedule(
                 conn,
                 project=project,
                 schedule=str(body.get("schedule") or ""),
                 profiles=profiles,
                 changed_by=principal.user_id,
             )
+            projects_db.record_project_activity(
+                conn, project.id, "schedule_set",
+                actor=principal.user_id, detail={"schedule": str(body.get("schedule") or "")},
+            )
+            return result
 
     try:
         return await asyncio.to_thread(_put_sync)
@@ -5384,13 +5478,18 @@ async def delete_schedule_route(request: Request) -> dict[str, Any]:
     """Remove the cron job and both halves of the link. Removing — not
     pausing — keeps the store honest; the cadence-change path is the one
     that pauses (§3.1)."""
-    project, _role, _profiles, _principal = await _require_write(request)
+    project, _role, _profiles, principal = await _require_write(request)
 
     def _del_sync() -> dict:
         with projects_db.connect_closing() as conn:
             removed = projects_schedule.clear_project_schedule(
                 conn, project=project
             )
+            if removed:
+                projects_db.record_project_activity(
+                    conn, project.id, "schedule_cleared",
+                    actor=principal.user_id, detail={},
+                )
             return {"scheduled": False, "removed": removed}
 
     return await asyncio.to_thread(_del_sync)

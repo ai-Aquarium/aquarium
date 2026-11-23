@@ -368,6 +368,7 @@ SIGNED_IN = {
     "GET /api/registry/projects/{slug}/board",
     "GET /api/registry/projects/{slug}/assignable-profiles",
     "GET /api/registry/projects/{slug}/events",
+    "GET /api/registry/projects/{slug}/log",
     "POST /api/registry/projects/{slug}/summarise",
     "POST /api/registry/projects/{slug}/cards",
     "GET /api/registry/projects/{slug}/cards/{task_id}",

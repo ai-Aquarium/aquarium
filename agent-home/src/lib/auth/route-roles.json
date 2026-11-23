@@ -189,6 +189,7 @@
   "POST /api/projects/[slug]/directives/[directiveId]/retire": "signed-in",
   "GET /api/projects/[slug]/doctor": "signed-in",
   "GET /api/projects/[slug]/events": "signed-in",
+  "GET /api/projects/[slug]/log": "signed-in",
   "GET /api/projects/[slug]/events/stream": "signed-in",
   "POST /api/projects/[slug]/files/upload": "signed-in",
   "DELETE /api/projects/[slug]/links": "signed-in",

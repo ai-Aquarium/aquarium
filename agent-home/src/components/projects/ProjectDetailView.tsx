@@ -551,7 +551,7 @@ export function ProjectDetailView({
           className={`flex min-w-0 flex-col gap-6 ${phoneHide}`}
         >
           {shown === "log" ? (
-            <ProjectLog project={project} board={board} />
+            <ProjectLog project={project} />
           ) : (
             parts.map((part) => {
               const Section = TAB_COMPONENT[part];
