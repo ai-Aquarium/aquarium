@@ -268,3 +268,17 @@ describe("MessageBubble", () => {
     expect(user).not.toContain("Copy reply");
   });
 });
+
+describe("MessageBubble in a group chat", () => {
+  it("puts another person's message on the left, out of the accent, and keeps your own on the right", () => {
+    const msg = { role: "user" as const, content: "Can you confirm Friday?" };
+    const other = renderToStaticMarkup(<MessageBubble message={msg} fromOther />);
+    expect(other).toContain('data-from-other="true"');
+    expect(other).toContain("justify-start");
+    expect(other).not.toContain("bg-[var(--color-accent)]");
+    const own = renderToStaticMarkup(<MessageBubble message={msg} />);
+    expect(own).not.toContain("data-from-other");
+    expect(own).toContain("justify-end");
+    expect(own).toContain("bg-[var(--color-accent)]");
+  });
+});

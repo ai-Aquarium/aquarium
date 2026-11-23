@@ -34,7 +34,10 @@ export function ChatConversationView({
   emptyState,
   onComposerTextChange,
   readOnly,
+  isFromOther,
 }: {
+  /** A group chat's other people's messages (shown on the left). */
+  isFromOther?: (message: ChatMessage) => boolean;
   /** Shown instead of the composer: the reader may not post here. */
   readOnly?: ReactNode;
   /** The composer's text changed. */
@@ -129,6 +132,7 @@ export function ChatConversationView({
                   message={m}
                   msgIndex={i}
                   highlightTerm={highlightTerm}
+                  fromOther={isFromOther?.(m) ?? false}
                 />
               );
               const around = renderAround?.(m, i);

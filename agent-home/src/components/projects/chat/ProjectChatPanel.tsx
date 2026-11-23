@@ -395,6 +395,7 @@ function ProjectChatPane({
         composerDraft={composerDraft}
         onComposerTextChange={onComposerText}
         renderAround={renderAround}
+        isFromOther={(m) => m.role === "user" && !mine(m)}
         emptyState={
           <div className="space-y-3">
             {(cards.get(-1) ?? []).map((p) => (
@@ -480,7 +481,7 @@ export function AskAgentToggle({
         </span>
         {t("dock.chat.askAgent")}
       </button>
-      <span className="min-w-0 truncate text-[var(--color-muted)]">
+      <span className="min-w-0 text-[var(--color-muted)]">
         {on ? t("dock.chat.askAgentOn", { profile }) : t("dock.chat.askAgentOff")}
       </span>
     </div>
@@ -511,7 +512,7 @@ function TurnLabel({
         data-component="ProjectChatTurnLabel"
         data-profile={memberOnly ? undefined : profile}
         data-person={person}
-        className="-mb-1.5 pt-1 text-right text-[11px] text-[var(--color-muted)]"
+        className={`-mb-1.5 pt-1 text-[11px] text-[var(--color-muted)] ${person ? "text-left" : "text-right"}`}
       >
         {text}
       </p>
