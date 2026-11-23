@@ -137,6 +137,21 @@ describe("MessageBubble", () => {
     expect(html).toContain('alt="shot"');
   });
 
+  it("keeps a bracketed file name in one download chip", () => {
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        message={{
+          role: "user",
+          content:
+            "see [draft [v2].pdf](/api/chat/media?path=mia_member%2Fhome_2%2Fu1-draft_v2.pdf)",
+        }}
+      />,
+    );
+    expect(html).toContain('data-component="ChatFile"');
+    expect(html).toContain("draft [v2].pdf");
+    expect(html).not.toContain("[draft");
+  });
+
   it("renders a non-image attachment ref as a download chip, not an image", () => {
     const html = renderToStaticMarkup(
       <MessageBubble

@@ -583,19 +583,20 @@ def _sent_while_posting(
 ) -> list[dict]:
     """The turns asked while their person could post, each with its reply.
 
-    A turn started from a queued input (*queued*: ``(started, sent)``, the
-    start falling between the previous turn and this one) was asked when the
-    input was sent, not when it ran."""
+    A turn started from queued input (*queued*: ``(started, sent)``, the
+    start falling between the previous turn and this one) was asked when its
+    input was sent, not when it ran; merged steers, at each one's time."""
     out: list[dict] = []
     keep = False
     previous = float("-inf")
     for m in rows:
         if m["role"] == "user":
-            at = m["timestamp"]
+            asked = [m["timestamp"]]
             if not m.get("sent_while_working"):
-                sent = [s for launched, s in queued if previous < launched <= at]
-                previous, at = at, (sent[-1] if sent else at)
-            keep = any(a <= at < b for a, b in spans)
+                sent = [s for launched, s in queued if previous < launched <= m["timestamp"]]
+                previous = m["timestamp"]
+                asked = sent or asked
+            keep = all(any(a <= t < b for a, b in spans) for t in asked)
         if keep:
             out.append(m)
     return out
@@ -858,8 +859,9 @@ def projects_api_refuse_archived(project) -> None:
 
 
 _MEDIA_REF_RE = re.compile(r"/api/chat/media\?path=([^\s)\"'&<>\]]+)")
-# A file name may itself hold ``]`` (agent-home does not escape it).
-_LINK_LINE_RE = re.compile(r"^!?\[[^\n]*\]\([^)\s]+\)$")
+# One link per line; its name may hold a bracketed part (``draft [v2].pdf``,
+# agent-home does not escape it) but never another link.
+_LINK_LINE_RE = re.compile(r"^!?\[(?:[^\[\]\n]|\[[^\[\]\n]*\])*\]\(([^)\s]+)\)$")
 
 
 def _attached_refs(content: str) -> list[str]:
@@ -879,8 +881,14 @@ def _attached_refs(content: str) -> list[str]:
         content = content[:cut]
     lines = content.split("\n")
     refs: list[str] = []
-    while lines and _LINK_LINE_RE.match(lines[-1]):
-        refs += [unquote(r) for r in _MEDIA_REF_RE.findall(lines.pop())]
+    while lines:
+        link = _LINK_LINE_RE.match(lines[-1])
+        if not link:
+            break
+        lines.pop()
+        ref = _MEDIA_REF_RE.fullmatch(link.group(1))
+        if ref:
+            refs.append(unquote(ref.group(1)))
     return refs
 
 
