@@ -476,8 +476,9 @@ def catch_up_digest(missed: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def project_context(conn, project) -> str:
-    """The brief, the active playbook and the last run's retro, bounded."""
+def project_context(conn, project, user_id: Optional[str] = None) -> str:
+    """The brief, the active playbook and the last run's retro, bounded;
+    with *user_id*, how to co-create the plan in that person's draft."""
     lines = [CONTEXT_HEADER]
     if project.goal:
         lines.append(f"Goal: {_short(project.goal, CONTEXT_FIELD_CHARS)}")
@@ -512,6 +513,13 @@ def project_context(conn, project) -> str:
         f"Use `hermes projects … {project.slug}` to read or change this project; "
         "a playbook you save is a proposal until a person makes it active."
     )
+    if user_id:
+        lines.append(
+            "To shape the plan with this person, edit their working draft: "
+            f"`hermes projects --actor {user_id} playbook {project.slug} draft "
+            "show|set|patch-step|remove-step`; they press Save to propose it. "
+            "Offer 2-3 approaches as a fenced `options` block (projects skill)."
+        )
     return "\n".join(lines)
 
 
@@ -763,7 +771,7 @@ def _prepare_sync(
     context = ""
     if empty:
         with projects_db.connect_closing() as conn:
-            context = project_context(conn, project)
+            context = project_context(conn, project, user_id)
     return {
         "session_id": sid,
         "message": compose_turn(project, _project_ref(project), message, context=context, digest=digest),
