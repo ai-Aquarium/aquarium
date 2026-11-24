@@ -94,6 +94,10 @@
   "interrupted": "The upgrade job stopped without finishing.",
   "rollbackHint": "Something not right? Rolling back restores {tag} and its backup (database included). Changes made since the upgrade would be lost.",
   "backToReleases": "Back to releases",
+  "stepBackupSince": "Backing up changes since {time}",
+  "baseBackupPreparing": "A background backup is preparing the next upgrade.",
+  "baseBackupDone": "The background backup finished, so the next upgrade only backs up what changed.",
+  "baseBackupFailed": "The background backup did not finish, so the next upgrade takes a full backup.",
   "step": {
     "backup": "Back up",
     "download": "Download {tag}",

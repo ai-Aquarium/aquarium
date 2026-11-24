@@ -4539,6 +4539,18 @@ export interface SoftwareUpgradeJob {
   error: string | null;
   steps: SoftwareUpgradeStep[];
   log: string[];
+  /** The backup step only saved the changes since the background base backup made then. */
+  backup_since?: string | null;
+  /** A background base backup was started when this job finished. */
+  base_started?: boolean;
+}
+
+/** The background backup that makes the next upgrade's backup quick. */
+export interface SoftwareUpgradeBaseBackup {
+  state: "queued" | "running" | "done" | "failed" | "stopped";
+  after_job: string | null;
+  finished: string | null;
+  error: string | null;
 }
 
 export interface SoftwareUpgradeHistoryRow {
@@ -4581,6 +4593,7 @@ export interface SoftwareUpgradeStatus {
   rollback_to?: string | null;
   /** The automatic "finish upgrade" step failed; it is not retried until someone asks. */
   finish?: { failed: true; error: string | null; at: string | null } | null;
+  base_job?: SoftwareUpgradeBaseBackup | null;
   /** Pre-flight checks for one release (from `POST /api/software-upgrade/check {version}`). */
   preflight?: SoftwareUpgradePreflight;
   releases?: {

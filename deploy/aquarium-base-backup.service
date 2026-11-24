@@ -1,0 +1,11 @@
+[Unit]
+Description=Aquarium base backup (makes the next upgrade's backup quick)
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/aquarium backup --base
+Nice=19
+IOSchedulingClass=idle
+PrivateTmp=yes
+NoNewPrivileges=yes

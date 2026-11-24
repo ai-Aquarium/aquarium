@@ -94,6 +94,10 @@
   "interrupted": "升級工作未完成便停止了。",
   "rollbackHint": "有問題？回復會還原 {tag} 及其備份（包括資料庫）。升級後所作的更改會遺失。",
   "backToReleases": "返回版本列表",
+  "stepBackupSince": "正在備份自 {time} 以來的變更",
+  "baseBackupPreparing": "背景備份正在為下次升級作準備。",
+  "baseBackupDone": "背景備份已完成，下次升級只需備份有變更的部分。",
+  "baseBackupFailed": "背景備份未能完成，下次升級將進行完整備份。",
   "step": {
     "backup": "備份",
     "download": "下載 {tag}",

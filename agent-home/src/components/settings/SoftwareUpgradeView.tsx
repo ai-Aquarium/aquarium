@@ -15,6 +15,7 @@ import type {
   SoftwareUpgradePreflight,
   SoftwareUpgradeRelease,
   SoftwareUpgradeStatus,
+  SoftwareUpgradeBaseBackup,
   SoftwareUpgradeStep,
 } from "@/types";
 
@@ -145,6 +146,35 @@ export function SoftwareUpgradeView({
     );
   }, []);
 
+  const basePending =
+    !running &&
+    status.job?.result === "ok" &&
+    !!status.job.base_started &&
+    (!status.base_job ||
+      status.base_job.state === "queued" ||
+      status.base_job.state === "running");
+  useEffect(() => {
+    if (!basePending) return;
+    let stopped = false;
+    const timer = window.setInterval(async () => {
+      try {
+        const res = await fetch("/api/software-upgrade/job", {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const next = (await res.json()) as SoftwareUpgradeStatus;
+        if (stopped || !next.available) return;
+        setStatus((cur) => ({ ...cur, base_job: next.base_job ?? null }));
+      } catch {
+        // the note keeps its last state; the next tick tries again
+      }
+    }, 10000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [basePending]);
+
   useEffect(() => {
     if (!running) return;
     let stopped = false;
@@ -234,6 +264,7 @@ export function SoftwareUpgradeView({
           reconnecting={reconnecting}
           canUpgrade={canUpgrade}
           rollbackTo={status.rollback_to ?? null}
+          baseBackup={status.base_job ?? null}
           onRollback={(tag) => setConfirm({ kind: "rollback", tag })}
           onClose={() => setWatching(null)}
         />
@@ -964,17 +995,24 @@ function StepRow({
   index,
   tag,
   finish,
+  since = null,
 }: {
   step: SoftwareUpgradeStep;
   index: number;
   tag: string;
   finish: boolean;
+  /** For the backup step: it only saved the changes since this time. */
+  since?: string | null;
 }) {
   const t = useT("upgrade");
+  const time = useTimeLabel();
+  const sinceAt = step.key === "backup" ? epoch(since) : null;
   const label =
     finish && step.key === "install"
       ? t("stepFinishInstall")
-      : t(`step.${step.key}`, { tag });
+      : sinceAt != null
+        ? t("stepBackupSince", { time: time(sinceAt, "dateTime") })
+        : t(`step.${step.key}`, { tag });
   const hint =
     finish && step.key === "install"
       ? t("stepFinishInstallHint")
@@ -1033,6 +1071,17 @@ function StepRow({
   );
 }
 
+function baseBackupNote(
+  t: ReturnType<typeof useT>,
+  base: SoftwareUpgradeBaseBackup | null,
+  jobId: string,
+): string {
+  if (!base || base.after_job !== jobId) return t("baseBackupPreparing");
+  if (base.state === "done") return t("baseBackupDone");
+  if (base.state === "failed" || base.state === "stopped") return t("baseBackupFailed");
+  return t("baseBackupPreparing");
+}
+
 function JobPanel({
   job,
   reconnecting,
@@ -1040,8 +1089,10 @@ function JobPanel({
   rollbackTo,
   onRollback,
   onClose,
+  baseBackup = null,
 }: {
   job: SoftwareUpgradeJob;
+  baseBackup?: SoftwareUpgradeBaseBackup | null;
   reconnecting: boolean;
   canUpgrade: boolean;
   rollbackTo: string | null;
@@ -1083,6 +1134,11 @@ function JobPanel({
           {t("tookTotal", {
             took: tookLabel(between(job.started, job.finished)),
           })}
+          {job.base_started ? (
+            <div data-testid="upgrade-base-backup" className="mt-1 text-xs">
+              {baseBackupNote(t, baseBackup, job.id)}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {!job.running && !ok ? (
@@ -1173,6 +1229,7 @@ function JobPanel({
               index={i}
               tag={tag}
               finish={job.kind === "finish"}
+              since={job.backup_since ?? null}
             />
           ))}
         </ul>
