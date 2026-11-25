@@ -137,6 +137,52 @@ describe("SoftwareUpgradeView", () => {
     expect(screen.getByTestId("upgrade-preflight").querySelector('[data-check="disk"]')?.getAttribute("data-ok")).toBe("0");
   });
 
+  it("shows each check as it finishes while the answer is still in flight", async () => {
+    let finishCheck: ((r: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "/api/software-upgrade/job")
+        return new Response(JSON.stringify({
+          check: {
+            version: "v1.3.0", started: "2026-11-05T08:00:00", done: false,
+            checks: [
+              { key: "disk", running: false, ok: true, message: "40 GB of disk space is free." },
+              { key: "backup", running: false, ok: true, message: "The backup folder can be written to." },
+              { key: "services", running: true, ok: false, message: "Asking every service if it is healthy." },
+            ],
+          },
+        }), { status: 200 });
+      if (url === "/api/software-upgrade/check")
+        return new Promise<Response>((resolve) => { finishCheck = resolve; });
+      return new Response("{}", { status: 404 });
+    }));
+    render(<SoftwareUpgradeView initial={STATUS} />);
+    const list = await waitFor(() => screen.getByTestId("upgrade-preflight"));
+    await waitFor(() => {
+      expect(list.querySelector('[data-check="disk"]')?.getAttribute("data-ok")).toBe("1");
+      expect(list.querySelector('[data-check="disk"]')?.textContent).toContain("40 GB of disk space");
+      expect(list.querySelector('[data-check="services"]')?.getAttribute("data-ok")).toBe("");
+      expect(list.querySelector('[data-check="services"]')?.textContent).toContain("Asking every service");
+      expect(list.querySelector('[data-check="release"]')?.getAttribute("data-ok")).toBe("");
+    });
+    await act(async () => {
+      finishCheck?.(new Response(JSON.stringify({ preflight: PASS("v1.3.0") }), { status: 200 }));
+    });
+    await waitFor(() =>
+      expect(list.querySelector('[data-check="release"]')?.getAttribute("data-ok")).toBe("1"));
+  });
+
+  it("says the check itself failed instead of leaving every row pending", async () => {
+    serve({
+      "/api/software-upgrade/check": () => ({
+        preflight: { version: "v1.3.0", ok: false, checks: [], busy: [],
+                     error: "The server took too long to answer. Try again." },
+      }),
+    });
+    render(<SoftwareUpgradeView initial={STATUS} />);
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain("took too long to answer"));
+  });
+
   it("warns about work in progress and needs a tick to upgrade anyway", async () => {
     const fetchMock = serve({
       "/api/software-upgrade/check": () => ({ preflight: PASS("v1.3.0", ["1 project run is in progress"]) }),

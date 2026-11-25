@@ -4566,13 +4566,28 @@ export interface SoftwareUpgradeHistoryRow {
   error: string | null;
 }
 
+export interface SoftwareUpgradeCheckRow {
+  key: "disk" | "backup" | "services" | "release";
+  ok: boolean;
+  message: string;
+}
+
+export interface SoftwareUpgradeCheckProgress {
+  version: string | null;
+  started: string | null;
+  done: boolean;
+  checks: (SoftwareUpgradeCheckRow & { running: boolean })[];
+}
+
 export interface SoftwareUpgradePreflight {
   version: string | null;
   /** Every server check passed (disk, backup folder, services, release signature). */
   ok: boolean;
-  checks: { key: "disk" | "backup" | "services" | "release"; ok: boolean; message: string }[];
+  checks: SoftwareUpgradeCheckRow[];
   /** Work a restart interrupts; the upgrade then needs an explicit confirm. */
   busy: string[];
+  /** The helper died or timed out mid-check; `checks` may then be empty. */
+  error?: string | null;
 }
 
 export interface SoftwareUpgradeStatus {
@@ -4594,6 +4609,8 @@ export interface SoftwareUpgradeStatus {
   /** The automatic "finish upgrade" step failed; it is not retried until someone asks. */
   finish?: { failed: true; error: string | null; at: string | null } | null;
   base_job?: SoftwareUpgradeBaseBackup | null;
+  /** Live rows while `upgrade check` runs (polled via `/api/software-upgrade/job`). */
+  check?: SoftwareUpgradeCheckProgress | null;
   /** Pre-flight checks for one release (from `POST /api/software-upgrade/check {version}`). */
   preflight?: SoftwareUpgradePreflight;
   releases?: {

@@ -3654,6 +3654,7 @@ def cmd_offsite(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
 # dashboard also strips paths from error text and the log before the browser sees them.
 
 UPGRADE_STATUS = "/var/lib/aquarium/upgrade-status.json"
+UPGRADE_CHECK = "/var/lib/aquarium/upgrade-check.json"
 UPGRADE_REQUEST = "/var/lib/aquarium/upgrade-request.json"
 UPGRADE_RELEASES = "/var/lib/aquarium/upgrade-releases.json"
 UPGRADE_BEHIND_SHOWN = 20
@@ -3910,10 +3911,12 @@ def upgrade_public_status(cfg: Dict[str, str]) -> Dict:
     finish = None
     if failed.get("version") and failed.get("version") == info.get("version") and finish_needed(cfg, retry=True):
         finish = {"failed": True, "error": str(failed.get("error") or ""), "at": str(failed.get("at") or "")}
+    check = load_check_progress()
     return {"ok": True, "installed": {**info, "label": installed_label(info)}, "job": job or None,
             "history": [_public_record(r) for r in reversed(upgrades[-UPGRADE_HISTORY_SHOWN:])],
             "releases_checked_at": checked,
             "rollback": {"to": rb["to"]} if rb else None, "finish": finish,
+            "check": check if check.get("version") else None,
             "base_backup": base_backup_public()}
 
 
@@ -4369,13 +4372,43 @@ def _launch_job(cfg: Dict[str, str], kind: str, lay: str, info: Dict, target: st
     return None
 
 
+def _check_progress_write(progress: Dict, version: Optional[str]) -> None:
+    """The page polls these rows while `upgrade check` is still running (one synchronous
+    helper call used to leave every spinner pending until it all finished)."""
+    if version:
+        write_private(P(UPGRADE_CHECK), json.dumps(progress, sort_keys=True).encode())
+
+
+def load_check_progress() -> Dict:
+    try:
+        data = json.loads(P(UPGRADE_CHECK).read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def upgrade_preflight(cfg: Dict[str, str], version: Optional[str] = None) -> List[Dict[str, str]]:
     """Checks before an upgrade may start: [{key, status ok|fail, message}] in plain words."""
     rows: List[Dict[str, str]] = []
+    progress = {"version": version, "started": now_iso(), "done": False, "checks": rows}
+    _check_progress_write(progress, version)
+
+    def _upsert(key: str, status: str, message: str) -> None:
+        for row in rows:
+            if row["key"] == key:
+                row.update({"status": status, "message": message})
+                break
+        else:
+            rows.append({"key": key, "status": status, "message": message})
+        _check_progress_write(progress, version)
+
+    def note(key: str, message: str) -> None:
+        _upsert(key, "running", message)
 
     def add(key: str, ok: bool, message: str) -> None:
-        rows.append({"key": key, "status": "ok" if ok else "fail", "message": message})
+        _upsert(key, "ok" if ok else "fail", message)
 
+    note("disk", "Reading the free disk space.")
     where = P(AQ) if layout(cfg) == "release" else P(cfg["DATA_ROOT"])
     try:
         free = shutil.disk_usage(where if where.exists() else P("/")).free / 2**30
@@ -4385,6 +4418,7 @@ def upgrade_preflight(cfg: Dict[str, str], version: Optional[str] = None) -> Lis
             "Delete old backups or give the server a bigger disk, then check again.")
     except OSError:
         add("disk", False, "The free disk space could not be read.")
+    note("backup", "Making sure a backup can be written first.")
     backups = P(cfg["BACKUP_DIR"])
     try:
         backups.mkdir(parents=True, exist_ok=True)
@@ -4395,12 +4429,16 @@ def upgrade_preflight(cfg: Dict[str, str], version: Optional[str] = None) -> Lis
     except OSError:
         add("backup", False, "The backup folder can't be written to, so no backup could be taken first. "
             "Ask whoever manages the server to fix the backup folder.")
+    note("services", "Asking every service if it is healthy.")
     units = service_units()
     failed = [name for name, fn in health_checks(cfg, units) if not _safe(fn)]
     add("services", not failed, "All services are running and answer." if not failed else
         f"Not healthy now: {', '.join(failed)}. Fix that first, so the check after the upgrade can be trusted.")
     if version:
-        add("release", *_release_verifiable(cfg, version))
+        note("release", "Asking GitHub about the release.")
+        add("release", *_release_verifiable(cfg, version, note))
+    progress["done"] = True
+    _check_progress_write(progress, version)
     return rows
 
 
@@ -4411,7 +4449,8 @@ def _safe(fn: Callable[[], bool]) -> bool:
         return False
 
 
-def _release_verifiable(cfg: Dict[str, str], version: str) -> Tuple[bool, str]:
+def _release_verifiable(cfg: Dict[str, str], version: str,
+                        note: Optional[Callable[[str, str], None]] = None) -> Tuple[bool, str]:
     """The release is downloadable and its signed checksum list checks out (not the tarball)."""
     if not VERSION_RE.match(version):
         return False, "Pick a release like v1.2.3."
@@ -4430,7 +4469,11 @@ def _release_verifiable(cfg: Dict[str, str], version: str) -> Tuple[bool, str]:
         folder.mkdir(parents=True, exist_ok=True)
         os.chmod(folder.parent, 0o700)
         for n in names:
+            if note:
+                note("release", f"Downloading {n} from the release.")
             download(assets[n], folder / n)
+        if note:
+            note("release", "Verifying the release's signature.")
         verify_sums(cfg, folder, version)
         shutil.rmtree(folder, ignore_errors=True)
     except Fail as error:
