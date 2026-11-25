@@ -583,6 +583,7 @@ export function ProjectDetailView({
                 aria-selected={p === activePart}
                 aria-controls={`project-section-${p}`}
                 data-part={p}
+                data-appmcp-hint={`Switches this section to show its ${p === "scope" ? t("brief") : PROJECT_TAB_LABEL[p]} part`}
                 onClick={() => selectPart(p)}
                 className={`h-9 rounded-md px-3 text-sm ${
                   p === activePart
