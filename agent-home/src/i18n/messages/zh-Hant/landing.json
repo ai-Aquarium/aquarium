@@ -22,6 +22,7 @@
     "tasks": "需要你",
     "chatsAndIncomings": "對話及來件",
     "incomingsWaiting": "{count} 項來件待處理",
+    "needsYouWaiting": "{count} 項需要你處理",
     "sidebarTabs": "左側面板"
   },
   "running": {

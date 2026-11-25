@@ -22,6 +22,8 @@ export type NeedsYouSource =
   | "profile_suggestion"
   | "pin_suggestion"
   | "data_draft"
+  | "data_schema"
+  | "data_health"
   /** FG-03: someone claimed a source another user owns (box owner/admin only). */
   | "source_claim"
   /** A pending notification that maps to no source above (e.g. a proactive ask). */
@@ -52,6 +54,8 @@ export interface NeedsYouEntry {
   detail?: string | null;
   context: {
     project_slug?: string | null;
+    /** The project's display name (resolved server-side; falls back to slug). */
+    project_name?: string | null;
     run_no?: number | null;
     task_id?: string | null;
     session_id?: string | null;

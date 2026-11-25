@@ -10,7 +10,7 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-function Harness() {
+function Harness({ tasksBadge = null, tasksUrgent = false }: { tasksBadge?: number | null; tasksUrgent?: boolean }) {
   const panels = useLandingPanels();
   return (
     <LandingLayout
@@ -19,7 +19,12 @@ function Harness() {
       main={<p>composer</p>}
       aside={<p>needs you list</p>}
       chats={{ collapsed: panels.chatsCollapsed, onCollapsedChange: panels.setChatsCollapsed }}
-      tasks={{ collapsed: panels.tasksCollapsed, onCollapsedChange: panels.setTasksCollapsed }}
+      tasks={{
+        collapsed: panels.tasksCollapsed,
+        onCollapsedChange: panels.setTasksCollapsed,
+        badge: tasksBadge,
+        badgeUrgent: tasksUrgent,
+      }}
     />
   );
 }
@@ -51,6 +56,21 @@ describe("LandingLayout panel collapse", () => {
     expect(grid().style.gridTemplateColumns).toBe("280px minmax(0,1fr) 48px");
     fireEvent.click(screen.getByRole("button", { name: "Expand Needs you and tasks panel" }));
     expect(aside().hidden).toBe(false);
+  });
+
+  it("shows the needs-you count on the collapsed tasks rail", () => {
+    render(<Harness tasksBadge={7} />);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Needs you and tasks panel" }));
+    const rail = screen.getByRole("button", { name: "Expand Needs you and tasks panel, 7 need you" });
+    expect(rail.textContent).toContain("Needs you");
+    expect(rail.querySelector('[data-slot="rail-badge"]')?.textContent).toBe("7");
+  });
+
+  it("hides the tasks rail badge when nothing needs you", () => {
+    render(<Harness tasksBadge={0} />);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Needs you and tasks panel" }));
+    const rail = screen.getByRole("button", { name: "Expand Needs you and tasks panel" });
+    expect(rail.querySelector('[data-slot="rail-badge"]')).toBeNull();
   });
 
   it("restores the remembered state on the next visit", () => {

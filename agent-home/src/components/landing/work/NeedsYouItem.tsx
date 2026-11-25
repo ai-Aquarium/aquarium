@@ -73,7 +73,25 @@ export function NeedsYouItem({
   const primaryOpens =
     !!onOpen && primary.kind === "link" && (entry.actions ?? []).some((a) => !a.href && isBffPath(a.endpoint));
   const severityLabel = text.severity(entry.severity);
-  const source = [text.detail(entry)?.trim() || null, text.age(entry.created_at, now)]
+  const projectName =
+    entry.context?.project_name || entry.context?.project_slug || null;
+  const sourceLabel = projectName
+    ? text.t("sources.project", { name: projectName })
+    : text.t.has(`sources.${entry.source}`)
+      ? text.t(`sources.${entry.source}`)
+      : null;
+  const detail = text.detail(entry)?.trim() || null;
+  // A detail that already names the project ("Website relaunch" under slug
+  // "website-relaunch") repeats the label — drop it.
+  const detailIsProject =
+    !!projectName &&
+    !!detail &&
+    detail.toLowerCase() === projectName.toLowerCase().replace(/[-_]/g, " ");
+  const source = [
+    sourceLabel,
+    detailIsProject ? null : detail,
+    text.age(entry.created_at, now),
+  ]
     .filter(Boolean)
     .join(" · ");
 

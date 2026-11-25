@@ -14,6 +14,55 @@
     "review": "待審閱",
     "fyi": "供你參考"
   },
+  "filter": {
+    "label": "篩選",
+    "aria": "篩選「需要你」列表",
+    "source": "來源",
+    "who": "誰的",
+    "all": "全部",
+    "reset": "重設",
+    "showing": "顯示 {n} 項，共 {total} 項",
+    "empty": "沒有符合此篩選條件的項目。",
+    "group": {
+      "suggested": "建議任務",
+      "projects": "專案",
+      "approvals": "待批准",
+      "messages": "訊息與待辦",
+      "data": "數據字典",
+      "other": "其他"
+    },
+    "whom": {
+      "me": "我",
+      "team": "團隊"
+    }
+  },
+  "sources": {
+    "project": "專案 · {name}",
+    "project_checkpoint": "專案執行",
+    "budget": "預算停止",
+    "card_wait": "卡片等待",
+    "card_approval": "卡片批准",
+    "card_blocked": "受阻卡片",
+    "output_acceptance": "成果審閱",
+    "clarify": "待答問題",
+    "plan_approval": "計劃批准",
+    "chat_tool_approval": "對話批准",
+    "webview_approval": "網頁檢視",
+    "todo": "待辦",
+    "notification": "訊息",
+    "profile_suggestion": "代理設定檔建議",
+    "pin_suggestion": "置頂建議",
+    "data_draft": "字典草稿",
+    "data_schema": "結構變更",
+    "data_health": "來源健康",
+    "source_claim": "來源申領"
+  },
+  "suggestedOrigin": {
+    "analysis": "系統洞察",
+    "user": "你新增的",
+    "agent": "助理",
+    "cron": "排程"
+  },
   "age": {
     "justNow": "剛剛",
     "min": "{n} 分鐘",

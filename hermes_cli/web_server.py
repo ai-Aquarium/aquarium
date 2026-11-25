@@ -13761,6 +13761,11 @@ async def needs_you(request: Request):
     except Exception:
         _log.warning("needs-you: projects source failed", exc_info=True)
 
+    try:
+        items = await asyncio.to_thread(ny.with_project_names, items)
+    except Exception:
+        _log.warning("needs-you: project names failed", exc_info=True)
+
     items = ny.finalize(items)
     # Enrolled push devices are the instance's, not per-member, so only the
     # admin's own waits are pushed from here.

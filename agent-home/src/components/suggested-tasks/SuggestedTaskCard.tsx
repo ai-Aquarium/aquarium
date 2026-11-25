@@ -4,6 +4,7 @@ import { DetailsPill } from "@/components/landing/work/NeedsYouItem";
 import { usePopover } from "@/components/landing/topbar/usePopover";
 import { RefBadge } from "@/components/refs/RefBadge";
 import { ActionButton } from "@/components/ui/ActionButton";
+import { useNeedsYouText } from "@/lib/landing/needsYouText";
 import { SNOOZE_OPTIONS, SUGGESTED_HINTS, senderOf, type SnoozeOption } from "@/lib/suggested-tasks/channels";
 import type { SuggestedTask } from "@/types";
 
@@ -42,6 +43,15 @@ export function SuggestedTaskCard({
   const urgent = todo.priority === "critical" || todo.priority === "high";
   const why = (todo.description ?? "").replace(/\s+/g, " ").trim();
   const who = senderOf(source);
+  const text = useNeedsYouText();
+  // Not from a message: name what raised it instead of a bare "Other" tag.
+  const origin =
+    todo.source_kind && todo.source_kind !== "inbound" ? todo.source_kind : null;
+  const originLabel = origin
+    ? text.t.has(`suggestedOrigin.${origin}`)
+      ? text.t(`suggestedOrigin.${origin}`)
+      : origin.charAt(0).toUpperCase() + origin.slice(1)
+    : null;
   const { open: snoozeOpen, setOpen: setSnoozeOpen, ref: snoozeRef } = usePopover<HTMLDivElement>();
   return (
     <article
@@ -53,7 +63,17 @@ export function SuggestedTaskCard({
     >
       <div className="flex flex-wrap items-center gap-1.5">
         <SuggestedTag />
-        <ChannelTag channel={channel} />
+        {originLabel ? (
+          <span
+            data-component="OriginTag"
+            data-origin={origin}
+            className="inline-flex items-center rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium leading-4 text-[var(--color-muted)]"
+          >
+            {originLabel}
+          </span>
+        ) : (
+          <ChannelTag channel={channel} />
+        )}
         {urgent ? (
           <span className="rounded-full border border-amber-500/50 px-2 py-0.5 text-[11px] font-medium leading-4 text-amber-400">
             Urgent

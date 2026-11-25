@@ -77,10 +77,36 @@ describe("NeedsYouItem", () => {
   it("shows title, source · age and a link action for a non-reversible entry", () => {
     render(<ul><NeedsYouItem entry={needsYouEntry()} now={NOW} /></ul>);
     expect(screen.getByTestId("needs-you-title").textContent).toBe("Run 4 is waiting at a checkpoint");
-    expect(screen.getByTestId("needs-you-source").textContent).toBe("Website relaunch · 8 min");
+    expect(screen.getByTestId("needs-you-source").textContent).toBe("Project · website-relaunch · 8 min");
     const link = screen.getByRole("link", { name: "Review" });
     expect(link.getAttribute("href")).toBe("/projects/website-relaunch/runs/4");
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("labels the source line with the project name when the server sends one", () => {
+    const entry = needsYouEntry({
+      context: {
+        project_slug: "whatsapp-history-mirror",
+        project_name: "WhatsAppHistory mirror",
+      },
+      detail: "WhatsAppHistory mirror",
+    });
+    render(<ul><NeedsYouItem entry={entry} now={NOW} /></ul>);
+    expect(screen.getByTestId("needs-you-source").textContent).toBe(
+      "Project · WhatsAppHistory mirror · 8 min",
+    );
+  });
+
+  it("labels non-project entries with their source kind", () => {
+    const entry = needsYouEntry({
+      source: "chat_tool_approval",
+      context: {},
+      detail: "Send a WhatsApp message",
+    });
+    render(<ul><NeedsYouItem entry={entry} now={NOW} /></ul>);
+    expect(screen.getByTestId("needs-you-source").textContent).toBe(
+      "Chat approval · Send a WhatsApp message · 8 min",
+    );
   });
 
   it("marks new entries", () => {
@@ -136,6 +162,7 @@ describe("NeedsYouItem in zh-Hant", () => {
     const entry = needsYouEntry({
       id: "data_draft:s1:4",
       source: "data_draft",
+      context: {},
       severity: "review",
       title: "Dictionary draft v4 for WMS is ready",
       detail: "3 changes · from a chat",
@@ -153,7 +180,7 @@ describe("NeedsYouItem in zh-Hant", () => {
       </I18nProvider>,
     );
     expect(screen.getByTestId("needs-you-title").textContent).toBe("WMS 的字典草稿 v4 可以審閱了");
-    expect(screen.getByTestId("needs-you-source").textContent).toBe("3 項修改 · 來自對話 · 8 分鐘");
+    expect(screen.getByTestId("needs-you-source").textContent).toBe("字典草稿 · 3 項修改 · 來自對話 · 8 分鐘");
     expect(screen.getByText("審閱")).toBeTruthy();
   });
 

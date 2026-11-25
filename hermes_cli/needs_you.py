@@ -996,6 +996,37 @@ async def arrival_entries_elsewhere(
     return out
 
 
+def with_project_names(items: Iterable[dict]) -> list[dict]:
+    """Fill ``context.project_name`` from ``project_slug``, one projects read.
+
+    Cards label their wait "Project · <name>"; ``project_slug`` stays the
+    link/filter key. A slug that no longer resolves (deleted project) leaves
+    the card without a name — the client falls back to the slug.
+    """
+    from hermes_cli import projects_db
+
+    items = list(items)
+    slugs = {
+        item["context"]["project_slug"]
+        for item in items
+        if (item.get("context") or {}).get("project_slug")
+    }
+    if not slugs:
+        return items
+    marks = ",".join("?" for _ in slugs)
+    with projects_db.connect_closing() as conn:
+        rows = conn.execute(
+            f"SELECT slug, name FROM projects WHERE slug IN ({marks})",
+            sorted(slugs),
+        ).fetchall()
+    names = {row["slug"]: row["name"] for row in rows}
+    for item in items:
+        slug = (item.get("context") or {}).get("project_slug")
+        if slug in names:
+            item["context"]["project_name"] = names[slug]
+    return items
+
+
 def finalize(items: Iterable[dict]) -> list[dict]:
     """Merge per-arrival rows, drop duplicate ids; severity first, then oldest wait first."""
     seen: set[str] = set()
