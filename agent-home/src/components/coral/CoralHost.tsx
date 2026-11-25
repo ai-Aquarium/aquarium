@@ -150,7 +150,7 @@ export function CoralHost({
                       <CoralTile
                         key={petal.app.id}
                         app={petal.app}
-                        active={isAppActive(pathname, petal.app.route)}
+                        active={isAppActive(pathname, petal.app)}
                         badgeCount={
                           petal.app.badgeSlot
                             ? allBadges[petal.app.badgeSlot]
@@ -195,7 +195,7 @@ export function CoralHost({
                         <CoralTile
                           key={member.id}
                           app={member}
-                          active={isAppActive(pathname, member.route)}
+                          active={isAppActive(pathname, member)}
                           badgeCount={
                             member.badgeSlot
                               ? allBadges[member.badgeSlot]

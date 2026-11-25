@@ -136,8 +136,12 @@ function petalOrder(petal: CoralPetal): number {
 }
 
 /** Whether `pathname` should mark `route` active (root only matches exactly). */
-export function isAppActive(pathname: string, route: string): boolean {
-  return route === "/" ? pathname === "/" : pathname.startsWith(route);
+export function isAppActive(
+  pathname: string,
+  app: Pick<AppManifest, "route" | "activeOn">,
+): boolean {
+  if (app.route === "/") return pathname === "/";
+  return [app.route, ...(app.activeOn ?? [])].some((prefix) => pathname.startsWith(prefix));
 }
 
 /** Test hook — clears the registries. Never call from app code. */

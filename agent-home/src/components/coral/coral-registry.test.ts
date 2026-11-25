@@ -93,10 +93,19 @@ describe("coral Phase 1 registrations", () => {
   });
 
   it("matches the old isActive semantics (root exact, others by prefix)", () => {
-    expect(isAppActive("/", "/")).toBe(true);
-    expect(isAppActive("/todos", "/")).toBe(false);
-    expect(isAppActive("/todos/abc", "/todos")).toBe(true);
-    expect(isAppActive("/tools", "/todos")).toBe(false);
+    expect(isAppActive("/", { route: "/" })).toBe(true);
+    expect(isAppActive("/todos", { route: "/" })).toBe(false);
+    expect(isAppActive("/todos/abc", { route: "/todos" })).toBe(true);
+    expect(isAppActive("/tools", { route: "/todos" })).toBe(false);
+  });
+
+  it("sends the Chat tile to All chats and keeps it active on a chat thread", () => {
+    const chat = getApps().find((a) => a.id === "chat");
+    if (!chat) throw new Error("expected the chat app");
+    expect(chat.route).toBe("/chats");
+    expect(isAppActive("/chats", chat)).toBe(true);
+    expect(isAppActive("/chat", chat)).toBe(true);
+    expect(isAppActive("/inbox", chat)).toBe(false);
   });
 });
 

@@ -37,6 +37,8 @@ export interface AppManifest {
   kind: AppKind;
   /** Internal path for `next-route` apps, e.g. "/todos". */
   route: string;
+  /** Other path prefixes where this app's tile shows as active. */
+  activeOn?: string[];
   /**
    * Cluster id. Categories whose id is in `CLUSTER_CATEGORIES` render as a
    * cluster petal with a fan-out of members; any other category id becomes a
