@@ -194,6 +194,12 @@ export function ProjectDetailView({
   useEffect(() => {
     if (target.part) scrollTo(target.part);
   }, [target]);
+  // The sub-tab open inside the section — null means the section's first part.
+  const [part, setPart] = useState<ProjectTab | null>(target.part ?? null);
+  const selectPart = (next: ProjectTab) => {
+    setPart(next);
+    writeTabParam(next);
+  };
   const [dock, dockDispatch] = useChatDock(callerUserId);
   // "Discuss in chat" (a run comparison): fill the docked chat's composer.
   const [composerDraft, setComposerDraft] = useState<ComposerDraft | undefined>(undefined);
@@ -207,11 +213,13 @@ export function ProjectDetailView({
       return;
     }
     setSection(to.section);
+    setPart(to.part ?? null);
     writeTabParam(to.part ?? to.section);
     if (to.part) scrollTo(to.part);
   }, []);
   const selectSection = (next: PhoneSection) => {
     setSection(next);
+    setPart(null);
     writeTabParam(next);
   };
   // Open the tab that fixes a readiness gap, then scroll to and ring its field.
@@ -303,6 +311,13 @@ export function ProjectDetailView({
     onDiscussInChat: discussInChat,
   };
   const parts = SECTION_PARTS[shown];
+  // Switching sub-tab: which part of the section renders (first part by
+  // default). Parts stay mounted so their state survives the switch.
+  const activePart: ProjectTab | null = parts.length
+    ? part && (parts as readonly ProjectTab[]).includes(part)
+      ? part
+      : parts[0]
+    : null;
   const action = nextAction(
     project,
     board,
@@ -552,10 +567,40 @@ export function ProjectDetailView({
           end={more}
         />
 
+        {parts.length > 1 ? (
+          <div
+            role="tablist"
+            aria-label={t("tabs.aria")}
+            data-component="ProjectPartsNav"
+            data-active-part={activePart ?? undefined}
+            className={`flex min-w-0 flex-wrap items-center gap-1 ${phoneHide}`}
+          >
+            {parts.map((p) => (
+              <button
+                key={p}
+                type="button"
+                role="tab"
+                aria-selected={p === activePart}
+                aria-controls={`project-section-${p}`}
+                data-part={p}
+                onClick={() => selectPart(p)}
+                className={`h-9 rounded-md px-3 text-sm ${
+                  p === activePart
+                    ? "bg-surface-2 font-semibold text-ink"
+                    : "text-muted hover:bg-surface-1"
+                }`}
+              >
+                {p === "scope" ? t("brief") : PROJECT_TAB_LABEL[p]}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         <div
           data-component="ProjectTabPanel"
           role="tabpanel"
           data-active-tab={shown}
+          data-active-part={activePart ?? undefined}
           className={`flex min-w-0 flex-col gap-6 ${phoneHide}`}
         >
           {shown === "log" ? (
@@ -568,7 +613,8 @@ export function ProjectDetailView({
                   key={part}
                   id={`project-section-${part}`}
                   data-section={part}
-                  className="flex min-w-0 scroll-mt-20 flex-col gap-2"
+                  hidden={part !== activePart}
+                  className={`min-w-0 scroll-mt-20 flex-col gap-2 ${part === activePart ? "flex" : "hidden"}`}
                 >
                   {part === "runs" ? null : (
                     <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">

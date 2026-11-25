@@ -58,9 +58,10 @@ export function resolveTabParam(value: string | null | undefined): TabTarget {
     case "runs":
       return { section: "execution", part: raw as ProjectTab };
     case "work":
-    case "dashboard":
     case "overview":
       return { section: "execution" };
+    case "dashboard":
+      return { section: "execution", part: "dashboard" };
     case "files":
       return { section: "planning", part: "outputs" };
     case "skills":
