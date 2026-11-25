@@ -472,7 +472,8 @@ if [ -f deploy/app-mcp-ledger.conf ]; then
   APPMCP_SWEEP=1
   install -d -m 755 $UNIT_DIR/app-mcp.service.d
   install -m 644 deploy/app-mcp-ledger.conf $UNIT_DIR/app-mcp.service.d/50-coverage-ledger.conf
-  install -m 644 deploy/hermes-appmcp-hint-sweep.service deploy/hermes-appmcp-hint-sweep.timer $UNIT_DIR/
+  install -m 644 deploy/hermes-appmcp-hint-sweep.service $UNIT_DIR/hermes-appmcp-hint-sweep.service
+  install -m 644 deploy/hermes-appmcp-hint-sweep.timer $UNIT_DIR/hermes-appmcp-hint-sweep.timer
 fi
 fix_paths < deploy/hermes-embed.service > $UNIT_DIR/hermes-embed.service
 # Template only (one instance per linked phone); see the unit file for how to start one.
