@@ -25,6 +25,8 @@ Group=hermes
 WorkingDirectory=/opt/data/hermes-agent/app-mcp
 # The gateway's env (DATABASE_URL, which config.yaml's app datastore DSN names:
 # where the card goes), then app-mcp's (HERMES_HOME, the same home app-mcp uses).
+# The sweep also reads $HERMES_HOME/.env, so a box whose gateway env file has
+# another name still delivers.
 EnvironmentFile=-/opt/data/hermes.env
 EnvironmentFile=-/etc/aquarium/hermes.env
 EnvironmentFile=-/opt/data/hermes-agent/app-mcp/app-mcp.env
