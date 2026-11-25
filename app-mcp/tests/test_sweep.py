@@ -122,6 +122,41 @@ def test_deliver_raises_one_deduped_owner_ask(tmp_path, monkeypatch):
     assert '/: button "Archive"' in ask["body"]
 
 
+def test_deliver_reads_the_hermes_home_env_before_resolving_the_datastore(tmp_path, monkeypatch):
+    import sys
+    import types
+
+    path = _ledger(tmp_path, [("/", [{"role": "button", "name": "Archive"}])])
+    order: list[str] = []
+    seen: list[dict] = []
+
+    def _load_dotenv(**_kw):
+        order.append("dotenv")
+        monkeypatch.setenv("DATABASE_URL", "postgresql://from-hermes-home-env")
+        return []
+
+    def _load_config():
+        order.append("config")
+        import os
+
+        return {"datastore": {"supabase_app": {"dsn": os.environ.get("DATABASE_URL", "")}}}
+
+    async def _deliver(report, config=None):
+        seen.append(config)
+        return types.SimpleNamespace(created=True)
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", types.SimpleNamespace(load_config=_load_config))
+    monkeypatch.setitem(
+        sys.modules, "hermes_cli.env_loader", types.SimpleNamespace(load_hermes_dotenv=_load_dotenv)
+    )
+    monkeypatch.setattr(sw, "deliver", _deliver)
+    assert sw.main(["--ledger", str(path), "--deliver"]) == 0
+    assert order == ["dotenv", "config"]
+    assert seen[0]["datastore"]["supabase_app"]["dsn"] == "postgresql://from-hermes-home-env"
+
+
 def test_a_timer_runs_the_sweep_with_delivery():
     service = (REPO / "deploy" / "hermes-appmcp-hint-sweep.service").read_text()
     timer = (REPO / "deploy" / "hermes-appmcp-hint-sweep.timer").read_text()

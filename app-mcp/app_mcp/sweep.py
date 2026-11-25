@@ -134,7 +134,11 @@ def main(argv: list[str] | None = None) -> int:
     if not (args.deliver and report.gap_count):
         return 0
     from hermes_cli.config import load_config
+    from hermes_cli.env_loader import load_hermes_dotenv
 
+    # config.yaml names the app datastore as ${DATABASE_URL}; like every hermes
+    # entry point, read it from $HERMES_HOME/.env, whatever the box's unit env holds.
+    load_hermes_dotenv()
     try:
         result = asyncio.run(deliver(report, load_config() or {}))
     except RuntimeError as exc:
