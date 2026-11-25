@@ -2,6 +2,7 @@
 import {
   act,
   cleanup,
+  fireEvent,
   render,
   renderHook,
   screen,
@@ -274,6 +275,118 @@ describe("NeedsYouPanelView with suggested tasks", () => {
     });
     const tally = { count: 250 };
     expect(needsYouCount(251, [...alerts, started], feed([]), tally)).toBe(251);
+  });
+});
+
+describe("NeedsYouPanelView filters", () => {
+  const suggestedFeed = (items: SuggestedTask[]): UseSuggestedTasks => ({
+    items,
+    loaded: true,
+    error: null,
+    profile: "default",
+    refresh: async () => {},
+    remove: () => {},
+  });
+  const sug = (id: string) =>
+    ({
+      channel: "other",
+      todo: { id, title: `suggestion ${id}` },
+      source: null,
+    }) as unknown as SuggestedTask;
+  const items = [
+    needsYouEntry({
+      id: "proj",
+      title: "run waiting",
+      context: { project_slug: "wa", project_name: "WhatsAppHistory mirror" },
+    }),
+    needsYouEntry({ id: "mine-todo", source: "todo", context: {}, title: "mine" }),
+    needsYouEntry({ id: "team-1", source: "data_health", context: {}, team: true, title: "team" }),
+    needsYouEntry({
+      id: "theirs",
+      source: "todo",
+      context: {},
+      foreign: true,
+      owner_user_id: "u-ada",
+      title: "theirs",
+    }),
+  ];
+  const chips = () =>
+    [...document.querySelectorAll("[data-component=Chip]")].map(
+      (c) => c.textContent,
+    );
+  const rows = () =>
+    [...document.querySelectorAll("[data-component=NeedsYouItem]")];
+
+  it("opens the filter row from the header and lists only buckets present", () => {
+    render(<NeedsYouPanelView {...view} count={4} items={items} />);
+    expect(screen.queryByTestId("needs-you-filters")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Filter/ }));
+    const filters = screen.getByTestId("needs-you-filters");
+    expect(filters).toBeTruthy();
+    expect(chips()).toEqual([
+      "All",
+      "Projects ·1",
+      "Messages & to-dos ·2",
+      "Data dictionary ·1",
+      "All",
+      "Me ·2",
+      "Team ·1",
+      "u-ada ·1",
+    ]);
+    // "Suggested tasks" chip appears only when a suggested task is loaded.
+    expect(chips().some((c) => c?.startsWith("Suggested tasks"))).toBe(false);
+  });
+
+  it("narrows to a source bucket and counts against the unfiltered total", () => {
+    render(
+      <NeedsYouPanelView
+        {...view}
+        count={4}
+        items={items}
+        suggested={suggestedFeed([sug("s1")])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Filter/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Suggested tasks ·1" }),
+    );
+    expect(rows()).toHaveLength(0);
+    expect(screen.getByTestId("needs-you-filtered").textContent).toContain(
+      "Showing 1 of 5",
+    );
+    expect(screen.getByText("suggestion s1")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Projects ·1" }));
+    // Selecting a second bucket shows both.
+    expect(rows().map((r) => r.getAttribute("data-severity"))).toHaveLength(1);
+    expect(screen.getByTestId("needs-you-filtered").textContent).toContain(
+      "Showing 2 of 5",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(rows()).toHaveLength(4);
+    expect(screen.queryByTestId("needs-you-filtered")).toBeNull();
+  });
+
+  it("filters by who — team, a person, and me+another together", () => {
+    render(<NeedsYouPanelView {...view} count={4} items={items} />);
+    fireEvent.click(screen.getByRole("button", { name: /Filter/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Team ·1" }));
+    expect(rows().map((r) => r.getAttribute("data-severity"))).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Team ·1" }));
+    fireEvent.click(screen.getByRole("button", { name: "u-ada ·1" }));
+    expect(rows()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Me ·2" }));
+    expect(rows()).toHaveLength(3);
+  });
+
+  it("shows the filter-empty state, not the all-clear, when nothing matches", () => {
+    render(<NeedsYouPanelView {...view} count={4} items={items} />);
+    fireEvent.click(screen.getByRole("button", { name: /Filter/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Team ·1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Projects ·1" }));
+    expect(screen.getByTestId("needs-you-filter-empty")).toBeTruthy();
+    expect(screen.queryByTestId("needs-you-all-clear")).toBeNull();
   });
 });
 

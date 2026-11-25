@@ -14,6 +14,55 @@
     "review": "To review",
     "fyi": "For your information"
   },
+  "filter": {
+    "label": "Filter",
+    "aria": "Filter the Needs-you list",
+    "source": "Source",
+    "who": "Who",
+    "all": "All",
+    "reset": "Reset",
+    "showing": "Showing {n} of {total}",
+    "empty": "Nothing matches this filter.",
+    "group": {
+      "suggested": "Suggested tasks",
+      "projects": "Projects",
+      "approvals": "Approvals",
+      "messages": "Messages & to-dos",
+      "data": "Data dictionary",
+      "other": "Other"
+    },
+    "whom": {
+      "me": "Me",
+      "team": "Team"
+    }
+  },
+  "sources": {
+    "project": "Project · {name}",
+    "project_checkpoint": "Project run",
+    "budget": "Budget stop",
+    "card_wait": "Card wait",
+    "card_approval": "Card approval",
+    "card_blocked": "Blocked card",
+    "output_acceptance": "Output review",
+    "clarify": "Questions to answer",
+    "plan_approval": "Plan approval",
+    "chat_tool_approval": "Chat approval",
+    "webview_approval": "Webview",
+    "todo": "To-do",
+    "notification": "Message",
+    "profile_suggestion": "Profile suggestion",
+    "pin_suggestion": "Pin suggestion",
+    "data_draft": "Dictionary draft",
+    "data_schema": "Schema change",
+    "data_health": "Source health",
+    "source_claim": "Source claim"
+  },
+  "suggestedOrigin": {
+    "analysis": "System insight",
+    "user": "Added by you",
+    "agent": "Agent",
+    "cron": "Scheduled"
+  },
   "age": {
     "justNow": "just now",
     "min": "{n} min",

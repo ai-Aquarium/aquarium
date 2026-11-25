@@ -2,6 +2,30 @@
 
 Tracking file for in-flight feature work. Update as phases land.
 
+## Needs-you: card source labels + source/owner filters
+
+Plan: `plans/2026-11-25-needs-you-source-filters.md`
+Status: **implemented** — updated 2026-11-25
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `with_project_names()` in `needs_you.py` fills `context.project_name`; wired into `/api/needs-you` | done |
+| 2 | `context.project_name` + missing `data_schema`/`data_health` added to `NeedsYouSource`/`NeedsYouEntry` | done |
+| 3 | `needsYouFilter.ts` model: `sourceGroupOf` (6 buckets), `whoOf` (me/team/person), `facetsOf`, `applyFilter` | done |
+| 4 | Collapsible filter row on `NeedsYouPanelView` (source + who chips, facet counts, "Showing X of N · Reset", filter-empty state) | done |
+| 5 | Card source line (`Project · <name>` or kind label) on `NeedsYouItem`; `suggestedOrigin` tag on `SuggestedTaskCard` for non-inbound todos | done |
+| 6 | i18n keys (`filter.*`, `sources.*`, `suggestedOrigin.*`) en + zh-Hant | done |
+| 7 | Tests: `needsYouFilter.test.ts`, panel/item test updates, `test_needs_you.py` cases | done |
+
+### Verified
+
+- `pytest tests/hermes_cli/test_needs_you.py` — 35 passed.
+- `agent-home` vitest on landing/suggested-tasks/inbox/lib suites — 313 passed; `tsc --noEmit` and eslint clean on touched files.
+
+### Not yet verified
+
+- Deployed browser check of the filter row and card source lines against a live backend.
+
 ## Context-length learning & app-mcp semantics (incident 2026-11-25)
 
 Plans: `plans/2026-11-25-context-length-learning-and-compression-loop.md`,

@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { SuggestedTasksNeedsYou } from "@/components/suggested-tasks/SuggestedTasksNeedsYou";
 import {
   type UseSuggestedTasks,
   useSuggestedTasks,
 } from "@/components/suggested-tasks/useSuggestedTasks";
+import { useViewableRoster } from "@/components/access/ViewingChip";
+import { FilterIcon } from "@/components/ui/icons";
 import { useNeedsYouText } from "@/lib/landing/needsYouText";
 import { arrivalKeyOf } from "@/lib/suggested-tasks/channels";
 import type { NeedsYouEntry } from "@/types/landing";
@@ -17,6 +19,15 @@ import {
   NeedsYouDetails,
 } from "./NeedsYouDetails";
 import { NeedsYouItem } from "./NeedsYouItem";
+import {
+  EMPTY_FILTER,
+  activeFilterCount,
+  applyFilter,
+  facetsOf,
+  filterIsActive,
+  type NeedsYouFilter,
+  type SourceGroup,
+} from "./needsYouFilter";
 import { SectionHeader } from "./SectionHeader";
 import { SEVERITY_RANK } from "./tone";
 import { useNow } from "./usePolled";
@@ -96,13 +107,40 @@ export function NeedsYouPanelView({
 }: NeedsYouPanelViewProps) {
   const now = useNow(true, AGE_TICK_MS);
   const { t } = useNeedsYouText();
-  const kept = withoutSuggestedAsks(items, suggested);
-  const sorted = sortBySeverity(kept);
-  const suggestions = suggested?.items.length ?? 0;
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filter, setFilter] = useState<NeedsYouFilter>(EMPTY_FILTER);
+  const roster = useViewableRoster();
+  const kept = useMemo(
+    () => withoutSuggestedAsks(items, suggested),
+    [items, suggested],
+  );
+  const suggestedItems = useMemo(
+    () => suggested?.items ?? [],
+    [suggested],
+  );
+  const facets = useMemo(
+    () => facetsOf(kept, suggestedItems),
+    [kept, suggestedItems],
+  );
+  const filtered = useMemo(
+    () => applyFilter(kept, suggestedItems, filter),
+    [kept, suggestedItems, filter],
+  );
+  const filteredSuggested = useMemo(
+    () =>
+      suggested
+        ? ({ ...suggested, items: filtered.suggested } as UseSuggestedTasks)
+        : undefined,
+    [suggested, filtered.suggested],
+  );
+  const sorted = sortBySeverity(filtered.entries);
+  const suggestions = filtered.suggested.length;
   const shownCount = loaded
     ? needsYouCount(count, items, suggested, tally)
     : null;
-  const details = useDetails(sorted, suggested, onActed);
+  const details = useDetails(sorted, filteredSuggested, onActed);
+  const shown = sorted.length + suggestions;
+  const total = kept.length + suggestedItems.length;
 
   return (
     <section
@@ -116,10 +154,49 @@ export function NeedsYouPanelView({
         label={t("heading")}
         count={shownCount}
         attention={sorted.length + suggestions > 0}
+        trailing={
+          loaded && total > 0 ? (
+            <FilterToggle
+              open={filterOpen}
+              active={activeFilterCount(filter)}
+              label={t("filter.label")}
+              onToggle={() => setFilterOpen((o) => !o)}
+            />
+          ) : undefined
+        }
       />
-      {suggested ? (
+      {filterOpen && total > 0 ? (
+        <FilterRows
+          facets={facets}
+          filter={filter}
+          onChange={setFilter}
+          label={(id) => t(`filter.group.${id}`)}
+          whoLabel={(id) =>
+            id === "me" || id === "team"
+              ? t(`filter.whom.${id}`)
+              : (roster?.people.find((p) => p.user_id === id)?.display ?? id)
+          }
+        />
+      ) : null}
+      {filterIsActive(filter) ? (
+        <p
+          data-testid="needs-you-filtered"
+          className="flex items-center gap-2 px-3 text-[11px] font-medium leading-[14px] text-[var(--color-muted)]"
+        >
+          <span>{t("filter.showing", { n: shown, total })}</span>
+          <button
+            type="button"
+            data-action="needs-you-filter-reset"
+            onClick={() => setFilter(EMPTY_FILTER)}
+            className="text-[var(--color-accent)] hover:underline"
+          >
+            {t("filter.reset")}
+          </button>
+        </p>
+      ) : null}
+      {filteredSuggested ? (
         <SuggestedTasksNeedsYou
-          feed={suggested}
+          feed={filteredSuggested}
           canStart={canStart}
           onDetails={details.openTask}
         />
@@ -141,6 +218,14 @@ export function NeedsYouPanelView({
         )
       ) : sorted.length === 0 && suggestions > 0 ? null : sorted.length ===
         0 ? (
+        filterIsActive(filter) ? (
+          <p
+            data-testid="needs-you-filter-empty"
+            className="px-3 py-3 text-center text-[12px] font-medium leading-[16px] text-[var(--color-muted)]"
+          >
+            {t("filter.empty")}
+          </p>
+        ) : (
         <div
           data-testid="needs-you-all-clear"
           className="flex flex-col items-center gap-2 py-3 text-center"
@@ -160,6 +245,7 @@ export function NeedsYouPanelView({
             {t("allClearBody")}
           </p>
         </div>
+        )
       ) : (
         <ul className="flex flex-col gap-2" aria-label={t("listLabel")}>
           {sorted.map((entry) => (
@@ -190,6 +276,151 @@ export function NeedsYouPanelView({
         />
       ) : null}
     </section>
+  );
+}
+
+/** The header's filter button: "Filter", or "Filter ·N" while filters are on. */
+function FilterToggle({
+  open,
+  active,
+  label,
+  onToggle,
+}: {
+  open: boolean;
+  active: number;
+  label: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-action="needs-you-filter"
+      aria-expanded={open}
+      onClick={onToggle}
+      className="inline-flex min-h-6 items-center gap-1 rounded-[var(--radius-full)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[11px] font-medium leading-[14px] text-[var(--color-fg)] hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+    >
+      <FilterIcon size={12} />
+      {active > 0 ? `${label} ·${active}` : label}
+    </button>
+  );
+}
+
+/** One filter chip, the same pattern as the inbox filters. */
+function Chip({
+  active,
+  action,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  action: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      data-component="Chip"
+      data-action={action}
+      data-active={active || undefined}
+      onClick={onClick}
+      className={`inline-flex min-h-6 items-center rounded-full border px-2.5 text-[11px] font-medium leading-[14px] ${
+        active
+          ? "border-[var(--color-accent)] text-[var(--color-accent)]"
+          : "border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * The expanded filter row: SOURCE chips (one per bucket present, counts
+ * included) and WHO chips (Me / Team / each other person whose waits are in
+ * the list). Each is a toggle; nothing selected means "all" — the "All"
+ * chip clears that row.
+ */
+function FilterRows({
+  facets,
+  filter,
+  onChange,
+  label,
+  whoLabel,
+}: {
+  facets: ReturnType<typeof facetsOf>;
+  filter: NeedsYouFilter;
+  onChange: (next: NeedsYouFilter) => void;
+  label: (group: SourceGroup) => string;
+  whoLabel: (id: string) => string;
+}) {
+  const { t } = useNeedsYouText();
+  const toggleGroup = (id: SourceGroup) =>
+    onChange({
+      ...filter,
+      groups: filter.groups.includes(id)
+        ? filter.groups.filter((g) => g !== id)
+        : [...filter.groups, id],
+    });
+  const toggleWho = (id: string) =>
+    onChange({
+      ...filter,
+      who: filter.who.includes(id)
+        ? filter.who.filter((w) => w !== id)
+        : [...filter.who, id],
+    });
+  const labelClass =
+    "w-14 shrink-0 pt-1 text-[10px] font-semibold uppercase leading-[14px] tracking-wide text-[var(--color-muted)]";
+  return (
+    <div
+      data-testid="needs-you-filters"
+      className="flex flex-col gap-1.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2"
+    >
+      <div className="flex items-start gap-1">
+        <span className={labelClass}>{t("filter.source")}</span>
+        <div className="flex flex-1 flex-wrap items-center gap-1.5">
+          <Chip
+            active={filter.groups.length === 0}
+            action="filter-source-all"
+            onClick={() => onChange({ ...filter, groups: [] })}
+          >
+            {t("filter.all")}
+          </Chip>
+          {facets.groups.map((g) => (
+            <Chip
+              key={g.id}
+              active={filter.groups.includes(g.id)}
+              action={`filter-source-${g.id}`}
+              onClick={() => toggleGroup(g.id)}
+            >
+              {label(g.id)} ·{g.count}
+            </Chip>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-start gap-1">
+        <span className={labelClass}>{t("filter.who")}</span>
+        <div className="flex flex-1 flex-wrap items-center gap-1.5">
+          <Chip
+            active={filter.who.length === 0}
+            action="filter-who-all"
+            onClick={() => onChange({ ...filter, who: [] })}
+          >
+            {t("filter.all")}
+          </Chip>
+          {facets.who.map((w) => (
+            <Chip
+              key={w.id}
+              active={filter.who.includes(w.id)}
+              action={`filter-who-${w.id === "me" || w.id === "team" ? w.id : "other"}`}
+              onClick={() => toggleWho(w.id)}
+            >
+              {whoLabel(w.id)} ·{w.count}
+            </Chip>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

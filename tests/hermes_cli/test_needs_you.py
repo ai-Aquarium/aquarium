@@ -232,6 +232,29 @@ def test_drafted_plan_on_unrun_project_awaits_approval(env):
     assert [r["id"] for r in rows] == [f"plan:{project['slug']}:1"]
 
 
+def test_with_project_names_resolves_slugs_to_names(env):
+    project = _create(env)
+    with projects_db.connect_closing() as conn:
+        name = projects_db.get_project(conn, project["id"]).name
+    items = [
+        ny.entry(id="a", source="project_checkpoint", title="t", href="/x",
+                 created_at=1, context={"project_slug": project["slug"]}),
+        ny.entry(id="b", source="todo", title="t", href="/x", created_at=1),
+        ny.entry(id="c", source="card_wait", title="t", href="/x", created_at=1,
+                 context={"project_slug": "no-such-project"}),
+    ]
+    out = {i["id"]: i for i in ny.with_project_names(items)}
+    assert out["a"]["context"]["project_name"] == name
+    assert out["a"]["context"]["project_slug"] == project["slug"]
+    assert "project_name" not in out["b"]["context"]
+    assert "project_name" not in out["c"]["context"]
+
+
+def test_with_project_names_is_a_noop_without_slugs():
+    items = [ny.entry(id="a", source="todo", title="t", href="/x", created_at=1)]
+    assert ny.with_project_names(items) == items
+
+
 # ---------------------------------------------------------------------------
 # In-memory approvals
 # ---------------------------------------------------------------------------
