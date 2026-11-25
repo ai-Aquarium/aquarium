@@ -62,7 +62,7 @@ describe("standSteps", () => {
   it("delivered outputs put Review & accept current", () => {
     const p = project({ runs: [run()], outputs: [output({ status: "delivered" })] });
     const s = states(p, board(), playbook(), NOW);
-    expect(s.iteration).toEqual(["done", "idle"]);
+    expect(s.iteration).toEqual(["done", "awaiting review"]);
     expect(s.review[0]).toBe("current");
   });
 
