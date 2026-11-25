@@ -14,6 +14,7 @@ Status: **proposed** — updated 2026-11-25
 | B | Per-turn LLM-compression cap (~3) + one deterministic no-summary pass + <5% non-convergence suppression | proposed |
 | C | Preflight prefers `last_real_prompt_tokens`; prune before summary; `compress_passes`/`compress_ms` in turn-timing lines + drift-check flagging | proposed |
 | D | app-mcp `section`/`hint` snapshot fields; `data-appmcp-hint` convention + ratchet vitest; coverage-ledger drift sweeper; `/` help.py suggested-tasks entry | proposed |
+| E | Advisory-only config policy: agent never writes `config.yaml`; proposed changes (threshold, context-length pins) surface as Needs-You cards with evidence + suggested value | decided (owner, 2026-11-25) — proposed |
 
 ## Suggested-task Snooze duration options
 

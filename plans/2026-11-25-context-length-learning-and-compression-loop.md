@@ -229,8 +229,44 @@ config-gated cron). Fresh session, trivial prompt, measure TTFT against
 each configured provider + `fallback_providers` entry; on SLO breach
 file a Needs-You card via `needs_you.push_new` — same channel as (a).
 
-### 4. Deliberately NOT proposed
+### 4. Configuration policy: advisory-only, never silent
 
+The agent may correct its own **facts** — the `model@base_url`
+context-length cache is a measurement, not a setting — but it **never
+writes `config.yaml`**. Every proposed configuration change is a
+recommendation, delivered as a Needs-You card
+(`needs_you.push_new`, `hermes_cli/needs_you.py` L1162) carrying the
+observed evidence, the specific suggested value, and the expected
+effect. Applying it is always an owner action (hand edit or a
+follow-up PR). A card may later gain a one-click "apply" affordance —
+still an explicit owner action, never automatic.
+
+Advisory triggers (all file the same Needs-You channel as §3):
+
+1. **Pathological compression** — when the §3a ledger flags
+   `compress_ms > 60s` or `compress_passes > 3`, the card includes a
+   concrete suggested `compression.threshold` with the math, e.g.
+   *"effective trigger is 64K on a proven-256K window (floor dominates);
+   consider `compression.threshold: 0.6` → trigger ≈153K, or accept the
+   policy as-is."*
+2. **Floor silently overrides intent** — when upward learning lands but
+   `pct × learned_window < MINIMUM_CONTEXT_LENGTH`, the configured pct
+   is dead code; recommend either an absolute trigger or a pct that
+   actually expresses intent.
+3. **Learned-window flapping** — an up-learn followed by a provider-error
+   down-learn on the same `model@base_url` key means the serving window
+   is unstable or the probes disagree with reality; recommend pinning
+   `model.context_length` explicitly in config.
+
+This keeps the split clean: **learning fixes facts silently, policy
+changes ask first.** `compression.threshold` remains a deliberate
+owner decision — the system's job is to make sure the owner sees the
+evidence it was set against a window that turned out to be wrong.
+
+### 5. Deliberately NOT proposed
+
+- No silent writes to `config.yaml` — no `compression.threshold`
+  rewrite, no auto-applied recommendation; §4 is the only channel.
 - No change to `compression.threshold` semantics or the
   `MINIMUM_CONTEXT_LENGTH` floor itself — the floor is correct once the
   window is right; the bug was the window.
@@ -239,7 +275,7 @@ file a Needs-You card via `needs_you.push_new` — same channel as (a).
   protected head/tail policy.
 - No env vars — new flags go in `config.yaml` under `compression.*`.
 
-### 5. Rollout
+### 6. Rollout
 
 | Flag | Default | Rationale |
 |------|---------|-----------|
