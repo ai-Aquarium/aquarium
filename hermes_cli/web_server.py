@@ -13269,14 +13269,21 @@ def _start_chat_run(run_id, run_entry, loop, principal, profile, sid, user_messa
                 if marks["first_delta"]
                 else -1
             )
+            from gateway.session_chat import compression_turn_stats
+
+            _compress = compression_turn_stats(run_entry.get("agent"))
             _log.info(
-                "[agent-home] turn-timing run=%s session=%s first_token_ms=%d total_ms=%d tools=%d chars=%d",
+                "[agent-home] turn-timing run=%s session=%s first_token_ms=%d total_ms=%d tools=%d chars=%d "
+                "compress_passes=%d compress_ms=%d compress_ineffective=%d",
                 run_id,
                 eff_sid,
                 first_ms,
                 int((now - marks["accepted"]) * 1000),
                 marks["tools"],
                 len(final_response),
+                _compress["compress_passes"],
+                _compress["compress_ms"],
+                _compress["compress_ineffective"],
             )
             _trace_emit(
                 trace,

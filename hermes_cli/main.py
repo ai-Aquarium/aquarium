@@ -13212,6 +13212,14 @@ def main():
     register_vpn_subparser(subparsers)
 
     # =========================================================================
+    # compression command — advisories from the per-turn compression ledger
+    # (rung 2: CLI, run on a timer; proposes config changes, never edits them)
+    # =========================================================================
+    from hermes_cli.compression_advisor import register_compression_subparser
+
+    register_compression_subparser(subparsers)
+
+    # =========================================================================
     # projects command — the Projects feature's operator surface (design §14,
     # rung 2: CLI + skill, no model tool). Drives the projects_api router in
     # process. `hermes project` (singular) stays the folder-workspace command.

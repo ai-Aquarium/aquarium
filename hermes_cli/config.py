@@ -1513,6 +1513,15 @@ DEFAULT_CONFIG = {
                                       # Default False matches historical behavior; set to
                                       # True if you'd rather pause than silently lose
                                       # context turns when your aux model is flaky.
+        "learned_context": True,      # Raise the cached context window (model@base_url)
+                                      # when the provider ACCEPTS a prompt larger than the
+                                      # assumed window. Ignored when model.context_length
+                                      # (or a custom_providers value) is set explicitly.
+        "max_turn_llm_passes": 3,     # Max LLM-summary compression passes per user turn;
+                                      # past it one deterministic (no-summary) pass may run,
+                                      # then the turn continues uncompressed. 0 = unlimited.
+        "turn_llm_budget_ms": 120000,  # Wall-time budget for compression per user turn
+                                      # (ms); same fallback as the pass cap. 0 = unlimited.
         "codex_gpt55_autoraise": True,  # When True, gpt-5.5 on the ChatGPT Codex OAuth
                                       # route raises its compaction trigger to 85% (vs the
                                       # global `threshold` above). Codex hard-caps gpt-5.5

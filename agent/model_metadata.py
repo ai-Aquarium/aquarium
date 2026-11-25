@@ -994,6 +994,125 @@ def get_next_probe_tier(current_length: int) -> Optional[int]:
     return None
 
 
+# Granularity for an upward-learned window above every probe tier.
+_LEARNED_CONTEXT_ROUNDING = 64_000
+
+
+def get_probe_tier_above(n: int) -> int:
+    """Return the smallest probe tier strictly above ``n``.
+
+    An accepted request of ``n`` prompt tokens proves the window is larger
+    than ``n``; this picks the next conventional size. Above every tier, ``n``
+    is rounded up to the next multiple of ``_LEARNED_CONTEXT_ROUNDING``.
+    """
+    for tier in sorted(CONTEXT_PROBE_TIERS):
+        if tier > n:
+            return tier
+    step = _LEARNED_CONTEXT_ROUNDING
+    return (n // step + 1) * step
+
+
+def _get_context_events_path() -> Path:
+    from hermes_constants import get_hermes_home
+    return get_hermes_home() / "context_length_events.jsonl"
+
+
+_CONTEXT_EVENTS_KEEP = 200
+
+
+def record_context_length_event(
+    model: str,
+    base_url: str,
+    direction: str,
+    old: int,
+    new: int,
+    **evidence: Any,
+) -> None:
+    """Append a context-length learning event (``up`` / ``down``).
+
+    The advisory scan (``hermes_cli.compression_advisor``) reads these to spot
+    a window that flaps between up- and down-learning. Bounded to the most
+    recent ``_CONTEXT_EVENTS_KEEP`` events. Never raises.
+    """
+    event = {
+        "ts": time.time(),
+        "key": f"{model}@{base_url}",
+        "direction": direction,
+        "old": int(old or 0),
+        "new": int(new or 0),
+        **evidence,
+    }
+    path = _get_context_events_path()
+    try:
+        lines: List[str] = []
+        if path.exists():
+            lines = path.read_text(encoding="utf-8").splitlines()
+        lines.append(json.dumps(event, sort_keys=True))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(lines[-_CONTEXT_EVENTS_KEEP:]) + "\n", encoding="utf-8")
+    except Exception as e:
+        logger.debug("Failed to record context length event: %s", e)
+
+
+def load_context_length_events() -> List[Dict[str, Any]]:
+    """Return recorded context-length learning events, oldest first."""
+    path = _get_context_events_path()
+    if not path.exists():
+        return []
+    out: List[Dict[str, Any]] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                item = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(item, dict):
+                out.append(item)
+    except Exception as e:
+        logger.debug("Failed to load context length events: %s", e)
+    return out
+
+
+def learn_context_length_upward(
+    model: str,
+    base_url: str,
+    current_length: int,
+    prompt_tokens: int,
+    *,
+    threshold_percent: Optional[float] = None,
+) -> Optional[int]:
+    """Raise a window that an accepted request proved too small.
+
+    ``prompt_tokens`` must be the provider-reported count of a request that
+    SUCCEEDED: it is then a hard lower bound on the real window. When it
+    exceeds ``current_length``, persist the next probe tier above it under
+    ``model@base_url`` (the cache ``get_model_context_length`` consults first)
+    and return the learned value. Returns None when nothing was learned.
+    Callers must skip this when the window is explicitly configured.
+    """
+    try:
+        prompt_tokens = int(prompt_tokens or 0)
+        current_length = int(current_length or 0)
+    except (TypeError, ValueError):
+        return None
+    if not model or prompt_tokens <= 0 or prompt_tokens <= current_length:
+        return None
+    learned = get_probe_tier_above(prompt_tokens)
+    save_context_length(model, base_url, learned)
+    evidence: Dict[str, Any] = {"prompt_tokens": prompt_tokens}
+    if threshold_percent is not None:
+        evidence["threshold_percent"] = float(threshold_percent)
+        evidence["floor_dominates"] = (
+            int(learned * float(threshold_percent)) < MINIMUM_CONTEXT_LENGTH
+        )
+    record_context_length_event(model, base_url, "up", current_length, learned, **evidence)
+    logger.info(
+        "Learned context length upward: %s → %s for %s@%s (provider accepted in=%s)",
+        f"{current_length:,}", f"{learned:,}", model, base_url, f"{prompt_tokens:,}",
+    )
+    return learned
+
+
 def parse_context_limit_from_error(error_msg: str) -> Optional[int]:
     """Try to extract the actual context limit from an API error message.
 

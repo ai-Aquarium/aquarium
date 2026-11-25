@@ -60,6 +60,14 @@ from utils import base_url_host_matches, is_truthy_value
 logger = logging.getLogger("run_agent")
 
 
+def _coerce_nonneg_int(value: Any, default: int) -> int:
+    """Parse a non-negative int config value, falling back to ``default``."""
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
 def _ra():
     """Lazy reference to ``run_agent`` so callers can patch
     ``run_agent.OpenAI`` / ``run_agent.cleanup_vm`` / ... and have those
@@ -1818,6 +1826,15 @@ def init_agent(
             api_mode=agent.api_mode,
             abort_on_summary_failure=compression_abort_on_summary_failure,
             max_tokens=agent.max_tokens,
+            learned_context=is_truthy_value(
+                _compression_cfg.get("learned_context"), default=True
+            ),
+            max_turn_llm_passes=_coerce_nonneg_int(
+                _compression_cfg.get("max_turn_llm_passes"), 3
+            ),
+            turn_llm_budget_ms=_coerce_nonneg_int(
+                _compression_cfg.get("turn_llm_budget_ms"), 120_000
+            ),
         )
     _bind_session_state = getattr(agent.context_compressor, "bind_session_state", None)
     if callable(_bind_session_state):

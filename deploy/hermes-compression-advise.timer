@@ -1,0 +1,14 @@
+; Daily: the scan is a cheap file read, and a pathological-compression turn is
+; worth surfacing the morning after rather than at the weekly review.
+
+[Unit]
+Description=Daily Hermes compression advisories
+
+[Timer]
+OnCalendar=*-*-* 07:30:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=hermes-compression-advise.service
+
+[Install]
+WantedBy=timers.target
