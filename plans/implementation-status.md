@@ -13,7 +13,18 @@ Status: **proposed** — updated 2026-11-25
 | A | Upward context-length learning in `update_from_response` (+ `model@base_url` cache write, explicit-config wins) | proposed |
 | B | Per-turn LLM-compression cap (~3) + one deterministic no-summary pass + <5% non-convergence suppression | proposed |
 | C | Preflight prefers `last_real_prompt_tokens`; prune before summary; `compress_passes`/`compress_ms` in turn-timing lines + drift-check flagging | proposed |
-| D | app-mcp `section`/`hint` snapshot fields; `data-appmcp-hint` convention + ratchet vitest; coverage-ledger drift sweeper; `/` help.py suggested-tasks entry | proposed |
+| D | app-mcp `section`/`hint` snapshot fields; `data-appmcp-hint` convention + ratchet vitest; coverage-ledger drift sweeper; `/` help.py suggested-tasks entry | in progress (see below) |
+
+### app-mcp semantic layer — `plans/2026-11-25-app-mcp-semantic-layer.md`
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| A | `section` + `hint` on `AppMcpElement` (`sectionOf`/`hintOf` in `snapshot.ts`), carried through `app_describe_page`; section in the last-active awareness line (`state.ts`) | done |
+| B | `data-appmcp-hint` on SuggestedTaskCard + NeedsYouDetails (Work / Snooze / each duration / Dismiss); ratchet vitest `hint-ratchet.test.ts` + baseline; `/` guide in `help.py` covers Needs you + suggested tasks | done |
+| C | Coverage ledger: append-only `$HERMES_HOME/app-mcp/coverage-ledger.jsonl`, `(page, role, name) → hinted?`, updated per snapshot (`app_mcp/ledger.py`) | done |
+| C | Nightly cron agent that sweeps ledger gaps into a hint-gap PR | follow-up (needs prod cron/deploy wiring) |
+| D | pytest route-guide guard: every `PAGES` route and every agent-home `page.tsx` route has a guide (`UNGUIDED_ROUTES` allowlist only shrinks) | done |
+
 
 ## Suggested-task Snooze duration options
 

@@ -15,7 +15,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { useNeedsYouText } from "@/lib/landing/needsYouText";
 import { usePopover } from "@/components/landing/topbar/usePopover";
-import { SNOOZE_OPTIONS, channelOf, senderOf, snoozeUntil, type SnoozeOption } from "@/lib/suggested-tasks/channels";
+import { SNOOZE_OPTIONS, SUGGESTED_HINTS, channelOf, senderOf, snoozeUntil, type SnoozeOption } from "@/lib/suggested-tasks/channels";
 import { useAction } from "@/lib/use-action";
 import type { SuggestedTask, SuggestedTaskSource, TodoDetail } from "@/types";
 import type { NeedsYouAction, NeedsYouEntry } from "@/types/landing";
@@ -488,7 +488,7 @@ function SuggestedActions({
     <div className="flex w-full flex-wrap gap-2" data-testid="details-actions">
       {error ? <InlineAlert tone="danger">{error}</InlineAlert> : null}
       {canStart ? (
-        <button type="button" data-action="details-work" onClick={() => setStarting(true)} className={`${BUTTON} ${SEVERITY_TONE.approval.button}`}>
+        <button type="button" data-action="details-work" data-appmcp-hint={SUGGESTED_HINTS.work} onClick={() => setStarting(true)} className={`${BUTTON} ${SEVERITY_TONE.approval.button}`}>
           Work on this
         </button>
       ) : null}
@@ -496,6 +496,7 @@ function SuggestedActions({
         <button
           type="button"
           data-action="suggested-snooze"
+          data-appmcp-hint={SUGGESTED_HINTS.snooze}
           aria-haspopup="menu"
           aria-expanded={snoozeOpen}
           disabled={pending}
@@ -516,6 +517,7 @@ function SuggestedActions({
                 type="button"
                 role="menuitem"
                 data-snooze={option.id}
+                data-appmcp-hint={SUGGESTED_HINTS.snoozeFor(option)}
                 disabled={pending}
                 onClick={() => {
                   setSnoozeOpen(false);
@@ -529,7 +531,13 @@ function SuggestedActions({
           </div>
         ) : null}
       </div>
-      <button type="button" disabled={pending} onClick={() => run("dismiss")} className={`${BUTTON} ${SECONDARY}`}>
+      <button
+        type="button"
+        data-appmcp-hint={SUGGESTED_HINTS.dismiss}
+        disabled={pending}
+        onClick={() => run("dismiss")}
+        className={`${BUTTON} ${SECONDARY}`}
+      >
         Dismiss
       </button>
       {starting ? <StartTaskSheet task={task} onClose={() => setStarting(false)} /> : null}

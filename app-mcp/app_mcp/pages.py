@@ -39,3 +39,22 @@ PAGES: list[dict[str, str]] = [
     {"path": "/settings", "name": "Settings", "purpose": "App settings"},
     {"path": "/onboarding", "name": "Onboarding", "purpose": "First-run onboarding"},
 ]
+
+
+def page_template(path: str) -> str:
+    """``path`` as its ``PAGES`` template (``/todos/42`` -> ``/todos/[id]``).
+
+    An exact route wins over a dynamic one (``/projects/new`` is not
+    ``/projects/[slug]``); a path no page matches is returned unchanged.
+    """
+    parts = path.rstrip("/").split("/") if path != "/" else [""]
+    best: str | None = None
+    for page in PAGES:
+        tmpl = page["path"].rstrip("/").split("/") if page["path"] != "/" else [""]
+        if len(tmpl) != len(parts):
+            continue
+        if all(t == p or (t.startswith("[") and t.endswith("]")) for t, p in zip(tmpl, parts)):
+            if tmpl == parts:
+                return page["path"]
+            best = best or page["path"]
+    return best or path

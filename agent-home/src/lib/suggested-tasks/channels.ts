@@ -77,6 +77,19 @@ export const SNOOZE_OPTIONS = [
 ] as const;
 export type SnoozeOption = (typeof SNOOZE_OPTIONS)[number];
 
+/**
+ * `data-appmcp-hint` text for the suggested-task controls: what each one does,
+ * for the agent (app-mcp), not the person — so English and untranslated.
+ */
+export const SUGGESTED_HINTS = {
+  title: "Opens the details of this suggested task: the source message, why triage suggested it, and what each action does.",
+  work:
+    "Work on this: opens the Start task sheet prefilled from this suggestion and its source message; the task checks in at every step unless another level is picked.",
+  snooze: `Snooze: opens a menu to hide this suggestion for ${SNOOZE_OPTIONS.map((o) => o.label).join(" / ")}; it comes back when the time is up.`,
+  snoozeFor: (option: SnoozeOption) => `Hides this suggestion for ${option.label}, then it comes back.`,
+  dismiss: "Dismiss: removes this suggestion from the list; nothing is sent to anyone.",
+} as const;
+
 /** Snooze = "not now": the task comes back `ms` later. */
 export function snoozeUntil(ms: number, now: Date = new Date()): Date {
   return new Date(now.getTime() + ms);
