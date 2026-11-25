@@ -238,7 +238,11 @@ same progress and history, and runs once per version: if it fails, the old
 copies are put back, the failure is recorded and the page shows the reason
 with **Try again** (`upgrade start` with `{"finish": true}`; nothing else
 retries it). Git checkouts are deployed by hand, so `hermes-deploy.sh` keeps
-reporting stale copies with the exact commands instead.
+reporting stale copies with the exact commands instead — except the admin
+command itself, which the deploy script syncs to `/usr/local/sbin/aquarium`
+on every run: the web server reaches every upgrade verb through it, so a
+stale copy breaks Settings → Software upgrade silently (the checkout is
+root-owned, and the deploy already runs its code as root).
 
 **Pre-flight (before the Upgrade button is enabled):** `aquarium upgrade
 check` with `{"version": "vX.Y.Z"}` on stdin answers, in plain words, whether
