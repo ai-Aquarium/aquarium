@@ -17,6 +17,20 @@ Status: **implemented** — updated 2026-11-25
 
 - A real stalled check naming its culprit row (needs this build on the box; HSD is a git checkout → update the checkout on the box, the UI upgrade can't self-deliver past its own hung check).
 
+## Deploy syncs the aquarium admin command
+
+Plan: `plans/2026-11-25-deploy-syncs-aquarium-admin-command.md`
+Status: **implemented** — updated 2026-11-25
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `hermes-deploy.sh` installs `deploy/aquarium.py` → `/usr/local/sbin/aquarium` when it exists and differs; reports (not installs) when missing | done |
+| 2 | `RELEASES.md` contract updated (admin command is the one auto-synced root copy on checkouts) | done |
+
+### Not yet verified
+
+- Sync branch on a real deploy (both boxes were hand-synced this session, so the next deploy is the no-op path).
+
 ## agent-home graceful shutdown
 
 Plan: `plans/2026-11-25-agent-home-graceful-shutdown.md`

@@ -407,10 +407,23 @@ if [ -e "$TOOLS_RULE" ] && ! cmp -s "$TOOLS_RULE" "$REPO/deploy/sudoers.d/hermes
   echo "    sudo visudo -cf $REPO/deploy/sudoers.d/hermes-tools && sudo install -m 440 -o root -g root $REPO/deploy/sudoers.d/hermes-tools $TOOLS_RULE"
 fi
 
+# The admin command is the one root copy this script installs itself: the web
+# server reaches every upgrade verb through `sudo -n /usr/local/sbin/aquarium`,
+# so a stale copy breaks Settings → Software upgrade silently (a helper that
+# predates a new verb answers ok:true without its part — seen live as four
+# eternal "checking…" rows). Copying the checkout's file is safe here: the
+# checkout is root-owned (F13) and this script already runs its code as root.
+# The other root copies stay report-only; the release flow's finish job is what
+# installs them on release installs, from the verified package.
 AQ_HELPER=/usr/local/sbin/aquarium
-if [ -e "$AQ_HELPER" ] && ! cmp -s "$AQ_HELPER" "$REPO/deploy/aquarium.py"; then
-  echo "AQUARIUM ADMIN COMMAND STALE: $AQ_HELPER differs from the reviewed copy at $AFTER. Install it with:"
-  echo "    sudo install -m 755 -o root -g root $REPO/deploy/aquarium.py $AQ_HELPER"
+if [ -e "$AQ_HELPER" ]; then
+  if ! cmp -s "$AQ_HELPER" "$REPO/deploy/aquarium.py"; then
+    install -m 755 -o root -g root "$REPO/deploy/aquarium.py" "$AQ_HELPER"
+    echo "AQUARIUM ADMIN COMMAND synced: $AQ_HELPER now matches the deployed revision."
+  fi
+else
+  echo "AQUARIUM ADMIN COMMAND MISSING: Settings → Software upgrade calls $AQ_HELPER via sudo. Install it with:"
+  echo "    install -m 755 -o root -g root $REPO/deploy/aquarium.py $AQ_HELPER"
 fi
 BACKUP_RULE=/etc/sudoers.d/hermes-backup
 if [ -e "$BACKUP_RULE" ] && ! cmp -s "$BACKUP_RULE" "$REPO/deploy/sudoers.d/hermes-backup"; then
