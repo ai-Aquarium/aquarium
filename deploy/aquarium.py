@@ -996,6 +996,13 @@ def install_root_copies(cfg: Dict[str, str], src: Path, save: Path) -> List[str]
     return [label for _d, _s, label, _k in todo]
 
 
+def restart_app_mcp_for_ledger(installed: List[str]) -> None:
+    """For install paths with no service restart after the root copies: app-mcp picks up
+    a newly added ledger drop-in only on restart, else it keeps the old ledger path."""
+    if "app-mcp unit 50-coverage-ledger.conf" in installed:
+        systemctl("try-restart", "app-mcp.service", check=False)
+
+
 def restore_root_copies(save: Optional[str]) -> List[str]:
     """Put back the root copies an update saved (same bytes, owner and mode)."""
     if not save:
@@ -4162,9 +4169,11 @@ def _upgrade_git(cfg: Dict[str, str], tracker: UpgradeJob, ref: str, label: str)
     _run_deploy(cfg, ref, tracker.mark)
     if src is not None:
         saved = root_copies_save_dir(cfg, ref)
-        if install_root_copies(cfg, src, saved):
+        installed = install_root_copies(cfg, src, saved)
+        if installed:
             tracker.job["root_copies"] = str(saved)
             tracker._save()
+            restart_app_mcp_for_ledger(installed)  # the deploy already restarted it
     if not tracker.reached("restart"):
         tracker.mark("restart")
     tracker.mark("checks")
@@ -4276,8 +4285,7 @@ def _finish_upgrade(cfg: Dict[str, str], tracker: UpgradeJob, version: str) -> N
     if installed:
         tracker.job["root_copies"] = str(saved)
         tracker._save()
-        if "app-mcp unit 50-coverage-ledger.conf" in installed:  # no restart follows here
-            systemctl("try-restart", "app-mcp.service", check=False)
+        restart_app_mcp_for_ledger(installed)
     else:
         say("  the system helpers already match this release")
     tracker.mark("checks")

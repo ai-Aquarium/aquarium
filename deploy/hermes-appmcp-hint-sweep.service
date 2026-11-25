@@ -23,8 +23,10 @@ Type=oneshot
 User=hermes
 Group=hermes
 WorkingDirectory=/opt/data/hermes-agent/app-mcp
-# Same env as app-mcp.service: HERMES_HOME (the gateway's home, whose config
-# names the app datastore the card goes to).
+# The gateway's env (DATABASE_URL, which config.yaml's app datastore DSN names:
+# where the card goes), then app-mcp's (HERMES_HOME, the same home app-mcp uses).
+EnvironmentFile=-/opt/data/hermes.env
+EnvironmentFile=-/etc/aquarium/hermes.env
 EnvironmentFile=-/opt/data/hermes-agent/app-mcp/app-mcp.env
 EnvironmentFile=-/etc/aquarium/app-mcp.env
 # The ledger app-mcp writes (deploy/app-mcp-ledger.conf); $STATE_DIRECTORY.

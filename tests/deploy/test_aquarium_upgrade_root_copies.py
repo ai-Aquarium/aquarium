@@ -490,3 +490,26 @@ def test_the_app_mcp_units_ship_in_every_release():
     tarball the installer unpacks for root copies)."""
     for _installed, source in aq.APP_MCP_UNITS:
         assert source.startswith("deploy/") and (REPO / source).is_file(), source
+
+
+def test_git_upgrade_restarts_app_mcp_after_adding_the_ledger_drop_in(box, monkeypatch, capsys):  # noqa: F811
+    git_box(box, monkeypatch)
+    box.releases.clear()
+    box.make_release("v1.0.0")
+    box.make_release("v1.1.0", extra=APPMCP)
+    releases(box)
+    fakes(box, "visudo", "sudo")
+    code, job = upgrade(box, monkeypatch, capsys)
+    assert code == 0 and job["result"] == "ok", job
+    for path, src in APPMCP_INSTALLED.items():
+        assert box.p(path).read_text() == APPMCP[src], path
+    log = box.log()
+    # the deploy restarted app-mcp before the drop-in existed; it restarts again after
+    assert log.rindex("systemctl try-restart app-mcp.service") > log.index("systemctl enable --now hermes-appmcp-hint-sweep.timer")
+
+
+def test_installer_skips_the_app_mcp_units_a_release_does_not_ship():
+    text = (REPO / "install-aquarium.sh").read_text()
+    guard = text.index("if [ -f deploy/app-mcp-ledger.conf ]; then")
+    assert guard < text.index("install -m 644 deploy/app-mcp-ledger.conf")
+    assert "if [ $APPMCP_SWEEP = 1 ]; then systemctl enable -q --now hermes-appmcp-hint-sweep.timer" in text
