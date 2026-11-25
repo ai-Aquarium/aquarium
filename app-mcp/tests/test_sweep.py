@@ -144,8 +144,11 @@ def test_app_mcp_and_the_sweep_share_a_ledger_folder_every_box_has():
     # Same mode in both, or each start would chmod the folder the other way.
     mode = re.compile(r"^StateDirectoryMode=(\S+)$", re.M)
     assert mode.findall(drop_in) == mode.findall(sweep_unit) == ["0700"]
-    # The sweep reads app-mcp's own env files, so it finds the same HERMES_HOME.
+    # The sweep reads app-mcp's own env files last, so it finds the same HERMES_HOME,
+    # after the gateway's (DATABASE_URL for the card's datastore).
     env = re.compile(r"^EnvironmentFile=(\S+)$", re.M)
-    assert env.findall(unit) == env.findall(sweep_unit)
+    app_env, sweep_env = env.findall(unit), env.findall(sweep_unit)
+    assert sweep_env[-len(app_env):] == app_env
+    assert "-/opt/data/hermes.env" in sweep_env[: -len(app_env)]
     for text in (drop_in, sweep_unit):
         assert "hermes-home" not in text and "ReadWritePaths" not in text
