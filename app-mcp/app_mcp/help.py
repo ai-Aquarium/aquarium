@@ -7,6 +7,11 @@ describes what the user sees and does, not internal enums or routes.
 Keys are page paths as reported by the browser bridge (``/projects/[slug]``
 style templates). Sub-pages without an entry fall back to the nearest
 ancestor, so ``/projects/[slug]/runs/[runNo]`` inherits the Projects guide.
+
+Boundary: guides stay page-level (how a screen is used end to end, who can
+do what). What one control does lives on the control as ``data-appmcp-hint``
+and reaches the agent through ``app_describe_page`` (``hint`` / ``section``)
+— never add per-element entries here.
 """
 from __future__ import annotations
 
@@ -90,8 +95,25 @@ outputs, guidance, retro).
 
 HELP: dict[str, str] = {
     "/": (
-        "Home is the landing page: who you are signed in as and shortcuts into "
-        "every other screen via the app grid."
+        "Home is the landing page: the top bar (who you are signed in as, health, "
+        "what is running, the Needs you badge and the app grid with shortcuts "
+        "into every other screen), your chats down the side, a composer in the "
+        "middle to start a chat, and the Needs you panel.\n\n"
+        "NEEDS YOU lists what is waiting on you: approvals, replies to send, "
+        "items to review, and suggested tasks. Details opens an item with its "
+        "source, why it is there and what each action does; the arrows step "
+        "through the list.\n\n"
+        "SUGGESTED TASKS are cards triage writes when an incoming message (email, "
+        "WhatsApp, Telegram, calendar…) looks like something you may want to "
+        "act on. Each card shows the channel, the ask, who it came from and, if "
+        "urgent, an Urgent tag (Quiet means it was captured without notifying "
+        "you). Three choices: Work on this opens the Start task sheet prefilled "
+        "from the suggestion and its message to start a task (it checks in at "
+        "every step unless you pick another level; viewers do not see it); "
+        "Snooze opens a small menu — 1 min, 1 day or 1 week — and the card "
+        "comes back when the time is up; Dismiss removes it from the list. "
+        "Nothing is sent to anyone by any of the three. The same cards also "
+        "appear on Inbox and Projects."
     ),
     "/chat": (
         "Chats are full conversations with the agent. Send a message and the "

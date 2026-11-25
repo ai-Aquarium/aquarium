@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { snapshotElements, accessibleName, selectorFor, inShellChrome } from "@/lib/app-mcp/snapshot";
+import { snapshotElements, accessibleName, selectorFor, inShellChrome, elementRef } from "@/lib/app-mcp/snapshot";
 
 function fixture(html: string): void {
   document.body.innerHTML = html;
@@ -119,5 +119,96 @@ describe("shell chrome exclusion", () => {
     `);
     expect(inShellChrome(document.querySelector("#panel")!)).toBe(true);
     expect(inShellChrome(document.querySelector("#bg")!)).toBe(false);
+  });
+});
+
+describe("section", () => {
+  it("is the nearest labelled ancestor: aria-label beats data-component beats heading", () => {
+    fixture(`
+      <section><h2>Inbox</h2>
+        <div data-component="Card">
+          <div aria-label="Reply to Ada"><button id="a">Snooze</button></div>
+          <button id="b">Snooze</button>
+        </div>
+        <button id="c">Open</button>
+      </section>
+    `);
+    const byId = Object.fromEntries(
+      snapshotElements(document).map((e) => [e.selector, e.section]),
+    );
+    expect(byId["#a"]).toBe("Reply to Ada");
+    expect(byId["#b"]).toBe("Card");
+    expect(byId["#c"]).toBe("Inbox");
+  });
+
+  it("joins data-component and aria-label on the same ancestor", () => {
+    fixture(`
+      <article data-component="SuggestedTaskCard" aria-label="Reply to Ada">
+        <div><button>Snooze</button></div>
+      </article>
+    `);
+    expect(snapshotElements(document)[0].section).toBe("SuggestedTaskCard: Reply to Ada");
+  });
+
+  it("follows aria-labelledby and a heading ancestor", () => {
+    fixture(`
+      <div role="dialog" aria-labelledby="t"><p id="t">Edit task</p><button>Save</button></div>
+      <h3>Due soon <a href="/todos/1">Pay rent</a></h3>
+    `);
+    const [save, link] = snapshotElements(document);
+    expect(save.section).toBe("Edit task");
+    expect(link.section).toBe("Due soon Pay rent");
+  });
+
+  it("is absent when nothing above the element is labelled", () => {
+    fixture(`<div><button>Lonely</button></div>`);
+    expect(snapshotElements(document)[0].section).toBeUndefined();
+  });
+
+  it("is flattened and capped at 80 characters", () => {
+    fixture(`<div aria-label="  ${"long\n title ".repeat(20)}"><button>Go</button></div>`);
+    const { section } = snapshotElements(document)[0];
+    expect(section).not.toContain("\n");
+    expect(section!.length).toBeLessThanOrEqual(80);
+    expect(section!.endsWith("…")).toBe(true);
+  });
+});
+
+describe("hint", () => {
+  it("prefers data-appmcp-hint over title and aria-description", () => {
+    fixture(`
+      <button data-appmcp-hint="Hides the card for a while" title="Snooze it" aria-description="desc">Snooze</button>
+      <button title="Opens the archive">Archive</button>
+      <button aria-description="Clears the filter">Reset</button>
+      <button>Plain</button>
+    `);
+    const [authored, titled, described, plain] = snapshotElements(document);
+    expect(authored.hint).toBe("Hides the card for a while");
+    expect(titled.hint).toBe("Opens the archive");
+    expect(described.hint).toBe("Clears the filter");
+    expect(plain.hint).toBeUndefined();
+  });
+
+  it("drops a title that only repeats the accessible name", () => {
+    fixture(`<button aria-label="Next" title="Next">›</button>`);
+    expect(snapshotElements(document)[0].hint).toBeUndefined();
+  });
+
+  it("is flattened and capped", () => {
+    fixture(`<button data-appmcp-hint="${"word\n".repeat(200)}">Go</button>`);
+    const { hint } = snapshotElements(document)[0];
+    expect(hint).not.toContain("\n");
+    expect(hint!.length).toBeLessThanOrEqual(200);
+  });
+});
+
+describe("elementRef", () => {
+  it("carries the section for the awareness line", () => {
+    fixture(`<article data-component="SuggestedTaskCard" aria-label="Reply to Ada"><button>Snooze</button></article>`);
+    expect(elementRef(document.querySelector("button")!)).toEqual({
+      role: "button",
+      name: "Snooze",
+      section: "SuggestedTaskCard: Reply to Ada",
+    });
   });
 });

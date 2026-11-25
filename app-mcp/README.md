@@ -68,7 +68,7 @@ FolderBridge (client,   ──WSS──▶     · MCP endpoint 127.0.0.1:9220/mc
 | `app_state` | Current page + last-active element + connection status |
 | `app_pages` | The app's page map with the current page marked (and whether a guide exists) |
 | `app_page_help` | Usage guide for the current page (or a given path): what it is for, how to use it end to end, what the options mean, who may do what. Sub-pages inherit their feature's guide (`app_mcp/help.py`) |
-| `app_describe_page` | Live snapshot: every interactive element with id/role/name/state |
+| `app_describe_page` | Live snapshot: every interactive element with id/role/name/state, plus `section` (nearest labelled ancestor) and `hint` (what it does) |
 | `app_act` | Safe actions (click/type/select/focus/read/scroll/navigate/snapshot); refuses destructive-looking targets |
 | `app_act_destructive` | Same, for destructive actions — gated by `approvals.tools` |
 | `folder_bridge_state` | Whether a Folder Bridge browser session is connected |
@@ -103,6 +103,22 @@ otherwise ask the agent to read and exfiltrate a local file with no human in
 the loop). `folder_bridge_list_folders`/`_list_directory`/`_get_file_metadata`
 are left ungated by default (names/sizes/timestamps only, same sensitivity as
 `app_describe_page`); widen to `mcp_app_folder_bridge_*` for maximum caution.
+
+### Element semantics (`section` / `hint`)
+
+Each snapshot element may carry `section` — the nearest labelled ancestor
+(`aria-label`/`aria-labelledby`, `data-component`, or a heading; ≤80 chars) —
+and `hint` — `data-appmcp-hint`, else `title`/`aria-description` (≤200 chars).
+`data-appmcp-hint` is agent metadata: English, not translated. Page guides
+(`app_mcp/help.py`) stay page-level; what one control does belongs on the
+control. `agent-home/src/lib/app-mcp/hint-ratchet.test.ts` fails CI when a
+component gains unhinted controls (existing gaps are in
+`hint-ratchet.baseline.json`, which only shrinks).
+
+Every successful snapshot also folds `(page, role, name) → hinted?` into an
+append-only ledger at `$HERMES_HOME/app-mcp/coverage-ledger.jsonl` (no values,
+mode 0600; a row is appended only when a key is new or its hinted state
+changes). A nightly sweeper over the ledger is a follow-up.
 
 ## Hermes wiring (box config.yaml)
 

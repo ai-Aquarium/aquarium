@@ -12,6 +12,8 @@ export interface UiElementRef {
   role: string;
   /** Its accessible name (aria-label, label, text, placeholder…). */
   name: string;
+  /** Nearest labelled ancestor (see `sectionOf` in snapshot.ts), when there is one. */
+  section?: string;
 }
 
 export interface UiContext {
@@ -44,13 +46,16 @@ function clip(name: string): string {
 
 /**
  * The one-line context prepended to outbound chat turns, e.g.
- * `[app context: page /todos · last active: button "Filter"]`. Returns null
+ * `[app context: page /todos · last active: button "Filter"]`, with
+ * ` in "SuggestedTaskCard: Reply to Ada"` after the element when it sits in a
+ * labelled section. Returns null
  * when there is nothing to say (server render, before the bridge starts).
  */
 export function formatUiContext(ctx: UiContext | null): string | null {
   if (!ctx || !ctx.path) return null;
-  const element = ctx.element
-    ? `${ctx.element.role} "${clip(ctx.element.name)}"`
+  const el = ctx.element;
+  const element = el
+    ? `${el.role} "${clip(el.name)}"${el.section ? ` in "${clip(el.section)}"` : ""}`
     : "none";
   return `[app context: page ${ctx.path} · last active: ${element}]`;
 }
