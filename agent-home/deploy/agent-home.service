@@ -45,6 +45,9 @@ EnvironmentFile=-/etc/aquarium/agent-home.env
 # on the box during deploy and edit this line if node lives elsewhere (e.g. nvm).
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/opt/data/hermes-agent/agent-home/deploy/start.sh
+# Backstop for deploy/server.mjs's own shutdown (10 s request drain + 15 s
+# hard exit): if that wedged, SIGKILL lands here instead of the 90 s default.
+TimeoutStopSec=20s
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

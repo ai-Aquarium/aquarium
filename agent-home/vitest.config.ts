@@ -19,7 +19,7 @@ export default defineConfig({
     // integration test opens a real socket and skips itself when no throwaway
     // PG is available.
     environment: "node",
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: ["src/**/*.test.{ts,tsx}", "deploy/**/*.test.{ts,tsx}"],
     // Components render English when a test mounts no I18nProvider.
     setupFiles: ["./test/setup-i18n.ts"],
   },
