@@ -73,7 +73,7 @@ export function standSteps(
       iterSub = "finished";
       iterState = "done";
     } else {
-      iterSub = "idle";
+      iterSub = awaiting > 0 ? "awaiting review" : "idle";
       iterState = awaiting > 0 ? "done" : "current";
     }
   } else {

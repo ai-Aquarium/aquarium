@@ -12,6 +12,15 @@ Status: **implemented** — updated 2026-11-25
 | 1 | `ProjectPartsNav` second tab row; parts mounted-but-hidden except active; `part` state + `selectPart`; `?tab=dashboard` → part deep-link | done |
 | 2 | Tests (sub-tab row, deep-link, Log without row); `tsc`/`eslint`/projects suite | done |
 
+## Run status wording: Finished vs project Done
+
+Plan: `plans/2026-11-25-run-status-wording.md`
+Status: **implemented** — updated 2026-11-25
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `status.done` label → Finished (en + zh-Hant); Iteration sub "awaiting review" when outputs await acceptance; test | done |
+
 ## Deliveries: refuse paths the Outputs page can never open
 
 Plan: `plans/2026-11-25-deliver-refuse-unopenable-paths.md`
