@@ -1,0 +1,14 @@
+; Every 6 hours: one 16-token request per provider is negligible cost, and a
+; degraded primary is worth surfacing within the same working day.
+
+[Unit]
+Description=Hermes latency self-test every 6 hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:15:00
+RandomizedDelaySec=10m
+Persistent=true
+Unit=hermes-selftest-latency.service
+
+[Install]
+WantedBy=timers.target

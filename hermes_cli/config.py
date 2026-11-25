@@ -1550,6 +1550,17 @@ DEFAULT_CONFIG = {
                                       # after live validation.
     },
 
+    # Self-test canaries (`hermes selftest ...`). Off by default; a breach is
+    # raised as a Needs-You card, never acted on.
+    "selftest": {
+        "latency": {
+            "enabled": False,         # `hermes selftest latency` exits early unless True
+                                      # (or --force); safe to leave its timer installed.
+            "ttft_slo_ms": 10000,     # time-to-first-token SLO per provider (ms)
+            "timeout_s": 60,          # per-provider request timeout (s)
+        },
+    },
+
     # agent-home landing page.
     "landing": {
         # On landing load the agent reviews recent chats (one tool-less
