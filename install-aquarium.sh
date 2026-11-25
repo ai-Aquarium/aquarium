@@ -464,6 +464,11 @@ UNIT_DIR=/etc/systemd/system
 fix_paths() { sed "s#/opt/data/hermes-agent#$APP#g; s#/opt/data/hermes-embed#$EMBED#g"; }
 fix_paths < agent-home/deploy/agent-home.service > $UNIT_DIR/agent-home.service
 fix_paths < app-mcp/deploy/app-mcp.service > $UNIT_DIR/app-mcp.service
+# app-mcp's coverage ledger and its nightly sweep; copied as is (`aquarium update` keeps them
+# equal to the release, see APP_MCP_UNITS in deploy/aquarium.py).
+install -d -m 755 $UNIT_DIR/app-mcp.service.d
+install -m 644 deploy/app-mcp-ledger.conf $UNIT_DIR/app-mcp.service.d/50-coverage-ledger.conf
+install -m 644 deploy/hermes-appmcp-hint-sweep.service deploy/hermes-appmcp-hint-sweep.timer $UNIT_DIR/
 fix_paths < deploy/hermes-embed.service > $UNIT_DIR/hermes-embed.service
 # Template only (one instance per linked phone); see the unit file for how to start one.
 fix_paths < deploy/hermes-wa-bridge@.service | sed "s#/opt/data/hermes-home#$HERMES_HOME_DIR#g" \
@@ -524,6 +529,7 @@ bash deploy/hermes-tools-setup --hermes-home "$HERMES_HOME_DIR" --hermes-bin "$A
 systemctl daemon-reload
 systemctl enable -q hermes-embed hermes-dashboard hermes-gateway app-mcp agent-home
 systemctl restart hermes-embed hermes-dashboard hermes-gateway app-mcp agent-home
+systemctl enable -q --now hermes-appmcp-hint-sweep.timer
 
 # ---------------------------------------------------------------- 10. Caddy
 if [ -n "$HOME_DOMAIN$DASH_DOMAIN" ]; then

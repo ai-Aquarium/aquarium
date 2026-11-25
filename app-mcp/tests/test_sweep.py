@@ -132,14 +132,20 @@ def test_a_timer_runs_the_sweep_with_delivery():
     assert "Persistent=true" in timer
 
 
-def test_the_service_can_write_the_ledger_under_protect_system_strict():
-    """``ProtectSystem=strict`` makes everything read-only unless granted."""
+def test_app_mcp_and_the_sweep_share_a_ledger_folder_every_box_has():
+    """``ProtectSystem=strict`` makes everything read-only unless granted; the grant is
+    ``StateDirectory=``, the same path on every box, so the units copy over as they are."""
     unit = (REPO / "app-mcp" / "deploy" / "app-mcp.service").read_text()
+    drop_in = (REPO / "deploy" / "app-mcp-ledger.conf").read_text()
     sweep_unit = (REPO / "deploy" / "hermes-appmcp-hint-sweep.service").read_text()
-    home = re.search(r"^Environment=HERMES_HOME=(\S+)$", sweep_unit, re.M).group(1)
-    ledger_dir = f"{home}/app-mcp"
     assert "ProtectSystem=strict" in unit
-    rw = re.search(r"^ReadWritePaths=(.+)$", unit, re.M)
-    assert rw and ledger_dir in rw.group(1).replace("-/", "/").split()
-    # The grant only works on a directory that exists, so the unit creates it.
-    assert re.search(rf"^ExecStartPre=\+.*install -d .*{re.escape(ledger_dir)}$", unit, re.M)
+    state = re.findall(r"^StateDirectory=(\S+)$", drop_in, re.M)
+    assert state and state == re.findall(r"^StateDirectory=(\S+)$", sweep_unit, re.M)
+    # Same mode in both, or each start would chmod the folder the other way.
+    mode = re.compile(r"^StateDirectoryMode=(\S+)$", re.M)
+    assert mode.findall(drop_in) == mode.findall(sweep_unit) == ["0700"]
+    # The sweep reads app-mcp's own env files, so it finds the same HERMES_HOME.
+    env = re.compile(r"^EnvironmentFile=(\S+)$", re.M)
+    assert env.findall(unit) == env.findall(sweep_unit)
+    for text in (drop_in, sweep_unit):
+        assert "hermes-home" not in text and "ReadWritePaths" not in text

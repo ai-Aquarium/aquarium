@@ -1,14 +1,18 @@
 """Coverage ledger: which interactive elements the agent has seen, hinted or not.
 
-Every app-mcp snapshot is folded into an append-only JSON-lines file under
-``$HERMES_HOME/app-mcp/coverage-ledger.jsonl``, keyed by
+Every app-mcp snapshot is folded into an append-only JSON-lines file,
+``coverage-ledger.jsonl``, keyed by
 ``(page, role, name)``. A row is appended only when a key is new or its
 ``hinted`` state flips, so the file grows with the UI, not with traffic.
 Reading it back (``load``) folds the rows into the current picture — the
 input for the drift sweep that drafts missing ``data-appmcp-hint`` lines
 (plans/2026-11-25-app-mcp-semantic-layer.md, Layer 3).
 
-Best-effort by design: no ``HERMES_HOME`` means no ledger, and an I/O error
+It lives in systemd's ``StateDirectory=app-mcp`` (``$STATE_DIRECTORY``, the one
+folder ``ProtectSystem=strict`` leaves writable, same path on every box) and
+otherwise under ``$HERMES_HOME/app-mcp/``.
+
+Best-effort by design: no folder means no ledger, and an I/O error
 never reaches the tool that took the snapshot.
 """
 from __future__ import annotations
@@ -32,8 +36,12 @@ Key = tuple[str, str, str]
 
 
 def ledger_path(hermes_home: str | None = None) -> Path | None:
-    home = hermes_home if hermes_home is not None else os.environ.get("HERMES_HOME", "")
-    return Path(home) / "app-mcp" / LEDGER_NAME if home else None
+    if hermes_home is None:
+        state = os.environ.get("STATE_DIRECTORY", "").split(":")[0]
+        if state:
+            return Path(state) / LEDGER_NAME
+        hermes_home = os.environ.get("HERMES_HOME", "")
+    return Path(hermes_home) / "app-mcp" / LEDGER_NAME if hermes_home else None
 
 
 def _clip(text: Any) -> str:

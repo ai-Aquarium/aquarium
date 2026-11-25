@@ -36,6 +36,17 @@ OLD = {
     "/etc/sudoers.d/aquarium-upgrade": ("# upgrade rule v1.0.0\n", 0o440),
 }
 
+APPMCP = {  # the app-mcp units a release ships (APP_MCP_UNITS)
+    "deploy/app-mcp-ledger.conf": "[Service]\nStateDirectory=app-mcp\n",
+    "deploy/hermes-appmcp-hint-sweep.service": "[Service]\nExecStart=sweep\n",
+    "deploy/hermes-appmcp-hint-sweep.timer": "[Timer]\nOnCalendar=daily\n",
+}
+APPMCP_INSTALLED = {
+    "/etc/systemd/system/app-mcp.service.d/50-coverage-ledger.conf": "deploy/app-mcp-ledger.conf",
+    "/etc/systemd/system/hermes-appmcp-hint-sweep.service": "deploy/hermes-appmcp-hint-sweep.service",
+    "/etc/systemd/system/hermes-appmcp-hint-sweep.timer": "deploy/hermes-appmcp-hint-sweep.timer",
+}
+
 
 def fakes(b, *names):
     for name in names:
@@ -402,3 +413,80 @@ def test_git_preflight_without_cosign_lets_the_upgrade_start(box, monkeypatch, c
     release = {c["key"]: c for c in answer["preflight"]["checks"]}["release"]
     assert release["status"] == "ok", release
     assert "cosign isn't installed" in release["message"]
+
+
+# --------------------------------------------------------------------------- app-mcp units (added, not just replaced)
+
+
+@pytest.fixture
+def abox(box, monkeypatch):  # noqa: F811
+    """A v1.0.0 box that runs app-mcp but has none of its ledger/sweep units yet."""
+    box.install_release("v1.0.0")
+    box.make_release("v1.0.0")
+    box.make_release("v1.1.0", extra=APPMCP)
+    releases(box)
+    fakes(box, "visudo", "sudo")
+    return box
+
+
+def test_upgrade_adds_the_app_mcp_units_and_starts_the_timer(abox, monkeypatch, capsys):
+    code, job = upgrade(abox, monkeypatch, capsys)
+    assert code == 0 and job["result"] == "ok", job
+    for path, src in APPMCP_INSTALLED.items():
+        f = abox.p(path)
+        assert f.read_text() == APPMCP[src] and f.stat().st_mode & 0o777 == 0o644, path
+    log = abox.log()
+    assert "systemctl enable --now hermes-appmcp-hint-sweep.timer" in log
+    # the drop-in is in place before app-mcp restarts on the new release
+    assert log.index("systemctl daemon-reload") < log.rindex("systemctl restart app-mcp.service")
+    rec = aq.load_state()["upgrades"][-1]
+    manifest = json.loads((aq.Path(rec["root_copies"]) / "manifest.json").read_text())
+    assert {e["path"] for e in manifest if e.get("absent")} == set(APPMCP_INSTALLED)
+
+
+def test_failed_upgrade_removes_the_app_mcp_units_it_added(abox, monkeypatch, capsys):
+    abox.write("/opt/data/hermes-home/config.yaml", "terminal:\n  run_as: hermes-tools\n")
+    monkeypatch.setenv("FAKE_SUDO_EXIT", "1")
+    code, job = upgrade(abox, monkeypatch, capsys)
+    assert code == 1 and job["result"] == "rolled back", job
+    for path in APPMCP_INSTALLED:
+        assert not abox.p(path).exists(), path
+    assert "systemctl disable --now hermes-appmcp-hint-sweep.timer" in abox.log()
+
+
+def test_a_box_without_app_mcp_gets_no_app_mcp_units(abox, monkeypatch, capsys):
+    abox.p("/etc/systemd/system/app-mcp.service").unlink()
+    code, job = upgrade(abox, monkeypatch, capsys)
+    assert code == 0 and job["result"] == "ok", job
+    for path in APPMCP_INSTALLED:
+        assert not abox.p(path).exists(), path
+    assert "hermes-appmcp-hint-sweep.timer" not in abox.log()
+
+
+def test_finish_adds_the_app_mcp_units_an_older_job_did_not_know(box, monkeypatch, capsys):  # noqa: F811
+    box.make_release("v1.0.0")
+    box.make_release("v1.1.0", extra=APPMCP)
+    releases(box)
+    box.install_release("v1.1.0")
+    rel = box.p("/opt/aquarium/releases/v1.1.0")
+    for name, text in APPMCP.items():
+        (rel / name).write_text(text)
+    box.write("/usr/local/sbin/aquarium", "# new aquarium\n", mode=0o755)
+    (rel / "deploy/aquarium.py").write_text("# new aquarium\n")
+    fakes(box, "visudo", "sudo")
+    assert aq.finish_needed(aq.load_config())
+    call(box, monkeypatch, capsys, "status")
+    assert box.run("upgrade", "run") == 0, aq.load_upgrade_status()
+    for path, src in APPMCP_INSTALLED.items():
+        assert box.p(path).read_text() == APPMCP[src], path
+    log = box.log()
+    assert "systemctl enable --now hermes-appmcp-hint-sweep.timer" in log
+    assert "systemctl try-restart app-mcp.service" in log
+    assert not aq.finish_needed(aq.load_config())
+
+
+def test_the_app_mcp_units_ship_in_every_release():
+    """Each APP_MCP_UNITS source is a tracked file under deploy/ (the only part of the
+    tarball the installer unpacks for root copies)."""
+    for _installed, source in aq.APP_MCP_UNITS:
+        assert source.startswith("deploy/") and (REPO / source).is_file(), source
