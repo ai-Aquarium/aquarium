@@ -54,6 +54,7 @@ from agent.model_metadata import (
     get_context_length_from_provider_error,
     is_output_cap_error,
     parse_available_output_tokens_from_error,
+    record_context_length_event,
     save_context_length,
 )
 from agent.process_bootstrap import _install_safe_stdio
@@ -2029,6 +2030,12 @@ def run_conversation(
                         ctx = agent.context_compressor.context_length
                         if getattr(agent.context_compressor, "_context_probe_persistable", False):
                             save_context_length(agent.model, agent.base_url, ctx)
+                            record_context_length_event(
+                                agent.model, agent.base_url, "down",
+                                getattr(agent.context_compressor, "_context_step_down_from", 0),
+                                ctx,
+                            )
+                            agent.context_compressor._context_step_down_from = 0
                             agent._safe_print(f"{agent.log_prefix}💾 Cached context length: {ctx:,} tokens for {agent.model}")
                         agent.context_compressor._context_probed = False
                         agent.context_compressor._context_probe_persistable = False

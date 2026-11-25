@@ -30,6 +30,7 @@ from agent.model_metadata import (
     MINIMUM_CONTEXT_LENGTH,
     get_model_context_length,
     estimate_messages_tokens_rough,
+    learn_context_length_upward,
 )
 from agent.redact import redact_sensitive_text
 
@@ -630,6 +631,22 @@ class ContextCompressor(ContextEngine):
       5. On subsequent compactions, iteratively update the previous summary
     """
 
+    # Class-level defaults for the self-calibration / per-turn budget state,
+    # so instances built without __init__ (tests, subclasses) still work.
+    _config_context_length: Optional[int] = None
+    learned_context: bool = True
+    max_turn_llm_passes: int = 3
+    turn_llm_budget_ms: int = 120_000
+    turn_llm_compression_passes: int = 0
+    turn_deterministic_passes: int = 0
+    turn_compress_passes: int = 0
+    turn_compress_ms: int = 0
+    turn_compress_ineffective: int = 0
+    _turn_llm_suppressed: bool = False
+    _turn_exhausted_warned: bool = False
+    _pending_preflight_rough_tokens: int = 0
+    _context_step_down_from: int = 0
+
     @property
     def name(self) -> str:
         return "compressor"
@@ -800,6 +817,16 @@ class ContextCompressor(ContextEngine):
         max_tokens: int | None = None,
     ) -> None:
         """Update model info after a model switch or fallback activation."""
+        if (
+            model == self.model
+            and base_url == getattr(self, "base_url", base_url)
+            and context_length < getattr(self, "context_length", 0)
+        ):
+            # Same endpoint, smaller window: a provider-error step-down.
+            # Remember the window it stepped down from for the learning log.
+            self._context_step_down_from = max(
+                self._context_step_down_from, self.context_length,
+            )
         self.model = model
         self.base_url = base_url
         self.api_key = api_key
@@ -811,16 +838,9 @@ class ContextCompressor(ContextEngine):
         # passes the new value explicitly. (#43547)
         if max_tokens is not None:
             self.max_tokens = self._coerce_max_tokens(max_tokens)
-        self.threshold_tokens = self._compute_threshold_tokens(
-            context_length, self.threshold_percent, self.max_tokens,
-        )
         # Recalculate token budgets for the new context length so the
         # compressor stays calibrated after a model switch (e.g. 200K → 32K).
-        target_tokens = int(self.threshold_tokens * self.summary_target_ratio)
-        self.tail_token_budget = target_tokens
-        self.max_summary_tokens = min(
-            int(context_length * 0.05), _SUMMARY_TOKENS_CEILING,
-        )
+        self._apply_context_length(context_length)
 
         # Reset cross-call calibration state captured under the PREVIOUS model.
         # These fields encode "the provider proved this prompt fit" / "preflight
@@ -843,6 +863,17 @@ class ContextCompressor(ContextEngine):
         self.last_compression_rough_tokens = 0
         self.awaiting_real_usage_after_compression = False
         self._ineffective_compression_count = 0
+
+    def _apply_context_length(self, context_length: int) -> None:
+        """Set the window and re-derive every budget that depends on it."""
+        self.context_length = context_length
+        self.threshold_tokens = self._compute_threshold_tokens(
+            context_length, self.threshold_percent, self.max_tokens,
+        )
+        self.tail_token_budget = int(self.threshold_tokens * self.summary_target_ratio)
+        self.max_summary_tokens = min(
+            int(context_length * 0.05), _SUMMARY_TOKENS_CEILING,
+        )
 
     # When the MINIMUM_CONTEXT_LENGTH floor meets/exceeds a small context
     # window, compacting at the percentage (50% → 32K of a 64K window) wastes
@@ -926,6 +957,9 @@ class ContextCompressor(ContextEngine):
         api_mode: str = "",
         abort_on_summary_failure: bool = False,
         max_tokens: int | None = None,
+        learned_context: bool = True,
+        max_turn_llm_passes: int = 3,
+        turn_llm_budget_ms: int = 120_000,
     ):
         self.model = model
         self.base_url = base_url
@@ -949,6 +983,18 @@ class ContextCompressor(ContextEngine):
         # When False (default = historical behavior), insert a
         # deterministic "summary unavailable" handoff and drop the middle window.
         self.abort_on_summary_failure = abort_on_summary_failure
+        # An explicitly configured window (model.context_length or a
+        # custom_providers per-model value) always wins: upward learning is
+        # disabled and the cache is never written.
+        self._config_context_length = config_context_length or None
+        # compression.learned_context: raise the window when the provider
+        # accepts a prompt larger than it (see update_from_response).
+        self.learned_context = bool(learned_context)
+        # compression.max_turn_llm_passes / turn_llm_budget_ms: per-user-turn
+        # bounds on LLM-summary compression. 0 = unlimited.
+        self.max_turn_llm_passes = max(0, int(max_turn_llm_passes or 0))
+        self.turn_llm_budget_ms = max(0, int(turn_llm_budget_ms or 0))
+        self.begin_turn()
 
         self.context_length = get_model_context_length(
             model, base_url=base_url, api_key=api_key,
@@ -1042,14 +1088,102 @@ class ContextCompressor(ContextEngine):
         self.last_prompt_tokens = usage.get("prompt_tokens", 0)
         self.last_completion_tokens = usage.get("completion_tokens", 0)
         self.last_total_tokens = usage.get("total_tokens", self.last_prompt_tokens + self.last_completion_tokens)
+        self._maybe_learn_context_length(self.last_prompt_tokens)
         if self.last_prompt_tokens > 0:
             self.last_real_prompt_tokens = self.last_prompt_tokens
             if self.last_prompt_tokens < self.threshold_tokens:
                 if self.awaiting_real_usage_after_compression and self.last_compression_rough_tokens > 0:
                     self.last_rough_tokens_when_real_prompt_fit = self.last_compression_rough_tokens
+                elif self._pending_preflight_rough_tokens > 0:
+                    self.last_rough_tokens_when_real_prompt_fit = self._pending_preflight_rough_tokens
             else:
                 self.last_rough_tokens_when_real_prompt_fit = 0
+            self._pending_preflight_rough_tokens = 0
         self.awaiting_real_usage_after_compression = False
+
+    def _maybe_learn_context_length(self, prompt_tokens: Any) -> None:
+        """Raise ``context_length`` when an accepted prompt proved it too small.
+
+        Only real provider usage from a successful response reaches here, so
+        ``prompt_tokens`` is a hard lower bound on the window. Downward
+        learning (provider context errors → ``update_model``) is the
+        complementary direction: together they bound the true window.
+        """
+        if not self.learned_context or self._config_context_length:
+            return
+        try:
+            tokens = int(prompt_tokens or 0)
+        except (TypeError, ValueError):
+            return
+        if tokens <= self.context_length:
+            return
+        learned = learn_context_length_upward(
+            self.model, self.base_url, self.context_length, tokens,
+            threshold_percent=self.threshold_percent,
+        )
+        if learned and learned > self.context_length:
+            self._apply_context_length(learned)
+
+    # ------------------------------------------------------------------
+    # Per-turn compression budget (loop dampeners)
+    # ------------------------------------------------------------------
+
+    def begin_turn(self) -> None:
+        """Reset per-user-turn compression accounting. Called at turn start."""
+        self.turn_llm_compression_passes = 0
+        self.turn_deterministic_passes = 0
+        self.turn_compress_passes = 0
+        self.turn_compress_ms = 0
+        self.turn_compress_ineffective = 0
+        self._turn_llm_suppressed = False
+        self._turn_exhausted_warned = False
+        self._pending_preflight_rough_tokens = 0
+
+    def note_preflight_estimate(self, rough_tokens: int) -> None:
+        """Remember this turn's rough request estimate.
+
+        When the provider then reports a real ``prompt_tokens`` under the
+        threshold, this rough value becomes the baseline that lets the next
+        preflight defer to real usage instead of re-compressing on an
+        inflated rough estimate.
+        """
+        self._pending_preflight_rough_tokens = max(0, int(rough_tokens or 0))
+
+    def _turn_llm_block_reason(self) -> Optional[str]:
+        """Why another LLM-summary pass is not allowed this turn, or None."""
+        if self._turn_llm_suppressed:
+            return "previous pass did not converge"
+        if (
+            self.max_turn_llm_passes > 0
+            and self.turn_llm_compression_passes >= self.max_turn_llm_passes
+        ):
+            return f"{self.turn_llm_compression_passes} LLM passes this turn"
+        if self.turn_llm_budget_ms > 0 and self.turn_compress_ms >= self.turn_llm_budget_ms:
+            return f"{self.turn_compress_ms}ms spent compressing this turn"
+        return None
+
+    def _turn_compression_exhausted(self) -> bool:
+        """True when the proactive gates should stop compressing this turn.
+
+        Once LLM passes are blocked, one deterministic (no-summary) pass is
+        allowed; after it — or straight away when abort_on_summary_failure
+        forbids dropping turns without a summary — the turn proceeds
+        uncompressed.
+        """
+        if self._turn_llm_block_reason() is None:
+            return False
+        return self.abort_on_summary_failure or self.turn_deterministic_passes >= 1
+
+    def turn_compression_stats(self) -> Dict[str, int]:
+        """Per-turn compression ledger fields for the turn-timing log lines."""
+        return {
+            "compress_passes": self.turn_compress_passes,
+            "compress_llm_passes": self.turn_llm_compression_passes,
+            "compress_ms": self.turn_compress_ms,
+            "compress_ineffective": self.turn_compress_ineffective,
+            "ctx": int(self.context_length or 0),
+            "trigger": int(self.threshold_tokens or 0),
+        }
 
     def should_defer_preflight_to_real_usage(self, rough_tokens: int) -> bool:
         """Return True when a high rough preflight estimate is known-noisy.
@@ -1118,6 +1252,15 @@ class ContextCompressor(ContextEngine):
                 logger.debug(
                     "Compression deferred — summary LLM in cooldown for %.0fs more",
                     _cooldown_remaining,
+                )
+            return False
+        if self._turn_compression_exhausted():
+            if not self._turn_exhausted_warned:
+                self._turn_exhausted_warned = True
+                logger.warning(
+                    "Compression budget for this turn exhausted (%s) — "
+                    "continuing uncompressed (%d tokens >= %d threshold)",
+                    self._turn_llm_block_reason(), tokens, self.threshold_tokens,
                 )
             return False
         # Anti-thrashing: back off if recent compressions were ineffective
@@ -2628,6 +2771,20 @@ This compaction should PRIORITISE preserving all information related to the focu
     # ------------------------------------------------------------------
 
     def compress(self, messages: List[Dict[str, Any]], current_tokens: int = None, focus_topic: str = None, force: bool = False) -> List[Dict[str, Any]]:
+        """Compress conversation messages; see ``_compress_impl``.
+
+        Wall time is charged to the per-turn compression budget.
+        """
+        started = time.monotonic()
+        try:
+            return self._compress_impl(
+                messages, current_tokens=current_tokens,
+                focus_topic=focus_topic, force=force,
+            )
+        finally:
+            self.turn_compress_ms += int((time.monotonic() - started) * 1000)
+
+    def _compress_impl(self, messages: List[Dict[str, Any]], current_tokens: int = None, focus_topic: str = None, force: bool = False) -> List[Dict[str, Any]]:
         """Compress conversation messages by summarizing middle turns.
 
         Algorithm:
@@ -2685,6 +2842,7 @@ This compaction should PRIORITISE preserving all information related to the focu
             return messages
 
         display_tokens = current_tokens if current_tokens else self.last_prompt_tokens or estimate_messages_tokens_rough(messages)
+        pre_pass_estimate = estimate_messages_tokens_rough(messages)
 
         # Phase 1: Prune old tool results (cheap, no LLM call)
         messages, pruned_count = self._prune_old_tool_results(
@@ -2693,6 +2851,20 @@ This compaction should PRIORITISE preserving all information related to the focu
         )
         if pruned_count and not self.quiet_mode:
             logger.info("Pre-compression: pruned %d old tool result(s)", pruned_count)
+        # A pass that pruning alone brings under the threshold never spends
+        # an LLM call. The prune's savings are measured with one estimator on
+        # both sides and applied to the caller's token count.
+        if pruned_count and not force and display_tokens >= self.threshold_tokens:
+            pruned_saving = max(0, pre_pass_estimate - estimate_messages_tokens_rough(messages))
+            if display_tokens - pruned_saving < self.threshold_tokens:
+                self.turn_compress_passes += 1
+                if not self.quiet_mode:
+                    logger.info(
+                        "Compression resolved by pruning alone (~%d -> ~%d tokens, "
+                        "threshold %d) — no summary call",
+                        display_tokens, display_tokens - pruned_saving, self.threshold_tokens,
+                    )
+                return messages
 
         # Phase 2: Determine boundaries
         compress_start = self._protect_head_size(messages)
@@ -2768,8 +2940,31 @@ This compaction should PRIORITISE preserving all information related to the focu
             )
 
         # Phase 3: Generate structured summary
-        summary_focus_topic = focus_topic or self._derive_auto_focus_topic(messages)
-        summary = self._generate_summary(turns_to_summarize, focus_topic=summary_focus_topic)
+        # Per-turn dampener: past the LLM-pass cap / time budget, or after a
+        # non-convergent pass, run the deterministic no-summary pass (static
+        # handoff, same as a failed summary) instead of another LLM call.
+        # Manual /compress (force=True) is never capped.
+        llm_block = None if force else self._turn_llm_block_reason()
+        if llm_block is not None:
+            self._last_summary_error = f"per-turn compression budget reached ({llm_block})"
+            if self.abort_on_summary_failure:
+                logger.warning(
+                    "Skipping LLM compression: %s; abort_on_summary_failure=true, "
+                    "so messages are left unchanged for this turn",
+                    self._last_summary_error,
+                )
+                self._last_compress_aborted = True
+                return messages
+            logger.warning(
+                "Skipping LLM compression: %s — using deterministic handoff",
+                self._last_summary_error,
+            )
+            self.turn_deterministic_passes += 1
+            summary = None
+        else:
+            summary_focus_topic = focus_topic or self._derive_auto_focus_topic(messages)
+            self.turn_llm_compression_passes += 1
+            summary = self._generate_summary(turns_to_summarize, focus_topic=summary_focus_topic)
 
         # If summary generation failed, behavior splits on
         # ``abort_on_summary_failure`` (config: compression.abort_on_summary_failure):
@@ -2950,6 +3145,25 @@ This compaction should PRIORITISE preserving all information related to the focu
 
         new_estimate = estimate_messages_tokens_rough(compressed)
         saved_estimate = display_tokens - new_estimate
+
+        # Per-turn non-convergence: measured with one estimator before and
+        # after this pass (not against a possibly-inflated baseline), so an
+        # overestimated display_tokens cannot hide a pass that barely moved.
+        self.turn_compress_passes += 1
+        pass_saving = max(0, pre_pass_estimate - new_estimate)
+        if (
+            pre_pass_estimate > 0
+            and pass_saving < pre_pass_estimate * 0.05
+            and display_tokens - pass_saving >= self.threshold_tokens
+        ):
+            self.turn_compress_ineffective += 1
+            if not self._turn_llm_suppressed:
+                self._turn_llm_suppressed = True
+                logger.warning(
+                    "Compression pass shrank the request by <5%% (~%d tokens) and it "
+                    "is still >= %d threshold — no more LLM passes this turn",
+                    pass_saving, self.threshold_tokens,
+                )
 
         # Anti-thrashing: track compression effectiveness
         savings_pct = (saved_estimate / display_tokens * 100) if display_tokens > 0 else 0

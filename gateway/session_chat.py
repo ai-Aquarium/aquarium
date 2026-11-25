@@ -185,13 +185,21 @@ def run_session_turn_sync(
         conversation_history=conversation_history,
         task_id=session_id or "",
     )
+    _compress = compression_turn_stats(agent)
     _log.info(
-        "session-turn-timing session=%s build_agent_ms=%d run_ms=%d history=%d",
+        "session-turn-timing session=%s build_agent_ms=%d run_ms=%d history=%d "
+        "compress_passes=%d compress_ms=%d compress_ineffective=%d",
         session_id or "",
         int((t1 - t0) * 1000),
         int((time.monotonic() - t1) * 1000),
         len(conversation_history or []),
+        _compress["compress_passes"],
+        _compress["compress_ms"],
+        _compress["compress_ineffective"],
     )
+    from hermes_cli.compression_advisor import record_turn
+
+    record_turn(getattr(agent, "session_id", None) or session_id or "", _compress)
     usage = {
         "input_tokens": getattr(agent, "session_prompt_tokens", 0) or 0,
         "output_tokens": getattr(agent, "session_completion_tokens", 0) or 0,
@@ -210,6 +218,22 @@ def run_session_turn_sync(
             agent=agent,
         )
     return result, usage
+
+
+_NO_COMPRESSION = {"compress_passes": 0, "compress_ms": 0, "compress_ineffective": 0}
+
+
+def compression_turn_stats(agent: Any) -> dict:
+    """The agent's per-turn compression ledger (zeros for engines without one)."""
+    stats_fn = getattr(getattr(agent, "context_compressor", None), "turn_compression_stats", None)
+    if callable(stats_fn):
+        try:
+            stats = stats_fn()
+            if isinstance(stats, dict):
+                return {**_NO_COMPRESSION, **stats}
+        except Exception:
+            pass
+    return dict(_NO_COMPRESSION)
 
 
 def _main_runtime_of(agent: Any) -> Optional[dict]:

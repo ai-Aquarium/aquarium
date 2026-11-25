@@ -415,6 +415,17 @@ compression:
   # head messages, matching the pre-feature behaviour.
   protect_first_n: 3
 
+  # Learn the context window upward when the provider ACCEPTS a prompt larger
+  # than the assumed window (cached per model@base_url in
+  # context_length_cache.yaml). Ignored when model.context_length is set.
+  learned_context: true
+
+  # Per-user-turn bounds on LLM-summary compression. Past either one, one
+  # deterministic (no-summary) pass may run, then the turn continues
+  # uncompressed. Manual /compress is never capped. 0 = unlimited.
+  max_turn_llm_passes: 3
+  turn_llm_budget_ms: 120000
+
   # To pin a specific model/provider for compression summaries, use the
   # auxiliary section below (auxiliary.compression.provider / model).
 

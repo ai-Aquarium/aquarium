@@ -6,13 +6,13 @@ Tracking file for in-flight feature work. Update as phases land.
 
 Plans: `plans/2026-11-25-context-length-learning-and-compression-loop.md`,
 `plans/2026-11-25-app-mcp-semantic-layer.md`
-Status: **proposed** — updated 2026-11-25
+Status: **A–C done** (context-length learning + compression dampeners); D in progress — updated 2026-11-25
 
 | Item | Scope | Status |
 |------|-------|--------|
-| A | Upward context-length learning in `update_from_response` (+ `model@base_url` cache write, explicit-config wins) | proposed |
-| B | Per-turn LLM-compression cap (~3) + one deterministic no-summary pass + <5% non-convergence suppression | proposed |
-| C | Preflight prefers `last_real_prompt_tokens`; prune before summary; `compress_passes`/`compress_ms` in turn-timing lines + drift-check flagging | proposed |
+| A | Upward context-length learning in `update_from_response` (+ `model@base_url` cache write, explicit-config wins) | **done** — `get_probe_tier_above`, `learn_context_length_upward`, gateway hygiene mirror, `compression.learned_context` |
+| B | Per-turn LLM-compression cap (~3) + one deterministic no-summary pass + <5% non-convergence suppression | **done** — `compression.max_turn_llm_passes` / `turn_llm_budget_ms`, `ContextCompressor.begin_turn` |
+| C | Preflight prefers `last_real_prompt_tokens`; prune before summary; `compress_passes`/`compress_ms` in turn-timing lines + drift-check flagging | **done** — `hermes compression advise` → Needs-You (`deploy/hermes-compression-advise.timer`, not installed); `hermes selftest latency` deferred |
 | D | app-mcp `section`/`hint` snapshot fields; `data-appmcp-hint` convention + ratchet vitest; coverage-ledger drift sweeper; `/` help.py suggested-tasks entry | in progress (see below) |
 
 ### app-mcp semantic layer — `plans/2026-11-25-app-mcp-semantic-layer.md`

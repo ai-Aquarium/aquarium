@@ -10714,6 +10714,7 @@ class GatewayRunner(
             # compression on every turn in long gateway sessions.
             _hyg_model = "anthropic/claude-sonnet-4.6"
             _hyg_threshold_pct = 0.85
+            _hyg_learned_context = True
             _hyg_compression_enabled = True
             _hyg_hard_msg_limit = 5000
             _hyg_config_context_length = None
@@ -10749,6 +10750,9 @@ class GatewayRunner(
                     if isinstance(_comp_cfg, dict):
                         _hyg_compression_enabled = str(
                             _comp_cfg.get("enabled", True)
+                        ).lower() in {"true", "1", "yes"}
+                        _hyg_learned_context = str(
+                            _comp_cfg.get("learned_context", True)
                         ).lower() in {"true", "1", "yes"}
                         _raw_hard_limit = _comp_cfg.get("hygiene_hard_message_limit")
                         if _raw_hard_limit is not None:
@@ -10822,6 +10826,29 @@ class GatewayRunner(
                 if _stored_tokens > 0:
                     _approx_tokens = _stored_tokens
                     _token_source = "actual"
+                    # The provider accepted this many prompt tokens, so the
+                    # window is at least that large: learn it upward (same
+                    # model@base_url cache the agent reads) unless the window
+                    # is explicitly configured.
+                    if (
+                        _hyg_learned_context
+                        and _hyg_config_context_length is None
+                        and _stored_tokens > _hyg_context_length
+                    ):
+                        from agent.model_metadata import learn_context_length_upward
+
+                        _learned_ctx = learn_context_length_upward(
+                            _hyg_model,
+                            _hyg_base_url or "",
+                            _hyg_context_length,
+                            _stored_tokens,
+                        )
+                        if _learned_ctx:
+                            _hyg_context_length = _learned_ctx
+                            _compress_token_threshold = int(
+                                _hyg_context_length * _hyg_threshold_pct
+                            )
+                            _warn_token_threshold = int(_hyg_context_length * 0.95)
                 else:
                     _approx_tokens = estimate_messages_tokens_rough(history)
                     _token_source = "estimated"
