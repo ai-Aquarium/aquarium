@@ -27,7 +27,7 @@ def test_rows_appear_after_a_snapshot_and_repeat_snapshots_append_nothing(tmp_pa
         ("/", "button", "Snooze", True),
         ("/", "button", "Dismiss", False),
     ]
-    assert written[0]["section"] == "SuggestedTaskCard: Reply to Ada"
+    assert "section" not in written[0]
     assert path.stat().st_mode & 0o777 == 0o600
 
 
@@ -85,3 +85,35 @@ def test_page_template():
     assert page_template("/projects/new") == "/projects/new"
     assert page_template("/projects/acme/runs/3") == "/projects/[slug]/runs/[runNo]"
     assert page_template("/no/such/page") == "/no/such/page"
+
+
+def test_duplicate_labels_with_mixed_hints_are_one_gap_and_do_not_churn(tmp_path):
+    path = ledger_path(str(tmp_path))
+    ledger = CoverageLedger(path)
+    twins = [{**DISMISS, "hint": "Removes the suggestion"}, DISMISS]
+    assert ledger.observe("/projects", twins) == 1
+    assert ledger.observe("/projects", twins) == 0
+    assert load(path)[("/projects", "button", "Dismiss")]["hinted"] is False
+
+
+def test_lone_surrogate_from_a_clipped_emoji_never_breaks_the_snapshot(tmp_path):
+    path = ledger_path(str(tmp_path))
+    ledger = CoverageLedger(path)
+    assert ledger.observe("/", [{"role": "button", "name": "Reply \ud83d"}]) == 1
+    assert ("/", "button", "Reply \ud83d") in load(path)
+
+
+def test_failed_write_is_retried_on_the_next_snapshot(tmp_path):
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    ledger = CoverageLedger(blocker / "app-mcp" / "l.jsonl")
+    assert ledger.observe("/", [DISMISS]) == 0
+    blocker.unlink()
+    blocker.mkdir()
+    assert ledger.observe("/", [DISMISS]) == 1
+
+
+def test_private_section_text_is_not_recorded(tmp_path):
+    path = ledger_path(str(tmp_path))
+    CoverageLedger(path).observe("/", [SNOOZE])
+    assert "Reply to Ada" not in path.read_text()
