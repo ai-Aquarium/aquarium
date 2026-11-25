@@ -119,7 +119,12 @@ Every successful snapshot also folds `(page, role, name) → hinted?` into an
 append-only ledger at `$HERMES_HOME/app-mcp/coverage-ledger.jsonl` (no values
 or section text, mode 0600; a row is appended only when a key is new or its
 hinted state changes; same-named controls on a page count as hinted only if
-all are). A nightly sweeper over the ledger is a follow-up.
+all are). `python -m app_mcp.sweep` folds the ledger into the open gaps —
+unhinted controls per page, and observed pages without a guide — and with
+`--deliver` raises them as one owner Needs-You card that dedupes on the gap
+set; `deploy/hermes-appmcp-hint-sweep.timer` runs it nightly. The service unit
+grants write access to `$HERMES_HOME/app-mcp` only (`ReadWritePaths=`), since
+`ProtectSystem=strict` otherwise leaves the ledger unwritable.
 
 ## Hermes wiring (box config.yaml)
 
