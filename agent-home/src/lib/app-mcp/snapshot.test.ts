@@ -172,6 +172,13 @@ describe("section", () => {
     expect(section!.length).toBeLessThanOrEqual(80);
     expect(section!.endsWith("…")).toBe(true);
   });
+
+  it("never splits an emoji at the cap", () => {
+    fixture(`<div aria-label="${"a".repeat(78)}🔥🔥🔥"><button>Go</button></div>`);
+    const { section } = snapshotElements(document)[0];
+    expect(section).toBe(`${"a".repeat(78)}🔥…`);
+    expect(section).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
 });
 
 describe("hint", () => {

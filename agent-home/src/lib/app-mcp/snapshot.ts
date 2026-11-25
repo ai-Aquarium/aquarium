@@ -107,7 +107,8 @@ const LANDMARK_SELECTOR =
 
 function flatClip(text: string, limit: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > limit ? `${flat.slice(0, limit - 1)}…` : flat;
+  const chars = Array.from(flat);
+  return chars.length > limit ? `${chars.slice(0, limit - 1).join("")}…` : flat;
 }
 
 function labelOf(el: Element): string {

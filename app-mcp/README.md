@@ -116,9 +116,10 @@ component gains unhinted controls (existing gaps are in
 `hint-ratchet.baseline.json`, which only shrinks).
 
 Every successful snapshot also folds `(page, role, name) → hinted?` into an
-append-only ledger at `$HERMES_HOME/app-mcp/coverage-ledger.jsonl` (no values,
-mode 0600; a row is appended only when a key is new or its hinted state
-changes). A nightly sweeper over the ledger is a follow-up.
+append-only ledger at `$HERMES_HOME/app-mcp/coverage-ledger.jsonl` (no values
+or section text, mode 0600; a row is appended only when a key is new or its
+hinted state changes; same-named controls on a page count as hinted only if
+all are). A nightly sweeper over the ledger is a follow-up.
 
 ## Hermes wiring (box config.yaml)
 

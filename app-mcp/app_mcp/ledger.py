@@ -74,34 +74,39 @@ class CoverageLedger:
             return 0
         try:
             return self._observe(page_template(page), elements)
-        except OSError as err:
+        except (OSError, ValueError) as err:
             log.debug("app-mcp: coverage ledger write failed: %s", err)
             return 0
 
     def _observe(self, page: str, elements: Iterable[dict[str, Any]]) -> int:
         assert self.path is not None
-        state = self._state()
-        fresh: list[dict[str, Any]] = []
+        # Controls sharing (role, name) on a page are one key: hinted only if
+        # every instance is, so a lone unhinted twin stays a gap without the
+        # key flipping on every snapshot.
+        seen: dict[Key, bool] = {}
         for entry in elements:
             role, name = _clip(entry.get("role")), _clip(entry.get("name"))
-            if not role or not name:
-                continue
-            key = (page, role, name)
-            hinted = bool(entry.get("hint"))
-            known = state.get(key)
+            if role and name:
+                key = (page, role, name)
+                seen[key] = seen.get(key, True) and bool(entry.get("hint"))
+        state = self._state()
+        fresh: list[dict[str, Any]] = []
+        for (page_, role, name), hinted in seen.items():
+            known = state.get((page_, role, name))
             if known is not None and known.get("hinted") == hinted:
                 continue
-            if known is None and len(state) >= self.max_keys:
+            if known is None and len(state) + len(fresh) >= self.max_keys:
                 continue
-            row = {"ts": int(time.time()), "page": page, "role": role, "name": name,
-                   "hinted": hinted, "section": _clip(entry.get("section")) or None}
-            state[key] = row
-            fresh.append(row)
+            fresh.append({"ts": int(time.time()), "page": page_, "role": role, "name": name,
+                          "hinted": hinted})
         if fresh:
+            text = "".join(json.dumps(r) + "\n" for r in fresh)
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
             with os.fdopen(fd, "a", encoding="utf-8") as fh:
-                fh.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in fresh)
+                fh.write(text)
+            for r in fresh:
+                state[(r["page"], r["role"], r["name"])] = r
         return len(fresh)
 
     def gaps(self) -> list[dict[str, Any]]:
