@@ -108,15 +108,20 @@ describe("Suggested tasks", () => {
     });
   });
 
-  it("Snooze and Dismiss call their routes and drop the card", async () => {
+  it("Snooze offers 1 min / 1 day / 1 week, Dismiss drops the card", async () => {
     const fetchFn = mockFetch({});
     const f = feed();
     render(<SuggestedTasksInbox feed={f} />);
-    fireEvent.click(within(screen.getAllByRole("article")[0]).getByRole("button", { name: "Snooze" }));
+    const card = screen.getAllByRole("article")[0];
+    fireEvent.click(within(card).getByRole("button", { name: "Snooze" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["1 min", "1 day", "1 week"]);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "1 day" }));
     await waitFor(() => expect(f.remove).toHaveBeenCalledWith("88"));
     expect(fetchFn.mock.calls[0][0]).toBe("/api/suggested-tasks/88/snooze");
-    expect(Date.parse(JSON.parse(String(fetchFn.mock.calls[0][1]?.body)).until)).toBeGreaterThan(Date.now());
-    expect(screen.getByText("Snoozed D88 for 2 hours.")).toBeTruthy();
+    const until = Date.parse(JSON.parse(String(fetchFn.mock.calls[0][1]?.body)).until);
+    expect(until - Date.now()).toBeGreaterThan(23 * 3_600_000);
+    expect(screen.getByText("Snoozed D88 for 1 day.")).toBeTruthy();
     fireEvent.click(within(screen.getAllByRole("article")[2]).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(f.remove).toHaveBeenCalledWith("92"));
     expect(fetchFn.mock.calls[1][0]).toBe("/api/suggested-tasks/92/dismiss");

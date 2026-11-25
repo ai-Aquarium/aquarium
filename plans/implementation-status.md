@@ -2,6 +2,25 @@
 
 Tracking file for in-flight feature work. Update as phases land.
 
+## Suggested-task Snooze duration options
+
+Plan: `plans/2026-11-25-suggested-task-snooze-options.md`
+Status: **implemented** — updated 2026-11-25
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `SNOOZE_OPTIONS` (1 min / 1 day / 1 week) + `snoozeUntil(ms)` in `channels.ts` | done |
+| 2 | Snooze popover menu on `SuggestedTaskCard` + `NeedsYouDetails` | done |
+| 3 | Notice text, i18n (en + zh-Hant), tests updated | done |
+
+### Verified
+
+- `agent-home` `tsc -p . --noEmit` clean; vitest 13/13 on touched suites; eslint clean.
+
+### Not yet verified
+
+- Deployed browser check (menu opens above the button on phone widths).
+
 ## Data dictionary — Phase 6: schema change check
 
 Plan: `docs/plans/2026-11-14-001-data-dictionary-semantic-layer-plan.md`

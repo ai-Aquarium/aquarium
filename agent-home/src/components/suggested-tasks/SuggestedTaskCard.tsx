@@ -1,9 +1,10 @@
 "use client";
 
 import { DetailsPill } from "@/components/landing/work/NeedsYouItem";
+import { usePopover } from "@/components/landing/topbar/usePopover";
 import { RefBadge } from "@/components/refs/RefBadge";
 import { ActionButton } from "@/components/ui/ActionButton";
-import { senderOf } from "@/lib/suggested-tasks/channels";
+import { SNOOZE_OPTIONS, senderOf, type SnoozeOption } from "@/lib/suggested-tasks/channels";
 import type { SuggestedTask } from "@/types";
 
 import { ChannelTag, SuggestedTag } from "./ChannelTag";
@@ -32,7 +33,7 @@ export function SuggestedTaskCard({
   /** Viewers see suggestions but cannot start a task. */
   canStart?: boolean;
   onWork: (task: SuggestedTask) => void;
-  onSnooze: (task: SuggestedTask) => Promise<unknown>;
+  onSnooze: (task: SuggestedTask, option: SnoozeOption) => Promise<unknown>;
   onDismiss: (task: SuggestedTask) => Promise<unknown>;
   /** Shows a Details pill (top right) and makes the title open it. */
   onDetails?: (task: SuggestedTask) => void;
@@ -41,6 +42,7 @@ export function SuggestedTaskCard({
   const urgent = todo.priority === "critical" || todo.priority === "high";
   const why = (todo.description ?? "").replace(/\s+/g, " ").trim();
   const who = senderOf(source);
+  const { open: snoozeOpen, setOpen: setSnoozeOpen, ref: snoozeRef } = usePopover<HTMLDivElement>();
   return (
     <article
       data-component="SuggestedTaskCard"
@@ -96,14 +98,41 @@ export function SuggestedTaskCard({
             Work on this
           </button>
         ) : null}
-        <ActionButton
-          data-action="suggested-snooze"
-          onAction={() => onSnooze(task)}
-          busyLabel="Snoozing…"
-          className={BTN}
-        >
-          Snooze
-        </ActionButton>
+        <div ref={snoozeRef} className="relative">
+          <button
+            type="button"
+            data-action="suggested-snooze"
+            aria-haspopup="menu"
+            aria-expanded={snoozeOpen}
+            onClick={() => setSnoozeOpen((v) => !v)}
+            className={BTN}
+          >
+            Snooze
+          </button>
+          {snoozeOpen ? (
+            <div
+              role="menu"
+              aria-label="Snooze for"
+              className="absolute bottom-full left-0 z-[65] mb-1 w-28 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg)] p-1 shadow-xl"
+            >
+              {SNOOZE_OPTIONS.map((option) => (
+                <ActionButton
+                  key={option.id}
+                  role="menuitem"
+                  data-snooze={option.id}
+                  onAction={async () => {
+                    await onSnooze(task, option);
+                    setSnoozeOpen(false);
+                  }}
+                  busyLabel={option.label}
+                  className="block w-full rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm hover:bg-[var(--color-surface-2)] disabled:opacity-50"
+                >
+                  {option.label}
+                </ActionButton>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <ActionButton
           data-action="suggested-dismiss"
           onAction={() => onDismiss(task)}

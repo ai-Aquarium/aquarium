@@ -66,12 +66,20 @@ export function senderOf(source: SuggestedTaskSource | null): string {
   return (source.sender_name || source.sender_id || "").trim();
 }
 
-/** How long Snooze hides a suggested task. */
-export const SNOOZE_HOURS = 2;
+/**
+ * The Snooze choices on a suggested task: "not now" for this long — a minute
+ * to watch it come back, a day, or a week.
+ */
+export const SNOOZE_OPTIONS = [
+  { id: "1min", label: "1 min", ms: 60_000 },
+  { id: "1day", label: "1 day", ms: 86_400_000 },
+  { id: "1week", label: "1 week", ms: 7 * 86_400_000 },
+] as const;
+export type SnoozeOption = (typeof SNOOZE_OPTIONS)[number];
 
-/** Snooze = "not now": the task comes back after {@link SNOOZE_HOURS}. */
-export function snoozeUntil(now: Date = new Date()): Date {
-  return new Date(now.getTime() + SNOOZE_HOURS * 3_600_000);
+/** Snooze = "not now": the task comes back `ms` later. */
+export function snoozeUntil(ms: number, now: Date = new Date()): Date {
+  return new Date(now.getTime() + ms);
 }
 
 /**

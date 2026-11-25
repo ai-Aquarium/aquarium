@@ -14,7 +14,8 @@ import { InlineAlert } from "@/components/ui/InlineAlert";
 import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
 import { useNeedsYouText } from "@/lib/landing/needsYouText";
-import { channelOf, senderOf, snoozeUntil } from "@/lib/suggested-tasks/channels";
+import { usePopover } from "@/components/landing/topbar/usePopover";
+import { SNOOZE_OPTIONS, channelOf, senderOf, snoozeUntil, type SnoozeOption } from "@/lib/suggested-tasks/channels";
 import { useAction } from "@/lib/use-action";
 import type { SuggestedTask, SuggestedTaskSource, TodoDetail } from "@/types";
 import type { NeedsYouAction, NeedsYouEntry } from "@/types/landing";
@@ -455,7 +456,7 @@ function SuggestedBody({ task }: { task: SuggestedTask }) {
       ) : null}
       <SourceSection source={task.source} inboxId={task.todo.source_ref ?? detail?.source?.id ?? null} />
       <WhySection why={t("detailsView.why.suggested")} detail={detail ?? null} />
-      <DoesSection ids={["work", "snooze", "dismiss"]} labelOf={(id) => ({ work: "Work on this", snooze: "Snooze 2h", dismiss: "Dismiss" })[id] ?? id} />
+      <DoesSection ids={["work", "snooze", "dismiss"]} labelOf={(id) => ({ work: "Work on this", snooze: "Snooze", dismiss: "Dismiss" })[id] ?? id} />
       <LinkedSection todo={{ id: task.todo.id, ref: task.todo.ref }} />
     </>
   );
@@ -472,11 +473,12 @@ function SuggestedActions({
 }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { run, pending } = useAction(async (verb: "snooze" | "dismiss") => {
+  const { open: snoozeOpen, setOpen: setSnoozeOpen, ref: snoozeRef } = usePopover<HTMLDivElement>();
+  const { run, pending } = useAction(async (verb: "snooze" | "dismiss", option?: SnoozeOption) => {
     const id = encodeURIComponent(task.todo.id);
     const problem =
       verb === "snooze"
-        ? await post(`/api/suggested-tasks/${id}/snooze`, { until: snoozeUntil().toISOString() })
+        ? await post(`/api/suggested-tasks/${id}/snooze`, { until: snoozeUntil(option?.ms ?? 0).toISOString() })
         : await post(`/api/suggested-tasks/${id}/dismiss`);
     if (problem) return setError(problem);
     announceSuggestedTasksChanged();
@@ -490,9 +492,43 @@ function SuggestedActions({
           Work on this
         </button>
       ) : null}
-      <button type="button" disabled={pending} onClick={() => run("snooze")} className={`${BUTTON} ${SECONDARY}`}>
-        Snooze 2h
-      </button>
+      <div ref={snoozeRef} className="relative">
+        <button
+          type="button"
+          data-action="suggested-snooze"
+          aria-haspopup="menu"
+          aria-expanded={snoozeOpen}
+          disabled={pending}
+          onClick={() => setSnoozeOpen((v) => !v)}
+          className={`${BUTTON} ${SECONDARY}`}
+        >
+          Snooze
+        </button>
+        {snoozeOpen ? (
+          <div
+            role="menu"
+            aria-label="Snooze for"
+            className="absolute bottom-full left-0 z-[65] mb-1 w-28 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg)] p-1 shadow-xl"
+          >
+            {SNOOZE_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                role="menuitem"
+                data-snooze={option.id}
+                disabled={pending}
+                onClick={() => {
+                  setSnoozeOpen(false);
+                  void run("snooze", option);
+                }}
+                className="block w-full rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm hover:bg-[var(--color-surface-2)] disabled:opacity-50"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
       <button type="button" disabled={pending} onClick={() => run("dismiss")} className={`${BUTTON} ${SECONDARY}`}>
         Dismiss
       </button>
