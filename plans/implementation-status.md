@@ -22,7 +22,7 @@ Status: **A–C done** (context-length learning + compression dampeners); D in p
 | A | `section` + `hint` on `AppMcpElement` (`sectionOf`/`hintOf` in `snapshot.ts`), carried through `app_describe_page`; section in the last-active awareness line (`state.ts`) | done |
 | B | `data-appmcp-hint` on SuggestedTaskCard + NeedsYouDetails (Work / Snooze / each duration / Dismiss); ratchet vitest `hint-ratchet.test.ts` + baseline; `/` guide in `help.py` covers Needs you + suggested tasks | done |
 | C | Coverage ledger: append-only `$HERMES_HOME/app-mcp/coverage-ledger.jsonl`, `(page, role, name) → hinted?`, updated per snapshot (`app_mcp/ledger.py`) | done |
-| C | Nightly cron agent that sweeps ledger gaps into a hint-gap PR | follow-up (needs prod cron/deploy wiring) |
+| C | Nightly sweep of ledger gaps (unhinted controls + unguided pages) into an owner Needs-You card (`app_mcp/sweep.py`, `deploy/hermes-appmcp-hint-sweep.timer`); `app-mcp.service` `ReadWritePaths=` for the ledger dir | **done** — units tracked, not installed |
 | D | pytest route-guide guard: every `PAGES` route and every agent-home `page.tsx` route has a guide (`UNGUIDED_ROUTES` allowlist only shrinks) | done |
 
 

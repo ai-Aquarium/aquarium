@@ -1,0 +1,15 @@
+; Nightly: the plan bounds a pre-existing surface's hint gap at one sweep cycle
+; (~24h). Before the 07:30 compression advisories, so both cards are waiting in
+; the morning.
+
+[Unit]
+Description=Nightly app-mcp hint-gap sweep
+
+[Timer]
+OnCalendar=*-*-* 06:30:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=hermes-appmcp-hint-sweep.service
+
+[Install]
+WantedBy=timers.target
