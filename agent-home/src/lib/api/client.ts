@@ -1557,6 +1557,17 @@ export class HermesApiClient {
     );
   }
 
+  /** Snooze a pending notification until `until` (ISO-8601), then it returns. */
+  async snoozeNotification(
+    notificationId: string,
+    until: string,
+  ): Promise<{ ok: boolean }> {
+    return this.request(
+      `/api/comms/notifications/${encodeURIComponent(notificationId)}/snooze`,
+      { method: "POST", json: { until } },
+    );
+  }
+
   /** Undo a visible, reversible FG-12 change (C2 + D6 enforced upstream). */
   async undoChange(changeRef: string): Promise<ChangeOpResponse> {
     return this.request(

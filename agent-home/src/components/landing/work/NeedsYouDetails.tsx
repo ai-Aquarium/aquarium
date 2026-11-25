@@ -8,7 +8,7 @@ import { RefBadge } from "@/components/refs/RefBadge";
 import { WhyThisProfile } from "@/components/sources/WhyThisProfile";
 import { ChannelTag, SuggestedTag } from "@/components/suggested-tasks/ChannelTag";
 import { StartTaskSheet } from "@/components/suggested-tasks/StartTaskSheet";
-import { post } from "@/components/suggested-tasks/SuggestedTaskList";
+import { post } from "@/lib/post";
 import { announceSuggestedTasksChanged } from "@/components/suggested-tasks/useSuggestedTasks";
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { Sheet } from "@/components/ui/Sheet";
@@ -20,7 +20,7 @@ import { useAction } from "@/lib/use-action";
 import type { SuggestedTask, SuggestedTaskSource, TodoDetail } from "@/types";
 import type { NeedsYouAction, NeedsYouEntry } from "@/types/landing";
 
-import { BUTTON, OneTapButton } from "./NeedsYouItem";
+import { BUTTON, OneTapButton, SnoozeButton } from "./NeedsYouItem";
 import { SEVERITY_TONE } from "./tone";
 
 /** One row of the Details view: a Needs-you entry or a suggested-task card. */
@@ -373,7 +373,7 @@ function EntryBody({
       ) : null}
       <SourceSection source={arrival.source} inboxId={arrival.id} />
       <WhySection why={why} detail={detail} entry={entry} />
-      <DoesSection ids={(entry.actions ?? []).map((a) => a.id)} labelOf={(id) => text.action(entry.actions.find((a) => a.id === id)?.label ?? id)} />
+      <DoesSection ids={[...(entry.actions ?? []).map((a) => a.id), ...(entry.notification_id && !entry.foreign ? ["snooze"] : [])]} labelOf={(id) => text.action(entry.actions.find((a) => a.id === id)?.label ?? (id === "snooze" ? "Snooze" : id))} />
       <LinkedSection entry={entry} todo={todoId ? { id: todoId, ref: detail?.ref } : null} />
     </>
   );
@@ -439,6 +439,9 @@ function EntryActions({
           {text.action(a.label)}
         </Link>
       ))}
+      {entry.notification_id && !entry.foreign ? (
+        <SnoozeButton entry={entry} onSnoozed={() => onActed(entry)} />
+      ) : null}
     </div>
   );
 }

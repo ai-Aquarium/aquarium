@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -29,11 +29,12 @@ from tests.hermes_cli.test_projects_api import (  # noqa: F401 — fixture
 
 
 def _notif(id, *, target="leo", dedupe_key=None, kind="approval", reversible=False,
-           title="t", body="b", created=1000.0, command=""):
+           title="t", body="b", created=1000.0, command="", snoozed_until=None):
     return SimpleNamespace(
         id=id, kind=kind, owner_user_id=target, visibility="shared", title=title,
         body=body, reversible=reversible, status="pending", dedupe_key=dedupe_key,
         created_at=datetime.fromtimestamp(created, tz=timezone.utc), command=command,
+        snoozed_until=snoozed_until,
     )
 
 
@@ -68,10 +69,53 @@ def test_notifications_map_to_sources_with_deep_links():
     assert by_id["notif:n5"]["source"] == "notification"
     assert by_id["notif:n5"]["severity"] == "fyi"
     assert all(r["notification_id"] == r["id"][len("notif:"):] for r in rows)
-    # Irreversible → only an "open" action, except a reply to send.
+    # Irreversible → "open" plus a way out ("dismiss"), except a reply to send.
     assert all(r["reversible"] is False for r in rows)
-    assert all([a["id"] for a in r["actions"]] == ["open"] for r in rows if r["id"] != "notif:n4")
+    assert all(
+        [a["id"] for a in r["actions"]] == ["open", "dismiss"]
+        for r in rows if r["id"] != "notif:n4"
+    )
     assert by_id["notif:n1"]["created_at"] == 1000.0
+
+
+def test_notification_without_verdicts_offers_dismiss():
+    """"No action" settles the row: only entries lacking a settle verb get it."""
+    [row] = ny.notification_entries([_notif("n1", kind="proactive_ask")], "leo")
+    actions = {a["id"]: a for a in row["actions"]}
+    assert list(actions) == ["open", "dismiss"]
+    assert actions["dismiss"]["endpoint"] == "/api/comms/notifications/n1/answer"
+    assert actions["dismiss"]["body"] == {"answer": "dismissed"}
+    assert actions["dismiss"]["style"] == "secondary"
+
+
+def test_verdict_entries_get_no_dismiss():
+    """Approve/deny and send/revise/reject are already the way out."""
+    [approval] = ny.notification_entries([_notif("n1", reversible=True)], "leo")
+    assert "dismiss" not in {a["id"] for a in approval["actions"]}
+    [reply] = ny.notification_entries(
+        [_notif("n2", dedupe_key="todo-action:td1", command="hermes todos send td1")],
+        "leo",
+    )
+    assert "dismiss" not in {a["id"] for a in reply["actions"]}
+
+
+def test_snoozed_notification_is_hidden_but_still_covers():
+    """Snoozing the card drops it at finalize yet keeps suppressing its wait."""
+    key = "proj:digest:run:3:checkpoint:step-2"
+    until = datetime.now(timezone.utc) + timedelta(days=1)
+    [row] = ny.notification_entries(
+        [_notif("n1", dedupe_key=key, snoozed_until=until)], "leo")
+    assert row["context"]["snoozed"] is True
+    # The coverage key survives: a snoozed "run waiting" card must not let
+    # the same wait resurface as a derived project entry under another id.
+    assert ny.notification_dedupe_keys([row]) == {("digest", "run", 3)}
+    assert ny.finalize([row]) == []
+
+    past = datetime.now(timezone.utc) - timedelta(minutes=1)
+    [back] = ny.notification_entries(
+        [_notif("n1", dedupe_key=key, snoozed_until=past)], "leo")
+    assert "snoozed" not in back["context"]
+    assert ny.finalize([back]) == [back]
 
 
 def test_reversible_notification_offers_one_tap_answers():

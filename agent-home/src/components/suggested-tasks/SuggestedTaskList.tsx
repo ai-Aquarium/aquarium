@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { InlineAlert } from "@/components/ui/InlineAlert";
+import { post } from "@/lib/post";
 import { useAction } from "@/lib/use-action";
 import { snoozeUntil, type SnoozeOption } from "@/lib/suggested-tasks/channels";
 import type { SuggestedTask } from "@/types";
@@ -10,22 +11,6 @@ import type { SuggestedTask } from "@/types";
 import { StartTaskSheet } from "./StartTaskSheet";
 import { SuggestedTaskCard } from "./SuggestedTaskCard";
 import { announceSuggestedTasksChanged } from "./useSuggestedTasks";
-
-export async function post(path: string, body?: unknown): Promise<string | null> {
-  try {
-    const res = await fetch(path, {
-      method: "POST",
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      cache: "no-store",
-    });
-    if (res.ok) return null;
-    const parsed = (await res.json().catch(() => null)) as { detail?: string } | null;
-    return parsed?.detail ?? "That didn't go through.";
-  } catch {
-    return "Couldn't reach Aquarium. Try again.";
-  }
-}
 
 /**
  * Suggested-task cards plus what their buttons open: the Start task sheet,

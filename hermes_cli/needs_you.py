@@ -37,7 +37,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 from urllib.parse import quote, unquote, urlencode
@@ -288,6 +288,16 @@ def _reply_context(n: Any) -> dict:
     }
 
 
+def _snoozed(n: Any) -> bool:
+    """Pending but hidden on every surface until the stamp passes."""
+    until = getattr(n, "snoozed_until", None)
+    if until is None:
+        return False
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+    return until > datetime.now(timezone.utc)
+
+
 def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dict]:
     """Pending notifications addressed to ``user_id``.
 
@@ -350,11 +360,32 @@ def notification_entries(notifications: Iterable[Any], user_id: str) -> list[dic
                 _post_action("reject", "Reject", "danger", endpoint, {"answer": "denied"}),
                 {**_open_action(href, "Open"), "style": "secondary"},
             ]
+        # "Take no action": an entry with no settle verb of its own (approve /
+        # deny / send / reject are verbs already) still gets a way out —
+        # answering "dismissed" settles the row. Never on a `todos send`
+        # proposal: a non-verdict answer there becomes revision feedback and
+        # relaunches the session.
+        if not any(a.get("endpoint") for a in actions):
+            actions.append(
+                _post_action(
+                    "dismiss",
+                    "Dismiss",
+                    "secondary",
+                    f"/api/comms/notifications/{quote(n.id, safe='')}/answer",
+                    {"answer": "dismissed"},
+                )
+            )
         if arrival:
             context["arrival_key"] = arrival
         extra = getattr(n, "context", None) or {}
         if all(extra.get(k) for k in ROUTING_KEYS):
             context.update({k: str(extra[k]) for k in ROUTING_KEYS})
+        # A snoozed row still emits its entry so `notification_dedupe_keys`
+        # keeps suppressing the derived project wait it covers — snoozing the
+        # card must not resurface the same wait under a different id.
+        # `finalize` drops the entry before counts, pushes and the response.
+        if _snoozed(n):
+            context["snoozed"] = True
         out.append(entry(
             id=f"notif:{n.id}",
             source=source,
@@ -945,6 +976,10 @@ def merge_arrivals(items: Iterable[dict]) -> list[dict]:
                            if all(i["context"].get(k) for k in ROUTING_KEYS)), None)
             if routed is not None:
                 context.update({k: routed[k] for k in ROUTING_KEYS})
+        # Snooze is per profile copy: the merged card hides only when every
+        # copy is snoozed — one live copy anywhere keeps it visible.
+        if not all((i.get("context") or {}).get("snoozed") for i in group):
+            context.pop("snoozed", None)
         if len(profiles) != 1:
             context.pop("profile", None)
         out.append({
@@ -989,7 +1024,9 @@ async def arrival_entries_elsewhere(
                 principal = await PrincipalStore(app).get(user_id)
                 if principal is None or not getattr(principal, "active", True):
                     continue
-                rows = await NotificationStore(app, config=config).list_pending(principal)
+                rows = await NotificationStore(app, config=config).list_pending(
+                    principal, include_snoozed=True
+                )
             out.extend(tag_profile(notification_entries(rows, user_id), profile.name, link=True))
         except Exception:
             logger.debug("needs-you: profile %s unreadable", profile.name, exc_info=True)
@@ -1028,11 +1065,18 @@ def with_project_names(items: Iterable[dict]) -> list[dict]:
 
 
 def finalize(items: Iterable[dict]) -> list[dict]:
-    """Merge per-arrival rows, drop duplicate ids; severity first, then oldest wait first."""
+    """Merge per-arrival rows, drop duplicate ids; severity first, then oldest wait first.
+
+    Rows marked ``context.snoozed`` (a notification hidden until its stamp)
+    leave the list here — late, so their dedupe keys still covered the waits
+    they stand for while `items` was built.
+    """
     seen: set[str] = set()
     unique: list[dict] = []
     for item in merge_arrivals(items):
         if not item.get("href") or item["id"] in seen:
+            continue
+        if (item.get("context") or {}).get("snoozed"):
             continue
         seen.add(item["id"])
         unique.append(item)

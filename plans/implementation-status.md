@@ -26,6 +26,28 @@ Status: **implemented** — updated 2026-11-25
 
 - Deployed browser check of the filter row and card source lines against a live backend.
 
+## Needs-you: Snooze + Dismiss on notification cards
+
+Plan: `plans/2026-11-25-needs-you-snooze-dismiss.md`
+Status: **implemented** — updated 2026-11-25
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `notifications.snoozed_until` + `NotificationStore.snooze` (C2-gated, conditional update); `list_pending` hides rows until the stamp (`include_snoozed` opt-out) | done |
+| 2 | `dismiss` action on notification entries without a settle verb; `notification_id` on entries; `POST …/snooze` route; `context.snoozed` keeps dedupe coverage, `finalize` drops them | done |
+| 3 | BFF: `client.snoozeNotification`, `…/[notificationId]/snooze/route.ts`, `route-roles.json`; `post` moved to `src/lib/post.ts` (import cycle) | done |
+| 4 | `SnoozeButton` + `NotificationActions` on the card and in `EntryActions`; `snooze` in the Does-section; i18n en + zh-Hant | done |
+| 5 | Tests: `test_needs_you.py` action lists, `test_human_comms_e2e.py` snooze cases, `NeedsYouItem.test.tsx` gate/post cases | done |
+
+### Verified
+
+- `pytest tests/hermes_cli/test_needs_you.py test_human_comms.py` — 46 passed; e2e skips without docker (CI runs it).
+- `vitest` full suite green (incl. route-roles + hint-ratchet after rebasing on #1107); `tsc --noEmit` + eslint clean.
+
+### Not yet verified
+
+- Live roundtrip (snooze leaves the panel and returns; dismiss settles permanently) and deploy.
+
 ## Context-length learning & app-mcp semantics (incident 2026-11-25)
 
 Plans: `plans/2026-11-25-context-length-learning-and-compression-loop.md`,
