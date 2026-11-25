@@ -429,19 +429,29 @@ def _workspace_kind(project, ws: Path) -> Optional[str]:
 
 
 def retain_delivery(
-    project, link_kind: Optional[str], link_ref: Optional[str]
+    project,
+    link_kind: Optional[str],
+    link_ref: Optional[str],
+    task_id: Optional[str] = None,
 ) -> tuple[Optional[str], Optional[str]]:
     """The ``(link_kind, link_ref)`` to record for a delivery. A file in a
     card's scratch workspace (deleted when the card completes) is copied
     to its kept copy and the kept copy is delivered instead; a local path
     that does not resolve is refused (ValueError), so an output is never
-    marked delivered on bytes that are already gone."""
+    marked delivered on bytes that are already gone. A local path the page
+    can never serve — outside the board's managed roots, or labelled
+    ``path`` — is refused too: recording it would mark the output
+    delivered on a file nobody can open."""
     ref = str(link_ref or "").strip()
-    if (
-        not ref or link_kind not in (None, "", "workspace")
-        or _is_web_url(ref) or not os.path.isabs(ref)
-    ):
+    if not ref or _is_web_url(ref) or not os.path.isabs(ref):
+        if link_kind == "path" and ref:
+            raise ValueError(
+                "link_kind 'path' never opens on the project page. Deliver a "
+                "Files download URL, a kept artifact (link_kind 'workspace'), "
+                "or a web link (link_kind 'url')."
+            )
         return link_kind, link_ref
+    # A local absolute path: the page must be able to serve it.
     ws = kanban_db.scratch_workspace_of(ref)
     if ws is not None and _workspace_kind(project, ws) not in (None, "scratch"):
         ws = None
@@ -463,7 +473,38 @@ def retain_delivery(
         raise ValueError(
             f"{ref} does not exist. Deliver a file that resolves or a download URL."
         )
-    return link_kind, link_ref
+    if _servable(ref, _delivery_roots(project, task_id)) is None:
+        raise ValueError(
+            f"{ref} is a local path outside this project's managed folders, "
+            "so the page could never open it. Deliver a kept artifact or a "
+            "Files download URL instead."
+        )
+    return "workspace", ref
+
+
+def _task_workspace_path(project, task_id: Optional[str]) -> Optional[Path]:
+    """The delivering card's workspace (it may sit outside the default
+    workspaces root), so a delivery naming a file in it stays servable."""
+    if not task_id:
+        return None
+    try:
+        with _board_conn(project) as bconn:
+            row = bconn.execute(
+                "SELECT workspace_path FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+    except Exception:
+        return None
+    return Path(row["workspace_path"]) if row and row["workspace_path"] else None
+
+
+def _delivery_roots(project, task_id: Optional[str]) -> list[Path]:
+    """Managed roots for the servability check: the board's plus the
+    delivering card's own workspace."""
+    roots = _managed_roots(None, project.board_slug or None)
+    ws = _task_workspace_path(project, task_id)
+    if ws is not None:
+        roots.append(ws)
+    return roots
 
 
 def _card_links(task, runs) -> list[dict]:

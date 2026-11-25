@@ -803,6 +803,61 @@ def test_a_local_path_that_does_not_resolve_is_refused(env, tmp_path):
     assert _output_status(project) != "delivered"
 
 
+def test_a_local_path_outside_the_managed_folders_is_refused(env, tmp_path):
+    """A file on the box but outside the board's managed roots can never be
+    opened from the page — it used to record anyway and sit behind a
+    disabled Open button forever."""
+    project = _project(env)
+    outside = tmp_path / "elsewhere" / "book.xlsx"
+    outside.parent.mkdir(parents=True)
+    outside.write_bytes(b"x")
+    for body in (
+        {"link_ref": str(outside)},
+        {"link_kind": "path", "link_ref": str(outside)},
+        {"link_kind": "workspace", "link_ref": str(outside)},
+    ):
+        resp = _deliver(env, project, body)
+        assert resp.status_code == 422, (body, resp.text)
+        assert "managed folders" in resp.json()["detail"]
+    assert _output_status(project) != "delivered"
+
+
+def test_a_path_kind_is_refused_even_without_a_local_file(env):
+    """``link_kind='path'`` never resolves to an href whatever the ref is."""
+    project = _project(env)
+    resp = _deliver(env, project, {"link_kind": "path", "link_ref": "some/file.xlsx"})
+    assert resp.status_code == 422 and "never opens" in resp.json()["detail"]
+
+
+def test_a_servable_local_path_is_recorded_as_a_workspace_delivery(env, tmp_path):
+    project = _project(env)
+    kept_dir = tmp_path / "artifacts"
+    book = kept_dir / "book.xlsx"
+    book.parent.mkdir(parents=True)
+    book.write_bytes(b"x")
+    resp = _deliver(env, project, {"link_kind": "path", "link_ref": str(book)})
+    assert resp.status_code == 200, resp.text
+    with projects_db.connect_closing() as conn:
+        (d,) = projects_db.get_output_deliveries(conn, project_id=project["id"])
+    assert d["link_kind"] == "workspace" and d["link_ref"] == str(book)
+
+
+def test_a_delivery_inside_its_cards_own_workspace_is_served(env, tmp_path):
+    """A ``dir`` workspace can sit outside the default workspaces root; a
+    delivery naming a file in it stays openable through that card."""
+    project = _project(env)
+    ws = tmp_path / "card-ws"
+    book = ws / "book.xlsx"
+    ws.mkdir()
+    book.write_bytes(b"x")
+    tid = _done_card(project, title="Build the book", workspace=ws)
+    resp = _deliver(env, project, {"link_ref": str(book), "task_id": tid})
+    assert resp.status_code == 200, resp.text
+    with projects_db.connect_closing() as conn:
+        (d,) = projects_db.get_output_deliveries(conn, project_id=project["id"])
+    assert d["link_kind"] == "workspace" and d["link_ref"] == str(book)
+
+
 def test_urls_and_non_paths_are_delivered_as_given(env):
     project = _project(env)
     url = "https://home.example/api/files/abc/content?download=1"

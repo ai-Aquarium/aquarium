@@ -2351,7 +2351,8 @@ async def deliver_output(request: Request, output_id: str) -> dict[str, Any]:
 
         try:
             link_kind, link_ref = retain_delivery(
-                project, body.get("link_kind"), body.get("link_ref")
+                project, body.get("link_kind"), body.get("link_ref"),
+                task_id=body.get("task_id"),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))

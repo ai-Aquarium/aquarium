@@ -2,6 +2,16 @@
 
 Tracking file for in-flight feature work. Update as phases land.
 
+## Deliveries: refuse paths the Outputs page can never open
+
+Plan: `plans/2026-11-25-deliver-refuse-unopenable-paths.md`
+Status: **implemented** — updated 2026-11-25
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `retain_delivery` — any local abs path: scratch → kept copy; missing → 422; servable under managed roots + delivering card's `workspace_path` → `workspace`; else 422; `link_kind="path"` → 422 | done |
+| 2 | `deliver_output` passes `task_id`; tests (4 new cases) | done |
+
 ## Upgrade pre-flight checks: live progress
 
 Plan: `plans/2026-11-25-upgrade-check-progress.md`
