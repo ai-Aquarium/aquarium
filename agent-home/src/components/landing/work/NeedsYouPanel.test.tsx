@@ -31,6 +31,7 @@ import { resetNeedsYouFeedCache, useNeedsYouFeed } from "./useNeedsYouFeed";
 afterEach(() => {
   cleanup();
   resetNeedsYouFeedCache();
+  window.localStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -387,6 +388,38 @@ describe("NeedsYouPanelView filters", () => {
     fireEvent.click(screen.getByRole("button", { name: "Projects ·1" }));
     expect(screen.getByTestId("needs-you-filter-empty")).toBeTruthy();
     expect(screen.queryByTestId("needs-you-all-clear")).toBeNull();
+  });
+
+  it("keeps the filter and open row across a remount", () => {
+    const first = render(<NeedsYouPanelView {...view} count={4} items={items} />);
+    fireEvent.click(screen.getByRole("button", { name: /Filter/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Team ·1" }));
+    expect(rows()).toHaveLength(1);
+    expect(window.localStorage.getItem("aquarium.needsYou.filter")).toBe(
+      JSON.stringify({ groups: [], who: ["team"] }),
+    );
+    expect(window.localStorage.getItem("aquarium.needsYou.filterOpen")).toBe("1");
+    first.unmount();
+
+    render(<NeedsYouPanelView {...view} count={4} items={items} />);
+    // Still filtered — and the row stayed open — without touching anything.
+    expect(rows()).toHaveLength(1);
+    expect(screen.getByTestId("needs-you-filters")).toBeTruthy();
+    expect(screen.getByTestId("needs-you-filtered").textContent).toContain(
+      "Showing 1 of 4",
+    );
+  });
+
+  it("prunes a persisted who id that no longer has items", () => {
+    window.localStorage.setItem(
+      "aquarium.needsYou.filter",
+      JSON.stringify({ groups: [], who: ["u-gone", "team"] }),
+    );
+    render(<NeedsYouPanelView {...view} count={4} items={items} />);
+    expect(rows()).toHaveLength(1);
+    expect(window.localStorage.getItem("aquarium.needsYou.filter")).toBe(
+      JSON.stringify({ groups: [], who: ["team"] }),
+    );
   });
 });
 
