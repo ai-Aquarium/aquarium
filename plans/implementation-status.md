@@ -2,6 +2,16 @@
 
 Tracking file for in-flight feature work. Update as phases land.
 
+## Project detail: sub-tabs inside Planning / Execution
+
+Plan: `plans/2026-11-25-project-part-tabs.md`
+Status: **implemented** — updated 2026-11-25
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `ProjectPartsNav` second tab row; parts mounted-but-hidden except active; `part` state + `selectPart`; `?tab=dashboard` → part deep-link | done |
+| 2 | Tests (sub-tab row, deep-link, Log without row); `tsc`/`eslint`/projects suite | done |
+
 ## Deliveries: refuse paths the Outputs page can never open
 
 Plan: `plans/2026-11-25-deliver-refuse-unopenable-paths.md`

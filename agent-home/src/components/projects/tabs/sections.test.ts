@@ -11,7 +11,7 @@ describe("?tab= mapping", () => {
   });
 
   it.each([
-    ["dashboard", { section: "execution" }],
+    ["dashboard", { section: "execution", part: "dashboard" }],
     ["overview", { section: "execution" }],
     ["scope", { section: "planning", part: "scope" }],
     ["inputs", { section: "planning", part: "inputs" }],

@@ -677,6 +677,56 @@ describe("ProjectDetailView", () => {
     expect(unknown).toContain('data-active-tab="planning"');
   });
 
+  it("switches sub-sections with a second tab row", () => {
+    const html = renderToStaticMarkup(
+      <ProjectDetailView
+        project={PROJECT}
+        board={BOARD}
+        playbook={null}
+        directives={null}
+        callerUserId="leo"
+        isInstanceAdmin={false}
+      />,
+    );
+    // Planning leads on its first part; the rest stay mounted but hidden so
+    // their state survives the switch.
+    expect(html).toContain('data-component="ProjectPartsNav"');
+    expect(html).toContain('data-active-part="scope"');
+    for (const p of ["scope", "inputs", "plan", "outputs"]) {
+      expect(html).toContain(`data-part="${p}"`);
+    }
+    expect(html).toMatch(/id="project-section-outputs"[^>]*hidden/);
+    expect(html).not.toMatch(/id="project-section-scope"[^>]*hidden/);
+    // A part deep-link selects that sub-tab.
+    const deep = renderToStaticMarkup(
+      <ProjectDetailView
+        project={PROJECT}
+        board={BOARD}
+        playbook={null}
+        directives={null}
+        callerUserId="leo"
+        isInstanceAdmin={false}
+        initialTab="outputs"
+      />,
+    );
+    expect(deep).toContain('data-active-part="outputs"');
+    expect(deep).toMatch(/id="project-section-scope"[^>]*hidden/);
+    expect(deep).not.toMatch(/id="project-section-outputs"[^>]*hidden/);
+    // Log has no parts — no second row.
+    const log = renderToStaticMarkup(
+      <ProjectDetailView
+        project={PROJECT}
+        board={BOARD}
+        playbook={null}
+        directives={null}
+        callerUserId="leo"
+        isInstanceAdmin={false}
+        initialTab="log"
+      />,
+    );
+    expect(log).not.toContain('data-component="ProjectPartsNav"');
+  });
+
   it("never puts Run now / Activate / Continue in the header — the journey bar owns them", () => {
     for (const project of [
       { ...PROJECT, status: "planning" as const },
