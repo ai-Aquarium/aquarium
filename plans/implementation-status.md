@@ -2,6 +2,22 @@
 
 Tracking file for in-flight feature work. Update as phases land.
 
+## agent-home graceful shutdown
+
+Plan: `plans/2026-11-25-agent-home-graceful-shutdown.md`
+Status: **implemented** — updated 2026-11-25
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `deploy/graceful-shutdown.mjs` — socket tracking, stop-accepting + closeIdleConnections + 10 s drain + 15 s hard exit | done |
+| 2 | `deploy/server.mjs` custom server (replaces `next start`); `start.sh` execs it; `TimeoutStopSec=20s` in unit | done |
+| 3 | vitest 4 cases; live smoke on box :3199 — held request exits at 10.1 s clean | done |
+
+### Not yet verified
+
+- Real deploy/`aquarium update` end-to-end (`journalctl -u agent-home` should show `[graceful-shutdown]` + ~10 s stop).
+- Unit file reinstalled on the box for `TimeoutStopSec` (`deploy/hermes-deploy.sh` does not re-copy units).
+
 ## Needs-you: card source labels + source/owner filters
 
 Plan: `plans/2026-11-25-needs-you-source-filters.md`

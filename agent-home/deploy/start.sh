@@ -5,8 +5,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# Load nvm if node/npm isn't already on PATH (systemd's PATH is minimal).
-if ! command -v npm >/dev/null 2>&1; then
+# Load nvm if node isn't already on PATH (systemd's PATH is minimal).
+if ! command -v node >/dev/null 2>&1; then
   for nvm_sh in "$HOME/.nvm/nvm.sh" /usr/local/nvm/nvm.sh /opt/nvm/nvm.sh; do
     if [ -s "$nvm_sh" ]; then
       # shellcheck disable=SC1090
@@ -25,4 +25,7 @@ fi
 # `https://localhost:<port>` behind Caddy's X-Forwarded-Proto, which fails as a
 # bare 500. ipv4first keeps `localhost` bound to 127.0.0.1 where Caddy points.
 export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--dns-result-order=ipv4first"
-exec npm run start -- -H localhost -p "${PORT:-3100}"
+# deploy/server.mjs runs the same Next server `next start` does, plus a
+# bounded-drain shutdown — `next start` hangs on SIGTERM behind live SSE
+# streams until systemd's SIGKILL (see deploy/graceful-shutdown.mjs).
+exec node deploy/server.mjs
