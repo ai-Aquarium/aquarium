@@ -214,3 +214,27 @@ def test_user_only_controls_can_still_be_read(leo_browser):
     res = call("app_act", {"action": "read", "element_id": 9})
     assert res["ok"] is True
     assert leo_browser.commands == [{"type": "read", "elementId": 9, "expectName": "Always approve"}]
+
+
+def test_describe_page_passes_section_and_hint_through(leo_browser):
+    leo_browser.elements = [
+        {"id": 1, "role": "button", "name": "Snooze", "tag": "button", "selector": "#s",
+         "section": "SuggestedTaskCard: Reply to Ada", "hint": "Snooze: 1 min / 1 day / 1 week"},
+    ]
+    res = call("app_describe_page", {})
+    (snooze,) = res["elements"]
+    assert snooze["section"] == "SuggestedTaskCard: Reply to Ada"
+    assert snooze["hint"] == "Snooze: 1 min / 1 day / 1 week"
+
+
+def test_snapshots_feed_the_coverage_ledger(leo_browser, tmp_path, monkeypatch):
+    from app_mcp.ledger import CoverageLedger, load
+
+    path = tmp_path / "app-mcp" / "coverage-ledger.jsonl"
+    monkeypatch.setattr(server, "ledger", CoverageLedger(path))
+    server.hub.update_state(leo_browser, "/todos/7", None)
+    call("app_describe_page", {})
+    rows = load(path)
+    assert ("/todos/[id]", "button", "Rename") in rows
+    assert rows[("/todos/[id]", "textbox", "Password")]["hinted"] is False
+    assert all("value" not in r for r in rows.values())

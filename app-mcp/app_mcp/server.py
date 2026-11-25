@@ -50,6 +50,7 @@ from . import netfolders as nf
 from .guard import is_user_only, looks_destructive, looks_sensitive
 from .help import help_for
 from .hub import Hub, HubError
+from .ledger import CoverageLedger, ledger_path
 from .mcp_auth import BearerTokenMiddleware, read_token, token_file
 from .pages import PAGES
 from .ticket import verify_ticket
@@ -68,6 +69,7 @@ hub = Hub(timeout=COMMAND_TIMEOUT)
 folder_hub = Hub(timeout=FOLDER_COMMAND_TIMEOUT)
 mcp = FastMCP("app", host="127.0.0.1", port=MCP_PORT)
 hermes = nf.HermesClient()
+ledger = CoverageLedger(ledger_path())
 
 SAFE_ACTIONS = {"click", "type", "select", "focus", "read", "scroll", "navigate", "snapshot"}
 DESTRUCTIVE_REFUSAL = (
@@ -173,6 +175,7 @@ async def _snapshot(user: str | None) -> dict[str, Any]:
         result["elements"] = [
             _clean_entry(e) for e in result.get("elements") or [] if isinstance(e, dict)
         ]
+        ledger.observe(hub.state_summary(user).get("page"), result["elements"])
     return result
 
 
@@ -323,8 +326,12 @@ async def app_page_help(path: str | None = None) -> dict[str, Any]:
 @mcp.tool()
 async def app_describe_page() -> dict[str, Any]:
     """Detailed description of every interactive element on the page the user
-    is on right now: id, role, accessible name, value/checked/disabled and a
-    selector. Use the ids with app_act / app_act_destructive."""
+    is on right now: id, role, accessible name, value/checked/disabled, a
+    selector, and — when the page provides them — `section` (the labelled
+    card/panel/dialog it sits in, e.g. "SuggestedTaskCard: Reply to Ada") and
+    `hint` (what the control does). Answer "what does this button do?" from
+    `hint` + `section` first, then app_page_help. Use the ids with app_act /
+    app_act_destructive."""
     user = _caller()
     try:
         result = await _snapshot(user)

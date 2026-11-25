@@ -4,7 +4,7 @@ import { DetailsPill } from "@/components/landing/work/NeedsYouItem";
 import { usePopover } from "@/components/landing/topbar/usePopover";
 import { RefBadge } from "@/components/refs/RefBadge";
 import { ActionButton } from "@/components/ui/ActionButton";
-import { SNOOZE_OPTIONS, senderOf, type SnoozeOption } from "@/lib/suggested-tasks/channels";
+import { SNOOZE_OPTIONS, SUGGESTED_HINTS, senderOf, type SnoozeOption } from "@/lib/suggested-tasks/channels";
 import type { SuggestedTask } from "@/types";
 
 import { ChannelTag, SuggestedTag } from "./ChannelTag";
@@ -46,6 +46,7 @@ export function SuggestedTaskCard({
   return (
     <article
       data-component="SuggestedTaskCard"
+      aria-label={todo.title}
       data-todo={todo.id}
       data-channel={channel}
       className="flex min-w-0 flex-col gap-1.5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
@@ -77,6 +78,7 @@ export function SuggestedTaskCard({
         <button
           type="button"
           data-testid="suggested-title"
+          data-appmcp-hint={SUGGESTED_HINTS.title}
           onClick={() => onDetails(task)}
           className="text-left text-sm font-semibold leading-5 [overflow-wrap:anywhere] hover:underline"
         >
@@ -94,7 +96,7 @@ export function SuggestedTaskCard({
       ) : null}
       <div className="mt-1 flex flex-wrap gap-2">
         {canStart ? (
-          <button type="button" data-action="suggested-work" onClick={() => onWork(task)} className={PRIMARY}>
+          <button type="button" data-action="suggested-work" data-appmcp-hint={SUGGESTED_HINTS.work} onClick={() => onWork(task)} className={PRIMARY}>
             Work on this
           </button>
         ) : null}
@@ -102,6 +104,7 @@ export function SuggestedTaskCard({
           <button
             type="button"
             data-action="suggested-snooze"
+            data-appmcp-hint={SUGGESTED_HINTS.snooze}
             aria-haspopup="menu"
             aria-expanded={snoozeOpen}
             onClick={() => setSnoozeOpen((v) => !v)}
@@ -120,6 +123,7 @@ export function SuggestedTaskCard({
                   key={option.id}
                   role="menuitem"
                   data-snooze={option.id}
+                  data-appmcp-hint={SUGGESTED_HINTS.snoozeFor(option)}
                   onAction={async () => {
                     await onSnooze(task, option);
                     setSnoozeOpen(false);
@@ -135,6 +139,7 @@ export function SuggestedTaskCard({
         </div>
         <ActionButton
           data-action="suggested-dismiss"
+          data-appmcp-hint={SUGGESTED_HINTS.dismiss}
           onAction={() => onDismiss(task)}
           busyLabel="Dismissing…"
           className={`${BTN} border-transparent text-[var(--color-muted)]`}

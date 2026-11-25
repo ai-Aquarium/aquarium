@@ -23,6 +23,16 @@ describe("app-mcp UI context store", () => {
     expect(line).toBe('[app context: page /todos · last active: button "Filter"]');
   });
 
+  it("names the section the element sits in", () => {
+    const line = formatUiContext({
+      path: "/",
+      element: { role: "button", name: "Snooze", section: "SuggestedTaskCard: Reply to Ada" },
+    });
+    expect(line).toBe(
+      '[app context: page / · last active: button "Snooze" in "SuggestedTaskCard: Reply to Ada"]',
+    );
+  });
+
   it("says 'none' when no element has been touched yet", () => {
     expect(formatUiContext({ path: "/chat", element: null })).toBe(
       "[app context: page /chat · last active: none]",

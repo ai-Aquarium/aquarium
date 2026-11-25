@@ -23,6 +23,13 @@ export interface AppMcpElement {
   denied?: boolean;
   checked?: boolean;
   disabled?: boolean;
+  /**
+   * Nearest labelled ancestor ("SuggestedTaskCard: Reply to Ada"), so two
+   * controls with the same name can be told apart. DOM-derived, never authored.
+   */
+  section?: string;
+  /** One-line meaning of the control: `data-appmcp-hint`, else `title` / `aria-description`. */
+  hint?: string;
 }
 
 const INTERACTIVE_SELECTOR = [
@@ -90,6 +97,65 @@ export const APPMCP_DENY_SELECTOR = "[data-appmcp-deny]";
 
 export function isAppMcpDenied(el: Element): boolean {
   return Boolean(el.closest(APPMCP_DENY_SELECTOR));
+}
+
+const SECTION_LIMIT = 80;
+const HINT_LIMIT = 200;
+const HEADING_SELECTOR = "h1, h2, h3, h4";
+const LANDMARK_SELECTOR =
+  'section, article, form, dialog, aside, nav, [role="dialog"], [role="alertdialog"], [role="region"]';
+
+function flatClip(text: string, limit: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const chars = Array.from(flat);
+  return chars.length > limit ? `${chars.slice(0, limit - 1).join("")}…` : flat;
+}
+
+function labelOf(el: Element): string {
+  const aria = el.getAttribute("aria-label")?.trim();
+  if (aria) return aria;
+  const ids = el.getAttribute("aria-labelledby")?.trim();
+  if (!ids) return "";
+  return ids
+    .split(/\s+/)
+    .map((id) => el.ownerDocument.getElementById(id)?.textContent?.trim() ?? "")
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * The nearest labelled ancestor of `el`. On each ancestor, closest first:
+ * `aria-label` / `aria-labelledby`, then `data-component` (joined as
+ * "Component: label" when the same ancestor has both), then a heading — the
+ * ancestor itself being an h1–h4, or a landmark (section, article, dialog…)
+ * whose first heading names it.
+ */
+export function sectionOf(el: Element): string | undefined {
+  for (let node = el.parentElement; node && node !== node.ownerDocument.body; node = node.parentElement) {
+    const label = labelOf(node);
+    const component = node.getAttribute("data-component")?.trim() ?? "";
+    let text = "";
+    if (label) text = component ? `${component}: ${label}` : label;
+    else if (component) text = component;
+    else if (node.matches(HEADING_SELECTOR)) text = node.textContent ?? "";
+    else if (node.matches(LANDMARK_SELECTOR)) text = node.querySelector(HEADING_SELECTOR)?.textContent ?? "";
+    const clipped = flatClip(text, SECTION_LIMIT);
+    if (clipped) return clipped;
+  }
+  return undefined;
+}
+
+/**
+ * What the control does, when the page says so: the authored
+ * `data-appmcp-hint`, else `title` / `aria-description`. A fallback that only
+ * repeats the accessible name adds nothing and is dropped.
+ */
+export function hintOf(el: Element, name: string = accessibleName(el)): string | undefined {
+  const authored = el.getAttribute("data-appmcp-hint")?.trim();
+  if (authored) return flatClip(authored, HINT_LIMIT);
+  const fallback = (el.getAttribute("title") ?? el.getAttribute("aria-description") ?? "").trim();
+  if (!fallback || fallback === name.trim()) return undefined;
+  return flatClip(fallback, HINT_LIMIT);
 }
 
 export function isHidden(el: Element): boolean {
@@ -189,8 +255,11 @@ export function selectorFor(el: Element): string {
 }
 
 /** A compact reference for awareness tracking (no id/selector needed). */
-export function elementRef(el: Element): { role: string; name: string } {
-  return { role: roleOf(el), name: accessibleName(el) };
+export function elementRef(el: Element): { role: string; name: string; section?: string } {
+  const ref: { role: string; name: string; section?: string } = { role: roleOf(el), name: accessibleName(el) };
+  const section = sectionOf(el);
+  if (section) ref.section = section;
+  return ref;
 }
 
 /**
@@ -222,6 +291,10 @@ export function snapshotElements(root: ParentNode = document): AppMcpElement[] {
     }
     if (input.disabled) entry.disabled = true;
     if (isAppMcpDenied(el)) entry.denied = true;
+    const section = sectionOf(el);
+    if (section) entry.section = section;
+    const hint = hintOf(el, entry.name);
+    if (hint) entry.hint = hint;
     out.push(entry);
   }
   return out;
