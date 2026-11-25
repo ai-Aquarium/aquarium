@@ -15,6 +15,8 @@
  * component may import a *component* from a `"use client"` module, but a plain
  * value it receives is a client reference, not the number it was written as.
  */
+import { describeError } from "@/lib/error-message";
+
 export const PAGE_SIZE = 50;
 
 /** A refusal from a BFF route, carrying the status so callers can act on 403. */
@@ -53,7 +55,7 @@ export async function sendJson<T>(
 
 /** The message to show for a thrown refusal, without leaking internals. */
 export function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
+  return describeError(err, fallback);
 }
 
 /** An absolute activation URL for a path the server returned, for copy/paste. */
