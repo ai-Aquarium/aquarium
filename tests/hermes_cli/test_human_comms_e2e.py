@@ -16,7 +16,7 @@ import subprocess
 import time
 import uuid
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import asyncpg
 import pytest
@@ -164,6 +164,61 @@ async def test_cross_surface_dedupe_answer_once(postgres_dsn: str) -> None:
     # The original answer/surface is preserved; the second answer does not win.
     assert second.notification.answer == "approved"
     assert second.notification.answered_via == "telegram"
+
+
+@pytest.mark.asyncio
+async def test_snooze_hides_until_it_expires(postgres_dsn: str) -> None:
+    await _reset(postgres_dsn)
+    ntf = _ntf(postgres_dsn)
+
+    created = await ntf.create(
+        kind="proactive_ask", target_user_id="alice", title="look later",
+        dedupe_key="ask:later",
+    )
+    nid = created.notification.id
+
+    future = datetime.now(timezone.utc) + timedelta(days=1)
+    snoozed = await ntf.snooze(nid, _member("alice"), until=future)
+    assert snoozed.snoozed_until == future
+    # Off the pending surface while snoozed — still pending underneath, so a
+    # re-raise over the window collapses onto the same row, not a new card.
+    assert await ntf.list_pending(_member("alice")) == []
+    again = await ntf.create(
+        kind="proactive_ask", target_user_id="alice", title="look later (re-raise)",
+        dedupe_key="ask:later",
+    )
+    assert again.created is False and again.notification.id == nid
+
+    # The stamp passing brings it back on its own; a past stamp clears the snooze.
+    past = datetime.now(timezone.utc) - timedelta(minutes=1)
+    back = await ntf.snooze(nid, _member("alice"), until=past)
+    assert back.is_pending and back.snoozed_until == past
+    assert [n.id for n in await ntf.list_pending(_member("alice"))] == [nid]
+
+
+@pytest.mark.asyncio
+async def test_snooze_is_c2_scoped_and_settled_items_stay_settled(postgres_dsn: str) -> None:
+    await _reset(postgres_dsn)
+    ntf = _ntf(postgres_dsn)
+
+    created = await ntf.create(
+        kind="proactive_ask", target_user_id="alice", title="alice only",
+    )
+    nid = created.notification.id
+
+    # A different member may not snooze a private item (C2 — same gate as answer).
+    with pytest.raises(PermissionError):
+        await ntf.snooze(
+            nid, _member("bob"), until=datetime.now(timezone.utc) + timedelta(days=1)
+        )
+
+    answered = await ntf.answer(nid, _member("alice"), answer="dismissed", via="web")
+    assert answered.newly_answered is True
+    # Snoozing an already-settled item is a no-op that returns it unchanged.
+    same = await ntf.snooze(
+        nid, _member("alice"), until=datetime.now(timezone.utc) + timedelta(days=1)
+    )
+    assert same.status == "answered" and same.snoozed_until is None
 
 
 @pytest.mark.asyncio

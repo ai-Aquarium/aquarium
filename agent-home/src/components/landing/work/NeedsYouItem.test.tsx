@@ -157,6 +157,83 @@ describe("NeedsYouItem", () => {
   });
 });
 
+describe("NeedsYouItem — Snooze / Dismiss on notification cards", () => {
+  const notif = (over: Partial<ReturnType<typeof needsYouEntry>> = {}) =>
+    needsYouEntry({
+      id: "notif:n1",
+      source: "notification",
+      severity: "review",
+      title: "Needs your attention: Google Calendar",
+      context: {},
+      href: "/inbox",
+      notification_id: "n1",
+      actions: [
+        { id: "open", label: "Open", style: "primary", href: "/inbox" },
+        {
+          id: "dismiss",
+          label: "Dismiss",
+          style: "secondary",
+          method: "POST",
+          endpoint: "/api/comms/notifications/n1/answer",
+          body: { answer: "dismissed" },
+        },
+      ],
+      ...over,
+    });
+
+  it("offers Snooze and Dismiss when the entry is notification-backed", () => {
+    render(<ul><NeedsYouItem entry={notif()} now={NOW} /></ul>);
+    expect(screen.getByRole("button", { name: "Snooze" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeTruthy();
+  });
+
+  it("offers only Snooze when the feed gives no dismiss action", () => {
+    render(
+      <ul>
+        <NeedsYouItem
+          entry={notif({ actions: [{ id: "open", label: "Open", style: "primary", href: "/inbox" }] })}
+          now={NOW}
+        />
+      </ul>,
+    );
+    expect(screen.getByRole("button", { name: "Snooze" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
+  });
+
+  it("hides both for someone else's wait in a widened view", () => {
+    render(<ul><NeedsYouItem entry={notif({ foreign: true })} now={NOW} /></ul>);
+    expect(screen.queryByRole("button", { name: "Snooze" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
+  });
+
+  it("snooze posts the chosen stamp to the notification route", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}", { status: 200 }));
+    const onActed = vi.fn();
+    render(<ul><NeedsYouItem entry={notif()} now={NOW} onActed={onActed} /></ul>);
+    fireEvent.click(screen.getByRole("button", { name: "Snooze" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "1 day" }));
+    await waitFor(() => expect(onActed).toHaveBeenCalledOnce());
+    const [path, init] = fetchSpy.mock.calls[0];
+    expect(path).toBe("/api/comms/notifications/n1/snooze");
+    expect(Date.parse(JSON.parse(String(init?.body)).until)).toBeGreaterThan(Date.now());
+  });
+
+  it("dismiss posts the action's own endpoint and body", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}", { status: 200 }));
+    const onActed = vi.fn();
+    render(<ul><NeedsYouItem entry={notif()} now={NOW} onActed={onActed} /></ul>);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(onActed).toHaveBeenCalledOnce());
+    const [path, init] = fetchSpy.mock.calls[0];
+    expect(path).toBe("/api/comms/notifications/n1/answer");
+    expect(init?.body).toBe(JSON.stringify({ answer: "dismissed" }));
+  });
+});
+
 describe("NeedsYouItem in zh-Hant", () => {
   it("renders the translated title, detail, age and action", () => {
     const entry = needsYouEntry({

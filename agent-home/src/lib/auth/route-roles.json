@@ -87,6 +87,7 @@
   "GET /api/comms/notifications": "signed-in",
   "GET /api/comms/people/[userId]/profiles": "signed-in",
   "POST /api/comms/notifications/[notificationId]/answer": "signed-in",
+  "POST /api/comms/notifications/[notificationId]/snooze": "signed-in",
   "GET /api/credentials": "signed-in",
   "DELETE /api/credentials/[provider]/[name]": "signed-in",
   "GET /api/credentials/[provider]/[name]": "signed-in",

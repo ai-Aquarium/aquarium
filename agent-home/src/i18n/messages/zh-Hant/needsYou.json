@@ -77,7 +77,9 @@
     "Allow": "允許",
     "Allow once": "允許一次",
     "Open chat": "開啟對話",
-    "Open dictionary": "開啟字典"
+    "Open dictionary": "開啟字典",
+    "Snooze": "稍後",
+    "Dismiss": "關閉"
   },
   "banner": {
     "countOne": "有 1 件事需要你",

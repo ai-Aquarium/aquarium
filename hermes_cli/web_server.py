@@ -5209,6 +5209,39 @@ async def comms_answer_notification(notification_id: str, request: Request):
     return payload
 
 
+@app.post("/api/comms/notifications/{notification_id}/snooze")
+async def comms_snooze_notification(notification_id: str, request: Request):
+    """Hide a pending item on every surface until ``until`` (ISO-8601), then
+    it comes back — the same semantics as a to-do's snooze. The row stays
+    pending, so a re-raise over the snooze window still collapses onto it.
+    """
+    from datetime import datetime, timezone
+
+    from hermes_cli.human_comms import NotificationNotFound, NotificationStore
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    raw_until = str((body or {}).get("until", "")).strip()
+    try:
+        until = datetime.fromisoformat(raw_until)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="until must be an ISO-8601 timestamp")
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+
+    principal = await _comms_resolve_principal(request)
+    ntf = NotificationStore(_comms_app_store(), config=load_config() or {})
+    try:
+        item = await ntf.snooze(notification_id, principal, until=until)
+    except NotificationNotFound:
+        raise HTTPException(status_code=404, detail="No such notification")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    return {"ok": True, "notification": item.as_dict()}
+
+
 #: Answers ``_settle_todo_proposal`` treats as a verdict rather than feedback.
 _PROPOSAL_VERDICTS = frozenset({"approved", "denied", "rejected"})
 
@@ -13649,7 +13682,10 @@ async def needs_you(request: Request):
 
         ntf = NotificationStore(_comms_app_store(), config=load_config() or {})
         await ntf.initialize()
-        pending = await ntf.list_pending(principal)
+        # include_snoozed: the entries carry context.snoozed and stay in the
+        # pipeline so their dedupe keys still cover the waits they stand for;
+        # finalize() drops them before counts, push and the response.
+        pending = await ntf.list_pending(principal, include_snoozed=True)
         items.extend(ny.notification_entries(pending, principal.user_id))
         for other in sorted(others):
             items.extend(ny.mark_foreign(ny.notification_entries(pending, other), other))

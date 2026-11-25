@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { useProjectAction } from "@/components/projects/useProjectAction";
+import { post } from "@/lib/post";
+import { usePopover } from "@/components/landing/topbar/usePopover";
 import { useNeedsYouText } from "@/lib/landing/needsYouText";
+import { SNOOZE_OPTIONS, snoozeUntil, type SnoozeOption } from "@/lib/suggested-tasks/channels";
+import { useAction } from "@/lib/use-action";
 import { Spinner } from "@/components/ui/Spinner";
 import type { NeedsYouAction, NeedsYouEntry } from "@/types/landing";
 
@@ -150,7 +154,7 @@ export function NeedsYouItem({
           align="end"
           recentRoutingHref={sourceRoutingHref}
         />
-        <div className="pt-1">
+        <div className="flex flex-wrap items-center gap-2 pt-1">
           {primaryOpens ? (
             <button
               type="button"
@@ -176,9 +180,142 @@ export function NeedsYouItem({
               {text.action(primary.label)}
             </Link>
           )}
+          {entry.notification_id && !entry.foreign ? (
+            <NotificationActions entry={entry} onActed={onActed} />
+          ) : null}
         </div>
       </div>
     </li>
+  );
+}
+
+const SECONDARY =
+  "border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg)] hover:bg-[var(--color-surface-2)]";
+
+/**
+ * The snooze popover on a notification-backed item — "not now" on every
+ * surface until the chosen stamp passes, then it comes back. Shared by the
+ * card row and the Details view.
+ */
+export function SnoozeButton({
+  entry,
+  pending = false,
+  onSnoozed,
+}: {
+  entry: NeedsYouEntry;
+  pending?: boolean;
+  onSnoozed: () => void;
+}) {
+  const text = useNeedsYouText();
+  const [error, setError] = useState<string | null>(null);
+  const { open, setOpen, ref } = usePopover<HTMLDivElement>();
+  const { run, pending: snoozing } = useAction(async (option: SnoozeOption) => {
+    const problem = await post(
+      `/api/comms/notifications/${encodeURIComponent(entry.notification_id!)}/snooze`,
+      { until: snoozeUntil(option.ms).toISOString() },
+    );
+    if (problem) return setError(problem);
+    onSnoozed();
+  });
+  return (
+    <div ref={ref} className="relative" data-error={error ?? undefined}>
+      <button
+        type="button"
+        data-action="needs-you-snooze"
+        data-appmcp-hint="Snooze: opens a menu to hide this until 1 min / 1 day / 1 week from now; it comes back when the time is up"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={pending || snoozing}
+        onClick={() => setOpen((v) => !v)}
+        className={`${BUTTON} ${SECONDARY}`}
+      >
+        {text.action("Snooze")}
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          aria-label="Snooze for"
+          className="absolute bottom-full left-0 z-[65] mb-1 w-28 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg)] p-1 shadow-xl"
+        >
+          {SNOOZE_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="menuitem"
+              data-snooze={option.id}
+              data-appmcp-hint={`Hide this item until ${option.label} from now`}
+              disabled={pending || snoozing}
+              onClick={() => {
+                setOpen(false);
+                void run(option);
+              }}
+              className="block w-full rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm hover:bg-[var(--color-surface-2)] disabled:opacity-50"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {error ? (
+        <span role="alert" className="absolute left-0 top-full mt-1 whitespace-nowrap text-[12px] leading-[16px] text-[var(--color-danger)]">
+          {error}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * "Not now" / "no action" on a notification-backed card — the same Snooze +
+ * Dismiss a suggested task offers. A `dismiss` action in the feed decides
+ * whether the second button exists (verdict entries keep theirs instead).
+ */
+export function NotificationActions({
+  entry,
+  onActed,
+}: {
+  entry: NeedsYouEntry;
+  onActed?: (entry: NeedsYouEntry) => void;
+}) {
+  const text = useNeedsYouText();
+  const [error, setError] = useState<string | null>(null);
+  const dismiss = (entry.actions ?? []).find(
+    (a): a is NeedsYouAction & { endpoint: string } =>
+      a.id === "dismiss" && isBffPath(a.endpoint),
+  );
+  const { run, pending } = useAction(async () => {
+    const problem = await post(
+      dismiss!.endpoint,
+      dismiss!.body ?? { answer: "dismissed" },
+    );
+    if (problem) return setError(problem);
+    onActed?.(entry);
+  });
+  return (
+    <>
+      {error ? (
+        <span role="alert" className="text-[12px] leading-[16px] text-[var(--color-danger)]">
+          {error}
+        </span>
+      ) : null}
+      <SnoozeButton
+        entry={entry}
+        pending={pending}
+        onSnoozed={() => onActed?.(entry)}
+      />
+      {dismiss ? (
+        <button
+          type="button"
+          data-action="needs-you-dismiss"
+          data-appmcp-hint="Dismiss: settles this item with no action taken; it leaves the Needs-you list"
+          disabled={pending}
+          onClick={() => void run()}
+          className={`${BUTTON} ${SECONDARY}`}
+        >
+          {text.action("Dismiss")}
+        </button>
+      ) : null}
+    </>
   );
 }
 

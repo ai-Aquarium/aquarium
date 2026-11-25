@@ -152,7 +152,7 @@ _GRANTED_ANSWERS = frozenset({"approved", "yes", "allow"})
 _SELECT_COLUMNS = (
     "id, kind, owner_user_id, visibility, title, body, command, reversible, "
     "status, answer, answered_by, answered_via, dedupe_key, delivered, "
-    "created_at, answered_at, context"
+    "created_at, answered_at, context, snoozed_until"
 )
 
 _SCHEMA_SQL = f"""
@@ -185,6 +185,9 @@ CREATE INDEX IF NOT EXISTS {NOTIFICATIONS_TABLE}_pending_idx
 -- What the item is about, for the client (e.g. the routed batch behind a
 -- triage to-do); never message text.
 ALTER TABLE {NOTIFICATIONS_TABLE} ADD COLUMN IF NOT EXISTS context JSONB;
+-- "Not now": a snoozed item stays pending but hides from every surface
+-- until the stamp passes — same semantics as a to-do's snoozed_until.
+ALTER TABLE {NOTIFICATIONS_TABLE} ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMPTZ;
 """
 
 
@@ -217,6 +220,7 @@ class Notification:
     created_at: Optional[datetime]
     answered_at: Optional[datetime]
     context: Optional[dict] = None
+    snoozed_until: Optional[datetime] = None
 
     @property
     def is_pending(self) -> bool:
@@ -245,6 +249,7 @@ class Notification:
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "answered_at": self.answered_at.isoformat() if self.answered_at else None,
             "context": self.context,
+            "snoozed_until": self.snoozed_until.isoformat() if self.snoozed_until else None,
         }
 
     @classmethod
@@ -267,6 +272,7 @@ class Notification:
             created_at=row["created_at"],
             answered_at=row["answered_at"],
             context=_context(row.get("context")),
+            snoozed_until=row["snoozed_until"],
         )
 
 
@@ -512,11 +518,23 @@ class NotificationStore:
         principal: Principal,
         *,
         kind: Optional[NotificationKind] = None,
+        include_snoozed: bool = False,
         connection: "Optional[asyncpg.Connection]" = None,
     ) -> list[Notification]:
-        """List pending items ``principal`` may see (C2-scoped), newest first."""
+        """List pending items ``principal`` may see (C2-scoped), newest first.
+
+        Snoozed rows are hidden unless ``include_snoozed`` — callers that
+        need the row's other effects (a needs-you notification still covers
+        its derived project wait while snoozed) read them and filter by
+        ``snoozed_until`` themselves.
+        """
         predicate = scope_filter(principal, column="visibility", start_index=1)
-        where = [predicate.sql, "status = 'pending'"]
+        where = [
+            predicate.sql,
+            "status = 'pending'",
+        ]
+        if not include_snoozed:
+            where.append("(snoozed_until IS NULL OR snoozed_until <= NOW())")
         params: list[object] = list(predicate.params)
         if kind is not None:
             if kind not in _KINDS:
@@ -600,6 +618,43 @@ class NotificationStore:
                 settled = await self._load_visible(conn, notification_id, principal)
                 return AnswerResult(settled, newly_answered=False)
             return AnswerResult(Notification._from_row(row), newly_answered=True)
+
+        return await self._with_connection(_run, connection)
+
+    async def snooze(
+        self,
+        notification_id: str,
+        principal: Principal,
+        *,
+        until: datetime,
+        connection: "Optional[asyncpg.Connection]" = None,
+    ) -> Notification:
+        """Hide a pending item on every surface until ``until``, then it returns.
+
+        C2-gated like :meth:`answer`. A stamp in the past is a no-op that
+        clears an earlier snooze; an already-settled item is returned
+        unchanged (the other surface won the race — same dedupe rule).
+        """
+        if until.tzinfo is None:
+            raise ValueError("snooze until must be timezone-aware")
+
+        async def _run(conn: "asyncpg.Connection") -> Notification:
+            current = await self._load_visible(conn, notification_id, principal)
+            if not current.is_pending:
+                return current
+            row = await conn.fetchrow(
+                f"""
+                UPDATE {NOTIFICATIONS_TABLE}
+                SET snoozed_until = $2
+                WHERE id = $1 AND status = 'pending'
+                RETURNING {_SELECT_COLUMNS}
+                """,
+                notification_id,
+                until,
+            )
+            if row is None:
+                return await self._load_visible(conn, notification_id, principal)
+            return Notification._from_row(row)
 
         return await self._with_connection(_run, connection)
 
