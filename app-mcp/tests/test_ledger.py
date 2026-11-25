@@ -17,6 +17,14 @@ def test_ledger_lives_under_hermes_home(tmp_path):
     assert ledger_path("") is None
 
 
+def test_systemd_state_directory_wins_over_hermes_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("STATE_DIRECTORY", f"{tmp_path}/state:{tmp_path}/other")
+    assert ledger_path() == tmp_path / "state" / "coverage-ledger.jsonl"
+    monkeypatch.delenv("STATE_DIRECTORY")
+    assert ledger_path() == tmp_path / "home" / "app-mcp" / "coverage-ledger.jsonl"
+
+
 def test_rows_appear_after_a_snapshot_and_repeat_snapshots_append_nothing(tmp_path):
     path = ledger_path(str(tmp_path))
     ledger = CoverageLedger(path)

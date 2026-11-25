@@ -45,13 +45,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=yes
-# The one write app-mcp makes: the coverage ledger
-# ($HERMES_HOME/app-mcp/coverage-ledger.jsonl). Everything else stays
-# read-only. systemd cannot expand $HERMES_HOME here, so the path is the box's
-# HERMES_HOME and must match app-mcp.env; the grant needs an existing
-# directory, so ExecStartPre (as root, "+") creates it first.
-ExecStartPre=+/usr/bin/install -d -o hermes -g hermes -m 700 /opt/data/hermes-home-staging/app-mcp
-ReadWritePaths=/opt/data/hermes-home-staging/app-mcp
+# The coverage ledger (the one write app-mcp makes) is granted by the drop-in
+# deploy/app-mcp-ledger.conf (StateDirectory=app-mcp), installed beside this unit.
 
 [Install]
 WantedBy=multi-user.target

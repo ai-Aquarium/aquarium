@@ -112,6 +112,13 @@ ROOT_COPIES = [
         "aquarium-apps", "aquarium-upgrade")],
 ]
 ROOT_COPY_MODE = {"bin": 0o755, "sudoers": 0o440, "unit": 0o644}
+#: Units app-mcp comes with (installed, source): the exception to "never install a missing
+#: copy" — an upgrade adds them on any box that runs app-mcp, and a rollback removes them.
+APP_MCP_UNITS = [
+    (f"{SYSTEMD}/app-mcp.service.d/50-coverage-ledger.conf", "deploy/app-mcp-ledger.conf"),
+    (f"{SYSTEMD}/hermes-appmcp-hint-sweep.service", "deploy/hermes-appmcp-hint-sweep.service"),
+    (f"{SYSTEMD}/hermes-appmcp-hint-sweep.timer", "deploy/hermes-appmcp-hint-sweep.timer"),
+]
 BUILD_CACHE = "/var/cache/aquarium"
 
 VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]{0,40})?$")
@@ -874,14 +881,23 @@ def _root_copy_items(cfg: Dict[str, str], src: Path) -> List[Tuple[str, Path, st
         elif f.name.startswith("aquarium-app-"):
             items.append((f"/usr/local/sbin/{f.name}", f, f"app runtime helper {f.name}", "bin"))
     items.append((f"{cfg['DATA_ROOT']}/deploy-hermes.sh", src / "deploy/hermes-deploy.sh", "deploy script", "bin"))
+    items += [(inst, src / source, f"app-mcp unit {Path(inst).name}", "unit") for inst, source in APP_MCP_UNITS]
     # Last: the job replacing this command keeps running the copy it loaded.
     items.append((SELF_INSTALL, src / "deploy/aquarium.py", "admin command", "bin"))
     return items
 
 
 def root_copies(cfg: Dict[str, str], src: Path) -> List[Tuple[str, Path, str, str]]:
-    """(installed, source, label, kind) for each root copy ``src`` ships that this box has installed."""
-    return [it for it in _root_copy_items(cfg, src) if it[1].is_file() and P(it[0]).exists()]
+    """(installed, source, label, kind) for each root copy ``src`` ships that this box has installed
+    (or, for ``APP_MCP_UNITS``, that this box should have: it runs app-mcp)."""
+    app_mcp = P(f"{SYSTEMD}/app-mcp.service").exists()
+    adds = {inst for inst, _source in APP_MCP_UNITS} if app_mcp else set()
+    return [it for it in _root_copy_items(cfg, src)
+            if it[1].is_file() and (P(it[0]).exists() or it[0] in adds)]
+
+
+def _differs(dest: Path, source: Path) -> bool:
+    return not dest.exists() or dest.read_bytes() != source.read_bytes()
 
 
 def root_sources(cfg: Dict[str, str], tarball: Path, dest: Path) -> Path:
@@ -934,7 +950,7 @@ def install_root_copies(cfg: Dict[str, str], src: Path, save: Path) -> List[str]
 
     Every new copy is staged and checked before the first one is swapped in."""
     todo = [(P(inst), source, label, kind) for inst, source, label, kind in root_copies(cfg, src)
-            if P(inst).read_bytes() != source.read_bytes()]
+            if _differs(P(inst), source)]
     if not todo:
         return []
     staged: List[Path] = []
@@ -946,6 +962,9 @@ def install_root_copies(cfg: Dict[str, str], src: Path, save: Path) -> List[str]
         os.chmod(save, 0o700)
         manifest = []
         for n, (dest, _source, label, kind) in enumerate(todo):
+            if not dest.exists():  # new on this box: a rollback removes it
+                manifest.append({"path": real(dest), "absent": True, "kind": kind, "label": label})
+                continue
             st = dest.stat()
             keep = save / f"{n:02d}-{dest.name}"
             write_private(keep, dest.read_bytes())
@@ -958,6 +977,7 @@ def install_root_copies(cfg: Dict[str, str], src: Path, save: Path) -> List[str]
                 tmp.unlink()
         raise
     step("Installing the system helpers of this release")
+    added = [dest for dest, *_x in todo if not dest.exists()]
     try:
         for (dest, _source, label, _kind), tmp in zip(todo, staged):
             os.replace(tmp, dest)
@@ -970,6 +990,9 @@ def install_root_copies(cfg: Dict[str, str], src: Path, save: Path) -> List[str]
         raise Fail(f"could not install the system helpers ({error}); the old ones were put back")
     if any(kind == "unit" for *_x, kind in todo):
         systemctl("daemon-reload", check=False)
+    for timer in (d.name for d in added if d.name.endswith(".timer")):
+        if systemctl("enable", "--now", timer, check=False).returncode != 0:
+            say(f"  WARNING: could not start {timer}")
     return [label for _d, _s, label, _k in todo]
 
 
@@ -985,6 +1008,15 @@ def restore_root_copies(save: Optional[str]) -> List[str]:
     restored = []
     for entry in manifest if isinstance(manifest, list) else []:
         dest = P(str(entry.get("path", "")))
+        if entry.get("absent"):
+            if dest.exists():
+                if dest.name.endswith(".timer"):
+                    systemctl("disable", "--now", dest.name, check=False)
+                with contextlib.suppress(OSError):
+                    dest.unlink()
+                say(f"  removed {entry.get('label')} ({real(dest)})")
+                restored.append(entry.get("kind"))
+            continue
         try:
             data = (folder / str(entry["file"])).read_bytes()
             if dest.exists() and dest.read_bytes() == data:
@@ -1019,7 +1051,7 @@ def root_copy_problems(cfg: Dict[str, str], src: Path) -> List[str]:
     problems = []
     for inst, source, label, _kind in root_copies(cfg, src):
         dest = P(inst)
-        if dest.read_bytes() != source.read_bytes():
+        if _differs(dest, source):
             problems.append(f"{label} does not match the release")
         elif not test_mode() and (dest.stat().st_uid != 0 or dest.stat().st_mode & 0o022):
             problems.append(f"{label} is not owned and writable only by root")
@@ -4240,9 +4272,12 @@ def _finish_upgrade(cfg: Dict[str, str], tracker: UpgradeJob, version: str) -> N
     src = root_sources(cfg, tarball, folder / "root-sources")
     tracker.mark("install")
     saved = root_copies_save_dir(cfg, version)
-    if install_root_copies(cfg, src, saved):
+    installed = install_root_copies(cfg, src, saved)
+    if installed:
         tracker.job["root_copies"] = str(saved)
         tracker._save()
+        if "app-mcp unit 50-coverage-ledger.conf" in installed:  # no restart follows here
+            systemctl("try-restart", "app-mcp.service", check=False)
     else:
         say("  the system helpers already match this release")
     tracker.mark("checks")
@@ -4273,7 +4308,7 @@ def finish_needed(cfg: Dict[str, str], *, retry: bool = False) -> bool:
         return False
     rel = P(f"{AQ}/releases/{version}")
     try:
-        return any(P(inst).read_bytes() != src.read_bytes() for inst, src, _l, _k in root_copies(cfg, rel))
+        return any(_differs(P(inst), src) for inst, src, _l, _k in root_copies(cfg, rel))
     except OSError:
         return False
 
@@ -4953,7 +4988,8 @@ def undo_layout(cfg: Dict[str, str]) -> int:
 
 def cmd_uninstall(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
     units = sorted(set(service_units()) | set(bridge_units()) | set(enabled_units("hermes-*.timer"))
-                   | {p.name for p in P(SYSTEMD).glob("hermes-offsite-*")})
+                   | {p.name for p in P(SYSTEMD).glob("hermes-offsite-*")}
+                   | {p.name for p in P(SYSTEMD).glob("hermes-appmcp-*")})
     data = [cfg["SUPABASE_DIR"].rsplit("/docker", 1)[0]] + hermes_homes(cfg) + [ETC, f"{cfg['DATA_ROOT']}/hermes-embed"]
     say("This removes Aquarium from this server:")
     say(f"  stop and remove {len(units)} services: {', '.join(units)}")

@@ -187,11 +187,17 @@ aquarium-apps-copies-prune.timer daily           drops app DB copies unused 90 d
 
 All times are box-local (UTC on the Hetzner box), with a randomized delay.
 
-Tracked in `deploy/` but not installed yet: `hermes-appmcp-hint-sweep.timer`
-(nightly 06:30). It reads app-mcp's coverage ledger and raises one Needs-You card
-for controls the agent saw without a `data-appmcp-hint` and pages without a guide
-(`app-mcp/app_mcp/sweep.py`). It needs the matching `app-mcp.service` update
-(`ReadWritePaths=` for `$HERMES_HOME/app-mcp`), or the ledger stays empty.
+`hermes-appmcp-hint-sweep.timer` (nightly 06:30) reads app-mcp's coverage ledger
+(`/var/lib/app-mcp`, granted by the `app-mcp.service.d/50-coverage-ledger.conf`
+drop-in from `deploy/app-mcp-ledger.conf`) and raises one Needs-You card for
+controls the agent saw without a `data-appmcp-hint` and pages without a guide
+(`app-mcp/app_mcp/sweep.py`). The three files are box-agnostic: `install-aquarium.sh`
+installs them, and `aquarium update` / Settings → Software upgrade adds them to any
+box that runs app-mcp (and removes them again if that upgrade rolls back).
+`deploy-hermes.sh` does not install them; on a git-layout box run once:
+`install -Dm644 deploy/app-mcp-ledger.conf /etc/systemd/system/app-mcp.service.d/50-coverage-ledger.conf`,
+`install -m644 deploy/hermes-appmcp-hint-sweep.{service,timer} /etc/systemd/system/`,
+then `systemctl daemon-reload && systemctl restart app-mcp && systemctl enable --now hermes-appmcp-hint-sweep.timer`.
 
 The review pass is the clock for FG-29/FG-30/FG-31: it generates the monthly
 profile suggestion, alerts on sibling-goal conflicts and delivers the weekly
