@@ -468,6 +468,7 @@ SIGNED_IN = {
     "GET /api/comms/directory",
     "GET /api/comms/notifications",
     "POST /api/comms/notifications/{notification_id}/answer",
+    "POST /api/comms/notifications/{notification_id}/snooze",
     "GET /api/comms/goals",
     "POST /api/comms/goals",
     "PUT /api/comms/goals/{goal_id}/priority",
