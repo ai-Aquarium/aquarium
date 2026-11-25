@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SuggestedTaskSource, Todo } from "@/types";
 
-import { arrivalKeyOf, channelLabel, channelOf, isSuggested, snoozeUntil, startRequestText } from "./channels";
+import { SNOOZE_OPTIONS, arrivalKeyOf, channelLabel, channelOf, isSuggested, snoozeUntil, startRequestText } from "./channels";
 
 const todo = (extra: Partial<Todo> = {}) =>
   ({ id: "t1", title: "Reply to Ada", description: "", stage: "open", ...extra }) as Todo;
@@ -45,8 +45,11 @@ describe("suggested-task helpers", () => {
     expect(startRequestText({ todo: todo({ description: "Reply to Ada" }), source: null })).toBe("Reply to Ada");
   });
 
-  it("snoozes for two hours", () => {
+  it("snoozes for the option the person picked", () => {
     const now = new Date(2026, 10, 17, 22, 30);
-    expect(snoozeUntil(now).getTime() - now.getTime()).toBe(2 * 3_600_000);
+    expect(SNOOZE_OPTIONS.map((o) => o.id)).toEqual(["1min", "1day", "1week"]);
+    expect(snoozeUntil(SNOOZE_OPTIONS[0].ms, now).getTime() - now.getTime()).toBe(60_000);
+    expect(snoozeUntil(SNOOZE_OPTIONS[1].ms, now).getTime() - now.getTime()).toBe(86_400_000);
+    expect(snoozeUntil(SNOOZE_OPTIONS[2].ms, now).getTime() - now.getTime()).toBe(7 * 86_400_000);
   });
 });

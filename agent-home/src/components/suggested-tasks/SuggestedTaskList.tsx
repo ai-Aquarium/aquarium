@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { InlineAlert } from "@/components/ui/InlineAlert";
 import { useAction } from "@/lib/use-action";
-import { SNOOZE_HOURS, snoozeUntil } from "@/lib/suggested-tasks/channels";
+import { snoozeUntil, type SnoozeOption } from "@/lib/suggested-tasks/channels";
 import type { SuggestedTask } from "@/types";
 
 import { StartTaskSheet } from "./StartTaskSheet";
@@ -50,12 +50,12 @@ export function SuggestedTaskList({
 }) {
   const [starting, setStarting] = useState<SuggestedTask | null>(null);
   const [notice, setNotice] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
-  const { run } = useAction(async (task: SuggestedTask, verb: "snooze" | "dismiss") => {
+  const { run } = useAction(async (task: SuggestedTask, verb: "snooze" | "dismiss", option?: SnoozeOption) => {
     const id = encodeURIComponent(task.todo.id);
     const label = task.todo.ref ?? task.todo.title;
     const error =
       verb === "snooze"
-        ? await post(`/api/suggested-tasks/${id}/snooze`, { until: snoozeUntil().toISOString() })
+        ? await post(`/api/suggested-tasks/${id}/snooze`, { until: snoozeUntil(option?.ms ?? 0).toISOString() })
         : await post(`/api/suggested-tasks/${id}/dismiss`);
     if (error) {
       setNotice({ tone: "danger", text: error });
@@ -63,7 +63,7 @@ export function SuggestedTaskList({
     }
     setNotice({
       tone: "success",
-      text: verb === "snooze" ? `Snoozed ${label} for ${SNOOZE_HOURS} hours.` : `Dismissed ${label}.`,
+      text: verb === "snooze" ? `Snoozed ${label} for ${option?.label ?? "a while"}.` : `Dismissed ${label}.`,
     });
     onRemoved?.(task.todo.id);
     announceSuggestedTasksChanged();
@@ -86,7 +86,7 @@ export function SuggestedTaskList({
             compact={compact}
             canStart={canStart}
             onWork={setStarting}
-            onSnooze={(t) => run(t, "snooze")}
+            onSnooze={(t, o) => run(t, "snooze", o)}
             onDismiss={(t) => run(t, "dismiss")}
             onDetails={onDetails}
           />

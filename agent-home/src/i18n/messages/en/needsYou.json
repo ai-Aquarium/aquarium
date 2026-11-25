@@ -162,7 +162,7 @@
       "open": "Opens its full page.",
       "review": "Opens it for review.",
       "work": "Starts a task from this message.",
-      "snooze": "Hides it for 2 hours.",
+      "snooze": "Hides it for a while — 1 minute, a day or a week.",
       "dismiss": "Removes it from Needs you."
     }
   }
