@@ -227,6 +227,21 @@ def _finish_view(raw: Any) -> Optional[Dict[str, Any]]:
 _PREFLIGHT_KEYS = ("disk", "backup", "services", "release")
 
 
+def check_view(raw: Any) -> Optional[Dict[str, Any]]:
+    """Live rows the helper writes while `upgrade check` runs, so the page can show each
+    check finishing instead of four spinners waiting on one synchronous answer."""
+    if not isinstance(raw, dict) or not raw.get("version"):
+        return None
+    checks = []
+    for c in raw.get("checks") or []:
+        if isinstance(c, dict) and c.get("key") in _PREFLIGHT_KEYS:
+            checks.append({"key": c["key"], "running": c.get("status") == "running",
+                           "ok": c.get("status") == "ok", "message": scrub(c.get("message"))})
+    return {"version": scrub(raw.get("version"), 60) or None,
+            "started": str(raw.get("started") or "")[:40] or None,
+            "done": bool(raw.get("done")), "checks": checks}
+
+
 def preflight_view(raw: Any, busy: List[str]) -> Dict[str, Any]:
     """Checks before an upgrade: the box's (disk, backup, services, release) and the work in
     progress here. ``ok`` only when every box check passed; ``busy`` needs a confirm."""
@@ -349,6 +364,7 @@ def status_view(raw: Dict[str, Any], rel: Optional[Dict[str, Any]] = None) -> Di
         "checked_at": raw.get("releases_checked_at") or None,
         "rollback_to": (raw.get("rollback") or {}).get("to") or None,
         "finish": _finish_view(raw.get("finish")),
+        "check": check_view(raw.get("check")),
         "base_job": _base_backup_view(raw.get("base_backup")),
     }
     if rel is not None:
@@ -439,8 +455,13 @@ async def upgrade_check(body: Optional[CheckBody] = None):
     raw = await asyncio.to_thread(_call, "status")
     out = status_view(raw, rel if rel.get("ok") else {"releases": [], "error": rel.get("error")})
     if version:
-        out["preflight"] = preflight_view(rel.get("preflight") or {"version": version},
-                                          await asyncio.to_thread(work_in_progress))
+        raw_pf = rel.get("preflight")
+        out["preflight"] = preflight_view(raw_pf or {"version": version},
+                                        await asyncio.to_thread(work_in_progress))
+        if raw_pf is None and rel.get("error"):
+            # The helper died or timed out mid-check: say so instead of leaving every
+            # row in "checking…" forever.
+            out["preflight"]["error"] = scrub(rel.get("error"))
     return out
 
 

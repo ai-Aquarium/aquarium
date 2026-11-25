@@ -2,6 +2,21 @@
 
 Tracking file for in-flight feature work. Update as phases land.
 
+## Upgrade pre-flight checks: live progress
+
+Plan: `plans/2026-11-25-upgrade-check-progress.md`
+Status: **implemented** — updated 2026-11-25
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `aquarium.py` — `UPGRADE_CHECK` progress file; running/ok/fail rows; release sub-notes; `status` serves `"check"` | done |
+| 2 | `software_upgrade_api.py` — `check_view` in status/job answers; helper timeout now lands in `preflight.error` | done |
+| 3 | `SoftwareUpgradeView` — poll `/job` 2 s while check POST in flight; merge live rows; show `result.error` | done |
+
+### Not yet verified
+
+- A real stalled check naming its culprit row (needs this build on the box; HSD is a git checkout → update the checkout on the box, the UI upgrade can't self-deliver past its own hung check).
+
 ## agent-home graceful shutdown
 
 Plan: `plans/2026-11-25-agent-home-graceful-shutdown.md`

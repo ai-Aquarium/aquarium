@@ -72,6 +72,20 @@ def test_check_lists_published_releases_newest_first(box, monkeypatch, capsys):
     assert [r["tag"] for r in again["releases"]] == tags and not again["error"]
 
 
+def test_check_writes_progress_rows_that_status_then_serves(box, monkeypatch, capsys):
+    releases(released_box(box))
+    code, answer = call(box, monkeypatch, capsys, "check", {"version": "v1.1.0"})
+    assert code == 0 and answer["ok"]
+    progress = json.loads(
+        (Path(os.environ["AQUARIUM_TEST_PREFIX"]) / "var/lib/aquarium/upgrade-check.json").read_text())
+    assert progress["version"] == "v1.1.0" and progress["done"] is True
+    assert [c["key"] for c in progress["checks"]] == ["disk", "backup", "services", "release"]
+    assert all(c["status"] == "ok" for c in progress["checks"])
+    code, status = call(box, monkeypatch, capsys, "status")
+    assert status["check"]["version"] == "v1.1.0" and status["check"]["done"] is True
+    assert {c["key"] for c in status["check"]["checks"]} == {"disk", "backup", "services", "release"}
+
+
 @pytest.mark.parametrize("body, error", [
     ({"version": "latest; rm -rf /"}, "like v1.2.3"),
     ({"version": "v7.7.7"}, "not a published release"),

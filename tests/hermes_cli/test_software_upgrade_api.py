@@ -248,6 +248,35 @@ def test_check_without_a_version_only_refreshes(client, helper):
     assert ("check", None) in helper.calls and "preflight" not in body
 
 
+def test_check_helper_timeout_says_so_instead_of_empty_rows(client, helper):
+    # The helper's 240 s cap hit mid-check used to leave the page showing four
+    # eternal "checking…" rows — the error was swallowed.
+    helper.answers["check"] = {"ok": False, "error": "The server took too long to answer. Try again."}
+    body = client.post("/api/software-upgrade/check", json={"version": "v1.1.0"}).json()
+    pf = body["preflight"]
+    assert pf["error"] == "The server took too long to answer. Try again."
+    assert pf["checks"] == [] and pf["ok"] is False
+
+
+def test_check_view_passes_live_progress_rows_through_status(client, helper):
+    helper.answers["status"] = {**STATUS, "check": {
+        "version": "v1.1.0", "started": "2026-11-05T08:00:00", "done": False,
+        "checks": [
+            {"key": "disk", "status": "ok", "message": "40 GB of disk space is free."},
+            {"key": "services", "status": "running", "message": "Asking every service."},
+            {"key": "bogus", "status": "ok", "message": "not a real check"},
+            {"key": "release", "status": "weird", "message": "not a known state"},
+        ]}}
+    body = client.get("/api/software-upgrade/job").json()
+    check = body["check"]
+    assert check["version"] == "v1.1.0" and check["done"] is False
+    assert check["checks"] == [
+        {"key": "disk", "running": False, "ok": True, "message": "40 GB of disk space is free."},
+        {"key": "services", "running": True, "ok": False, "message": "Asking every service."},
+        {"key": "release", "running": False, "ok": False, "message": "not a known state"},
+    ]
+
+
 def test_preflight_missing_a_check_is_not_ok():
     pf = su.preflight_view({"checks": PREFLIGHT["checks"][:1]}, [])
     assert pf["ok"] is False

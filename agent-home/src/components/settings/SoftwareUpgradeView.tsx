@@ -11,6 +11,7 @@ import { useT } from "@/i18n";
 import { useAction } from "@/lib/use-action";
 import { useHydrated } from "@/lib/use-hydrated";
 import type {
+  SoftwareUpgradeCheckProgress,
   SoftwareUpgradeJob,
   SoftwareUpgradePreflight,
   SoftwareUpgradeRelease,
@@ -100,11 +101,33 @@ export function SoftwareUpgradeView({
   const current = checked && checked.key === preflightKey ? checked : null;
   const preflight = current?.result ?? null;
   const preflightError = current?.error ?? null;
+  const [checkProgressRaw, setCheckProgress] = useState<{
+    key: string;
+    progress: SoftwareUpgradeCheckProgress;
+  } | null>(null);
+  const checkProgress =
+    checkProgressRaw?.key === preflightKey ? checkProgressRaw.progress : null;
 
   // Pre-flight for the chosen release: the Upgrade button waits until it passes.
+  // The checks run inside one synchronous helper call, so while it is in flight we
+  // poll /job for the rows it writes as each check finishes — that's how a stalled
+  // "Release download" names itself instead of looking like the whole check hung.
   useEffect(() => {
     if (!upgradeTarget || !preflightKey) return;
     let stopped = false;
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/software-upgrade/job", { cache: "no-store" });
+        if (!res.ok) return;
+        const body = (await res.json()) as SoftwareUpgradeStatus;
+        if (!stopped && body.check && body.check.version === upgradeTarget)
+          setCheckProgress({ key: preflightKey, progress: body.check });
+      } catch {
+        // best effort: the POST's own answer still arrives
+      }
+    };
+    const timer = window.setInterval(poll, 2000);
+    void poll();
     (async () => {
       try {
         const res = await fetch("/api/software-upgrade/check", {
@@ -125,9 +148,11 @@ export function SoftwareUpgradeView({
             error: err instanceof Error ? err.message : String(err),
           });
       }
+      window.clearInterval(timer);
     })();
     return () => {
       stopped = true;
+      window.clearInterval(timer);
     };
   }, [upgradeTarget, preflightKey]);
 
@@ -300,7 +325,11 @@ export function SoftwareUpgradeView({
             onUpgrade={(tag) => setConfirm({ kind: "upgrade", tag })}
             preflight={
               upgradeTarget
-                ? { result: preflight, error: preflightError }
+                ? {
+                    result: preflight,
+                    error: preflightError,
+                    live: checkProgress,
+                  }
                 : null
             }
             onRecheck={() => setPreflightRun((n) => n + 1)}
@@ -500,6 +529,7 @@ function ReleasePicker({
   preflight: {
     result: SoftwareUpgradePreflight | null;
     error: string | null;
+    live: SoftwareUpgradeCheckProgress | null;
   } | null;
   onRecheck: () => void;
 }) {
@@ -655,15 +685,20 @@ function PreflightList({
   tag,
   result,
   error,
+  live,
   onRecheck,
 }: {
   tag: string;
   result: SoftwareUpgradePreflight | null;
   error: string | null;
+  live: SoftwareUpgradeCheckProgress | null;
   onRecheck: () => void;
 }) {
   const t = useT("upgrade");
   const current = result?.version === tag ? result : null;
+  // Rows the helper reports mid-run (key → status/message); the finished answer wins.
+  const liveRows = !current && live?.version === tag ? live.checks : [];
+  const errText = error || current?.error || null;
   const failed = current ? current.checks.filter((c) => !c.ok) : [];
   return (
     <div
@@ -673,7 +708,7 @@ function PreflightList({
       <div className="flex flex-wrap items-center gap-2">
         <b className="text-xs">{t("preflightTitle", { tag })}</b>
         <span className="flex-1" />
-        {current || error ? (
+        {current || errText || liveRows.length ? (
           <button
             type="button"
             className="text-xs underline"
@@ -684,39 +719,39 @@ function PreflightList({
           </button>
         ) : null}
       </div>
-      {error ? (
+      {errText ? (
         <p className="mt-2 text-xs text-[var(--color-danger)]" role="alert">
-          {t("preflightError", { detail: error })}
+          {t("preflightError", { detail: errText })}
         </p>
-      ) : (
-        <ul className="mt-2">
-          {PREFLIGHT_KEYS.map((key) => {
-            const c = current?.checks.find((x) => x.key === key);
-            return (
-              <li
-                key={key}
-                data-check={key}
-                data-ok={c ? (c.ok ? "1" : "0") : ""}
-                className="my-1 flex gap-2 text-xs"
-              >
-                <CheckIcon ok={c ? c.ok : null} />
-                <span>
-                  <b>{t(`check.${key}`)}</b>{" "}
-                  <span
-                    className={
-                      c && !c.ok
-                        ? "text-[var(--color-danger)]"
-                        : "text-[var(--color-muted)]"
-                    }
-                  >
-                    {c ? c.message : t("preflightChecking")}
-                  </span>
+      ) : null}
+      <ul className="mt-2">
+        {PREFLIGHT_KEYS.map((key) => {
+          const c = current?.checks.find((x) => x.key === key);
+          const row = liveRows.find((x) => x.key === key);
+          return (
+            <li
+              key={key}
+              data-check={key}
+              data-ok={c ? (c.ok ? "1" : "0") : row ? (row.running ? "" : row.ok ? "1" : "0") : ""}
+              className="my-1 flex gap-2 text-xs"
+            >
+              <CheckIcon ok={c ? c.ok : row && !row.running ? row.ok : null} />
+              <span>
+                <b>{t(`check.${key}`)}</b>{" "}
+                <span
+                  className={
+                    c && !c.ok
+                      ? "text-[var(--color-danger)]"
+                      : "text-[var(--color-muted)]"
+                  }
+                >
+                  {c ? c.message : row?.message || t("preflightChecking")}
                 </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
       {failed.length ? (
         <p
           data-testid="upgrade-preflight-failed"
