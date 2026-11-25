@@ -25,6 +25,7 @@ import {
   type ChatStreamHandlers,
 } from "@/lib/chat/stream";
 import { mergeOlderPage, reconcileTail, visibleTurns } from "@/lib/chat/transcript";
+import { describeError } from "@/lib/error-message";
 import {
   decisionText,
   deriveActivity,
@@ -114,8 +115,7 @@ type Frame = { raf: number } | { timer: ReturnType<typeof setTimeout> };
 const isAbort = (err: unknown) =>
   (err instanceof DOMException || err instanceof Error) && err.name === "AbortError";
 
-const messageOf = (err: unknown, fallback: string) =>
-  err instanceof Error && err.message ? err.message : fallback;
+const messageOf = describeError;
 
 function emptyThread(key: string): ThreadSnapshot {
   return {

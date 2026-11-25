@@ -44,6 +44,7 @@ import {
 } from "@/lib/chat/turn-activity";
 import { notifySessionsChanged } from "@/lib/chat/sessions-changed";
 import { visibleTurns } from "@/lib/chat/transcript";
+import { describeError } from "@/lib/error-message";
 import { mayGetAutoTitle, waitForAutoTitle } from "@/lib/landing/titles";
 import { useAction } from "@/lib/use-action";
 import type {
@@ -330,7 +331,7 @@ export function useChatConversation({
         markRead(id);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load conversation.");
+      setError(describeError(err, "Failed to load conversation."));
     } finally {
       setLoadingThread(false);
     }
@@ -624,7 +625,7 @@ export function useChatConversation({
       return true;
     } catch (err) {
       if (err instanceof RunFinishedError) return startTurn(text, [], { afterRunEnds: true });
-      setError(err instanceof Error ? err.message : "The message could not be sent.");
+      setError(describeError(err, "The message could not be sent."));
       return false;
     }
   }
@@ -644,7 +645,7 @@ export function useChatConversation({
       else removingRef.current.delete(itemId);
     } catch (err) {
       removingRef.current.delete(itemId);
-      setError(err instanceof Error ? err.message : "That message could not be removed.");
+      setError(describeError(err, "That message could not be removed."));
     }
   }
 
@@ -766,7 +767,7 @@ export function useChatConversation({
         if (onThisSession()) {
           setMessages((prev) => prev.slice(0, Math.max(0, prev.length - 2)));
         }
-        setError(err instanceof Error ? err.message : "The message could not be sent.");
+        setError(describeError(err, "The message could not be sent."));
       }
       if (!busyRunId) return aborted;
     } finally {
@@ -817,7 +818,7 @@ export function useChatConversation({
       }
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The message could not be sent.");
+      setError(describeError(err, "The message could not be sent."));
       return false;
     }
   }
@@ -919,7 +920,7 @@ export function useChatConversation({
       setApprovals((prev) => dropKey(prev, targetKey));
       setDecisions((prev) => ({ ...prev, [targetKey]: decisionText(choice, req) }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Your decision could not be submitted.");
+      setError(describeError(err, "Your decision could not be submitted."));
     } finally {
       setResolvingApproval(false);
     }
@@ -959,7 +960,7 @@ export function useChatConversation({
       await cancelChatTurn({ sessionId: sid, runId, profile });
     } catch (err) {
       abortRef.current.get(targetKey)?.abort();
-      setError(err instanceof Error ? err.message : "The agent could not be stopped.");
+      setError(describeError(err, "The agent could not be stopped."));
     }
   }
 
