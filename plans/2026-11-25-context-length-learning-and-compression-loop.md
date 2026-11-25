@@ -289,3 +289,98 @@ first accepted oversized response corrects it (the incident scenario
 self-heals). Downward learning is unchanged. A wrong upward learn can
 only over-estimate headroom, which the existing provider-error step-down
 already bounds.
+
+## Implementation plan (handoff)
+
+Phases land independently — suggested as one stacked PR per phase; A and
+B may combine. All line refs verified against `origin/develop` @
+`88961c2a6`; re-locate symbols if they drifted.
+
+### Phase A — upward context-length learning (correctness)
+
+1. `agent/model_metadata.py` — add `get_probe_tier_above(n)` next to
+   `get_next_probe_tier` (L989–994): smallest `CONTEXT_PROBE_TIERS`
+   entry `> n`, else `n` rounded up to a sane bound. Unit-test it.
+2. `agent/context_compressor.py` — store `config_context_length` as
+   `self._config_context_length` at init (param arrives L924, consumed
+   L955). In `update_from_response` (L1040–1052): when
+   `compression.learned_context` is on, `self._config_context_length`
+   is unset, and real `usage.prompt_tokens > self.context_length` →
+   `learned = get_probe_tier_above(prompt_tokens)`;
+   `save_context_length(model, base_url, learned)`; set
+   `self.context_length` and recompute `threshold_tokens`,
+   `tail_token_budget`, `max_summary_tokens` (mirror `update_model`
+   L814–820); one log line per event.
+3. `gateway/run.py` hygiene — mirror the write where
+   `session_entry.last_prompt_tokens` (stored L11706) exceeds the
+   resolved window, so cron/gateway sessions learn too.
+4. Config — `compression.learned_context` (default `true`) in
+   `hermes_cli/config.py` schema near `compression.threshold` (L1495).
+
+### Phase B — per-turn dampeners (latency)
+
+5. `agent/context_compressor.py` — `turn_llm_compression_passes`
+   counter: reset at turn start (`agent/turn_context.py` entry),
+   incremented where `_generate_summary` runs. Cap from
+   `compression.max_turn_llm_passes` (default 3; 0 = unlimited).
+   At cap → one deterministic pass (`_prune_old_tool_results` L1139 +
+   oldest-window drop with the static handoff marker — the existing
+   `abort_on_summary_failure` fallback, L947–951) or proceed
+   uncompressed + warn. Enforce `compression.turn_llm_budget_ms`
+   (default 120000) as the hard wall.
+6. Non-convergence suppression — after each pass, re-estimate via
+   `_compression_made_progress` (`turn_context.py` L429–431): <5%
+   shrink and still ≥ threshold → suppress further LLM passes this
+   turn; deterministic prune may still run.
+7. `agent/turn_context.py` L337–439 — preflight gates on
+   `last_real_prompt_tokens` when a real count exists for the current
+   model (extend `should_defer_preflight_to_real_usage` L1054–1063):
+   real under threshold suppresses preflight even when rough is over.
+8. Ordering — the cap-check runs *after* the Phase-1 prune re-estimate
+   inside `compress()` (L2690), so a prune-only fix never burns an LLM
+   call.
+9. Config — `compression.max_turn_llm_passes` (3) and
+   `compression.turn_llm_budget_ms` (120000) in the same schema block
+   as step 4.
+
+### Phase C — self-test + advisory channel
+
+10. Extend `[agent-home] turn-timing` (`hermes_cli/web_server.py`
+    L13273) and `session-turn-timing` (`gateway/session_chat.py` L189)
+    with `compress_passes`, `compress_ms`, `compress_ineffective`.
+11. Drift-check scan (`hermes-drift-check.timer` on the box; in-repo
+    precedent `deploy/hermes-review-pass.timer`) → Needs-You cards via
+    `needs_you.push_new` (`hermes_cli/needs_you.py` L1162), carrying
+    the §4 advisory triggers: concrete suggested
+    `compression.threshold` with math, floor-dominates-intent, and
+    learned-window flapping.
+12. Optional `hermes selftest latency` — config-gated canary, fresh
+    session, trivial prompt, TTFT per provider + `fallback_providers`
+    entry; Needs-You on SLO breach.
+
+### Tests
+
+Encode every §3b invariant as a pytest behavior contract (not
+snapshots). Minimum set:
+
+- `update_from_response` upward learn: raises window, writes
+  `model@base_url` cache, recomputes threshold; no-op when
+  `prompt_tokens ≤ context_length`; no-op when
+  `model.context_length` is set in config.
+- Per-turn cap: fake provider → ≤3 LLM passes; a non-convergent pass
+  suppresses the rest of the turn; deterministic prune still runs.
+- Preflight: real < threshold with rough > threshold → no LLM pass.
+- Mid-session model switch → compressor re-derives from the *new*
+  model's own cache entry.
+
+### Acceptance criteria
+
+- Incident replay (synthetic ~133K session, `compression.threshold:
+  0.2`, wrong 128K assumption): the turn spends ≤2 min compressing,
+  ≤3 LLM passes, and the first accepted ~137K response learns the
+  window upward — verified via the `model@base_url` cache entry +
+  learning log line.
+- `model.context_length` explicitly set → byte-identical behavior to
+  today (learning fully disabled).
+- Existing compressor/turn_context/metadata tests unchanged and green
+  (`scripts/run_tests.sh`).

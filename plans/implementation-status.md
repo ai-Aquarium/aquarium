@@ -6,7 +6,10 @@ Tracking file for in-flight feature work. Update as phases land.
 
 Plans: `plans/2026-11-25-context-length-learning-and-compression-loop.md`,
 `plans/2026-11-25-app-mcp-semantic-layer.md`
-Status: **proposed** — updated 2026-11-25
+Status: **proposed — implementation-ready** — updated 2026-11-25
+Handoff: each doc ends with an "Implementation plan (handoff)" section —
+ordered phases, files/symbols, tests, acceptance criteria. Pick up per
+phase; phases are independently landable.
 
 | Item | Scope | Status |
 |------|-------|--------|
