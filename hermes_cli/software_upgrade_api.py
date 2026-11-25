@@ -458,10 +458,14 @@ async def upgrade_check(body: Optional[CheckBody] = None):
         raw_pf = rel.get("preflight")
         out["preflight"] = preflight_view(raw_pf or {"version": version},
                                         await asyncio.to_thread(work_in_progress))
-        if raw_pf is None and rel.get("error"):
-            # The helper died or timed out mid-check: say so instead of leaving every
-            # row in "checking…" forever.
-            out["preflight"]["error"] = scrub(rel.get("error"))
+        if raw_pf is None:
+            # The helper died or timed out mid-check — or is a stale copy that predates
+            # preflight and silently ignored the version (ok:true, no preflight key).
+            # Say so instead of leaving every row in "checking…" forever.
+            out["preflight"]["error"] = scrub(rel.get("error")) or (
+                "the upgrade helper on this server did not run the checks — it may be an "
+                "older copy; reinstall /usr/local/sbin/aquarium and check again")
+
     return out
 
 

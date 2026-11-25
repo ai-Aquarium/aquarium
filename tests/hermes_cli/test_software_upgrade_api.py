@@ -258,6 +258,15 @@ def test_check_helper_timeout_says_so_instead_of_empty_rows(client, helper):
     assert pf["checks"] == [] and pf["ok"] is False
 
 
+def test_check_with_a_stale_helper_names_it_instead_of_empty_rows(client, helper):
+    # A helper that predates preflight ignores the version and answers ok:true
+    # with no "preflight" key — used to leave four eternal "checking…" rows.
+    helper.answers["check"] = dict(RELEASES)
+    body = client.post("/api/software-upgrade/check", json={"version": "v1.1.0"}).json()
+    pf = body["preflight"]
+    assert "helper" in pf["error"] and pf["checks"] == [] and pf["ok"] is False
+
+
 def test_check_view_passes_live_progress_rows_through_status(client, helper):
     helper.answers["status"] = {**STATUS, "check": {
         "version": "v1.1.0", "started": "2026-11-05T08:00:00", "done": False,

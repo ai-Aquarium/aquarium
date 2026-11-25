@@ -745,7 +745,10 @@ function PreflightList({
                       : "text-[var(--color-muted)]"
                   }
                 >
-                  {c ? c.message : row?.message || t("preflightChecking")}
+                  {c
+                    ? c.message
+                    : row?.message ||
+                      (errText ? t("preflightSkipped") : t("preflightChecking"))}
                 </span>
               </span>
             </li>

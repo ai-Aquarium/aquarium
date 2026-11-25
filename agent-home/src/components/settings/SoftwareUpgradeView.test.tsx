@@ -181,6 +181,9 @@ describe("SoftwareUpgradeView", () => {
     render(<SoftwareUpgradeView initial={STATUS} />);
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain("took too long to answer"));
+    const list = screen.getByTestId("upgrade-preflight");
+    for (const key of ["disk", "backup", "services", "release"])
+      expect(list.querySelector(`[data-check="${key}"]`)?.textContent).toContain("not run");
   });
 
   it("warns about work in progress and needs a tick to upgrade anyway", async () => {
