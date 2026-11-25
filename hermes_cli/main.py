@@ -12298,7 +12298,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "computer-use",
         "changes", "config", "cron", "curator", "dashboard", "serve", "debug", "doctor",
         "incomings",
-        "datastore", "db", "dump", "fallback", "gateway", "goal", "hooks", "import", "insights",
+        "compression", "datastore", "db", "dump", "fallback", "gateway", "goal", "hooks", "import", "insights",
         "promotion",
         "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate", "moa",
         "journey", "memory-graph", "learning",
@@ -12306,7 +12306,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "postinstall", "profile",
         "project", "projects", "promote", "proxy", "ref",
         "prompt-size",
-        "send", "sessions", "setup", "setup-link", "todos", "vpn",
+        "selftest", "send", "sessions", "setup", "setup-link", "todos", "vpn",
         "skills", "slack", "source", "status", "tool", "tools", "triage", "uninstall", "update",
         "version", "webhook", "whatsapp", "whatsapp-cloud", "chat", "secrets", "security",
         # Help-ish invocations — plugin commands not being listed in
@@ -13218,6 +13218,14 @@ def main():
     from hermes_cli.compression_advisor import register_compression_subparser
 
     register_compression_subparser(subparsers)
+
+    # =========================================================================
+    # selftest command — latency canary per provider (rung 2: CLI on a timer;
+    # SLO breaches become Needs-You cards, never config edits)
+    # =========================================================================
+    from hermes_cli.selftest_latency import register_selftest_subparser
+
+    register_selftest_subparser(subparsers)
 
     # =========================================================================
     # projects command — the Projects feature's operator surface (design §14,

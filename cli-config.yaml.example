@@ -429,6 +429,15 @@ compression:
   # To pin a specific model/provider for compression summaries, use the
   # auxiliary section below (auxiliary.compression.provider / model).
 
+# Self-test canaries. `hermes selftest latency` sends one trivial prompt to the
+# main provider and each fallback_providers entry, measures time-to-first-token,
+# and raises a Needs-You card on an SLO breach or failure (never edits config).
+selftest:
+  latency:
+    enabled: false
+    ttft_slo_ms: 10000
+    timeout_s: 60
+
 # =============================================================================
 # Anthropic prompt caching TTL
 # =============================================================================
