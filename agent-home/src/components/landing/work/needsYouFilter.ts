@@ -72,6 +72,30 @@ export interface NeedsYouFilter {
 
 export const EMPTY_FILTER: NeedsYouFilter = { groups: [], who: [] };
 
+const GROUP_IDS = new Set<string>(GROUP_ORDER);
+
+/**
+ * localStorage form of a filter (`usePersistentState`): plain JSON. Stale
+ * group ids (a renamed bucket) are dropped rather than breaking the panel;
+ * a malformed blob falls back to EMPTY so nothing is ever filtered out by
+ * accident.
+ */
+export function parseFilter(raw: string): NeedsYouFilter {
+  const v: unknown = JSON.parse(raw);
+  if (typeof v !== "object" || v === null) return EMPTY_FILTER;
+  const { groups, who } = v as { groups?: unknown; who?: unknown };
+  return {
+    groups: Array.isArray(groups)
+      ? groups.filter((g): g is SourceGroup => typeof g === "string" && GROUP_IDS.has(g))
+      : [],
+    who: Array.isArray(who) ? who.filter((w): w is string => typeof w === "string") : [],
+  };
+}
+
+export function serializeFilter(filter: NeedsYouFilter): string {
+  return JSON.stringify(filter);
+}
+
 export function filterIsActive(filter: NeedsYouFilter): boolean {
   return filter.groups.length > 0 || filter.who.length > 0;
 }

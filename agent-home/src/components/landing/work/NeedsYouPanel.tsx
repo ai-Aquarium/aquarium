@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { SuggestedTasksNeedsYou } from "@/components/suggested-tasks/SuggestedTasksNeedsYou";
 import {
@@ -10,6 +10,7 @@ import {
 import { useViewableRoster } from "@/components/access/ViewingChip";
 import { FilterIcon } from "@/components/ui/icons";
 import { useNeedsYouText } from "@/lib/landing/needsYouText";
+import { usePersistentState } from "@/lib/use-persistent-state";
 import { arrivalKeyOf } from "@/lib/suggested-tasks/channels";
 import type { NeedsYouEntry } from "@/types/landing";
 
@@ -25,6 +26,8 @@ import {
   applyFilter,
   facetsOf,
   filterIsActive,
+  parseFilter,
+  serializeFilter,
   type NeedsYouFilter,
   type SourceGroup,
 } from "./needsYouFilter";
@@ -107,8 +110,20 @@ export function NeedsYouPanelView({
 }: NeedsYouPanelViewProps) {
   const now = useNow(true, AGE_TICK_MS);
   const { t } = useNeedsYouText();
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [filter, setFilter] = useState<NeedsYouFilter>(EMPTY_FILTER);
+  // Filter + row open-state persist per browser so navigating away and back
+  // keeps the same cut of the list.
+  const [filterOpen, setFilterOpen] = usePersistentState(
+    "aquarium.needsYou.filterOpen",
+    false,
+    (raw) => raw === "1",
+    (v) => (v ? "1" : "0"),
+  );
+  const [filter, setFilter] = usePersistentState<NeedsYouFilter>(
+    "aquarium.needsYou.filter",
+    EMPTY_FILTER,
+    parseFilter,
+    serializeFilter,
+  );
   const roster = useViewableRoster();
   const kept = useMemo(
     () => withoutSuggestedAsks(items, suggested),
@@ -122,6 +137,15 @@ export function NeedsYouPanelView({
     () => facetsOf(kept, suggestedItems),
     [kept, suggestedItems],
   );
+  // A persisted `who` id whose person no longer has items here would hide in
+  // the stored filter but still count toward "Filter ·N" — prune it once the
+  // list has loaded.
+  useEffect(() => {
+    if (!loaded || !filter.who.length) return;
+    const present = new Set(facets.who.map((f) => f.id));
+    const keptWho = filter.who.filter((id) => present.has(id));
+    if (keptWho.length !== filter.who.length) setFilter({ ...filter, who: keptWho });
+  }, [loaded, facets, filter, setFilter]);
   const filtered = useMemo(
     () => applyFilter(kept, suggestedItems, filter),
     [kept, suggestedItems, filter],
@@ -160,7 +184,7 @@ export function NeedsYouPanelView({
               open={filterOpen}
               active={activeFilterCount(filter)}
               label={t("filter.label")}
-              onToggle={() => setFilterOpen((o) => !o)}
+              onToggle={() => setFilterOpen(!filterOpen)}
             />
           ) : undefined
         }
@@ -187,6 +211,7 @@ export function NeedsYouPanelView({
           <button
             type="button"
             data-action="needs-you-filter-reset"
+            data-appmcp-hint="Clears every source and who filter so all items show again"
             onClick={() => setFilter(EMPTY_FILTER)}
             className="text-[var(--color-accent)] hover:underline"
           >
@@ -323,6 +348,7 @@ function Chip({
       data-component="Chip"
       data-action={action}
       data-active={active || undefined}
+      data-appmcp-hint={`Toggles the ${action} filter on the Needs-you list`}
       onClick={onClick}
       className={`inline-flex min-h-6 items-center rounded-full border px-2.5 text-[11px] font-medium leading-[14px] ${
         active
