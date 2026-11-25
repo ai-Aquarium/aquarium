@@ -9,7 +9,7 @@ import { useT } from "@/i18n";
 export interface PanelCollapse {
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
-  /** Shown on the collapsed rail (the left one: incomings waiting). */
+  /** Shown on the collapsed rail (left: incomings waiting; right: needs-you waits). */
   badge?: number | null;
   /** The badge counts something urgent: danger tone. */
   badgeUrgent?: boolean;
@@ -207,6 +207,9 @@ export function LandingLayout({
                 title={t("panels.expandTasks")}
                 controls="landing-aside"
                 onExpand={() => tasks?.onCollapsedChange(false)}
+                badge={tasks?.badge}
+                badgeLabel={t("panels.needsYouWaiting", { count: tasks?.badge ?? 0 })}
+                badgeUrgent={tasks?.badgeUrgent}
               />
             ) : null}
             <aside

@@ -22,6 +22,7 @@
     "tasks": "Needs you",
     "chatsAndIncomings": "Chats & incomings",
     "incomingsWaiting": "{count} incomings waiting",
+    "needsYouWaiting": "{count} need you",
     "sidebarTabs": "Left panel"
   },
   "running": {

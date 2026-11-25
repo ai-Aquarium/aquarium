@@ -284,7 +284,12 @@ export function LandingClient({
           badge: attention.count,
           badgeUrgent: attention.urgent > 0,
         }}
-        tasks={{ collapsed: panels.tasksCollapsed, onCollapsedChange: panels.setTasksCollapsed }}
+        tasks={{
+          collapsed: panels.tasksCollapsed,
+          onCollapsedChange: panels.setTasksCollapsed,
+          badge: needsYou.loading ? null : needsYouTotal,
+          badgeUrgent: needsYou.bySeverity.blocking > 0,
+        }}
         dock={
           <div className="flex gap-2">
             <button
