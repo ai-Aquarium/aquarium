@@ -68,5 +68,16 @@
     "viewOnly": "You can view this step. Only project members can change it.",
     "notInProject": "{profile} (not in project yet)"
   },
-  "noSteps": "This revision has no steps yet."
+  "noSteps": "This revision has no steps yet.",
+  "changedIn": {
+    "added": "New in v{rev}",
+    "changed": "Changed in v{rev}"
+  },
+  "since": {
+    "steps": "Changed since v{base}: {steps}.",
+    "removed": "Removed since v{base}: {steps}.",
+    "textOnly": "No step changed since v{base}; only the playbook text did.",
+    "same": "Same steps and text as v{base}."
+  },
+  "note": "v{rev} note: {note}"
 }
