@@ -608,6 +608,18 @@ def test_failed_health_checks_raise_a_blocking_card_for_the_owner():
     assert item["i18n"]["title"] == [{"key": "titles.dataHealth", "vars": {"source": "ERP"}}]
 
 
+def test_data_duties_go_to_the_assignee_else_to_every_manager_as_team():
+    drift = [{"table": "inbox", "change": "columns"}]
+    rows = [
+        {"id": "mine", "name": "A", "access": "manage", "owner_user_id": "leo", "schema_drift": drift},
+        {"id": "theirs", "name": "B", "access": "manage", "owner_user_id": "sam", "schema_drift": drift},
+        {"id": "nobody", "name": "C", "access": "manage", "owner_user_id": "", "schema_drift": drift},
+    ]
+    got = {item["id"]: item.get("team") for item in ny.data_duties(rows, "leo")}
+    assert got == {"data_schema:mine": None, "data_schema:nobody": True}
+    assert [i["id"] for i in ny.data_duties(rows, "sam")] == ["data_schema:theirs", "data_schema:nobody"]
+
+
 # ---------------------------------------------------------------------------
 # One arrival raised in several profiles (FG-03 P5)
 # ---------------------------------------------------------------------------

@@ -155,6 +155,48 @@ describe("data pages", () => {
     expect(screen.getByRole("tab", { name: "Website" })).toBeTruthy();
   });
 
+  it("assigns Aquarium data to one owner or admin, clears it, and shows failures", async () => {
+    const people = [
+      { user_id: "leo", display: "Leo", role: "owner" as const, channels: [] },
+      { user_id: "sam", display: "Sam", role: "admin" as const, channels: [] },
+      { user_id: "ken", display: "Ken", role: "member" as const, channels: [] },
+    ];
+    const app = { ...doc("manage"), source: source({ kind: "app", owner_user_id: "", site_id: null }) };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_u, init) =>
+      new Response(String(init?.body ?? "{}").replace("user_id", "owner_user_id"), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    render(<DataSourceDetail doc={app} versions={[]} directory={people} me="leo" />);
+    expect(screen.getAllByText(/Assigned to All owners & admins/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("To-dos: 1 · Team")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: /Assign this data source/ }));
+    expect(screen.getAllByRole("option")).toHaveLength(3);
+    expect(screen.queryByRole("option", { name: /Ken/ })).toBeNull();
+    expect(screen.getByRole("option", { name: /^No one/ }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("option", { name: /Sam/ }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Assigned to Sam"));
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ user_id: "sam" });
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/data/sources/s1/assignee");
+    expect(screen.getAllByText(/Assigned to Sam ·/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("None")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /Assign this data source/ }));
+    fireEvent.click(screen.getByRole("option", { name: /No one/ }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Unassigned"));
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ detail: "Only an owner or admin can be assigned." }), { status: 400, headers: { "content-type": "application/json" } }));
+    fireEvent.click(screen.getByRole("button", { name: /Assign this data source/ }));
+    fireEvent.click(screen.getByRole("option", { name: /Leo/ }));
+    await waitFor(() => expect(screen.getByText(/Couldn't change who it's assigned to/)).toBeTruthy());
+    expect(screen.getAllByText(/Assigned to All owners & admins/).length).toBeGreaterThan(0);
+  });
+
+  it("shows who a site's owner is and no assignee picker", () => {
+    render(<DataSourceDetail doc={doc("manage")} versions={[]} directory={[]} me="leo" />);
+    expect(screen.queryByRole("button", { name: /Assign this data source/ })).toBeNull();
+    expect(screen.getAllByText(/Owner: You/).length).toBeGreaterThan(0);
+  });
+
   it("searches the dictionary by meaning and column text", () => {
     expect(searchEntries({ tables: { orders: ENTRY, lines: { ...ENTRY, meaning: "Order lines", columns: { refund: "HKD back" } } }, glossary: [] }, "refund")).toEqual(["lines"]);
   });

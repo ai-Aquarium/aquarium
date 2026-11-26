@@ -261,6 +261,7 @@ SIGNED_IN = {
     "POST /api/data/sources/{source_id}/check",
     "GET /api/data/sources/{source_id}/study-schemas",
     "PUT /api/data/sources/{source_id}/study-schemas",
+    "PUT /api/data/sources/{source_id}/assignee",
     # site_sources_api: the handler checks the caller's grant on the site (404 otherwise)
     "GET /api/sites/settings",
     "GET /api/sites",

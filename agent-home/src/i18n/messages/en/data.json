@@ -360,5 +360,28 @@
     "saveTest": "Save and test",
     "removeTitle": "Remove {name}?",
     "removeBody": "The agent stops using it, and its data source and dictionary are removed from Data."
+  },
+  "assign": {
+    "title": "Assigned to",
+    "line": "Assigned to {who}",
+    "everyone": "All owners & admins",
+    "pick": "Assign this data source",
+    "none": "No one",
+    "noneHint": "All owners & admins get its to-dos (default)",
+    "onlyAdmins": "Only owners and admins can be assigned.",
+    "explainNone": "No one is assigned, so every owner and admin gets this source's to-dos in Needs you, tagged Team. Whoever handles one clears it for everyone.",
+    "explainOne": "Only {who} gets this source's to-dos in Needs you. Other owners and admins no longer get them pushed.",
+    "gets": "Gets its to-dos in Needs you",
+    "count": "To-dos: {n}",
+    "countTeam": "To-dos: {n} · Team",
+    "nothing": "None",
+    "foot": "Covers dictionary drafts, schema changes and health checks for this source. Everyone in “Who can use it” can still open and approve the dictionary here.",
+    "saved": "Assigned to {who}. Only they get its Needs you to-dos now.",
+    "cleared": "Unassigned. Every owner and admin gets its Needs you to-dos again.",
+    "failed": "Couldn't change who it's assigned to: {error}",
+    "role": {
+      "owner": "Owner",
+      "admin": "Admin"
+    }
   }
 }

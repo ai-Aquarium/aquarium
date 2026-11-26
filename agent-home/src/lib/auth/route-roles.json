@@ -21,6 +21,7 @@
   "GET /api/data/sources/[id]/grants": "signed-in",
   "GET /api/data/sources/[id]/study-schemas": "signed-in",
   "PUT /api/data/sources/[id]/study-schemas": "signed-in",
+  "PUT /api/data/sources/[id]/assignee": "signed-in",
   "POST /api/data/sources/[id]/grants": "signed-in",
   "DELETE /api/data/sources/[id]/grants": "signed-in",
   "GET /api/model-timeouts": "admin",
