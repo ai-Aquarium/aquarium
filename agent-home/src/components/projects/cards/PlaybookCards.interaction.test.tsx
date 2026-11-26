@@ -249,6 +249,50 @@ describe("Plan as cards", () => {
     expect(r.container.querySelectorAll('[data-component="StepCard"]')).toHaveLength(V4.length);
   });
 
+  it("marks the cards a version changed against the one before it, with its note", () => {
+    vi.stubGlobal("fetch", server());
+    const v4 = { ...rev(4, V4, 1), note: "first cut" };
+    const v5Steps = [V4[0], { ...V4[1], body: "Use the NEW drive." }, V4[2], step("extra")];
+    const v5 = {
+      ...rev(5, v5Steps, 0),
+      base_rev: 4,
+      note: "finished workbooks from the NEW drive",
+    };
+    const v6 = { ...rev(6, v5Steps, 0), body: "Weekly digest, new wording.", base_rev: 5 };
+    const r = mount({ active: v4, revisions: [v6, v5, v4] }, { latestRunNo: null });
+    const tags = () =>
+      Object.fromEntries(
+        Array.from(r.container.querySelectorAll('[data-component="StepCard"]')).map((el) => [
+          (el as HTMLElement).dataset.step,
+          el.querySelector("[data-change]")?.textContent ?? null,
+        ]),
+      );
+    const since = () => r.container.querySelector('[data-component="CardsSinceBase"]');
+    fireEvent.click(r.getByRole("button", { name: "Kanban" }));
+    fireEvent.click(r.container.querySelector('[data-component="RevisionPicker"] [data-rev="5"]')!);
+    expect(tags()).toEqual({ pull: null, clean: "Changed in v5", review: null, extra: "New in v5" });
+    expect(since()?.textContent).toContain("v5 note: finished workbooks from the NEW drive");
+    expect(since()?.textContent).toContain("Changed since v4: Clean, Extra.");
+
+    // Same steps as v5: no card is marked, and the line says only the text changed.
+    fireEvent.click(r.container.querySelector('[data-component="RevisionPicker"] [data-rev="6"]')!);
+    expect(Object.values(tags()).every((tag) => tag == null)).toBe(true);
+    expect(since()?.textContent).toContain("No step changed since v5; only the playbook text did.");
+
+    // The Graph marks the same nodes.
+    fireEvent.click(r.getByRole("button", { name: "Graph" }));
+    fireEvent.click(r.container.querySelector('[data-component="RevisionPicker"] [data-rev="5"]')!);
+    const node = r.container.querySelector('[data-component="StepNode"][data-step="clean"] [data-change]');
+    expect(node?.textContent).toBe("Changed in v5");
+
+    // The first version has nothing before it to compare with.
+    fireEvent.click(r.getByRole("button", { name: "Kanban" }));
+    fireEvent.click(r.container.querySelector('[data-component="RevisionPicker"] [data-rev="4"]')!);
+    // The first version has nothing to compare with, but its note still shows.
+    expect(since()?.textContent).toBe("v4 note: first cut");
+    expect(Object.values(tags()).every((tag) => tag == null)).toBe(true);
+  });
+
   it("opens a step read-only for a viewer who can't propose changes", () => {
     vi.stubGlobal("fetch", server());
     const r = mount(ACTIVE_ONLY, { canPropose: false });

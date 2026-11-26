@@ -17,6 +17,7 @@ import {
   cardsRev,
   graphLayout,
   planLane,
+  previousRev,
   runLane,
   runLanesForSteps,
   stepDeps,
@@ -25,7 +26,7 @@ import {
   type LanesBy,
   type RunLane,
 } from "./stepCards";
-import type { StepChange } from "@/components/projects/playbook/draftDiff";
+import { draftChanges, type StepChange } from "@/components/projects/playbook/draftDiff";
 
 /* Inline icons for the view switch (no shared equivalents yet). */
 const svg = (children: ReactNode) => (
@@ -198,6 +199,20 @@ export function PlaybookCards({
             (active?.rev === run.playbook_rev ? active : null));
     return runLanesForSteps(steps, run.cards, ran ? (ran.steps ?? []) : null);
   }, [runState, steps, rev, playbook.revisions, active]);
+  const sinceBase = useMemo(() => {
+    if (draft || !rev) return null;
+    const base = previousRev(rev, playbook.revisions ?? [], active);
+    return base ? { base, ...draftChanges(base, rev) } : null;
+  }, [draft, rev, playbook.revisions, active]);
+  const cardChanges = useMemo<CardChanges>(
+    () =>
+      draft
+        ? { changes: draft.changes, rev: null }
+        : sinceBase && rev
+          ? { changes: sinceBase.steps, rev: rev.rev }
+          : NO_CHANGES,
+    [draft, sinceBase, rev],
+  );
 
   if (!rev) return null;
   const state = revisionState(rev, active?.rev);
@@ -230,7 +245,7 @@ export function PlaybookCards({
   };
 
   return (
-    <StepChangeContext.Provider value={draft?.changes ?? NO_CHANGES}>
+    <StepChangeContext.Provider value={cardChanges}>
     <div data-component="PlaybookCards" data-view={view} className="mt-3 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <span
@@ -282,6 +297,8 @@ export function PlaybookCards({
             : runCaption()}
       </p>
 
+      {sinceBase || (!draft && rev.note?.trim()) ? <SinceBase rev={rev} diff={sinceBase} /> : null}
+
       {steps.length === 0 ? (
         <p className="text-sm text-[var(--color-muted)]">{t("noSteps")}</p>
       ) : view === "kanban" ? (
@@ -326,26 +343,81 @@ export function PlaybookCards({
   );
 }
 
-const NO_CHANGES = new Map<string, StepChange>();
-/** What the shown working draft changed, by step key; empty for a revision. */
-const StepChangeContext = createContext<Map<string, StepChange>>(NO_CHANGES);
+/**
+ * What the shown cards changed, by step key: a working draft against the
+ * version it started from (`rev` null), or a revision against the one
+ * before it (`rev` = the shown revision, for "Changed in vN").
+ */
+interface CardChanges {
+  changes: Map<string, StepChange>;
+  rev: number | null;
+}
+const NO_CHANGES: CardChanges = { changes: new Map(), rev: null };
+const StepChangeContext = createContext<CardChanges>(NO_CHANGES);
 
 function ChangeTag({ stepKey }: { stepKey: string }) {
   const t = useT("playbook");
-  const change = useContext(StepChangeContext).get(stepKey);
+  const tc = useT("playbookCards");
+  const { changes, rev } = useContext(StepChangeContext);
+  const change = changes.get(stepKey);
   if (!change) return null;
   return (
     <span
       data-change={change}
-      className="rounded-full bg-[var(--color-attention-bg)] px-1.5 text-[10px] font-medium text-[var(--color-warn-text)]"
+      className="shrink-0 rounded-full bg-[var(--color-attention-bg)] px-1.5 text-[10px] font-medium text-[var(--color-warn-text)]"
     >
-      {t(`draft.${change}`)}
+      {rev == null ? t(`draft.${change}`) : tc(`changedIn.${change}`, { rev })}
     </span>
   );
 }
 
+/** The shown revision's note and what it changed since the one before it. */
+function SinceBase({
+  rev,
+  diff,
+}: {
+  rev: PlaybookRev;
+  diff: {
+    base: PlaybookRev;
+    steps: Map<string, StepChange>;
+    removed: PlaybookStep[];
+    paragraphs: { changed: boolean }[];
+  } | null;
+}) {
+  const t = useT("playbookCards");
+  const lines: string[] = [];
+  if (diff) {
+    const { base, steps, removed, paragraphs } = diff;
+    const titles = (rev.steps ?? []).filter((s) => steps.has(s.key)).map((s) => s.title);
+    const textChanged = paragraphs.some((p) => p.changed) || (base.body ?? "").trim() !== (rev.body ?? "").trim();
+    if (titles.length) lines.push(t("since.steps", { base: base.rev, steps: titles.join(", ") }));
+    if (removed.length) lines.push(t("since.removed", { base: base.rev, steps: removed.map((s) => s.title).join(", ") }));
+    if (!titles.length && !removed.length) {
+      lines.push(t(textChanged ? "since.textOnly" : "since.same", { base: base.rev }));
+    }
+  }
+  return (
+    <div
+      data-component="CardsSinceBase"
+      data-base={diff?.base.rev}
+      className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-xs"
+    >
+      {rev.note?.trim() ? (
+        <p data-component="CardsRevNote" className="font-medium">
+          {t("note", { rev: rev.rev, note: rev.note.trim() })}
+        </p>
+      ) : null}
+      {lines.map((line) => (
+        <p key={line} className="text-[var(--color-muted)]">
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function useChanged(stepKey: string): boolean {
-  return useContext(StepChangeContext).has(stepKey);
+  return useContext(StepChangeContext).changes.has(stepKey);
 }
 
 function useStepNames(steps: PlaybookStep[]) {

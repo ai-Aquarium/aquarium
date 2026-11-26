@@ -284,3 +284,18 @@ export function cardsRev(revisions: PlaybookRev[], active: PlaybookRev | null): 
   if (pending.length === 0) return active;
   return pending.reduce((a, b) => (b.rev > a.rev ? b : a));
 }
+
+/**
+ * The version a revision is read against: the one it was edited from when
+ * that is still listed, else the newest older one; none for the first.
+ */
+export function previousRev(
+  rev: PlaybookRev,
+  revisions: PlaybookRev[],
+  active: PlaybookRev | null,
+): PlaybookRev | null {
+  const all = active && !revisions.some((r) => r.rev === active.rev) ? [...revisions, active] : revisions;
+  const base = rev.base_rev != null ? all.find((r) => r.rev === rev.base_rev && r.rev !== rev.rev) : undefined;
+  if (base) return base;
+  return all.reduce<PlaybookRev | null>((best, r) => (r.rev < rev.rev && (!best || r.rev > best.rev) ? r : best), null);
+}
