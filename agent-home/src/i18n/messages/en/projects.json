@@ -326,5 +326,24 @@
     "warn": "Something here needs you",
     "startRun": "Start run",
     "latestOutputs": "Latest outputs"
+  },
+  "startRun": {
+    "title": "Start a new run",
+    "subtitle": "Runs the cards of the chosen plan on one iteration batch.",
+    "planVersion": "Plan version",
+    "batch": "Iteration batch",
+    "currentBatch": "Current inputs",
+    "uses": "This batch uses",
+    "inputs": "inputs",
+    "newSince": "new since R{run}",
+    "stepsFrom": "{steps} steps",
+    "noSteps": "no steps listed",
+    "noPlan": "no plan versions yet",
+    "about": "About",
+    "aboutCost": "about {cost}",
+    "willApprove": "will ask for your approval",
+    "noEstimate": "First run — no estimate yet.",
+    "starting": "Starting…",
+    "start": "Start run"
   }
 }

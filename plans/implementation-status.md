@@ -295,3 +295,15 @@ develop`, HSD via the agent-home software-upgrade release flow) track
 
 - WhatsApp bridge QR onboarding stays box-side.
 - `send_message_tool` account support beyond email/WhatsApp.
+
+## 2026-11-27 — Project detail redesign PR3: Start run dialog
+
+- `StartRunSheet` per the approved mockup (frame `1:277`): plan-version
+  select wired to the real `playbook_rev` API, iteration-batch row over
+  current inputs (`N inputs · K new since R{m}`), input chips, and an
+  estimate from prior runs' duration/cost + `checkpoint` step count.
+- Header "Start run" opens the dialog; on success it selects the Runs
+  step. Approximations: no batch entity exists (single info row), cost
+  read defensively from the runs record endpoint.
+- Verified: tsc, eslint, projects suite 1100 green, hint-ratchet green.
+- Plan: `plans/2026-11-27-project-start-run-dialog.md`.
