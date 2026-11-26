@@ -611,13 +611,26 @@ def test_failed_health_checks_raise_a_blocking_card_for_the_owner():
 def test_data_duties_go_to_the_assignee_else_to_every_manager_as_team():
     drift = [{"table": "inbox", "change": "columns"}]
     rows = [
-        {"id": "mine", "name": "A", "access": "manage", "owner_user_id": "leo", "schema_drift": drift},
-        {"id": "theirs", "name": "B", "access": "manage", "owner_user_id": "sam", "schema_drift": drift},
-        {"id": "nobody", "name": "C", "access": "manage", "owner_user_id": "", "schema_drift": drift},
+        {"id": "mine", "kind": "app", "name": "A", "access": "manage", "owner_user_id": "leo", "schema_drift": drift},
+        {"id": "theirs", "kind": "app", "name": "B", "access": "manage", "owner_user_id": "sam", "schema_drift": drift},
+        {"id": "nobody", "kind": "app", "name": "C", "access": "manage", "owner_user_id": "", "schema_drift": drift},
     ]
     got = {item["id"]: item.get("team") for item in ny.data_duties(rows, "leo")}
     assert got == {"data_schema:mine": None, "data_schema:nobody": True}
     assert [i["id"] for i in ny.data_duties(rows, "sam")] == ["data_schema:theirs", "data_schema:nobody"]
+
+
+def test_a_sites_owner_is_not_an_assignee_so_its_managers_keep_its_cards():
+    site = {"id": "shop", "kind": "site", "name": "Shop", "access": "manage", "owner_user_id": "leo",
+            "schema_drift": [{"table": "orders", "change": "columns"}]}
+    assert [(i["id"], i.get("team")) for i in ny.data_duties([site], "sam")] == [("data_schema:shop", True)]
+
+
+def test_cards_of_an_assignee_no_longer_an_active_admin_fall_back_to_team():
+    app = {"id": "aq", "kind": "app", "name": "Aquarium data", "access": "manage", "owner_user_id": "sam",
+           "schema_drift": [{"table": "inbox", "change": "columns"}]}
+    assert ny.data_duties([app], "leo") == []
+    assert [(i["id"], i.get("team")) for i in ny.data_duties([app], "leo", gone=["sam"])] == [("data_schema:aq", True)]
 
 
 # ---------------------------------------------------------------------------

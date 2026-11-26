@@ -855,14 +855,25 @@ def data_health_entries(sources: Iterable[dict]) -> list[dict]:
     return out
 
 
-def data_duties(sources: Iterable[dict], user_id: str) -> list[dict]:
-    """Dictionary and health cards: to the source's assignee, else to every manager as Team."""
+def data_duties(sources: Iterable[dict], user_id: str, gone: Iterable[str] = ()) -> list[dict]:
+    """Dictionary and health cards: Aquarium data's to its assignee, the rest to every manager as Team.
+
+    Only Aquarium data (``kind == "app"``) is assigned; a site's or connection's
+    owner is its owner, not an assignee. ``gone`` are assignees no longer an
+    active owner or admin, whose cards fall back to Team.
+    """
     def cards(rows: list[dict]) -> list[dict]:
         return [*data_draft_entries(rows), *data_schema_entries(rows), *data_health_entries(rows)]
 
+    gone = set(gone)
+
+    def assignee(s: dict) -> str:
+        who = (s.get("owner_user_id") or "") if s.get("kind") == "app" else ""
+        return "" if who in gone else who
+
     rows = list(sources)
-    mine = [s for s in rows if s.get("owner_user_id") and s.get("owner_user_id") == user_id]
-    team = [s for s in rows if not s.get("owner_user_id")]
+    mine = [s for s in rows if assignee(s) and assignee(s) == user_id]
+    team = [s for s in rows if not assignee(s)]
     return [*cards(mine), *mark_team(cards(team))]
 
 

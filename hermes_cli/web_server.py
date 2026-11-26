@@ -13763,8 +13763,12 @@ async def needs_you(request: Request):
         from hermes_cli import data_dictionary as dd
         from hermes_cli import site_sources as ss
 
+        from hermes_cli.data_dictionary_api import _is_admin
+
         sources = await dd.list_sources(principal, ss.current_profile())
-        items.extend(ny.data_duties(sources, principal.user_id))
+        assignees = {s["owner_user_id"] for s in sources if s.get("kind") == "app" and s.get("owner_user_id")}
+        gone = [u for u in assignees if not await _is_admin(u)]
+        items.extend(ny.data_duties(sources, principal.user_id, gone))
     except Exception:
         _log.warning("needs-you: data dictionary source failed", exc_info=True)
 
