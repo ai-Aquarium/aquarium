@@ -37,6 +37,7 @@ export function stepChanged(step: PlaybookStep, base: PlaybookStep): boolean {
     (step.body ?? "") !== (base.body ?? "") ||
     (step.assignee ?? "") !== (base.assignee ?? "") ||
     Boolean(step.checkpoint) !== Boolean(base.checkpoint) ||
+    (step.mode ?? "card") !== (base.mode ?? "card") ||
     !sameList(stepDeps(step), stepDeps(base)) ||
     !sameList(step.toolsets ?? [], base.toolsets ?? [])
   );

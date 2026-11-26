@@ -1,21 +1,10 @@
 import type { PlaybookStep } from "@/types";
 
+import { stepChanged } from "@/components/projects/cards/stepCards";
+
 import { textDiff } from "./textDiff";
 
 export type StepChange = "added" | "changed";
-
-function stepSignature(step: PlaybookStep): string {
-  const deps = [...(step.depends_on ?? step.needs ?? [])].sort();
-  return JSON.stringify([
-    step.title ?? "",
-    step.body ?? "",
-    step.assignee ?? "",
-    Boolean(step.checkpoint),
-    deps,
-    step.mode ?? "",
-    step.toolsets ? [...step.toolsets].sort() : null,
-  ]);
-}
 
 /**
  * What a working draft changes against the revision it started from: which
@@ -38,7 +27,7 @@ export function draftChanges(
   for (const step of draft.steps ?? []) {
     const old = before.get(step.key);
     if (!old) steps.set(step.key, "added");
-    else if (stepSignature(old) !== stepSignature(step)) steps.set(step.key, "changed");
+    else if (stepChanged(step, old)) steps.set(step.key, "changed");
   }
   const removed = (base?.steps ?? []).filter((s) => !after.has(s.key));
   return {
