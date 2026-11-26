@@ -74,6 +74,8 @@
     "changed": "v{rev} 已更改"
   },
   "since": {
+    "added": "自 v{base} 起新增：{steps}。",
+    "order": "自 v{base} 起步驟次序已更改。",
     "steps": "自 v{base} 起已更改：{steps}。",
     "removed": "自 v{base} 起已移除：{steps}。",
     "textOnly": "自 v{base} 起沒有步驟更改，只更改了劇本文字。",

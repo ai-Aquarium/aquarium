@@ -12,6 +12,8 @@ function stepSignature(step: PlaybookStep): string {
     step.assignee ?? "",
     Boolean(step.checkpoint),
     deps,
+    step.mode ?? "",
+    step.toolsets ? [...step.toolsets].sort() : null,
   ]);
 }
 
