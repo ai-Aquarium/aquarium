@@ -2,7 +2,9 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { BrandingProvider } from "@/components/brand/BrandingProvider";
 import { SNAPSHOT_POLL_MS, type AquariumSnapshot } from "@/lib/aquarium/creatures";
+import type { Branding } from "@/lib/branding/branding";
 
 import { AquariumView, SHAKE_MS } from "./AquariumView";
 
@@ -18,6 +20,7 @@ const SNAPSHOT: AquariumSnapshot = {
   generated_at: 1,
   idle_seconds: 30,
   name: "Reef Lab",
+  name_is_default: false,
   users: [
     {
       user_id: "u1",
@@ -86,6 +89,32 @@ describe("AquariumView", () => {
     expect(document.title).toBe("Reef Lab");
     unmount();
     expect(document.title).toBe("Before");
+  });
+
+  it.each<[string, Partial<AquariumSnapshot>, Branding, string, string]>([
+    ["the custom name with the uploaded logo", {}, { name: "HangSengDev", logo: { content_type: "image/png", version: "v1" } }, "Reef Lab", "image"],
+    ["the box name and logo when no name is set", { name: "Aquarium", name_is_default: true }, { name: "HangSengDev", logo: { content_type: "image/png", version: "v1" } }, "HangSengDev", "image"],
+    ["the box name and its monogram without a logo", { name: "Aquarium", name_is_default: true }, { name: "Leo Lau", logo: null }, "Leo Lau", "monogram"],
+    ["“Aquarium” and its mark when nothing is set", { name: "Aquarium", name_is_default: true }, { name: null, logo: null }, "Aquarium", "mark"],
+  ])("titles the dashboard with %s", async (_, patch, branding, title, logo) => {
+    vi.stubGlobal("fetch", vi.fn(async () => respond({ ...SNAPSHOT, ...patch })));
+    render(
+      <BrandingProvider initial={branding}>
+        <AquariumView />
+      </BrandingProvider>,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading.textContent).toContain(title);
+    expect(document.title).toBe(title);
+    const box = heading.querySelector('[data-component="AquariumTitleLogo"]')!;
+    if (logo === "mark") {
+      expect(box.querySelector("img")?.getAttribute("src")).toMatch(/^\/brand\/aquarium-/);
+    } else {
+      expect(box.querySelector(`[data-box-logo="${logo}"]`)).not.toBeNull();
+    }
   });
 
   it("keeps the last state and shows the offline badge when a poll fails, then recovers", async () => {

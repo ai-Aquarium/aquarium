@@ -134,7 +134,10 @@ Decisions:
   the default. Snapshot gains `name`. `GET /api/aquarium/settings` returns
   `{idle_seconds, name}`; `PUT` takes any subset (owner/admin only) and
   returns the full object. Shown as the dashboard title and editable in the
-  same owner/admin Settings panel as idle seconds.
+  same owner/admin Settings panel as idle seconds. Snapshot and settings also
+  carry `name_is_default` (no name set): the dashboard then titles itself with
+  the box name from Settings → Name and logo (else `Aquarium`), always with
+  the box logo (`BoxLogo`) beside the title.
 - **Legend:** visible on load, fades out after `LEGEND_HIDE_MS` (8 s); a small
   info button brings it back (and it re-hides after the same delay). Keyboard
   and screen-reader reachable; reduced motion just hides it without the fade.

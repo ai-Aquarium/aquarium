@@ -1,3 +1,5 @@
+import { BoxLogo } from "@/components/brand/BoxLogo";
+
 const WAVE_S = 4.8;
 const CHAR_DELAY_S = 0.08;
 const BUBBLES = [
@@ -12,10 +14,11 @@ const BUBBLES = [
 const NOWRAP_MAX = 16;
 
 /**
- * The aquarium's name over the tank: each letter rides a slow wave of light,
- * with a few bubbles rising off it. CSS only (`.aq-title*` in globals.css);
- * reduced motion keeps it still. The animated letters are hidden from
- * assistive tech, which reads the plain name.
+ * The aquarium's name over the tank, after the box logo (`BoxLogo`): each
+ * letter rides a slow wave of light, with a few bubbles rising off it. CSS
+ * only (`.aq-title*` in globals.css); reduced motion keeps it still. Long
+ * names end in an ellipsis (one line on phones, two wider up). The animated letters are hidden from assistive
+ * tech, which reads the plain name.
  */
 export function AquariumTitle({ name }: { name: string }) {
   let index = 0;
@@ -23,10 +26,14 @@ export function AquariumTitle({ name }: { name: string }) {
   return (
     <h1
       data-component="AquariumTitle"
-      className="aq-title relative inline-block max-w-full rounded-full bg-[rgb(3_24_52/0.38)] px-5 py-1 text-center text-2xl font-extrabold leading-tight tracking-wide text-white shadow-[0_8px_32px_rgb(0_10_30/0.35)] ring-1 ring-white/15 backdrop-blur-sm sm:text-4xl"
+      title={name}
+      className="aq-title relative inline-flex max-w-full items-center gap-2.5 rounded-full bg-[rgb(3_24_52/0.38)] py-1 pr-5 pl-2 text-left text-2xl font-extrabold leading-tight tracking-wide text-white shadow-[0_8px_32px_rgb(0_10_30/0.35)] ring-1 ring-white/15 backdrop-blur-sm sm:pl-2.5 sm:text-4xl"
     >
+      <span data-component="AquariumTitleLogo" className="flex shrink-0 drop-shadow-[0_2px_8px_rgb(0_20_50/0.45)]">
+        <BoxLogo size={32} />
+      </span>
       <span className="sr-only">{name}</span>
-      <span aria-hidden className="block [overflow-wrap:anywhere]">
+      <span aria-hidden className="line-clamp-1 min-w-0 sm:line-clamp-2 py-[0.12em] [overflow-wrap:anywhere]">
         {words.map((word, w) => {
           if (/^\s+$/.test(word)) return " ";
           const chars = Array.from(word);

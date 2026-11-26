@@ -69,7 +69,13 @@ export function parseSnapshot(raw: unknown): AquariumSnapshot {
   if (!raw || typeof raw !== "object" || !Array.isArray((raw as { users?: unknown }).users)) {
     throw new Error("Malformed aquarium snapshot");
   }
-  const body = raw as { generated_at?: unknown; idle_seconds?: unknown; name?: unknown; users: unknown[] };
+  const body = raw as {
+    generated_at?: unknown;
+    idle_seconds?: unknown;
+    name?: unknown;
+    name_is_default?: unknown;
+    users: unknown[];
+  };
   const seen = new Set<string>();
   const users: AquariumUser[] = [];
   for (const u of body.users) {
@@ -79,10 +85,13 @@ export function parseSnapshot(raw: unknown): AquariumSnapshot {
       users.push(parsed);
     }
   }
+  const name = str(body.name) ?? AQUARIUM_NAME_DEFAULT;
   return {
     generated_at: num(body.generated_at),
     idle_seconds: num(body.idle_seconds),
-    name: str(body.name) ?? AQUARIUM_NAME_DEFAULT,
+    name,
+    // Older backends don't send the flag: the default name then means "not set".
+    name_is_default: typeof body.name_is_default === "boolean" ? body.name_is_default : name === AQUARIUM_NAME_DEFAULT,
     users,
   };
 }

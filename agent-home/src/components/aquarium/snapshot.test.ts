@@ -4,7 +4,7 @@ import { SNAPSHOT_POLL_MS, type AquariumSnapshot } from "@/lib/aquarium/creature
 
 import { parseSnapshot, startSnapshotPolling, type VisibilitySource } from "./snapshot";
 
-const EMPTY: AquariumSnapshot = { generated_at: 1, idle_seconds: 30, name: "Aquarium", users: [] };
+const EMPTY: AquariumSnapshot = { generated_at: 1, idle_seconds: 30, name: "Aquarium", name_is_default: true, users: [] };
 
 function visibility(hidden = false) {
   const listeners = new Set<() => void>();
@@ -24,7 +24,7 @@ describe("parseSnapshot", () => {
   it("keeps valid people and repairs or drops the rest", () => {
     const out = parseSnapshot({
       generated_at: 5,
-      idle_seconds: 30, name: "Aquarium",
+      idle_seconds: 30, name: "Aquarium", name_is_default: true,
       users: [
         {
           user_id: "u1",
@@ -47,6 +47,16 @@ describe("parseSnapshot", () => {
     expect(u2.name).toBe("u2");
     expect(u2.creature).not.toBe("kraken");
     expect(u2.metrics).toEqual({ chats: 0, projects: 0, tokens_in: 0, tokens_out: 0, tokens_24h: 0, active_now: false });
+  });
+
+  it("says whether the name was set, guessing from the name for older backends", () => {
+    expect(parseSnapshot({ users: [], name: "Reef", name_is_default: false })).toMatchObject({ name: "Reef", name_is_default: false });
+    expect(parseSnapshot({ users: [], name: "Aquarium", name_is_default: false }).name_is_default).toBe(false);
+    expect(parseSnapshot({ users: [], name: "Aquarium", name_is_default: true }).name_is_default).toBe(true);
+    expect(parseSnapshot({ users: [], name: "Reef" }).name_is_default).toBe(false);
+    expect(parseSnapshot({ users: [], name: "Aquarium" }).name_is_default).toBe(true);
+    expect(parseSnapshot({ users: [] })).toMatchObject({ name: "Aquarium", name_is_default: true });
+    expect(parseSnapshot({ users: [], name: "Reef", name_is_default: "no" }).name_is_default).toBe(false);
   });
 
   it("rejects a body without a users list", () => {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { CreatureIcon } from "@/components/aquarium/CreatureIcon";
+import { useBranding } from "@/components/brand/BrandingProvider";
 import { ActionButton } from "@/components/ui/ActionButton";
 import { Spinner } from "@/components/ui/Spinner";
 import { useT } from "@/i18n";
@@ -17,6 +18,7 @@ import {
   type CreatureId,
 } from "@/lib/aquarium/creatures";
 import { isValidIdleSeconds } from "@/lib/aquarium/useIdleRedirect";
+import { brandName } from "@/lib/branding/branding";
 import { useAction } from "@/lib/use-action";
 
 async function detailOf(res: Response): Promise<string> {
@@ -46,15 +48,24 @@ function isName(v: unknown): v is string {
   return typeof v === "string" && v.trim() !== "";
 }
 
+type SettingsBody = { idle_seconds?: unknown; name?: unknown; name_is_default?: unknown };
+
+/** The owner's own name from a settings body, `""` when none is set (older backends: the default name means none). */
+export function customNameOf(body: SettingsBody): string {
+  if (!isName(body.name)) return "";
+  if (typeof body.name_is_default === "boolean") return body.name_is_default ? "" : body.name;
+  return body.name === AQUARIUM_NAME_DEFAULT ? "" : body.name;
+}
+
 /** `PUT /api/aquarium/settings` with a subset; returns the full settings. */
-async function putSettings(body: { idle_seconds?: number; name?: string }): Promise<{ idle_seconds?: unknown; name?: unknown }> {
+async function putSettings(body: { idle_seconds?: number; name?: string }): Promise<SettingsBody> {
   const res = await fetch("/api/aquarium/settings", {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await detailOf(res));
-  return (await res.json()) as { idle_seconds?: unknown; name?: unknown };
+  return (await res.json()) as SettingsBody;
 }
 
 /**
@@ -64,6 +75,7 @@ async function putSettings(body: { idle_seconds?: number; name?: string }): Prom
  */
 export function AquariumIdleSetting({ canEdit }: { canEdit: boolean }) {
   const t = useT("settings");
+  const boxName = brandName(useBranding().branding);
   const [value, setValue] = useState(String(IDLE_SECONDS_DEFAULT));
   const [name, setName] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -76,7 +88,7 @@ export function AquariumIdleSetting({ canEdit }: { canEdit: boolean }) {
     if (!canEdit) return;
     const ac = new AbortController();
     void (async () => {
-      let body: { idle_seconds?: unknown; name?: unknown } = {};
+      let body: SettingsBody = {};
       try {
         const res = await fetch("/api/aquarium/settings", { cache: "no-store", signal: ac.signal });
         if (res.ok) body = (await res.json()) as typeof body;
@@ -85,7 +97,7 @@ export function AquariumIdleSetting({ canEdit }: { canEdit: boolean }) {
       }
       if (ac.signal.aborted) return;
       setValue(String(isValidIdleSeconds(body?.idle_seconds) ? body.idle_seconds : IDLE_SECONDS_DEFAULT));
-      setName(isName(body?.name) && body.name !== AQUARIUM_NAME_DEFAULT ? body.name : "");
+      setName(customNameOf(body ?? {}));
       setLoaded(true);
     })();
     return () => ac.abort();
@@ -98,7 +110,7 @@ export function AquariumIdleSetting({ canEdit }: { canEdit: boolean }) {
     setNameSaved(false);
     try {
       const body = await putSettings({ name: parsedName });
-      if (isName(body.name)) setName(body.name === AQUARIUM_NAME_DEFAULT ? "" : body.name);
+      if (isName(body.name)) setName(customNameOf(body));
       setNameSaved(true);
     } catch (err) {
       setNameError(t("aquarium.name.saveFailed", { error: err instanceof Error ? err.message : "?" }));
@@ -128,7 +140,7 @@ export function AquariumIdleSetting({ canEdit }: { canEdit: boolean }) {
       className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
     >
       <h2 className="text-base font-semibold">{t("aquarium.name.title")}</h2>
-      <p className="mb-3 text-xs text-[var(--color-muted)]">{t("aquarium.name.hint", { max: AQUARIUM_NAME_MAX })}</p>
+      <p className="mb-3 text-xs text-[var(--color-muted)]">{t("aquarium.name.hint", { max: AQUARIUM_NAME_MAX, box: boxName })}</p>
       <form
         data-form="aquarium-name"
         className="flex flex-wrap items-end gap-2"
@@ -144,7 +156,7 @@ export function AquariumIdleSetting({ canEdit }: { canEdit: boolean }) {
             name="aquarium-name"
             autoComplete="off"
             maxLength={AQUARIUM_NAME_MAX}
-            placeholder={AQUARIUM_NAME_DEFAULT}
+            placeholder={boxName}
             value={name}
             aria-invalid={parsedName === null}
             aria-busy={!loaded}

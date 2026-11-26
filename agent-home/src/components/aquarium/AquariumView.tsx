@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent } from "react";
 
+import { useBranding } from "@/components/brand/BrandingProvider";
 import { ChevronLeftIcon } from "@/components/ui/icons";
 import { useT } from "@/i18n/client";
 import { CREATURES, type AquariumSnapshot, type AquariumUser } from "@/lib/aquarium/creatures";
+import { aquariumTitle } from "@/lib/aquarium/title";
 import { usePersistentState } from "@/lib/use-persistent-state";
 
 import { AquariumBackdrop } from "./AquariumBackdrop";
@@ -65,7 +67,9 @@ export function AquariumView({ load }: AquariumViewProps) {
   const pinnedRef = useRef(false);
   const [users, setUsers] = useState<AquariumUser[] | null>(null);
   const [offline, setOffline] = useState(false);
-  const [name, setName] = useState<string | null>(null);
+  const [naming, setNaming] = useState<Pick<AquariumSnapshot, "name" | "name_is_default"> | null>(null);
+  const { branding } = useBranding();
+  const name = naming ? aquariumTitle(naming, branding) : null;
   const [selected, setSelectedState] = useState<HitTarget | null>(null);
   const reducedRef = useRef(false);
   const shakingRef = useRef(false);
@@ -98,7 +102,11 @@ export function AquariumView({ load }: AquariumViewProps) {
     const onSnapshot = (snap: AquariumSnapshot) => {
       applySnapshot(scene(), snap, boundsRef.current);
       setUsers(snap.users);
-      setName(snap.name);
+      setNaming((prev) =>
+        prev?.name === snap.name && prev.name_is_default === snap.name_is_default
+          ? prev
+          : { name: snap.name, name_is_default: snap.name_is_default },
+      );
       setOffline(false);
     };
     return startSnapshotPolling({ load, onSnapshot, onError: () => setOffline(true) });
@@ -317,7 +325,7 @@ export function AquariumView({ load }: AquariumViewProps) {
         {selectedUser && <CreatureCard ref={cardRef} user={selectedUser} profile={selected?.profile} />}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-start gap-3 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-start gap-3 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] max-sm:grid-cols-2 max-sm:gap-y-2">
         <Link
           href="/"
           data-action="aquarium-back"
@@ -326,7 +334,7 @@ export function AquariumView({ load }: AquariumViewProps) {
           <ChevronLeftIcon size={16} aria-hidden />
           {t("back")}
         </Link>
-        <div className="min-w-0 max-w-[min(64vw,44rem)] justify-self-center pt-0.5 text-center">
+        <div className="min-w-0 max-w-[min(64vw,44rem)] justify-self-center pt-0.5 text-center max-sm:order-last max-sm:col-span-2 max-sm:max-w-full max-sm:pt-0">
           {name ? <AquariumTitle name={name} /> : <h1 className="sr-only">{t("title")}</h1>}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 justify-self-end">
@@ -360,7 +368,7 @@ export function AquariumView({ load }: AquariumViewProps) {
       <p
         role="status"
         data-component="AquariumNotice"
-        className={`pointer-events-none absolute inset-x-0 top-[calc(max(0.75rem,env(safe-area-inset-top))+3.5rem)] z-20 flex justify-center px-3 ${notice ? "" : "sr-only"}`}
+        className={`pointer-events-none absolute inset-x-0 top-[calc(max(0.75rem,env(safe-area-inset-top))+3.5rem)] z-20 max-sm:top-[calc(max(0.75rem,env(safe-area-inset-top))+6.25rem)] flex justify-center px-3 ${notice ? "" : "sr-only"}`}
       >
         {notice && (
           <span className="aq-hint-in rounded-full bg-[rgb(3_24_52/0.8)] px-3 py-1.5 text-center text-xs font-semibold text-white shadow-lg backdrop-blur-sm">
@@ -369,7 +377,7 @@ export function AquariumView({ load }: AquariumViewProps) {
         )}
       </p>
 
-      <div className="pointer-events-none absolute right-0 bottom-0 z-10 flex justify-end p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] max-sm:top-[calc(max(0.75rem,env(safe-area-inset-top))+3.25rem)] max-sm:bottom-auto max-sm:left-0">
+      <div className="pointer-events-none absolute right-0 bottom-0 z-10 flex justify-end p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] max-sm:top-[calc(max(0.75rem,env(safe-area-inset-top))+6rem)] max-sm:bottom-auto max-sm:left-0">
         <AquariumPlayHints
           touch={touch}
           needsMotionPermission={needsMotion}

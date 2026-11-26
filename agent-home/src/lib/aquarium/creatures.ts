@@ -112,6 +112,8 @@ export interface AquariumSnapshot {
   idle_seconds: number;
   /** Aquarium display name; never empty (falls back to `AQUARIUM_NAME_DEFAULT`). */
   name: string;
+  /** No name was set in Settings → Aquarium, so the dashboard shows the box's name and logo instead. */
+  name_is_default: boolean;
   users: AquariumUser[];
 }
 
@@ -119,4 +121,6 @@ export interface AquariumSnapshot {
 export interface AquariumSettings {
   idle_seconds: number;
   name: string;
+  /** Older backends omit it; then `name === AQUARIUM_NAME_DEFAULT` means unset. */
+  name_is_default?: boolean;
 }

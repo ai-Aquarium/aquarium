@@ -148,7 +148,7 @@
   "aquarium.idle.invalid": "Enter a whole number of seconds from {min} to {max}.",
   "aquarium.idle.saveFailed": "Couldn't save: {error}",
   "aquarium.name.title": "Aquarium name",
-  "aquarium.name.hint": "Shown as the dashboard's title and in the browser tab. Up to {max} characters; leave empty for “Aquarium”. Applies to everyone.",
+  "aquarium.name.hint": "Shown next to the box logo as the dashboard's title and in the browser tab. Up to {max} characters; leave empty to use the box name and logo from Settings › Name and logo (now: {box}). Applies to everyone.",
   "aquarium.name.label": "Name",
   "aquarium.name.invalid": "Use at most {max} characters.",
   "aquarium.name.saveFailed": "Couldn't save the name: {error}",
