@@ -6,6 +6,7 @@ import { InlineAlert } from "@/components/ui/InlineAlert";
 import { Pill } from "@/components/ui/Pill";
 import { personName, readJson, JSON_HEADERS } from "@/components/sites/format";
 import { useT } from "@/i18n";
+import { useAction } from "@/lib/use-action";
 import type { DirectoryEntry } from "@/types";
 
 import { dataPath } from "./format";
@@ -46,7 +47,6 @@ export function AssigneeCard({
 }) {
   const t = useT("data");
   const [picking, setPicking] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -71,7 +71,6 @@ export function AssigneeCard({
   async function pick(userId: string) {
     setPicking(false);
     if (userId === assignee) return;
-    setBusy(true);
     setError(null);
     setNote(null);
     try {
@@ -82,10 +81,9 @@ export function AssigneeCard({
       setNote(userId ? t("assign.saved", { who: name(userId) }) : t("assign.cleared"));
     } catch (err) {
       setError(t("assign.failed", { error: err instanceof Error ? err.message : String(err) }));
-    } finally {
-      setBusy(false);
     }
   }
+  const assign = useAction(pick);
 
   const options = [{ user_id: "", display: t("assign.none"), hint: t("assign.noneHint") }, ...admins.map((p) => ({
     user_id: p.user_id,
@@ -106,7 +104,7 @@ export function AssigneeCard({
             aria-haspopup="listbox"
             aria-expanded={picking}
             aria-label={`${t("assign.pick")}: ${who}`}
-            disabled={busy}
+            disabled={assign.pending}
             data-appmcp-hint="Choose who gets this data source's Needs you to-dos"
             onClick={() => setPicking((v) => !v)}
             className="flex w-full max-w-sm items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-left text-sm hover:border-[var(--color-accent)] disabled:opacity-60"
@@ -128,7 +126,7 @@ export function AssigneeCard({
                   role="option"
                   aria-selected={o.user_id === assignee}
                   data-appmcp-hint="Assign the data source to this person (No one: every owner and admin)"
-                  onClick={() => void pick(o.user_id)}
+                  onClick={() => void assign.run(o.user_id)}
                   className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm hover:bg-[var(--color-bg)] aria-selected:bg-[var(--color-accent)]/10"
                 >
                   <Initial name={o.user_id ? o.display : ""} />
