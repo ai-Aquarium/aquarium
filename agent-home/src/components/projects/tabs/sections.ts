@@ -1,80 +1,83 @@
 import type { ProjectTab } from "@/components/projects/tabs/types";
 
 /**
- * The project page's sections (2026-11-22 redesign): Planning, Execution
- * and Log next to the docked project chat. On a phone the chat is a tab too.
+ * The project page's steps (2026-11-27 "less is more" redesign): one spine,
+ * Requirements → Plan → Cards → Runs. That is the whole navigation — Log,
+ * Skills and Settings hide behind ⋯; on a phone the chat is a fifth view.
  */
-export const PROJECT_SECTIONS = ["planning", "execution", "log"] as const;
+export const PROJECT_STEPS = ["requirements", "plan", "cards", "runs"] as const;
 
-export type ProjectSection = (typeof PROJECT_SECTIONS)[number];
+export type ProjectStep = (typeof PROJECT_STEPS)[number];
 
-/** Phone tabs: the chat first, then the three sections. */
-export const PHONE_SECTIONS = ["chat", ...PROJECT_SECTIONS] as const;
+/** Anywhere the detail view can be: a step, or the phone's Chat view. */
+export type ProjectView = ProjectStep | "chat";
 
-export type PhoneSection = (typeof PHONE_SECTIONS)[number];
-
-/** What each section shows, top to bottom (the older tabs, reused). */
-export const SECTION_PARTS: Record<ProjectSection, readonly ProjectTab[]> = {
-  planning: ["scope", "inputs", "plan", "outputs"],
-  execution: ["runs", "dashboard", "board", "iterations"],
-  log: [],
+/** What each step shows, top to bottom (the older tabs, reused). */
+export const STEP_PARTS: Record<ProjectStep, readonly ProjectTab[]> = {
+  requirements: ["scope", "inputs"],
+  plan: ["plan"],
+  cards: ["board"],
+  runs: ["runs", "dashboard", "iterations", "outputs"],
 };
 
-/** Skills and Settings moved into the header's ⋯ sheet. */
-export const SHEET_PARTS = ["skills", "settings"] as const satisfies readonly ProjectTab[];
+/** Skills, Settings and the Log live in the header's ⋯ sheet. */
+export const SHEET_PARTS = ["skills", "settings", "log"] as const;
 
 export type SheetPart = (typeof SHEET_PARTS)[number];
 
 export interface TabTarget {
-  section: PhoneSection;
-  /** Scroll to this part inside the section (an old deep link). */
+  view: ProjectView;
+  /** Scroll to this part inside the step (an old deep link). */
   part?: ProjectTab;
   /** Open the ⋯ sheet on this part. */
   sheet?: SheetPart;
 }
 
-export function isPhoneSection(value: string | null | undefined): value is PhoneSection {
-  return (PHONE_SECTIONS as readonly string[]).includes(value ?? "");
+export function isProjectView(value: string | null | undefined): value is ProjectView {
+  return (PROJECT_STEPS as readonly string[]).includes(value ?? "") || value === "chat";
 }
 
 /**
- * Where a `?tab=` value lands. New names pass through; the old tab and
- * group names map onto the section that now holds them, so bookmarks and
- * links in notifications keep working. Anything unknown opens Planning.
+ * Where a `?tab=` value lands. New step names pass through; the old tab,
+ * section and group names map onto the step that now holds them, so
+ * bookmarks and links in notifications keep working. Anything unknown opens
+ * Requirements.
  */
 export function resolveTabParam(value: string | null | undefined): TabTarget {
   const raw = (value ?? "").trim().toLowerCase();
-  if (isPhoneSection(raw)) return { section: raw };
+  if (isProjectView(raw)) return { view: raw };
   switch (raw) {
     case "scope":
     case "brief":
     case "inputs":
-    case "plan":
+    case "setup":
+      return { view: "requirements", part: raw === "brief" || raw === "setup" ? "scope" : (raw as ProjectTab) };
     case "playbook":
-    case "outputs":
-      return { section: "planning", part: raw === "brief" ? "scope" : raw === "playbook" ? "plan" : (raw as ProjectTab) };
+      return { view: "plan" };
     case "board":
+      return { view: "cards", part: "board" };
     case "iterations":
-    case "runs":
-      return { section: "execution", part: raw as ProjectTab };
+    case "dashboard":
+      return { view: "runs", part: raw as ProjectTab };
+    case "outputs":
+    case "files":
+      return { view: "runs", part: "outputs" };
+    case "planning":
+      return { view: "requirements" };
     case "work":
     case "overview":
-      return { section: "execution" };
-    case "dashboard":
-      return { section: "execution", part: "dashboard" };
-    case "files":
-      return { section: "planning", part: "outputs" };
+    case "execution":
+      return { view: "runs" };
     case "skills":
     case "settings":
-      return { section: "planning", sheet: raw };
-    case "setup":
-      return { section: "planning", part: "scope" };
+      return { view: "requirements", sheet: raw };
+    case "log":
     case "events":
     case "activity":
-      return { section: "log" };
+      return { view: "requirements", sheet: "log" };
     default:
       // No tab, or anything unknown.
-      return { section: "planning" };
+      return { view: "requirements" };
   }
 }
 

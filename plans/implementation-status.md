@@ -2,6 +2,17 @@
 
 Tracking file for in-flight feature work. Update as phases land.
 
+## Project detail: 4-step spine (redesign PR1)
+
+Plan: `plans/2026-11-27-project-detail-spine.md`
+Status: **implemented** — updated 2026-11-27
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `PROJECT_STEPS`/`STEP_PARTS` model; `ProjectSpine` (number+pill+sub+warn dot, phone chat view); `ProjectTabsNav`/`ProjectPartsNav` deleted | done |
+| 2 | Header status sentence + Start run / Latest outputs buttons; Log into ⋯ sheet; old `?tab=` → step+part mapping | done |
+| 3 | Requirements warn = open clarify count (replaces Planning badge); i18n en+zh-Hant; tests rewritten; tsc/eslint/vitest/ratchet green | done |
+
 ## Project detail: sub-tabs inside Planning / Execution
 
 Plan: `plans/2026-11-25-project-part-tabs.md`

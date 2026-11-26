@@ -316,5 +316,15 @@
     "starting": "Starting…",
     "failed": "Couldn't start it.",
     "unavailable": "This project isn't available to you."
+  },
+  "steps": {
+    "aria": "Project steps",
+    "requirements": "Requirements",
+    "plan": "Plan",
+    "cards": "Cards",
+    "runs": "Runs",
+    "warn": "Something here needs you",
+    "startRun": "Start run",
+    "latestOutputs": "Latest outputs"
   }
 }
