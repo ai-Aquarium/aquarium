@@ -16,7 +16,7 @@ import type { DataSourceDoc, DictionaryEntry, DictionaryVersion } from "@/types/
 
 import { BuildSheet } from "./BuildSheet";
 import { ShareSheet } from "./ShareSheet";
-import { allows, columnsToText, dataPath, entryOf, searchEntries, textToColumns } from "./format";
+import { accessOwnerOf, allows, columnsToText, dataPath, entryOf, searchEntries, textToColumns } from "./format";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -288,7 +288,7 @@ export function DictionaryDetail({
           }}
         />
       ) : null}
-      {sharing ? <ShareSheet sourceId={source.id} ownerId={source.owner_user_id} directory={directory} directoryError={directoryError} onClose={() => setSharing(false)} /> : null}
+      {sharing ? <ShareSheet sourceId={source.id} ownerId={accessOwnerOf(source)} directory={directory} directoryError={directoryError} onClose={() => setSharing(false)} /> : null}
       {restoring !== null ? (
         <ConfirmDialog
           title={t("history.restoreTitle", { v: restoring })}
