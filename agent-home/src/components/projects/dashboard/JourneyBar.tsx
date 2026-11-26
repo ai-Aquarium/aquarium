@@ -168,7 +168,7 @@ export function JourneyBar({
             />
           </span>
           {action.secondary ? (
-            <span className="hidden sm:inline-flex">
+            <span className={action.secondary.intent.kind === "start_run" ? "inline-flex" : "hidden sm:inline-flex"}>
               <DashActionButton
                 slug={project.slug}
                 action={action.secondary}
