@@ -62,7 +62,6 @@ export const READINESS_NEXT: Record<ReadinessItem["key"], string> = {
   profile: "pick a profile to run on",
   plan: "write the plan",
   status: "activate the project",
-  schedule: "set a schedule",
 };
 
 export interface ReadinessProgress {

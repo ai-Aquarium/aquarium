@@ -169,7 +169,6 @@ const READINESS_FIX: Record<
   profile: { title: "Pick a profile to run on", label: "Open Settings" },
   plan: { title: "The project has no plan to follow", label: "Open the plan" },
   status: { title: "Activate the project", label: "Activate" },
-  schedule: { title: "Set a schedule", label: "Open Settings" },
 };
 
 const OPEN_SCOPE: DashAction = {

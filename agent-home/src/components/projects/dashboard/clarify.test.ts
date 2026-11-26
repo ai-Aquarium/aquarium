@@ -208,7 +208,7 @@ describe("needsYouItems — scope ranking", () => {
     );
     const list = items(p, PLAN, {
       board: b,
-      readiness: [{ key: "schedule", label: "schedule", ok: false, hint: "x", anchor: "?tab=settings", tab: "settings" }],
+      readiness: [{ key: "plan", label: "plan", ok: false, hint: "x", anchor: "?tab=plan", tab: "plan" }],
     });
     expect(list.map((i) => i.group)).toEqual(["run", "triage", "scope", "blocked", "inputs", "readiness"]);
     const ranks = list.map((i) => NEEDS_YOU_ORDER.indexOf(i.group));

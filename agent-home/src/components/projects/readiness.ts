@@ -6,7 +6,7 @@ import type {
 } from "@/types";
 
 export interface ReadinessItem {
-  key: "outputs" | "profile" | "plan" | "schedule" | "status";
+  key: "outputs" | "profile" | "plan" | "status";
   label: string;
   ok: boolean;
   /** What to do when not ok — one short sentence. */
@@ -80,17 +80,6 @@ export function readinessItems(
       target: "journey-primary",
     },
   ];
-  if (project.cadence === "repeatable") {
-    items.push({
-      key: "schedule",
-      label: "A schedule",
-      ok: Boolean(project.schedule),
-      hint: "Repeatable projects need a schedule to fire.",
-      anchor: "?tab=settings",
-      tab: "settings",
-      target: "panel-settings",
-    });
-  }
   return items;
 }
 
@@ -103,7 +92,6 @@ export function extraFindings(
   const covered = new Set<string>();
   for (const item of items) {
     if (item.key === "plan") covered.add("no_active_playbook");
-    if (item.key === "schedule") covered.add("no_schedule");
     if (item.key === "profile") covered.add("host_profile_missing");
   }
   return doctor.findings

@@ -294,7 +294,7 @@ describe("needsYouItems", () => {
   const items = needsYouItems({
     project: p,
     board: b,
-    readiness: [UNMET("schedule", { tab: "settings" })],
+    readiness: [UNMET("plan", { tab: "plan" })],
     playbook: PB,
     now: NOW,
   });
