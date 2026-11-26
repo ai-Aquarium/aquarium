@@ -163,7 +163,7 @@ async def put_grant(source_id: str, request: Request):
     principal, source, _a = await _source_for(request, source_id, "manage")
     body = await _body(request)
     user_id = str(body.get("user_id") or "").strip()
-    if source.owner_user_id and user_id == source.owner_user_id:
+    if source.kind != "app" and source.owner_user_id and user_id == source.owner_user_id:
         raise HTTPException(400, "The source's owner already has full access.")
     grant = await _run(dd.put_grant(source.id, user_id, str(body.get("grant") or "read"), by=principal.user_id))
     return {"grant": grant}

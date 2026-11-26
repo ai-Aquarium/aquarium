@@ -247,7 +247,7 @@ export function DataSourceDetail({
           </div>
         ) : null}
       </div>
-      {sharing ? <ShareSheet sourceId={source.id} ownerId={source.owner_user_id} directory={directory} directoryError={directoryError} onClose={() => setSharing(false)} /> : null}
+      {sharing ? <ShareSheet sourceId={source.id} ownerId={app ? "" : source.owner_user_id} directory={directory} directoryError={directoryError} onClose={() => setSharing(false)} /> : null}
     </div>
   );
 }

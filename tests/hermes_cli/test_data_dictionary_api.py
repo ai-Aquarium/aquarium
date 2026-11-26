@@ -110,7 +110,14 @@ def test_readers_do_not_see_drafts(client, monkeypatch):
 
 def test_guards(client):
     assert call(client, "POST", f"/api/data/sources/{SID}/grants", "alice").status_code == 200
+    # Aquarium data's stored owner is only its Needs you assignee, so it can still be granted access.
     r = client.post(f"/api/data/sources/{SID}/grants", json={"user_id": "alice"}, headers={"x-test-user": "alice"})
+    assert r.status_code == 200
+    SOURCE.kind = "site"
+    try:
+        r = client.post(f"/api/data/sources/{SID}/grants", json={"user_id": "alice"}, headers={"x-test-user": "alice"})
+    finally:
+        SOURCE.kind = "app"
     assert r.status_code == 400
     r = client.post(f"/api/data/sources/{SID}/draft", json={"origin": "restore"}, headers={"x-test-user": "alice"})
     assert r.status_code == 400
