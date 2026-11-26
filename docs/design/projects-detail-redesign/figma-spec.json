@@ -1,0 +1,3399 @@
+{
+ "_about": "Layer-by-layer spec of the Figma mockup, exported from https://www.figma.com/design/2ulo0wiREINRTTsynkpkgl (frames 1:2 and 1:277).",
+ "_keys": {
+  "n": "layer name",
+  "t": "type (Fram=frame, Text, Rect, Elli=ellipse, Star, Vect=vector)",
+  "w/h": "size px",
+  "fill/stroke": "hex colour, @opacity",
+  "r": "corner radius",
+  "al": "auto-layout H/V",
+  "gap": "item spacing",
+  "pad": "padding top right bottom left",
+  "align/just": "cross/main axis alignment",
+  "sw/sh": "width/height sizing when not hug (fill/fixed)",
+  "text/font": "text content and Inter style + size",
+  "c": "children"
+ },
+ "frames": [
+  {
+   "n": "Project detail — Runs step (key mockup)",
+   "t": "Fram",
+   "w": 1440,
+   "h": 1024,
+   "fill": "#0b0d12",
+   "al": "H",
+   "sw": "fixed",
+   "sh": "fixed",
+   "c": [
+    {
+     "n": "Main",
+     "t": "Fram",
+     "w": 1060,
+     "h": 1024,
+     "al": "V",
+     "sw": "fill",
+     "sh": "fill",
+     "c": [
+      {
+       "n": "Top bar",
+       "t": "Fram",
+       "w": 1060,
+       "h": 54,
+       "stroke": "#262d3a",
+       "al": "H",
+       "gap": 16,
+       "pad": "14 24 14 24",
+       "align": "center",
+       "sw": "fill",
+       "c": [
+        {
+         "n": "Logo",
+         "t": "Fram",
+         "w": 102,
+         "h": 22,
+         "al": "H",
+         "gap": 8,
+         "align": "center",
+         "c": [
+          {
+           "n": "Rectangle",
+           "t": "Rect",
+           "w": 22,
+           "h": 22,
+           "fill": "gradient_linear",
+           "r": 6,
+           "sw": "fixed",
+           "sh": "fixed"
+          },
+          {
+           "n": "Aquarium",
+           "t": "Text",
+           "w": 72,
+           "h": 18,
+           "fill": "#e6e9ef",
+           "text": "Aquarium",
+           "font": "Bold 15"
+          }
+         ]
+        },
+        {
+         "n": "Breadcrumb",
+         "t": "Fram",
+         "w": 196,
+         "h": 16,
+         "al": "H",
+         "gap": 8,
+         "align": "center",
+         "c": [
+          {
+           "n": "Projects",
+           "t": "Text",
+           "w": 51,
+           "h": 16,
+           "fill": "#8b93a7",
+           "text": "Projects",
+           "font": "Medium 13"
+          },
+          {
+           "n": "/",
+           "t": "Text",
+           "w": 5,
+           "h": 16,
+           "fill": "#262d3a",
+           "text": "/",
+           "font": "Regular 13"
+          },
+          {
+           "n": "Weekly sales digest",
+           "t": "Text",
+           "w": 124,
+           "h": 16,
+           "fill": "#e6e9ef",
+           "text": "Weekly sales digest",
+           "font": "Medium 13"
+          }
+         ]
+        },
+        {
+         "n": "spacer",
+         "t": "Fram",
+         "w": 635,
+         "h": 1,
+         "al": "V",
+         "sw": "fill",
+         "sh": "fixed",
+         "c": []
+        },
+        {
+         "n": "Avatar",
+         "t": "Fram",
+         "w": 31,
+         "h": 25,
+         "fill": "#2a3550",
+         "r": 999,
+         "al": "H",
+         "pad": "6 8 6 8",
+         "c": [
+          {
+           "n": "YL",
+           "t": "Text",
+           "w": 15,
+           "h": 13,
+           "fill": "#e6e9ef",
+           "text": "YL",
+           "font": "Bold 11"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "n": "Content",
+       "t": "Fram",
+       "w": 1060,
+       "h": 970,
+       "al": "V",
+       "gap": 22,
+       "pad": "28 32 28 32",
+       "sw": "fill",
+       "sh": "fill",
+       "c": [
+        {
+         "n": "Header",
+         "t": "Fram",
+         "w": 996,
+         "h": 53,
+         "al": "H",
+         "gap": 10,
+         "align": "center",
+         "sw": "fill",
+         "c": [
+          {
+           "n": "Title block",
+           "t": "Fram",
+           "w": 710,
+           "h": 53,
+           "al": "V",
+           "gap": 8,
+           "sw": "fill",
+           "c": [
+            {
+             "n": "Title",
+             "t": "Fram",
+             "w": 280,
+             "h": 29,
+             "al": "H",
+             "gap": 10,
+             "align": "center",
+             "c": [
+              {
+               "n": "Ref",
+               "t": "Fram",
+               "w": 39,
+               "h": 23,
+               "fill": "#1c2230",
+               "stroke": "#262d3a",
+               "r": 6,
+               "al": "H",
+               "pad": "3 8 3 8",
+               "c": [
+                {
+                 "n": "P12",
+                 "t": "Text",
+                 "w": 21,
+                 "h": 15,
+                 "fill": "#8b93a7",
+                 "text": "P12",
+                 "font": "Semi Bold 12"
+                }
+               ]
+              },
+              {
+               "n": "Weekly sales digest",
+               "t": "Text",
+               "w": 231,
+               "h": 29,
+               "fill": "#e6e9ef",
+               "text": "Weekly sales digest",
+               "font": "Semi Bold 24"
+              }
+             ]
+            },
+            {
+             "n": "Status sentence",
+             "t": "Fram",
+             "w": 316,
+             "h": 16,
+             "al": "H",
+             "gap": 8,
+             "align": "center",
+             "c": [
+              {
+               "n": "Ellipse",
+               "t": "Elli",
+               "w": 8,
+               "h": 8,
+               "fill": "#34d399",
+               "sw": "fixed",
+               "sh": "fixed"
+              },
+              {
+               "n": "Run R7 running · step 4 of 6 ·",
+               "t": "Text",
+               "w": 178,
+               "h": 16,
+               "fill": "#8b93a7",
+               "text": "Run R7 running · step 4 of 6 ·",
+               "font": "Regular 13"
+              },
+              {
+               "n": "1 approval waiting",
+               "t": "Text",
+               "w": 114,
+               "h": 16,
+               "fill": "#fcd34d",
+               "text": "1 approval waiting",
+               "font": "Semi Bold 13"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "n": "Button/Latest outputs",
+           "t": "Fram",
+           "w": 122,
+           "h": 36,
+           "fill": "#1c2230",
+           "stroke": "#262d3a",
+           "r": 8,
+           "al": "H",
+           "gap": 6,
+           "pad": "9 14 9 14",
+           "align": "center",
+           "c": [
+            {
+             "n": "Latest outputs",
+             "t": "Text",
+             "w": 92,
+             "h": 16,
+             "fill": "#e6e9ef",
+             "text": "Latest outputs",
+             "font": "Semi Bold 13"
+            }
+           ]
+          },
+          {
+           "n": "Button/Start run",
+           "t": "Fram",
+           "w": 84,
+           "h": 34,
+           "fill": "#5b8cff",
+           "r": 8,
+           "al": "H",
+           "gap": 6,
+           "pad": "9 14 9 14",
+           "align": "center",
+           "c": [
+            {
+             "n": "Start run",
+             "t": "Text",
+             "w": 56,
+             "h": 16,
+             "fill": "#ffffff",
+             "text": "Start run",
+             "font": "Semi Bold 13"
+            }
+           ]
+          },
+          {
+           "n": "Button/•••",
+           "t": "Fram",
+           "w": 50,
+           "h": 36,
+           "fill": "#1c2230",
+           "stroke": "#262d3a",
+           "r": 8,
+           "al": "H",
+           "gap": 6,
+           "pad": "9 14 9 14",
+           "align": "center",
+           "c": [
+            {
+             "n": "•••",
+             "t": "Text",
+             "w": 20,
+             "h": 16,
+             "fill": "#e6e9ef",
+             "text": "•••",
+             "font": "Semi Bold 13"
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "n": "Workflow spine",
+         "t": "Fram",
+         "w": 996,
+         "h": 63,
+         "al": "H",
+         "gap": 8,
+         "align": "center",
+         "sw": "fill",
+         "c": [
+          {
+           "n": "Step/Requirements",
+           "t": "Fram",
+           "w": 231,
+           "h": 63,
+           "fill": "#141821",
+           "stroke": "#262d3a",
+           "r": 12,
+           "al": "H",
+           "gap": 12,
+           "pad": "12 16 12 14",
+           "align": "center",
+           "sw": "fill",
+           "c": [
+            {
+             "n": "n",
+             "t": "Fram",
+             "w": 24,
+             "h": 23,
+             "fill": "#1c2230",
+             "r": 999,
+             "al": "H",
+             "pad": "4 9 4 9",
+             "c": [
+              {
+               "n": "1",
+               "t": "Text",
+               "w": 6,
+               "h": 15,
+               "fill": "#8b93a7",
+               "text": "1",
+               "font": "Bold 12"
+              }
+             ]
+            },
+            {
+             "n": "t",
+             "t": "Fram",
+             "w": 169,
+             "h": 37,
+             "al": "V",
+             "gap": 3,
+             "c": [
+              {
+               "n": "r1",
+               "t": "Fram",
+               "w": 133,
+               "h": 19,
+               "al": "H",
+               "gap": 8,
+               "align": "center",
+               "c": [
+                {
+                 "n": "Requirements",
+                 "t": "Text",
+                 "w": 95,
+                 "h": 17,
+                 "fill": "#e6e9ef",
+                 "text": "Requirements",
+                 "font": "Semi Bold 14"
+                },
+                {
+                 "n": "Pill",
+                 "t": "Fram",
+                 "w": 30,
+                 "h": 19,
+                 "fill": "#1c2230",
+                 "r": 999,
+                 "al": "H",
+                 "gap": 5,
+                 "pad": "3 8 3 8",
+                 "align": "center",
+                 "c": [
+                  {
+                   "n": "v5",
+                   "t": "Text",
+                   "w": 14,
+                   "h": 13,
+                   "fill": "#8b93a7",
+                   "text": "v5",
+                   "font": "Semi Bold 11"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "n": "Saved 2 h ago · 3 files, 2 links",
+               "t": "Text",
+               "w": 169,
+               "h": 15,
+               "fill": "#8b93a7",
+               "text": "Saved 2 h ago · 3 files, 2 links",
+               "font": "Regular 12"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "n": "›",
+           "t": "Text",
+           "w": 8,
+           "h": 24,
+           "fill": "#8b93a7",
+           "text": "›",
+           "font": "Regular 20"
+          },
+          {
+           "n": "Step/Plan",
+           "t": "Fram",
+           "w": 231,
+           "h": 63,
+           "fill": "#141821",
+           "stroke": "#262d3a",
+           "r": 12,
+           "al": "H",
+           "gap": 12,
+           "pad": "12 16 12 14",
+           "align": "center",
+           "sw": "fill",
+           "c": [
+            {
+             "n": "n",
+             "t": "Fram",
+             "w": 26,
+             "h": 23,
+             "fill": "#1c2230",
+             "r": 999,
+             "al": "H",
+             "pad": "4 9 4 9",
+             "c": [
+              {
+               "n": "2",
+               "t": "Text",
+               "w": 8,
+               "h": 15,
+               "fill": "#8b93a7",
+               "text": "2",
+               "font": "Bold 12"
+              }
+             ]
+            },
+            {
+             "n": "t",
+             "t": "Fram",
+             "w": 177,
+             "h": 37,
+             "al": "V",
+             "gap": 3,
+             "c": [
+              {
+               "n": "r1",
+               "t": "Fram",
+               "w": 68,
+               "h": 19,
+               "al": "H",
+               "gap": 8,
+               "align": "center",
+               "c": [
+                {
+                 "n": "Plan",
+                 "t": "Text",
+                 "w": 30,
+                 "h": 17,
+                 "fill": "#e6e9ef",
+                 "text": "Plan",
+                 "font": "Semi Bold 14"
+                },
+                {
+                 "n": "Pill",
+                 "t": "Fram",
+                 "w": 30,
+                 "h": 19,
+                 "fill": "#1c2230",
+                 "r": 999,
+                 "al": "H",
+                 "gap": 5,
+                 "pad": "3 8 3 8",
+                 "align": "center",
+                 "c": [
+                  {
+                   "n": "v3",
+                   "t": "Text",
+                   "w": 14,
+                   "h": 13,
+                   "fill": "#8b93a7",
+                   "text": "v3",
+                   "font": "Semi Bold 11"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "n": "6 steps · from Requirements v5",
+               "t": "Text",
+               "w": 177,
+               "h": 15,
+               "fill": "#8b93a7",
+               "text": "6 steps · from Requirements v5",
+               "font": "Regular 12"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "n": "›",
+           "t": "Text",
+           "w": 8,
+           "h": 24,
+           "fill": "#8b93a7",
+           "text": "›",
+           "font": "Regular 20"
+          },
+          {
+           "n": "Step/Cards",
+           "t": "Fram",
+           "w": 231,
+           "h": 63,
+           "fill": "#141821",
+           "stroke": "#262d3a",
+           "r": 12,
+           "al": "H",
+           "gap": 12,
+           "pad": "12 16 12 14",
+           "align": "center",
+           "sw": "fill",
+           "c": [
+            {
+             "n": "n",
+             "t": "Fram",
+             "w": 26,
+             "h": 23,
+             "fill": "#1c2230",
+             "r": 999,
+             "al": "H",
+             "pad": "4 9 4 9",
+             "c": [
+              {
+               "n": "3",
+               "t": "Text",
+               "w": 8,
+               "h": 15,
+               "fill": "#8b93a7",
+               "text": "3",
+               "font": "Bold 12"
+              }
+             ]
+            },
+            {
+             "n": "t",
+             "t": "Fram",
+             "w": 88,
+             "h": 37,
+             "al": "V",
+             "gap": 3,
+             "c": [
+              {
+               "n": "r1",
+               "t": "Fram",
+               "w": 73,
+               "h": 19,
+               "al": "H",
+               "gap": 8,
+               "align": "center",
+               "c": [
+                {
+                 "n": "Cards",
+                 "t": "Text",
+                 "w": 41,
+                 "h": 17,
+                 "fill": "#e6e9ef",
+                 "text": "Cards",
+                 "font": "Semi Bold 14"
+                },
+                {
+                 "n": "Pill",
+                 "t": "Fram",
+                 "w": 24,
+                 "h": 19,
+                 "fill": "#1c2230",
+                 "r": 999,
+                 "al": "H",
+                 "gap": 5,
+                 "pad": "3 8 3 8",
+                 "align": "center",
+                 "c": [
+                  {
+                   "n": "6",
+                   "t": "Text",
+                   "w": 8,
+                   "h": 13,
+                   "fill": "#8b93a7",
+                   "text": "6",
+                   "font": "Semi Bold 11"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "n": "Kanban · Graph",
+               "t": "Text",
+               "w": 88,
+               "h": 15,
+               "fill": "#8b93a7",
+               "text": "Kanban · Graph",
+               "font": "Regular 12"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "n": "›",
+           "t": "Text",
+           "w": 8,
+           "h": 24,
+           "fill": "#8b93a7",
+           "text": "›",
+           "font": "Regular 20"
+          },
+          {
+           "n": "Step/Runs",
+           "t": "Fram",
+           "w": 231,
+           "h": 63,
+           "fill": "#17213a",
+           "stroke": "#5b8cff",
+           "r": 12,
+           "al": "H",
+           "gap": 12,
+           "pad": "12 16 12 14",
+           "align": "center",
+           "sw": "fill",
+           "c": [
+            {
+             "n": "n",
+             "t": "Fram",
+             "w": 27,
+             "h": 23,
+             "fill": "#5b8cff",
+             "r": 999,
+             "al": "H",
+             "pad": "4 9 4 9",
+             "c": [
+              {
+               "n": "4",
+               "t": "Text",
+               "w": 9,
+               "h": 15,
+               "fill": "#ffffff",
+               "text": "4",
+               "font": "Bold 12"
+              }
+             ]
+            },
+            {
+             "n": "t",
+             "t": "Fram",
+             "w": 105,
+             "h": 37,
+             "al": "V",
+             "gap": 3,
+             "c": [
+              {
+               "n": "r1",
+               "t": "Fram",
+               "w": 65,
+               "h": 19,
+               "al": "H",
+               "gap": 8,
+               "align": "center",
+               "c": [
+                {
+                 "n": "Runs",
+                 "t": "Text",
+                 "w": 34,
+                 "h": 17,
+                 "fill": "#e6e9ef",
+                 "text": "Runs",
+                 "font": "Semi Bold 14"
+                },
+                {
+                 "n": "Pill",
+                 "t": "Fram",
+                 "w": 23,
+                 "h": 19,
+                 "fill": "#24324f",
+                 "r": 999,
+                 "al": "H",
+                 "gap": 5,
+                 "pad": "3 8 3 8",
+                 "align": "center",
+                 "c": [
+                  {
+                   "n": "7",
+                   "t": "Text",
+                   "w": 7,
+                   "h": 13,
+                   "fill": "#a9c1ff",
+                   "text": "7",
+                   "font": "Semi Bold 11"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "n": "R7 live · avg 4.2 ★",
+               "t": "Text",
+               "w": 105,
+               "h": 15,
+               "fill": "#8b93a7",
+               "text": "R7 live · avg 4.2 ★",
+               "font": "Regular 12"
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "n": "Workspace",
+         "t": "Fram",
+         "w": 996,
+         "h": 754,
+         "al": "H",
+         "gap": 20,
+         "sw": "fill",
+         "sh": "fill",
+         "c": [
+          {
+           "n": "Run list",
+           "t": "Fram",
+           "w": 264,
+           "h": 754,
+           "fill": "#141821",
+           "stroke": "#262d3a",
+           "r": 12,
+           "al": "V",
+           "gap": 4,
+           "pad": "10 10 10 10",
+           "sw": "fixed",
+           "sh": "fill",
+           "c": [
+            {
+             "n": "h",
+             "t": "Fram",
+             "w": 242,
+             "h": 30,
+             "al": "H",
+             "pad": "6 8 8 8",
+             "align": "center",
+             "sw": "fill",
+             "c": [
+              {
+               "n": "Runs",
+               "t": "Text",
+               "w": 173,
+               "h": 16,
+               "fill": "#e6e9ef",
+               "sw": "fill",
+               "text": "Runs",
+               "font": "Semi Bold 13"
+              },
+              {
+               "n": "Compare",
+               "t": "Text",
+               "w": 53,
+               "h": 15,
+               "fill": "#5b8cff",
+               "text": "Compare",
+               "font": "Semi Bold 12"
+              }
+             ]
+            },
+            {
+             "n": "Run/R7",
+             "t": "Fram",
+             "w": 242,
+             "h": 56,
+             "fill": "#1c2230",
+             "r": 8,
+             "al": "H",
+             "gap": 10,
+             "pad": "10 10 10 10",
+             "align": "center",
+             "sw": "fill",
+             "c": [
+              {
+               "n": "Rectangle",
+               "t": "Rect",
+               "w": 14,
+               "h": 14,
+               "stroke": "#262d3a",
+               "r": 4,
+               "sw": "fixed",
+               "sh": "fixed"
+              },
+              {
+               "n": "t",
+               "t": "Fram",
+               "w": 198,
+               "h": 36,
+               "al": "V",
+               "gap": 4,
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "a",
+                 "t": "Fram",
+                 "w": 96,
+                 "h": 19,
+                 "al": "H",
+                 "gap": 8,
+                 "align": "center",
+                 "c": [
+                  {
+                   "n": "R7",
+                   "t": "Text",
+                   "w": 17,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "text": "R7",
+                   "font": "Semi Bold 13"
+                  },
+                  {
+                   "n": "Pill",
+                   "t": "Fram",
+                   "w": 71,
+                   "h": 19,
+                   "fill": "#34d399@0.14",
+                   "r": 999,
+                   "al": "H",
+                   "gap": 5,
+                   "pad": "3 8 3 8",
+                   "align": "center",
+                   "c": [
+                    {
+                     "n": "Ellipse",
+                     "t": "Elli",
+                     "w": 6,
+                     "h": 6,
+                     "fill": "#34d399",
+                     "sw": "fixed",
+                     "sh": "fixed"
+                    },
+                    {
+                     "n": "Running",
+                     "t": "Text",
+                     "w": 44,
+                     "h": 13,
+                     "fill": "#34d399",
+                     "text": "Running",
+                     "font": "Semi Bold 11"
+                    }
+                   ]
+                  }
+                 ]
+                },
+                {
+                 "n": "Plan v3 · Nov wk 4 · 6 min",
+                 "t": "Text",
+                 "w": 135,
+                 "h": 13,
+                 "fill": "#8b93a7",
+                 "text": "Plan v3 · Nov wk 4 · 6 min",
+                 "font": "Regular 11"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "n": "Run/R6",
+             "t": "Fram",
+             "w": 242,
+             "h": 56,
+             "r": 8,
+             "al": "H",
+             "gap": 10,
+             "pad": "10 10 10 10",
+             "align": "center",
+             "sw": "fill",
+             "c": [
+              {
+               "n": "Rectangle",
+               "t": "Rect",
+               "w": 14,
+               "h": 14,
+               "stroke": "#262d3a",
+               "r": 4,
+               "sw": "fixed",
+               "sh": "fixed"
+              },
+              {
+               "n": "t",
+               "t": "Fram",
+               "w": 154,
+               "h": 36,
+               "al": "V",
+               "gap": 4,
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "a",
+                 "t": "Fram",
+                 "w": 69,
+                 "h": 19,
+                 "al": "H",
+                 "gap": 8,
+                 "align": "center",
+                 "c": [
+                  {
+                   "n": "R6",
+                   "t": "Text",
+                   "w": 17,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "text": "R6",
+                   "font": "Semi Bold 13"
+                  },
+                  {
+                   "n": "Pill",
+                   "t": "Fram",
+                   "w": 44,
+                   "h": 19,
+                   "fill": "#8b93a7@0.14",
+                   "r": 999,
+                   "al": "H",
+                   "gap": 5,
+                   "pad": "3 8 3 8",
+                   "align": "center",
+                   "c": [
+                    {
+                     "n": "Done",
+                     "t": "Text",
+                     "w": 28,
+                     "h": 13,
+                     "fill": "#aab2c5",
+                     "text": "Done",
+                     "font": "Semi Bold 11"
+                    }
+                   ]
+                  }
+                 ]
+                },
+                {
+                 "n": "Plan v3 · Nov wk 3 · 12 min",
+                 "t": "Text",
+                 "w": 140,
+                 "h": 13,
+                 "fill": "#8b93a7",
+                 "text": "Plan v3 · Nov wk 3 · 12 min",
+                 "font": "Regular 11"
+                }
+               ]
+              },
+              {
+               "n": "score",
+               "t": "Fram",
+               "w": 34,
+               "h": 15,
+               "al": "H",
+               "gap": 4,
+               "align": "center",
+               "c": [
+                {
+                 "n": "Star",
+                 "t": "Star",
+                 "w": 11,
+                 "h": 11,
+                 "fill": "#fcd34d",
+                 "sw": "fixed",
+                 "sh": "fixed"
+                },
+                {
+                 "n": "4.0",
+                 "t": "Text",
+                 "w": 19,
+                 "h": 15,
+                 "fill": "#fcd34d",
+                 "text": "4.0",
+                 "font": "Semi Bold 12"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "n": "Run/R5",
+             "t": "Fram",
+             "w": 242,
+             "h": 56,
+             "r": 8,
+             "al": "H",
+             "gap": 10,
+             "pad": "10 10 10 10",
+             "align": "center",
+             "sw": "fill",
+             "c": [
+              {
+               "n": "Rectangle",
+               "t": "Rect",
+               "w": 14,
+               "h": 14,
+               "stroke": "#262d3a",
+               "r": 4,
+               "sw": "fixed",
+               "sh": "fixed"
+              },
+              {
+               "n": "t",
+               "t": "Fram",
+               "w": 154,
+               "h": 36,
+               "al": "V",
+               "gap": 4,
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "a",
+                 "t": "Fram",
+                 "w": 69,
+                 "h": 19,
+                 "al": "H",
+                 "gap": 8,
+                 "align": "center",
+                 "c": [
+                  {
+                   "n": "R5",
+                   "t": "Text",
+                   "w": 17,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "text": "R5",
+                   "font": "Semi Bold 13"
+                  },
+                  {
+                   "n": "Pill",
+                   "t": "Fram",
+                   "w": 44,
+                   "h": 19,
+                   "fill": "#8b93a7@0.14",
+                   "r": 999,
+                   "al": "H",
+                   "gap": 5,
+                   "pad": "3 8 3 8",
+                   "align": "center",
+                   "c": [
+                    {
+                     "n": "Done",
+                     "t": "Text",
+                     "w": 28,
+                     "h": 13,
+                     "fill": "#aab2c5",
+                     "text": "Done",
+                     "font": "Semi Bold 11"
+                    }
+                   ]
+                  }
+                 ]
+                },
+                {
+                 "n": "Plan v2 · Nov wk 2 · 14 min",
+                 "t": "Text",
+                 "w": 139,
+                 "h": 13,
+                 "fill": "#8b93a7",
+                 "text": "Plan v2 · Nov wk 2 · 14 min",
+                 "font": "Regular 11"
+                }
+               ]
+              },
+              {
+               "n": "score",
+               "t": "Fram",
+               "w": 34,
+               "h": 15,
+               "al": "H",
+               "gap": 4,
+               "align": "center",
+               "c": [
+                {
+                 "n": "Star",
+                 "t": "Star",
+                 "w": 11,
+                 "h": 11,
+                 "fill": "#fcd34d",
+                 "sw": "fixed",
+                 "sh": "fixed"
+                },
+                {
+                 "n": "5.0",
+                 "t": "Text",
+                 "w": 19,
+                 "h": 15,
+                 "fill": "#fcd34d",
+                 "text": "5.0",
+                 "font": "Semi Bold 12"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "n": "Run/R4",
+             "t": "Fram",
+             "w": 242,
+             "h": 56,
+             "r": 8,
+             "al": "H",
+             "gap": 10,
+             "pad": "10 10 10 10",
+             "align": "center",
+             "sw": "fill",
+             "c": [
+              {
+               "n": "Rectangle",
+               "t": "Rect",
+               "w": 14,
+               "h": 14,
+               "stroke": "#262d3a",
+               "r": 4,
+               "sw": "fixed",
+               "sh": "fixed"
+              },
+              {
+               "n": "t",
+               "t": "Fram",
+               "w": 198,
+               "h": 36,
+               "al": "V",
+               "gap": 4,
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "a",
+                 "t": "Fram",
+                 "w": 74,
+                 "h": 19,
+                 "al": "H",
+                 "gap": 8,
+                 "align": "center",
+                 "c": [
+                  {
+                   "n": "R4",
+                   "t": "Text",
+                   "w": 18,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "text": "R4",
+                   "font": "Semi Bold 13"
+                  },
+                  {
+                   "n": "Pill",
+                   "t": "Fram",
+                   "w": 48,
+                   "h": 19,
+                   "fill": "#f87171@0.14",
+                   "r": 999,
+                   "al": "H",
+                   "gap": 5,
+                   "pad": "3 8 3 8",
+                   "align": "center",
+                   "c": [
+                    {
+                     "n": "Failed",
+                     "t": "Text",
+                     "w": 32,
+                     "h": 13,
+                     "fill": "#f87171",
+                     "text": "Failed",
+                     "font": "Semi Bold 11"
+                    }
+                   ]
+                  }
+                 ]
+                },
+                {
+                 "n": "Plan v2 · Nov wk 1 · 3 min",
+                 "t": "Text",
+                 "w": 133,
+                 "h": 13,
+                 "fill": "#8b93a7",
+                 "text": "Plan v2 · Nov wk 1 · 3 min",
+                 "font": "Regular 11"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "n": "Run/R3",
+             "t": "Fram",
+             "w": 242,
+             "h": 56,
+             "r": 8,
+             "al": "H",
+             "gap": 10,
+             "pad": "10 10 10 10",
+             "align": "center",
+             "sw": "fill",
+             "c": [
+              {
+               "n": "Rectangle",
+               "t": "Rect",
+               "w": 14,
+               "h": 14,
+               "stroke": "#262d3a",
+               "r": 4,
+               "sw": "fixed",
+               "sh": "fixed"
+              },
+              {
+               "n": "t",
+               "t": "Fram",
+               "w": 154,
+               "h": 36,
+               "al": "V",
+               "gap": 4,
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "a",
+                 "t": "Fram",
+                 "w": 69,
+                 "h": 19,
+                 "al": "H",
+                 "gap": 8,
+                 "align": "center",
+                 "c": [
+                  {
+                   "n": "R3",
+                   "t": "Text",
+                   "w": 17,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "text": "R3",
+                   "font": "Semi Bold 13"
+                  },
+                  {
+                   "n": "Pill",
+                   "t": "Fram",
+                   "w": 44,
+                   "h": 19,
+                   "fill": "#8b93a7@0.14",
+                   "r": 999,
+                   "al": "H",
+                   "gap": 5,
+                   "pad": "3 8 3 8",
+                   "align": "center",
+                   "c": [
+                    {
+                     "n": "Done",
+                     "t": "Text",
+                     "w": 28,
+                     "h": 13,
+                     "fill": "#aab2c5",
+                     "text": "Done",
+                     "font": "Semi Bold 11"
+                    }
+                   ]
+                  }
+                 ]
+                },
+                {
+                 "n": "Plan v1 · Oct wk 4 · 18 min",
+                 "t": "Text",
+                 "w": 136,
+                 "h": 13,
+                 "fill": "#8b93a7",
+                 "text": "Plan v1 · Oct wk 4 · 18 min",
+                 "font": "Regular 11"
+                }
+               ]
+              },
+              {
+               "n": "score",
+               "t": "Fram",
+               "w": 34,
+               "h": 15,
+               "al": "H",
+               "gap": 4,
+               "align": "center",
+               "c": [
+                {
+                 "n": "Star",
+                 "t": "Star",
+                 "w": 11,
+                 "h": 11,
+                 "fill": "#fcd34d",
+                 "sw": "fixed",
+                 "sh": "fixed"
+                },
+                {
+                 "n": "3.0",
+                 "t": "Text",
+                 "w": 19,
+                 "h": 15,
+                 "fill": "#fcd34d",
+                 "text": "3.0",
+                 "font": "Semi Bold 12"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "n": "hint",
+             "t": "Fram",
+             "w": 242,
+             "h": 48,
+             "al": "H",
+             "pad": "10 8 4 8",
+             "sw": "fill",
+             "c": [
+              {
+               "n": "Tick two runs to compare plan, batch, cost, score and outputs side by side.",
+               "t": "Text",
+               "w": 226,
+               "h": 34,
+               "fill": "#8b93a7",
+               "sw": "fill",
+               "text": "Tick two runs to compare plan, batch, cost, score and outputs side by side.",
+               "font": "Regular 11"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "n": "Run detail",
+           "t": "Fram",
+           "w": 712,
+           "h": 754,
+           "al": "V",
+           "gap": 16,
+           "sw": "fill",
+           "sh": "fill",
+           "c": [
+            {
+             "n": "Run header",
+             "t": "Fram",
+             "w": 712,
+             "h": 43,
+             "al": "H",
+             "gap": 8,
+             "align": "center",
+             "sw": "fill",
+             "c": [
+              {
+               "n": "t",
+               "t": "Fram",
+               "w": 588,
+               "h": 43,
+               "al": "V",
+               "gap": 6,
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "r",
+                 "t": "Fram",
+                 "w": 104,
+                 "h": 22,
+                 "al": "H",
+                 "gap": 10,
+                 "align": "center",
+                 "c": [
+                  {
+                   "n": "R7",
+                   "t": "Text",
+                   "w": 23,
+                   "h": 22,
+                   "fill": "#e6e9ef",
+                   "text": "R7",
+                   "font": "Semi Bold 18"
+                  },
+                  {
+                   "n": "Pill",
+                   "t": "Fram",
+                   "w": 71,
+                   "h": 19,
+                   "fill": "#34d399@0.14",
+                   "r": 999,
+                   "al": "H",
+                   "gap": 5,
+                   "pad": "3 8 3 8",
+                   "align": "center",
+                   "c": [
+                    {
+                     "n": "Ellipse",
+                     "t": "Elli",
+                     "w": 6,
+                     "h": 6,
+                     "fill": "#34d399",
+                     "sw": "fixed",
+                     "sh": "fixed"
+                    },
+                    {
+                     "n": "Running",
+                     "t": "Text",
+                     "w": 44,
+                     "h": 13,
+                     "fill": "#34d399",
+                     "text": "Running",
+                     "font": "Semi Bold 11"
+                    }
+                   ]
+                  }
+                 ]
+                },
+                {
+                 "n": "Plan v3 · Batch “Nov week 4” (3 inputs) · started 10:02 · $0.41 so far",
+                 "t": "Text",
+                 "w": 405,
+                 "h": 15,
+                 "fill": "#8b93a7",
+                 "text": "Plan v3  ·  Batch “Nov week 4” (3 inputs)  ·  started 10:02  ·  $0.41 so far",
+                 "font": "Regular 12"
+                }
+               ]
+              },
+              {
+               "n": "Button/Pause",
+               "t": "Fram",
+               "w": 58,
+               "h": 29,
+               "fill": "#1c2230",
+               "stroke": "#262d3a",
+               "r": 8,
+               "al": "H",
+               "gap": 6,
+               "pad": "6 10 6 10",
+               "align": "center",
+               "c": [
+                {
+                 "n": "Pause",
+                 "t": "Text",
+                 "w": 36,
+                 "h": 15,
+                 "fill": "#e6e9ef",
+                 "text": "Pause",
+                 "font": "Semi Bold 12"
+                }
+               ]
+              },
+              {
+               "n": "Button/Stop",
+               "t": "Fram",
+               "w": 50,
+               "h": 29,
+               "fill": "#1c2230",
+               "stroke": "#262d3a",
+               "r": 8,
+               "al": "H",
+               "gap": 6,
+               "pad": "6 10 6 10",
+               "align": "center",
+               "c": [
+                {
+                 "n": "Stop",
+                 "t": "Text",
+                 "w": 28,
+                 "h": 15,
+                 "fill": "#e6e9ef",
+                 "text": "Stop",
+                 "font": "Semi Bold 12"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "n": "Progress",
+             "t": "Fram",
+             "w": 712,
+             "h": 29,
+             "al": "V",
+             "gap": 8,
+             "sw": "fill",
+             "c": [
+              {
+               "n": "l",
+               "t": "Fram",
+               "w": 712,
+               "h": 15,
+               "al": "H",
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "4 of 6 steps",
+                 "t": "Text",
+                 "w": 623,
+                 "h": 15,
+                 "fill": "#e6e9ef",
+                 "sw": "fill",
+                 "text": "4 of 6 steps",
+                 "font": "Medium 12"
+                },
+                {
+                 "n": "about 5 min left",
+                 "t": "Text",
+                 "w": 89,
+                 "h": 15,
+                 "fill": "#8b93a7",
+                 "text": "about 5 min left",
+                 "font": "Regular 12"
+                }
+               ]
+              },
+              {
+               "n": "bar",
+               "t": "Fram",
+               "w": 712,
+               "h": 6,
+               "fill": "#1c2230",
+               "r": 3,
+               "sw": "fill",
+               "sh": "fixed",
+               "c": [
+                {
+                 "n": "Rectangle",
+                 "t": "Rect",
+                 "w": 475,
+                 "h": 6,
+                 "fill": "#5b8cff",
+                 "r": 3,
+                 "sw": "fixed",
+                 "sh": "fixed"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "n": "Steps",
+             "t": "Fram",
+             "w": 712,
+             "h": 406,
+             "fill": "#141821",
+             "stroke": "#262d3a",
+             "r": 12,
+             "al": "V",
+             "sw": "fill",
+             "c": [
+              {
+               "n": "Step/Pull sales data from CRM",
+               "t": "Fram",
+               "w": 710,
+               "h": 42,
+               "al": "V",
+               "gap": 12,
+               "pad": "12 16 12 16",
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "row",
+                 "t": "Fram",
+                 "w": 678,
+                 "h": 18,
+                 "al": "H",
+                 "gap": 12,
+                 "align": "center",
+                 "sw": "fill",
+                 "c": [
+                  {
+                   "n": "check",
+                   "t": "Fram",
+                   "w": 19,
+                   "h": 18,
+                   "fill": "#34d399@0.16",
+                   "r": 999,
+                   "al": "H",
+                   "pad": "6 5 6 5",
+                   "align": "center",
+                   "c": [
+                    {
+                     "n": "Vector",
+                     "t": "Vect",
+                     "w": 9,
+                     "h": 6,
+                     "stroke": "#34d399",
+                     "sw": "fixed",
+                     "sh": "fixed"
+                    }
+                   ]
+                  },
+                  {
+                   "n": "Pull sales data from CRM",
+                   "t": "Text",
+                   "w": 525,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "sw": "fill",
+                   "text": "Pull sales data from CRM",
+                   "font": "Medium 13"
+                  },
+                  {
+                   "n": "Data analyst · 1m 12s",
+                   "t": "Text",
+                   "w": 110,
+                   "h": 13,
+                   "fill": "#8b93a7",
+                   "text": "Data analyst · 1m 12s",
+                   "font": "Regular 11"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "n": "Step/Merge with finance sheet",
+               "t": "Fram",
+               "w": 710,
+               "h": 43,
+               "stroke": "#262d3a",
+               "al": "V",
+               "gap": 12,
+               "pad": "12 16 12 16",
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "row",
+                 "t": "Fram",
+                 "w": 678,
+                 "h": 18,
+                 "al": "H",
+                 "gap": 12,
+                 "align": "center",
+                 "sw": "fill",
+                 "c": [
+                  {
+                   "n": "check",
+                   "t": "Fram",
+                   "w": 19,
+                   "h": 18,
+                   "fill": "#34d399@0.16",
+                   "r": 999,
+                   "al": "H",
+                   "pad": "6 5 6 5",
+                   "align": "center",
+                   "c": [
+                    {
+                     "n": "Vector",
+                     "t": "Vect",
+                     "w": 9,
+                     "h": 6,
+                     "stroke": "#34d399",
+                     "sw": "fixed",
+                     "sh": "fixed"
+                    }
+                   ]
+                  },
+                  {
+                   "n": "Merge with finance sheet",
+                   "t": "Text",
+                   "w": 541,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "sw": "fill",
+                   "text": "Merge with finance sheet",
+                   "font": "Medium 13"
+                  },
+                  {
+                   "n": "Data analyst · 48s",
+                   "t": "Text",
+                   "w": 94,
+                   "h": 13,
+                   "fill": "#8b93a7",
+                   "text": "Data analyst · 48s",
+                   "font": "Regular 11"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "n": "Step/Build charts",
+               "t": "Fram",
+               "w": 710,
+               "h": 43,
+               "stroke": "#262d3a",
+               "al": "V",
+               "gap": 12,
+               "pad": "12 16 12 16",
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "row",
+                 "t": "Fram",
+                 "w": 678,
+                 "h": 18,
+                 "al": "H",
+                 "gap": 12,
+                 "align": "center",
+                 "sw": "fill",
+                 "c": [
+                  {
+                   "n": "check",
+                   "t": "Fram",
+                   "w": 19,
+                   "h": 18,
+                   "fill": "#34d399@0.16",
+                   "r": 999,
+                   "al": "H",
+                   "pad": "6 5 6 5",
+                   "align": "center",
+                   "c": [
+                    {
+                     "n": "Vector",
+                     "t": "Vect",
+                     "w": 9,
+                     "h": 6,
+                     "stroke": "#34d399",
+                     "sw": "fixed",
+                     "sh": "fixed"
+                    }
+                   ]
+                  },
+                  {
+                   "n": "Build charts",
+                   "t": "Text",
+                   "w": 537,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "sw": "fill",
+                   "text": "Build charts",
+                   "font": "Medium 13"
+                  },
+                  {
+                   "n": "Visualiser · 2m 05s",
+                   "t": "Text",
+                   "w": 98,
+                   "h": 13,
+                   "fill": "#8b93a7",
+                   "text": "Visualiser · 2m 05s",
+                   "font": "Regular 11"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "n": "Step/Send digest email to 32 recipients",
+               "t": "Fram",
+               "w": 710,
+               "h": 190,
+               "fill": "#f59e0b@0.05",
+               "stroke": "#262d3a",
+               "al": "V",
+               "gap": 12,
+               "pad": "12 16 12 16",
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "row",
+                 "t": "Fram",
+                 "w": 678,
+                 "h": 19,
+                 "al": "H",
+                 "gap": 12,
+                 "align": "center",
+                 "sw": "fill",
+                 "c": [
+                  {
+                   "n": "wait",
+                   "t": "Fram",
+                   "w": 20,
+                   "h": 19,
+                   "fill": "#f59e0b@0.18",
+                   "r": 999,
+                   "al": "H",
+                   "pad": "3 8 3 8",
+                   "c": [
+                    {
+                     "n": "!",
+                     "t": "Text",
+                     "w": 4,
+                     "h": 13,
+                     "fill": "#fcd34d",
+                     "text": "!",
+                     "font": "Bold 11"
+                    }
+                   ]
+                  },
+                  {
+                   "n": "Send digest email to 32 recipients",
+                   "t": "Text",
+                   "w": 516,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "sw": "fill",
+                   "text": "Send digest email to 32 recipients",
+                   "font": "Medium 13"
+                  },
+                  {
+                   "n": "Mailer · waiting for you",
+                   "t": "Text",
+                   "w": 118,
+                   "h": 13,
+                   "fill": "#fcd34d",
+                   "text": "Mailer · waiting for you",
+                   "font": "Regular 11"
+                  }
+                 ]
+                },
+                {
+                 "n": "Approval",
+                 "t": "Fram",
+                 "w": 678,
+                 "h": 134,
+                 "fill": "#0b0d12",
+                 "stroke": "#f59e0b@0.45",
+                 "r": 10,
+                 "al": "V",
+                 "gap": 10,
+                 "pad": "14 14 14 14",
+                 "sw": "fill",
+                 "c": [
+                  {
+                   "n": "Approval needed",
+                   "t": "Text",
+                   "w": 99,
+                   "h": 15,
+                   "fill": "#fcd34d",
+                   "text": "Approval needed",
+                   "font": "Semi Bold 12"
+                  },
+                  {
+                   "n": "Email “Weekly sales digest — Nov week 4” to 32 people on the Finance list (Requirements v5). 3 of these addresses bounced last week.",
+                   "t": "Text",
+                   "w": 648,
+                   "h": 40,
+                   "fill": "#e6e9ef",
+                   "sw": "fill",
+                   "text": "Email “Weekly sales digest — Nov week 4” to 32 people on the Finance list (Requirements v5). 3 of these addresses bounced last week.",
+                   "font": "Regular 13"
+                  },
+                  {
+                   "n": "b",
+                   "t": "Fram",
+                   "w": 333,
+                   "h": 29,
+                   "al": "H",
+                   "gap": 8,
+                   "align": "center",
+                   "c": [
+                    {
+                     "n": "Button/Approve",
+                     "t": "Fram",
+                     "w": 70,
+                     "h": 27,
+                     "fill": "#5b8cff",
+                     "r": 8,
+                     "al": "H",
+                     "gap": 6,
+                     "pad": "6 10 6 10",
+                     "align": "center",
+                     "c": [
+                      {
+                       "n": "Approve",
+                       "t": "Text",
+                       "w": 50,
+                       "h": 15,
+                       "fill": "#ffffff",
+                       "text": "Approve",
+                       "font": "Semi Bold 12"
+                      }
+                     ]
+                    },
+                    {
+                     "n": "Button/Reject",
+                     "t": "Fram",
+                     "w": 59,
+                     "h": 29,
+                     "fill": "#1c2230",
+                     "stroke": "#262d3a",
+                     "r": 8,
+                     "al": "H",
+                     "gap": 6,
+                     "pad": "6 10 6 10",
+                     "align": "center",
+                     "c": [
+                      {
+                       "n": "Reject",
+                       "t": "Text",
+                       "w": 37,
+                       "h": 15,
+                       "fill": "#e6e9ef",
+                       "text": "Reject",
+                       "font": "Semi Bold 12"
+                      }
+                     ]
+                    },
+                    {
+                     "n": "Button/Preview email",
+                     "t": "Fram",
+                     "w": 101,
+                     "h": 27,
+                     "r": 8,
+                     "al": "H",
+                     "gap": 6,
+                     "pad": "6 10 6 10",
+                     "align": "center",
+                     "c": [
+                      {
+                       "n": "Preview email",
+                       "t": "Text",
+                       "w": 81,
+                       "h": 15,
+                       "fill": "#5b8cff",
+                       "text": "Preview email",
+                       "font": "Semi Bold 12"
+                      }
+                     ]
+                    },
+                    {
+                     "n": "Button/Ask agent",
+                     "t": "Fram",
+                     "w": 79,
+                     "h": 27,
+                     "r": 8,
+                     "al": "H",
+                     "gap": 6,
+                     "pad": "6 10 6 10",
+                     "align": "center",
+                     "c": [
+                      {
+                       "n": "Ask agent",
+                       "t": "Text",
+                       "w": 59,
+                       "h": 15,
+                       "fill": "#5b8cff",
+                       "text": "Ask agent",
+                       "font": "Semi Bold 12"
+                      }
+                     ]
+                    }
+                   ]
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "n": "Step/Post summary to #sales",
+               "t": "Fram",
+               "w": 710,
+               "h": 43,
+               "stroke": "#262d3a",
+               "al": "V",
+               "gap": 12,
+               "pad": "12 16 12 16",
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "row",
+                 "t": "Fram",
+                 "w": 678,
+                 "h": 18,
+                 "al": "H",
+                 "gap": 12,
+                 "align": "center",
+                 "sw": "fill",
+                 "c": [
+                  {
+                   "n": "Ellipse",
+                   "t": "Elli",
+                   "w": 18,
+                   "h": 18,
+                   "stroke": "#262d3a",
+                   "sw": "fixed",
+                   "sh": "fixed"
+                  },
+                  {
+                   "n": "Post summary to #sales",
+                   "t": "Text",
+                   "w": 578,
+                   "h": 16,
+                   "fill": "#8b93a7",
+                   "sw": "fill",
+                   "text": "Post summary to #sales",
+                   "font": "Regular 13"
+                  },
+                  {
+                   "n": "Messenger",
+                   "t": "Text",
+                   "w": 58,
+                   "h": 13,
+                   "fill": "#8b93a7",
+                   "text": "Messenger",
+                   "font": "Regular 11"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "n": "Step/Archive outputs to Finance bridge",
+               "t": "Fram",
+               "w": 710,
+               "h": 43,
+               "stroke": "#262d3a",
+               "al": "V",
+               "gap": 12,
+               "pad": "12 16 12 16",
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "row",
+                 "t": "Fram",
+                 "w": 678,
+                 "h": 18,
+                 "al": "H",
+                 "gap": 12,
+                 "align": "center",
+                 "sw": "fill",
+                 "c": [
+                  {
+                   "n": "Ellipse",
+                   "t": "Elli",
+                   "w": 18,
+                   "h": 18,
+                   "stroke": "#262d3a",
+                   "sw": "fixed",
+                   "sh": "fixed"
+                  },
+                  {
+                   "n": "Archive outputs to Finance bridge",
+                   "t": "Text",
+                   "w": 590,
+                   "h": 16,
+                   "fill": "#8b93a7",
+                   "sw": "fill",
+                   "text": "Archive outputs to Finance bridge",
+                   "font": "Regular 13"
+                  },
+                  {
+                   "n": "Archivist",
+                   "t": "Text",
+                   "w": 46,
+                   "h": 13,
+                   "fill": "#8b93a7",
+                   "text": "Archivist",
+                   "font": "Regular 11"
+                  }
+                 ]
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "n": "Outputs header",
+             "t": "Fram",
+             "w": 712,
+             "h": 16,
+             "al": "H",
+             "align": "center",
+             "sw": "fill",
+             "c": [
+              {
+               "n": "Outputs so far",
+               "t": "Text",
+               "w": 637,
+               "h": 16,
+               "fill": "#e6e9ef",
+               "sw": "fill",
+               "text": "Outputs so far",
+               "font": "Semi Bold 13"
+              },
+              {
+               "n": "Download all",
+               "t": "Text",
+               "w": 75,
+               "h": 15,
+               "fill": "#5b8cff",
+               "text": "Download all",
+               "font": "Semi Bold 12"
+              }
+             ]
+            },
+            {
+             "n": "Outputs",
+             "t": "Fram",
+             "w": 712,
+             "h": 58,
+             "al": "H",
+             "gap": 12,
+             "sw": "fill",
+             "c": [
+              {
+               "n": "Output/sales-summary.pdf",
+               "t": "Fram",
+               "w": 229,
+               "h": 58,
+               "fill": "#141821",
+               "stroke": "#262d3a",
+               "r": 10,
+               "al": "H",
+               "gap": 12,
+               "pad": "12 12 12 12",
+               "align": "center",
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "ic",
+                 "t": "Fram",
+                 "w": 34,
+                 "h": 30,
+                 "fill": "#f87171@0.16",
+                 "r": 8,
+                 "al": "H",
+                 "pad": "9 7 9 7",
+                 "c": [
+                  {
+                   "n": "PDF",
+                   "t": "Text",
+                   "w": 20,
+                   "h": 12,
+                   "fill": "#f87171",
+                   "text": "PDF",
+                   "font": "Bold 10"
+                  }
+                 ]
+                },
+                {
+                 "n": "t",
+                 "t": "Fram",
+                 "w": 157,
+                 "h": 32,
+                 "al": "V",
+                 "gap": 3,
+                 "sw": "fill",
+                 "c": [
+                  {
+                   "n": "sales-summary.pdf",
+                   "t": "Text",
+                   "w": 121,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "text": "sales-summary.pdf",
+                   "font": "Medium 13"
+                  },
+                  {
+                   "n": "Report · 4 pages",
+                   "t": "Text",
+                   "w": 87,
+                   "h": 13,
+                   "fill": "#8b93a7",
+                   "text": "Report · 4 pages",
+                   "font": "Regular 11"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "n": "Output/charts.html",
+               "t": "Fram",
+               "w": 229,
+               "h": 58,
+               "fill": "#141821",
+               "stroke": "#262d3a",
+               "r": 10,
+               "al": "H",
+               "gap": 12,
+               "pad": "12 12 12 12",
+               "align": "center",
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "ic",
+                 "t": "Fram",
+                 "w": 43,
+                 "h": 30,
+                 "fill": "#5b8cff@0.16",
+                 "r": 8,
+                 "al": "H",
+                 "pad": "9 7 9 7",
+                 "c": [
+                  {
+                   "n": "HTML",
+                   "t": "Text",
+                   "w": 29,
+                   "h": 12,
+                   "fill": "#5b8cff",
+                   "text": "HTML",
+                   "font": "Bold 10"
+                  }
+                 ]
+                },
+                {
+                 "n": "t",
+                 "t": "Fram",
+                 "w": 148,
+                 "h": 32,
+                 "al": "V",
+                 "gap": 3,
+                 "sw": "fill",
+                 "c": [
+                  {
+                   "n": "charts.html",
+                   "t": "Text",
+                   "w": 71,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "text": "charts.html",
+                   "font": "Medium 13"
+                  },
+                  {
+                   "n": "2 interactive charts",
+                   "t": "Text",
+                   "w": 101,
+                   "h": 13,
+                   "fill": "#8b93a7",
+                   "text": "2 interactive charts",
+                   "font": "Regular 11"
+                  }
+                 ]
+                }
+               ]
+              },
+              {
+               "n": "Output/email-draft.md",
+               "t": "Fram",
+               "w": 229,
+               "h": 58,
+               "fill": "#141821",
+               "stroke": "#262d3a",
+               "r": 10,
+               "al": "H",
+               "gap": 12,
+               "pad": "12 12 12 12",
+               "align": "center",
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "ic",
+                 "t": "Fram",
+                 "w": 31,
+                 "h": 30,
+                 "fill": "#f59e0b@0.16",
+                 "r": 8,
+                 "al": "H",
+                 "pad": "9 7 9 7",
+                 "c": [
+                  {
+                   "n": "MD",
+                   "t": "Text",
+                   "w": 17,
+                   "h": 12,
+                   "fill": "#f59e0b",
+                   "text": "MD",
+                   "font": "Bold 10"
+                  }
+                 ]
+                },
+                {
+                 "n": "t",
+                 "t": "Fram",
+                 "w": 160,
+                 "h": 32,
+                 "al": "V",
+                 "gap": 3,
+                 "sw": "fill",
+                 "c": [
+                  {
+                   "n": "email-draft.md",
+                   "t": "Text",
+                   "w": 93,
+                   "h": 16,
+                   "fill": "#e6e9ef",
+                   "text": "email-draft.md",
+                   "font": "Medium 13"
+                  },
+                  {
+                   "n": "Waiting for approval",
+                   "t": "Text",
+                   "w": 104,
+                   "h": 13,
+                   "fill": "#8b93a7",
+                   "text": "Waiting for approval",
+                   "font": "Regular 11"
+                  }
+                 ]
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "n": "Review",
+             "t": "Fram",
+             "w": 712,
+             "h": 63,
+             "fill": "#141821",
+             "stroke": "#262d3a",
+             "r": 12,
+             "al": "H",
+             "gap": 12,
+             "pad": "14 16 14 16",
+             "align": "center",
+             "sw": "fill",
+             "c": [
+              {
+               "n": "t",
+               "t": "Fram",
+               "w": 339,
+               "h": 33,
+               "al": "V",
+               "gap": 4,
+               "sw": "fill",
+               "c": [
+                {
+                 "n": "Grade this run",
+                 "t": "Text",
+                 "w": 90,
+                 "h": 16,
+                 "fill": "#e6e9ef",
+                 "text": "Grade this run",
+                 "font": "Semi Bold 13"
+                },
+                {
+                 "n": "Opens when R7 finishes · agent self-score 4 / 5",
+                 "t": "Text",
+                 "w": 246,
+                 "h": 13,
+                 "fill": "#8b93a7",
+                 "text": "Opens when R7 finishes · agent self-score 4 / 5",
+                 "font": "Regular 11"
+                }
+               ]
+              },
+              {
+               "n": "stars",
+               "t": "Fram",
+               "w": 106,
+               "h": 18,
+               "al": "H",
+               "gap": 4,
+               "align": "center",
+               "c": [
+                {
+                 "n": "Star",
+                 "t": "Star",
+                 "w": 18,
+                 "h": 18,
+                 "stroke": "#8b93a7",
+                 "sw": "fixed",
+                 "sh": "fixed"
+                },
+                {
+                 "n": "Star",
+                 "t": "Star",
+                 "w": 18,
+                 "h": 18,
+                 "stroke": "#8b93a7",
+                 "sw": "fixed",
+                 "sh": "fixed"
+                },
+                {
+                 "n": "Star",
+                 "t": "Star",
+                 "w": 18,
+                 "h": 18,
+                 "stroke": "#8b93a7",
+                 "sw": "fixed",
+                 "sh": "fixed"
+                },
+                {
+                 "n": "Star",
+                 "t": "Star",
+                 "w": 18,
+                 "h": 18,
+                 "stroke": "#8b93a7",
+                 "sw": "fixed",
+                 "sh": "fixed"
+                },
+                {
+                 "n": "Star",
+                 "t": "Star",
+                 "w": 18,
+                 "h": 18,
+                 "stroke": "#8b93a7",
+                 "sw": "fixed",
+                 "sh": "fixed"
+                }
+               ]
+              },
+              {
+               "n": "Button/Add note",
+               "t": "Fram",
+               "w": 75,
+               "h": 29,
+               "fill": "#1c2230",
+               "stroke": "#262d3a",
+               "r": 8,
+               "al": "H",
+               "gap": 6,
+               "pad": "6 10 6 10",
+               "align": "center",
+               "c": [
+                {
+                 "n": "Add note",
+                 "t": "Text",
+                 "w": 53,
+                 "h": 15,
+                 "fill": "#e6e9ef",
+                 "text": "Add note",
+                 "font": "Semi Bold 12"
+                }
+               ]
+              },
+              {
+               "n": "Button/Compare with R6",
+               "t": "Fram",
+               "w": 122,
+               "h": 29,
+               "fill": "#1c2230",
+               "stroke": "#262d3a",
+               "r": 8,
+               "al": "H",
+               "gap": 6,
+               "pad": "6 10 6 10",
+               "align": "center",
+               "c": [
+                {
+                 "n": "Compare with R6",
+                 "t": "Text",
+                 "w": 100,
+                 "h": 15,
+                 "fill": "#e6e9ef",
+                 "text": "Compare with R6",
+                 "font": "Semi Bold 12"
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "n": "Agent panel",
+     "t": "Fram",
+     "w": 380,
+     "h": 1024,
+     "fill": "#141821",
+     "stroke": "#262d3a",
+     "al": "V",
+     "sw": "fixed",
+     "sh": "fill",
+     "c": [
+      {
+       "n": "Agent header",
+       "t": "Fram",
+       "w": 379,
+       "h": 53,
+       "stroke": "#262d3a",
+       "al": "H",
+       "gap": 10,
+       "pad": "14 16 14 16",
+       "align": "center",
+       "sw": "fill",
+       "c": [
+        {
+         "n": "Ellipse",
+         "t": "Elli",
+         "w": 24,
+         "h": 24,
+         "fill": "gradient_linear",
+         "sw": "fixed",
+         "sh": "fixed"
+        },
+        {
+         "n": "Agent",
+         "t": "Text",
+         "w": 41,
+         "h": 17,
+         "fill": "#e6e9ef",
+         "text": "Agent",
+         "font": "Semi Bold 14"
+        },
+        {
+         "n": "Pill",
+         "t": "Fram",
+         "w": 72,
+         "h": 19,
+         "fill": "#24324f",
+         "r": 999,
+         "al": "H",
+         "gap": 5,
+         "pad": "3 8 3 8",
+         "align": "center",
+         "c": [
+          {
+           "n": "Co-author",
+           "t": "Text",
+           "w": 56,
+           "h": 13,
+           "fill": "#a9c1ff",
+           "text": "Co-author",
+           "font": "Semi Bold 11"
+          }
+         ]
+        },
+        {
+         "n": "s",
+         "t": "Fram",
+         "w": 160,
+         "h": 1,
+         "al": "V",
+         "sw": "fill",
+         "sh": "fixed",
+         "c": []
+        },
+        {
+         "n": "»",
+         "t": "Text",
+         "w": 10,
+         "h": 19,
+         "fill": "#8b93a7",
+         "text": "»",
+         "font": "Medium 16"
+        }
+       ]
+      },
+      {
+       "n": "Context",
+       "t": "Fram",
+       "w": 379,
+       "h": 40,
+       "stroke": "#262d3a",
+       "al": "H",
+       "gap": 6,
+       "pad": "10 16 10 16",
+       "align": "center",
+       "sw": "fill",
+       "c": [
+        {
+         "n": "Working on",
+         "t": "Text",
+         "w": 59,
+         "h": 13,
+         "fill": "#8b93a7",
+         "text": "Working on",
+         "font": "Regular 11"
+        },
+        {
+         "n": "Pill",
+         "t": "Fram",
+         "w": 66,
+         "h": 19,
+         "fill": "#1c2230",
+         "r": 999,
+         "al": "H",
+         "gap": 5,
+         "pad": "3 8 3 8",
+         "align": "center",
+         "c": [
+          {
+           "n": "Runs › R7",
+           "t": "Text",
+           "w": 50,
+           "h": 13,
+           "fill": "#e6e9ef",
+           "text": "Runs › R7",
+           "font": "Semi Bold 11"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "n": "Messages",
+       "t": "Fram",
+       "w": 379,
+       "h": 817,
+       "al": "V",
+       "gap": 14,
+       "pad": "16 16 16 16",
+       "sw": "fill",
+       "sh": "fill",
+       "c": [
+        {
+         "n": "Agent message",
+         "t": "Fram",
+         "w": 347,
+         "h": 80,
+         "fill": "#1c2230",
+         "r": 12,
+         "al": "V",
+         "gap": 10,
+         "pad": "10 12 10 12",
+         "sw": "fill",
+         "c": [
+          {
+           "n": "R7 has drafted the digest email for the 32 people on the Finance list. 3 of them bounced last week. Should I leave them out before you approve?",
+           "t": "Text",
+           "w": 323,
+           "h": 60,
+           "fill": "#e6e9ef",
+           "sw": "fill",
+           "text": "R7 has drafted the digest email for the 32 people on the Finance list. 3 of them bounced last week. Should I leave them out before you approve?",
+           "font": "Regular 13"
+          }
+         ]
+        },
+        {
+         "n": "User row",
+         "t": "Fram",
+         "w": 347,
+         "h": 60,
+         "al": "H",
+         "just": "max",
+         "sw": "fill",
+         "c": [
+          {
+           "n": "User message",
+           "t": "Fram",
+           "w": 260,
+           "h": 60,
+           "fill": "#5b8cff@0.22",
+           "r": 12,
+           "al": "V",
+           "pad": "10 12 10 12",
+           "sw": "fixed",
+           "c": [
+            {
+             "n": "Yes, leave them out. And attach the PDF summary.",
+             "t": "Text",
+             "w": 236,
+             "h": 40,
+             "fill": "#e6e9ef",
+             "sw": "fill",
+             "text": "Yes, leave them out. And attach the PDF summary.",
+             "font": "Regular 13"
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "n": "Agent message",
+         "t": "Fram",
+         "w": 347,
+         "h": 221,
+         "fill": "#1c2230",
+         "r": 12,
+         "al": "V",
+         "gap": 10,
+         "pad": "10 12 10 12",
+         "sw": "fill",
+         "c": [
+          {
+           "n": "Done for this run. To keep it for future runs, I suggest a plan change:",
+           "t": "Text",
+           "w": 323,
+           "h": 40,
+           "fill": "#e6e9ef",
+           "sw": "fill",
+           "text": "Done for this run. To keep it for future runs, I suggest a plan change:",
+           "font": "Regular 13"
+          },
+          {
+           "n": "Proposal",
+           "t": "Fram",
+           "w": 323,
+           "h": 151,
+           "fill": "#0b0d12",
+           "stroke": "#262d3a",
+           "r": 10,
+           "al": "V",
+           "gap": 8,
+           "pad": "12 12 12 12",
+           "sw": "fill",
+           "c": [
+            {
+             "n": "h",
+             "t": "Fram",
+             "w": 94,
+             "h": 19,
+             "al": "H",
+             "gap": 8,
+             "align": "center",
+             "c": [
+              {
+               "n": "Plan",
+               "t": "Text",
+               "w": 26,
+               "h": 15,
+               "fill": "#e6e9ef",
+               "text": "Plan",
+               "font": "Semi Bold 12"
+              },
+              {
+               "n": "Pill",
+               "t": "Fram",
+               "w": 60,
+               "h": 19,
+               "fill": "#24324f",
+               "r": 999,
+               "al": "H",
+               "gap": 5,
+               "pad": "3 8 3 8",
+               "align": "center",
+               "c": [
+                {
+                 "n": "v3 → v4",
+                 "t": "Text",
+                 "w": 44,
+                 "h": 13,
+                 "fill": "#a9c1ff",
+                 "text": "v3 → v4",
+                 "font": "Semi Bold 11"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "n": "+ Step 4 attaches sales-summary.pdf",
+             "t": "Text",
+             "w": 220,
+             "h": 15,
+             "fill": "#34d399",
+             "text": "+  Step 4 attaches sales-summary.pdf",
+             "font": "Medium 12"
+            },
+            {
+             "n": "+ Step 4 skips addresses that bounced",
+             "t": "Text",
+             "w": 228,
+             "h": 15,
+             "fill": "#34d399",
+             "text": "+  Step 4 skips addresses that bounced",
+             "font": "Medium 12"
+            },
+            {
+             "n": "Requirements stay at v5",
+             "t": "Text",
+             "w": 149,
+             "h": 15,
+             "fill": "#8b93a7",
+             "text": "   Requirements stay at v5",
+             "font": "Medium 12"
+            },
+            {
+             "n": "b",
+             "t": "Fram",
+             "w": 234,
+             "h": 29,
+             "al": "H",
+             "gap": 6,
+             "align": "center",
+             "c": [
+              {
+               "n": "Button/Save as v4",
+               "t": "Fram",
+               "w": 83,
+               "h": 27,
+               "fill": "#5b8cff",
+               "r": 8,
+               "al": "H",
+               "gap": 6,
+               "pad": "6 10 6 10",
+               "align": "center",
+               "c": [
+                {
+                 "n": "Save as v4",
+                 "t": "Text",
+                 "w": 63,
+                 "h": 15,
+                 "fill": "#ffffff",
+                 "text": "Save as v4",
+                 "font": "Semi Bold 12"
+                }
+               ]
+              },
+              {
+               "n": "Button/View diff",
+               "t": "Fram",
+               "w": 74,
+               "h": 29,
+               "fill": "#1c2230",
+               "stroke": "#262d3a",
+               "r": 8,
+               "al": "H",
+               "gap": 6,
+               "pad": "6 10 6 10",
+               "align": "center",
+               "c": [
+                {
+                 "n": "View diff",
+                 "t": "Text",
+                 "w": 52,
+                 "h": 15,
+                 "fill": "#e6e9ef",
+                 "text": "View diff",
+                 "font": "Semi Bold 12"
+                }
+               ]
+              },
+              {
+               "n": "Button/Discard",
+               "t": "Fram",
+               "w": 65,
+               "h": 27,
+               "r": 8,
+               "al": "H",
+               "gap": 6,
+               "pad": "6 10 6 10",
+               "align": "center",
+               "c": [
+                {
+                 "n": "Discard",
+                 "t": "Text",
+                 "w": 45,
+                 "h": 15,
+                 "fill": "#5b8cff",
+                 "text": "Discard",
+                 "font": "Semi Bold 12"
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "n": "Composer wrap",
+       "t": "Fram",
+       "w": 379,
+       "h": 114,
+       "stroke": "#262d3a",
+       "al": "V",
+       "pad": "16 16 16 16",
+       "sw": "fill",
+       "c": [
+        {
+         "n": "Composer",
+         "t": "Fram",
+         "w": 347,
+         "h": 81,
+         "fill": "#0b0d12",
+         "stroke": "#262d3a",
+         "r": 12,
+         "al": "V",
+         "gap": 12,
+         "pad": "12 12 12 12",
+         "sw": "fill",
+         "c": [
+          {
+           "n": "Ask the agent, or describe a change…",
+           "t": "Text",
+           "w": 233,
+           "h": 16,
+           "fill": "#8b93a7",
+           "text": "Ask the agent, or describe a change…",
+           "font": "Regular 13"
+          },
+          {
+           "n": "r",
+           "t": "Fram",
+           "w": 321,
+           "h": 27,
+           "al": "H",
+           "gap": 8,
+           "align": "center",
+           "sw": "fill",
+           "c": [
+            {
+             "n": "Pill",
+             "t": "Fram",
+             "w": 62,
+             "h": 19,
+             "fill": "#1c2230",
+             "r": 999,
+             "al": "H",
+             "gap": 5,
+             "pad": "3 8 3 8",
+             "align": "center",
+             "c": [
+              {
+               "n": "+ Attach",
+               "t": "Text",
+               "w": 46,
+               "h": 13,
+               "fill": "#8b93a7",
+               "text": "+ Attach",
+               "font": "Semi Bold 11"
+              }
+             ]
+            },
+            {
+             "n": "Pill",
+             "t": "Fram",
+             "w": 84,
+             "h": 19,
+             "fill": "#1c2230",
+             "r": 999,
+             "al": "H",
+             "gap": 5,
+             "pad": "3 8 3 8",
+             "align": "center",
+             "c": [
+              {
+               "n": "@ File or link",
+               "t": "Text",
+               "w": 68,
+               "h": 13,
+               "fill": "#8b93a7",
+               "text": "@ File or link",
+               "font": "Semi Bold 11"
+              }
+             ]
+            },
+            {
+             "n": "s",
+             "t": "Fram",
+             "w": 101,
+             "h": 1,
+             "al": "V",
+             "sw": "fill",
+             "sh": "fixed",
+             "c": []
+            },
+            {
+             "n": "Send",
+             "t": "Fram",
+             "w": 50,
+             "h": 27,
+             "fill": "#5b8cff",
+             "r": 8,
+             "al": "H",
+             "pad": "6 10 6 10",
+             "c": [
+              {
+               "n": "Send",
+               "t": "Text",
+               "w": 30,
+               "h": 15,
+               "fill": "#ffffff",
+               "text": "Send",
+               "font": "Semi Bold 12"
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "n": "Start run dialog",
+   "t": "Fram",
+   "w": 520,
+   "h": 447,
+   "fill": "#141821",
+   "stroke": "#262d3a",
+   "r": 16,
+   "al": "V",
+   "gap": 18,
+   "pad": "24 24 24 24",
+   "sw": "fixed",
+   "c": [
+    {
+     "n": "h",
+     "t": "Fram",
+     "w": 470,
+     "h": 46,
+     "al": "V",
+     "gap": 6,
+     "sw": "fill",
+     "c": [
+      {
+       "n": "Start a new run",
+       "t": "Text",
+       "w": 133,
+       "h": 22,
+       "fill": "#e6e9ef",
+       "text": "Start a new run",
+       "font": "Semi Bold 18"
+      },
+      {
+       "n": "Runs the cards of the chosen plan on one iteration batch.",
+       "t": "Text",
+       "w": 470,
+       "h": 18,
+       "fill": "#8b93a7",
+       "sw": "fill",
+       "text": "Runs the cards of the chosen plan on one iteration batch.",
+       "font": "Regular 12"
+      }
+     ]
+    },
+    {
+     "n": "Field/Plan version",
+     "t": "Fram",
+     "w": 470,
+     "h": 59,
+     "al": "V",
+     "gap": 6,
+     "sw": "fill",
+     "c": [
+      {
+       "n": "Plan version",
+       "t": "Text",
+       "w": 70,
+       "h": 15,
+       "fill": "#8b93a7",
+       "text": "Plan version",
+       "font": "Medium 12"
+      },
+      {
+       "n": "Select",
+       "t": "Fram",
+       "w": 470,
+       "h": 38,
+       "fill": "#0b0d12",
+       "stroke": "#262d3a",
+       "r": 8,
+       "al": "H",
+       "gap": 8,
+       "pad": "10 12 10 12",
+       "align": "center",
+       "sw": "fill",
+       "c": [
+        {
+         "n": "v3 · latest",
+         "t": "Text",
+         "w": 62,
+         "h": 16,
+         "fill": "#e6e9ef",
+         "text": "v3 · latest",
+         "font": "Semi Bold 13"
+        },
+        {
+         "n": "from Requirements v5 · 6 steps",
+         "t": "Text",
+         "w": 358,
+         "h": 15,
+         "fill": "#8b93a7",
+         "sw": "fill",
+         "text": "from Requirements v5 · 6 steps",
+         "font": "Regular 12"
+        },
+        {
+         "n": "Vector",
+         "t": "Vect",
+         "w": 8,
+         "h": 4,
+         "stroke": "#8b93a7",
+         "sw": "fixed",
+         "sh": "fixed"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "n": "Field/Iteration batch",
+     "t": "Fram",
+     "w": 470,
+     "h": 59,
+     "al": "V",
+     "gap": 6,
+     "sw": "fill",
+     "c": [
+      {
+       "n": "Iteration batch",
+       "t": "Text",
+       "w": 84,
+       "h": 15,
+       "fill": "#8b93a7",
+       "text": "Iteration batch",
+       "font": "Medium 12"
+      },
+      {
+       "n": "Select",
+       "t": "Fram",
+       "w": 470,
+       "h": 38,
+       "fill": "#0b0d12",
+       "stroke": "#262d3a",
+       "r": 8,
+       "al": "H",
+       "gap": 8,
+       "pad": "10 12 10 12",
+       "align": "center",
+       "sw": "fill",
+       "c": [
+        {
+         "n": "Nov week 4",
+         "t": "Text",
+         "w": 74,
+         "h": 16,
+         "fill": "#e6e9ef",
+         "text": "Nov week 4",
+         "font": "Semi Bold 13"
+        },
+        {
+         "n": "3 inputs · 1 new since R6",
+         "t": "Text",
+         "w": 346,
+         "h": 15,
+         "fill": "#8b93a7",
+         "sw": "fill",
+         "text": "3 inputs · 1 new since R6",
+         "font": "Regular 12"
+        },
+        {
+         "n": "Vector",
+         "t": "Vect",
+         "w": 8,
+         "h": 4,
+         "stroke": "#8b93a7",
+         "sw": "fixed",
+         "sh": "fixed"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "n": "Inputs",
+     "t": "Fram",
+     "w": 470,
+     "h": 69,
+     "al": "V",
+     "gap": 8,
+     "sw": "fill",
+     "c": [
+      {
+       "n": "This batch uses",
+       "t": "Text",
+       "w": 91,
+       "h": 15,
+       "fill": "#8b93a7",
+       "text": "This batch uses",
+       "font": "Medium 12"
+      },
+      {
+       "n": "chips",
+       "t": "Fram",
+       "w": 470,
+       "h": 46,
+       "al": "H",
+       "gap": 8,
+       "sw": "fill",
+       "c": [
+        {
+         "n": "Pill",
+         "t": "Fram",
+         "w": 94,
+         "h": 19,
+         "fill": "#1c2230",
+         "r": 999,
+         "al": "H",
+         "gap": 5,
+         "pad": "3 8 3 8",
+         "align": "center",
+         "c": [
+          {
+           "n": "sales_nov.xlsx",
+           "t": "Text",
+           "w": 78,
+           "h": 13,
+           "fill": "#e6e9ef",
+           "text": "sales_nov.xlsx",
+           "font": "Semi Bold 11"
+          }
+         ]
+        },
+        {
+         "n": "Pill",
+         "t": "Fram",
+         "w": 141,
+         "h": 19,
+         "fill": "#1c2230",
+         "r": 999,
+         "al": "H",
+         "gap": 5,
+         "pad": "3 8 3 8",
+         "align": "center",
+         "c": [
+          {
+           "n": "CRM · Q4 pipeline (link)",
+           "t": "Text",
+           "w": 125,
+           "h": 13,
+           "fill": "#e6e9ef",
+           "text": "CRM · Q4 pipeline (link)",
+           "font": "Semi Bold 11"
+          }
+         ]
+        },
+        {
+         "n": "Pill",
+         "t": "Fram",
+         "w": 183,
+         "h": 19,
+         "fill": "#1c2230",
+         "r": 999,
+         "al": "H",
+         "gap": 5,
+         "pad": "3 8 3 8",
+         "align": "center",
+         "c": [
+          {
+           "n": "Folder bridge · /finance/reports",
+           "t": "Text",
+           "w": 167,
+           "h": 13,
+           "fill": "#e6e9ef",
+           "text": "Folder bridge · /finance/reports",
+           "font": "Semi Bold 11"
+          }
+         ]
+        },
+        {
+         "n": "Pill",
+         "t": "Fram",
+         "w": 109,
+         "h": 19,
+         "fill": "#1c2230",
+         "r": 999,
+         "al": "H",
+         "gap": 5,
+         "pad": "3 8 3 8",
+         "align": "center",
+         "c": [
+          {
+           "n": "VPN · hq-intranet",
+           "t": "Text",
+           "w": 93,
+           "h": 13,
+           "fill": "#e6e9ef",
+           "text": "VPN · hq-intranet",
+           "font": "Semi Bold 11"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "n": "Estimate",
+     "t": "Fram",
+     "w": 470,
+     "h": 38,
+     "fill": "#1c2230",
+     "r": 8,
+     "al": "H",
+     "gap": 8,
+     "pad": "10 12 10 12",
+     "align": "center",
+     "sw": "fill",
+     "c": [
+      {
+       "n": "About 12–15 min · about $0.60 · 1 step will ask for your approval",
+       "t": "Text",
+       "w": 446,
+       "h": 18,
+       "fill": "#8b93a7",
+       "sw": "fill",
+       "text": "About 12–15 min · about $0.60 · 1 step will ask for your approval",
+       "font": "Regular 12"
+      }
+     ]
+    },
+    {
+     "n": "Footer",
+     "t": "Fram",
+     "w": 470,
+     "h": 36,
+     "al": "H",
+     "gap": 8,
+     "just": "max",
+     "sw": "fill",
+     "c": [
+      {
+       "n": "Button/Cancel",
+       "t": "Fram",
+       "w": 74,
+       "h": 36,
+       "fill": "#1c2230",
+       "stroke": "#262d3a",
+       "r": 8,
+       "al": "H",
+       "gap": 6,
+       "pad": "9 14 9 14",
+       "align": "center",
+       "c": [
+        {
+         "n": "Cancel",
+         "t": "Text",
+         "w": 44,
+         "h": 16,
+         "fill": "#e6e9ef",
+         "text": "Cancel",
+         "font": "Semi Bold 13"
+        }
+       ]
+      },
+      {
+       "n": "Button/Start run",
+       "t": "Fram",
+       "w": 84,
+       "h": 34,
+       "fill": "#5b8cff",
+       "r": 8,
+       "al": "H",
+       "gap": 6,
+       "pad": "9 14 9 14",
+       "align": "center",
+       "c": [
+        {
+         "n": "Start run",
+         "t": "Text",
+         "w": 56,
+         "h": 16,
+         "fill": "#ffffff",
+         "text": "Start run",
+         "font": "Semi Bold 13"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

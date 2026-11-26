@@ -8,6 +8,15 @@ handoff for the agent that builds it in `agent-home/` (the primary UI — see `A
   `Project detail — Runs step (key mockup)` and `Start run dialog`).
 - Screenshots: [`screenshots/runs-step-desktop.png`](screenshots/runs-step-desktop.png),
   [`screenshots/start-run-dialog.png`](screenshots/start-run-dialog.png).
+- Exact values without Figma access:
+  - [`figma-spec.json`](figma-spec.json): every layer's size, auto-layout (gap/padding/alignment),
+    fill/stroke colour, radius, text and font, exported from the Figma file. Treat it as the pixel
+    spec; map hex values to the theme tokens in section 4, not hard-coded colours.
+  - [`figma-build-script.js`](figma-build-script.js): the Figma Plugin API script that drew the
+    mockup. Run it through the Figma MCP `use_figma` tool on a blank file to rebuild or extend it.
+- With Figma MCP access, `get_design_context` / `get_screenshot` on file `2ulo0wiREINRTTsynkpkgl`
+  (nodes `1:2`, `1:277`) return the same details. Extend the file (Requirements and Cards steps)
+  rather than starting a new one.
 
 ![Runs step](screenshots/runs-step-desktop.png)
 
