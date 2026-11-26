@@ -37,6 +37,21 @@ describe("draftChanges", () => {
     expect(draftChanges(base, { ...base }).count).toBe(0);
   });
 
+  it("treats stored defaults as unchanged but a real tool or mode change as changed", () => {
+    const base = { steps: [step("pull"), step("clean"), step("send")] };
+    const draft = {
+      steps: [
+        step("pull", { toolsets: [], mode: "card" }),
+        step("clean", { toolsets: ["web"] }),
+        step("send", { mode: "inline" }),
+      ],
+    };
+    expect([...draftChanges(base, draft).steps]).toEqual([
+      ["clean", "changed"],
+      ["send", "changed"],
+    ]);
+  });
+
   it("treats every part of a draft from scratch as new", () => {
     const c = draftChanges(null, { body: "New plan.", steps: [step("pull")] });
     expect(c.paragraphs[0].changed).toBe(true);
