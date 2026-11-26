@@ -178,6 +178,26 @@ async def revoke_grant(source_id: str, request: Request):
     return {"revoked": await _run(dd.revoke_grant(source.id, user_id))}
 
 
+async def _is_admin(user_id: str) -> bool:
+    from hermes_cli.access import PrincipalStore
+    from hermes_cli.web_server import _comms_app_store
+
+    person = await PrincipalStore(_comms_app_store()).get(user_id)
+    return bool(person and person.active and ss._is_profile_admin(person))
+
+
+@router.put("/sources/{source_id}/assignee")
+async def put_assignee(source_id: str, request: Request):
+    """Who gets this source's Needs you cards; empty sends them to every owner and admin."""
+    principal, source, _a = await _source_for(request, source_id, "manage")
+    if not ss._is_profile_admin(principal):
+        raise HTTPException(403, "Only an owner or admin can assign a data source.")
+    user_id = str((await _body(request)).get("user_id") or "").strip()
+    if user_id and not await _is_admin(user_id):
+        raise HTTPException(400, "Only an owner or admin can be assigned.")
+    return {"owner_user_id": await _run(dd.assign(source, user_id))}
+
+
 # -- live structure (engine adapters, plan Phase 7) ---------------------------------------
 
 

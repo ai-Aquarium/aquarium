@@ -3823,6 +3823,10 @@ export class HermesApiClient {
     return this.request(`/api/data/sources/${encodeURIComponent(id)}/grants?${qs.toString()}`, { method: "DELETE" });
   }
 
+  async putDataAssignee(id: string, userId: string): Promise<{ owner_user_id: string }> {
+    return this.request(`/api/data/sources/${encodeURIComponent(id)}/assignee`, { method: "PUT", json: { user_id: userId } });
+  }
+
   /** The schemas a source's first study covers, and every schema it has. */
   async studySchemas(id: string): Promise<{ chosen: string[]; available: string[] }> {
     return this.request(`/api/data/sources/${encodeURIComponent(id)}/study-schemas`);

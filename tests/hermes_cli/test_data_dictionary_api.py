@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -127,3 +128,51 @@ def test_access_level_rules():
     assert dd.access_level(SOURCE, member, None, "admin") is None  # site access only counts for site sources
     assert dd.access_level(SOURCE, SimpleNamespace(user_id="x", role="admin", is_owner=False), None) == "manage"
     assert dd.access_level(SOURCE, None, "read") is None
+
+
+def test_only_an_owner_or_admin_assigns_and_only_to_an_owner_or_admin(client, monkeypatch):
+    roles = {"alice": "admin", "proposer": "member"}
+    assigned = []
+
+    async def caller(request):
+        user = request.headers["x-test-user"]
+        return SimpleNamespace(user_id=user, role=roles.get(user, "member"), is_owner=False)
+
+    async def assign(source, user_id, **_kw):
+        assigned.append(user_id)
+        return user_id
+
+    async def is_admin(user_id):
+        return user_id in {"alice", "leo"}
+
+    monkeypatch.setattr(api, "_caller", caller)
+    monkeypatch.setattr(api, "_is_admin", is_admin)
+    monkeypatch.setattr(dd, "assign", assign)
+    path = f"/api/data/sources/{SID}/assignee"
+
+    def put(user, body):
+        return client.put(path, json=body, headers={"x-test-user": user})
+
+    assert put("stranger", {"user_id": "leo"}).status_code == 404
+    assert put("proposer", {"user_id": "leo"}).status_code == 403
+    assert put("alice", {"user_id": "member"}).status_code == 400
+    assert put("alice", {"user_id": "leo"}).json() == {"owner_user_id": "leo"}
+    assert put("alice", {"user_id": ""}).json() == {"owner_user_id": ""}
+    assert assigned == ["leo", ""]
+
+
+def test_assign_refuses_sites_and_connections():
+    for kind in ("site", "connection"):
+        with pytest.raises(ss.SiteError):
+            asyncio.run(dd.assign(dd.Source(id=SID, kind=kind, profile="default", name="x"), "leo", db=object()))
+
+
+def test_being_assigned_aquarium_data_grants_no_access_of_its_own(monkeypatch):
+    app = dd.Source(id=SID, kind="app", profile="default", name="Aquarium data", owner_user_id="ken")
+    ken = SimpleNamespace(user_id="ken", role="member", is_owner=False)
+
+    async def no_grant(*_a, **_kw):
+        return None
+
+    monkeypatch.setattr(dd, "grant_for", no_grant)
+    assert asyncio.run(dd.resolve_access(app, ken, db=object())) is None

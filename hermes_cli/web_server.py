@@ -13764,11 +13764,7 @@ async def needs_you(request: Request):
         from hermes_cli import site_sources as ss
 
         sources = await dd.list_sources(principal, ss.current_profile())
-        items.extend(ny.mark_team([
-            *ny.data_draft_entries(sources),
-            *ny.data_schema_entries(sources),
-            *ny.data_health_entries(sources),
-        ]))
+        items.extend(ny.data_duties(sources, principal.user_id))
     except Exception:
         _log.warning("needs-you: data dictionary source failed", exc_info=True)
 

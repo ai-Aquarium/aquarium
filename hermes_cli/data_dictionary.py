@@ -220,7 +220,8 @@ def access_level(
         return best if _rank(best) else None
     if ss._is_profile_admin(principal):
         return "manage"
-    if source.owner_user_id and source.owner_user_id == principal.user_id:
+    # Aquarium's own data is "owned" only as its Needs you assignee (see assign).
+    if source.kind != "app" and source.owner_user_id and source.owner_user_id == principal.user_id:
         return "manage"
     levels = [grant if grant in GRANTS else None]
     if source.kind == "site" and site_access:
@@ -492,7 +493,7 @@ async def get_source(source_id: str, *, db: Any = None) -> Optional[Source]:
 async def resolve_access(source: Source, principal: Any, *, db: Any = None) -> Optional[str]:
     if principal is None or not getattr(principal, "user_id", None):
         return None
-    if source.owner_user_id == principal.user_id or (
+    if (source.kind != "app" and source.owner_user_id == principal.user_id) or (
         source.kind != "connection" and ss._is_profile_admin(principal)
     ):
         return "manage"
@@ -957,6 +958,23 @@ async def set_study_schemas(source: Source, schemas: Any, *, db: Any = None) -> 
         )
     source.study_schemas = chosen
     return chosen
+
+
+async def assign(source: Source, user_id: str, *, db: Any = None) -> str:
+    """Give Aquarium's own data to one owner or admin (empty: back to all of them).
+
+    The assignee alone gets the source's dictionary and health cards in Needs
+    you; access is unchanged. Sites and connections keep their own owner.
+    """
+    if source.kind != "app":
+        raise SiteError("Only Aquarium's own data can be assigned; sites and connections keep their owner.")
+    async with _Conn(db) as conn:
+        await conn.execute(
+            "UPDATE public.data_sources SET owner_user_id = $2, updated_at = now() WHERE id = $1::uuid",
+            source.id, user_id,
+        )
+    source.owner_user_id = user_id
+    return user_id
 
 
 async def recheck_site(site_id: Any, *, db: Any = None) -> None:

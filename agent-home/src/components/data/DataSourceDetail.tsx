@@ -15,6 +15,7 @@ import type { DataSourceDoc, DictionaryVersion } from "@/types/data";
 import { DictionaryPill, HealthPill, TypeBadge, askHref } from "./DataList";
 import { ConnectionHealth } from "./ConnectionHealth";
 import { DictionaryDetail } from "./DictionaryDetail";
+import { AssigneeCard } from "./AssigneeCard";
 import { ShareSheet } from "./ShareSheet";
 import { DATA_TABS, allows, healthOf, type DataTab } from "./format";
 
@@ -59,7 +60,12 @@ export function DataSourceDetail({
   const propose = allows(source.access, "propose");
   const h = healthOf(source);
   const drift = source.schema_drift ?? [];
-  const owner = !source.owner_user_id ? t("list.admins") : source.owner_user_id === me ? t("list.you") : personName(people, source.owner_user_id);
+  const [assignee, setAssignee] = useState(source.owner_user_id);
+  const app = source.kind === "app";
+  const owner = !assignee ? t("list.admins") : assignee === me ? t("list.you") : personName(people, assignee);
+  const ownerLine = app
+    ? t("assign.line", { who: assignee ? owner : t("assign.everyone") })
+    : t("list.owner", { who: owner });
   const sourceTab = source.kind === "site" ? "website" : source.kind === "app" ? "about" : "connection";
 
   function select(next: DataTab) {
@@ -74,7 +80,7 @@ export function DataSourceDetail({
         <HealthPill source={source} />
         <DictionaryPill source={source} />
         <span className="text-[var(--color-muted)]">
-          · {t("list.owner", { who: owner })} · {t(`access.${source.access}`)}
+          · {ownerLine} · {t(`access.${source.access}`)}
         </span>
         <Link href={askHref(source.id)} className={`${primaryButtonClass} ml-auto inline-flex min-h-9 items-center`}>
           {t("detail.ask")}
@@ -141,9 +147,20 @@ export function DataSourceDetail({
                   </button>
                 }
               >
-                <p className="text-sm">{t("list.owner", { who: owner })}</p>
+                {app ? null : <p className="text-sm">{ownerLine}</p>}
                 <p className="text-xs text-[var(--color-muted)]">{t("access.always")}</p>
               </Card>
+              {app ? (
+                <AssigneeCard
+                  sourceId={source.id}
+                  assignee={assignee}
+                  directory={directory}
+                  me={me}
+                  open={(draft ? 1 : 0) + (drift.length ? 1 : 0) + (h.state === "attention" ? 1 : 0)}
+                  canAssign={manage}
+                  onChange={setAssignee}
+                />
+              ) : null}
               <Card title={t("overview.linked")}>
                 <ul className="flex flex-col gap-1 text-sm">
                   {source.kind === "site" && source.site_id ? (
@@ -183,7 +200,7 @@ export function DataSourceDetail({
                 </Link>
               ) : null}
             </InlineAlert>
-            <p className="text-sm">{t("list.owner", { who: owner })}</p>
+            <p className="text-sm">{ownerLine}</p>
             {manage ? (
               <div>
                 <button type="button" className={primaryButtonClass} onClick={() => setSharing(true)}>

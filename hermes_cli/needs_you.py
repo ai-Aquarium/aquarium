@@ -855,6 +855,17 @@ def data_health_entries(sources: Iterable[dict]) -> list[dict]:
     return out
 
 
+def data_duties(sources: Iterable[dict], user_id: str) -> list[dict]:
+    """Dictionary and health cards: to the source's assignee, else to every manager as Team."""
+    def cards(rows: list[dict]) -> list[dict]:
+        return [*data_draft_entries(rows), *data_schema_entries(rows), *data_health_entries(rows)]
+
+    rows = list(sources)
+    mine = [s for s in rows if s.get("owner_user_id") and s.get("owner_user_id") == user_id]
+    team = [s for s in rows if not s.get("owner_user_id")]
+    return [*cards(mine), *mark_team(cards(team))]
+
+
 # ---------------------------------------------------------------------------
 # Response
 # ---------------------------------------------------------------------------
