@@ -602,14 +602,14 @@ describe("ProjectDetailView", () => {
     expect(html).toContain("Where this stands");
     expect(html).toContain("Summarised");
     expect(html).toContain("Update summary");
-    // Chat (phone only) / Planning / Execution / Log; Planning leads, with
-    // the project chat docked beside it and Skills + Settings behind ⋯.
-    expect(html).toContain('data-component="ProjectTabsNav"');
-    for (const label of ["Chat", "Planning", "Execution", "Log"]) {
+    // The four-step spine: Requirements / Plan / Cards / Runs (+ Chat on a
+    // phone); Requirements leads, with Skills + Settings + Log behind ⋯.
+    expect(html).toContain('data-component="ProjectSpine"');
+    for (const label of ["Chat", "Requirements", "Plan", "Cards", "Runs"]) {
       expect(html).toContain(`>${label}`);
     }
-    expect(html).toContain('data-active-tab="planning"');
-    expect(html).toContain('data-active-section="planning"');
+    expect(html).toContain('data-active-view="requirements"');
+    expect(html).toContain('data-active-tab="requirements"');
     expect(html).toContain('data-component="ProjectChatDock"');
     expect(html).toContain('data-action="project-more"');
     expect(html).not.toContain('data-component="PanelAnchors"');
@@ -639,7 +639,7 @@ describe("ProjectDetailView", () => {
     // The journey bar sits above the tabs, ahead of Where it stands.
     const barAt = html.indexOf('data-component="JourneyBar"');
     expect(barAt).toBeGreaterThan(-1);
-    expect(barAt).toBeLessThan(html.indexOf('data-component="ProjectTabsNav"'));
+    expect(barAt).toBeLessThan(html.indexOf('data-component="ProjectSpine"'));
     expect(html).not.toContain('data-component="NextActionHero"');
     // Run 14 is waiting: the bar's one click is Continue.
     expect(bar(html)).toContain('data-state="waiting"');
@@ -660,7 +660,7 @@ describe("ProjectDetailView", () => {
         initialTab="iterations"
       />,
     );
-    expect(html).toContain('data-active-tab="execution"');
+    expect(html).toContain('data-active-tab="runs"');
     expect(html).toContain('id="project-section-iterations"');
     expect(html).not.toContain('id="project-section-plan"');
     const unknown = renderToStaticMarkup(
@@ -674,10 +674,10 @@ describe("ProjectDetailView", () => {
         initialTab="nope"
       />,
     );
-    expect(unknown).toContain('data-active-tab="planning"');
+    expect(unknown).toContain('data-active-tab="requirements"');
   });
 
-  it("switches sub-sections with a second tab row", () => {
+  it("the spine picks the step and stacks its parts", () => {
     const html = renderToStaticMarkup(
       <ProjectDetailView
         project={PROJECT}
@@ -688,16 +688,16 @@ describe("ProjectDetailView", () => {
         isInstanceAdmin={false}
       />,
     );
-    // Planning leads on its first part; the rest stay mounted but hidden so
-    // their state survives the switch.
-    expect(html).toContain('data-component="ProjectPartsNav"');
-    expect(html).toContain('data-active-part="scope"');
-    for (const p of ["scope", "inputs", "plan", "outputs"]) {
-      expect(html).toContain(`data-part="${p}"`);
+    // Requirements leads; its two parts render stacked (no second nav row).
+    expect(html).toContain('data-component="ProjectSpine"');
+    for (const s of ["requirements", "plan", "cards", "runs"]) {
+      expect(html).toContain(`data-step="${s}"`);
     }
-    expect(html).toMatch(/id="project-section-outputs"[^>]*hidden/);
-    expect(html).not.toMatch(/id="project-section-scope"[^>]*hidden/);
-    // A part deep-link selects that sub-tab.
+    expect(html).toContain('data-active-tab="requirements"');
+    expect(html).toContain('id="project-section-scope"');
+    expect(html).toContain('id="project-section-inputs"');
+    expect(html).not.toContain('id="project-section-board"');
+    // A part deep-link selects the step that holds it.
     const deep = renderToStaticMarkup(
       <ProjectDetailView
         project={PROJECT}
@@ -709,10 +709,10 @@ describe("ProjectDetailView", () => {
         initialTab="outputs"
       />,
     );
-    expect(deep).toContain('data-active-part="outputs"');
-    expect(deep).toMatch(/id="project-section-scope"[^>]*hidden/);
-    expect(deep).not.toMatch(/id="project-section-outputs"[^>]*hidden/);
-    // Log has no parts — no second row.
+    expect(deep).toContain('data-active-tab="runs"');
+    expect(deep).toContain('id="project-section-outputs"');
+    expect(deep).not.toContain('id="project-section-scope"');
+    // Log moved behind ⋯: ?tab=log opens the sheet, not a step.
     const log = renderToStaticMarkup(
       <ProjectDetailView
         project={PROJECT}
@@ -724,7 +724,8 @@ describe("ProjectDetailView", () => {
         initialTab="log"
       />,
     );
-    expect(log).not.toContain('data-component="ProjectPartsNav"');
+    expect(log).toContain('data-component="ProjectMoreSheet"');
+    expect(log).toContain('data-section="log"');
   });
 
   it("never puts Run now / Activate / Continue in the header — the journey bar owns them", () => {
@@ -1223,40 +1224,39 @@ describe("ProjectDetailView — Planning / Execution / Log", () => {
       />,
     );
 
-  it("maps every older ?tab= value onto the section that now holds it", () => {
+  it("maps every older ?tab= value onto the step that now holds it", () => {
     const cases: Array<[string, string]> = [
-      ["scope", "planning"],
-      ["inputs", "planning"],
-      ["plan", "planning"],
-      ["outputs", "planning"],
-      ["dashboard", "execution"],
-      ["board", "execution"],
-      ["iterations", "execution"],
+      ["scope", "requirements"],
+      ["inputs", "requirements"],
+      ["plan", "plan"],
+      ["outputs", "runs"],
+      ["dashboard", "runs"],
+      ["board", "cards"],
+      ["iterations", "runs"],
     ];
-    for (const [legacy, section] of cases) {
+    for (const [legacy, step] of cases) {
       const html = render(legacy);
-      expect(html).toContain(`data-active-section="${section}"`);
+      expect(html).toContain(`data-active-tab="${step}"`);
       expect(html).toContain(`id="project-section-${legacy}"`);
     }
   });
 
-  it("shows the Brief (Scope) at the top of Planning, ahead of Inputs, Playbook and Outputs", () => {
-    const html = render("planning");
-    const order = ["scope", "inputs", "plan", "outputs"].map((part) => html.indexOf(`id="project-section-${part}"`));
+  it("shows the Brief (Scope) at the top of Requirements, ahead of Inputs", () => {
+    const html = render("requirements");
+    const order = ["scope", "inputs"].map((part) => html.indexOf(`id="project-section-${part}"`));
     expect(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1]))).toBe(true);
     expect(html).toContain(">Brief</h2>");
   });
 
-  it("keeps Skills and Settings in the ⋯ sheet, which ?tab=skills / ?tab=settings open", () => {
-    for (const tab of [undefined, "planning", "execution", "log"]) {
+  it("keeps Skills, Settings and Log in the ⋯ sheet, which ?tab= opens", () => {
+    for (const tab of [undefined, "planning", "execution"]) {
       const html = render(tab);
       expect(html).not.toContain('data-component="ProjectMoreSheet"');
       expect(html).not.toContain('id="project-section-skills"');
       expect(html).not.toContain('id="project-section-settings"');
     }
-    for (const tab of ["skills", "settings"]) {
+    for (const tab of ["skills", "settings", "log"]) {
       const html = render(tab);
-      expect(html).toContain('data-active-section="planning"');
       expect(html).toContain('data-component="ProjectMoreSheet"');
       expect(html).toContain(`id="project-section-${tab}"`);
     }

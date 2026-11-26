@@ -50,14 +50,16 @@ import { ScopeTab } from "@/components/projects/tabs/ScopeTab";
 import { IterationsTab } from "@/components/projects/tabs/IterationsTab";
 import { OutputsTab } from "@/components/projects/tabs/OutputsTab";
 import { PlanTab } from "@/components/projects/tabs/PlanTab";
-import { ProjectTabsNav } from "@/components/projects/tabs/ProjectTabsNav";
+import { ProjectSpine, type SpineStepMeta } from "@/components/projects/tabs/ProjectSpine";
 import {
-  SECTION_PARTS,
   SHEET_PARTS,
+  STEP_PARTS,
   resolveTabParam,
-  type PhoneSection,
+  type ProjectStep,
+  type ProjectView,
   type SheetPart,
 } from "@/components/projects/tabs/sections";
+import { groupInputLinks, inputCount } from "@/components/projects/inputs/inputKinds";
 import { SettingsTab } from "@/components/projects/tabs/SettingsTab";
 import { useProjectSkillCandidateCount } from "@/components/projects/skills/store";
 import { SkillsTab } from "@/components/projects/tabs/SkillsTab";
@@ -85,6 +87,9 @@ const HEALTH_TONE: Record<ProjectHealth, Tone> = {
 
 const TOOL_BTN =
   "rounded-lg border border-[var(--color-border)] px-3 py-1 text-xs disabled:opacity-50";
+
+const PRIMARY_BTN =
+  "rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs font-semibold text-[var(--color-accent-fg)] disabled:opacity-50";
 
 const TAB_COMPONENT: Record<ProjectTab, ComponentType<ProjectTabProps>> = {
   dashboard: DashboardTab,
@@ -169,17 +174,17 @@ export function ProjectDetailView({
 
   const t = useT("projects");
   const [target] = useState(() => resolveTabParam(initialTab));
-  const [section, setSection] = useState<PhoneSection>(target.section);
+  const [view, setView] = useState<ProjectView>(target.view);
   const [sheet, setSheet] = useState<SheetPart | null>(target.sheet ?? null);
   const [sheetPart, setSheetPart] = useState<SheetPart>(
     target.sheet ?? "skills",
   );
-  // The panels render on the server too; `section` on desktop is never "chat".
-  const shown = section === "chat" ? "planning" : section;
+  // The panels render on the server too; `view` on desktop is never "chat".
+  const shown: ProjectStep = view === "chat" ? "requirements" : view;
   const writeTabParam = (value: string | null) => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
-    if (!value || value === "planning") url.searchParams.delete("tab");
+    if (!value || value === "requirements") url.searchParams.delete("tab");
     else url.searchParams.set("tab", value);
     window.history.replaceState(null, "", url.toString());
   };
@@ -194,17 +199,11 @@ export function ProjectDetailView({
   useEffect(() => {
     if (target.part) scrollTo(target.part);
   }, [target]);
-  // The sub-tab open inside the section — null means the section's first part.
-  const [part, setPart] = useState<ProjectTab | null>(target.part ?? null);
-  const selectPart = (next: ProjectTab) => {
-    setPart(next);
-    writeTabParam(next);
-  };
   const [dock, dockDispatch] = useChatDock(callerUserId);
   // "Discuss in chat" (a run comparison): fill the docked chat's composer.
   const [composerDraft, setComposerDraft] = useState<ComposerDraft | undefined>(undefined);
-  // An old tab name (a readiness link, a dashboard card): open its section
-  // and scroll to it, or open the ⋯ sheet on Skills / Settings.
+  // An old tab name (a readiness link, a dashboard card): open its step
+  // and scroll to it, or open the ⋯ sheet on Skills / Settings / Log.
   const selectTab = useCallback((next: ProjectTab) => {
     const to = resolveTabParam(next);
     if (to.sheet) {
@@ -212,14 +211,12 @@ export function ProjectDetailView({
       setSheet(to.sheet);
       return;
     }
-    setSection(to.section);
-    setPart(to.part ?? null);
-    writeTabParam(to.part ?? to.section);
+    setView(to.view);
+    writeTabParam(to.part ?? to.view);
     if (to.part) scrollTo(to.part);
   }, []);
-  const selectSection = (next: PhoneSection) => {
-    setSection(next);
-    setPart(null);
+  const selectView = (next: ProjectView) => {
+    setView(next);
     writeTabParam(next);
   };
   // Open the tab that fixes a readiness gap, then scroll to and ring its field.
@@ -242,10 +239,6 @@ export function ProjectDetailView({
       .flatMap((column) => column.tasks)
       .filter((task) => task.status === "triage").length ?? 0;
   const skillCandidates = useProjectSkillCandidateCount(project.slug);
-  const tabBadges: Partial<Record<PhoneSection, number>> = {
-    execution: blockedCount + triageCount,
-    planning: project.clarify?.open_count ?? 0,
-  };
   const needsYou = blockedCount + triageCount;
   const liveRun = project.runs.find(
     (run) => run.status === "running" || run.status === "waiting",
@@ -293,7 +286,7 @@ export function ProjectDetailView({
     if (desktop) {
       if (dock.mode === "min") dockDispatch({ type: "restore" });
     } else {
-      selectSection("chat");
+      selectView("chat");
     }
   };
   const tabProps: ProjectTabProps = {
@@ -310,14 +303,41 @@ export function ProjectDetailView({
     onChangeRequest: openChange,
     onDiscussInChat: discussInChat,
   };
-  const parts = SECTION_PARTS[shown];
-  // Switching sub-tab: which part of the section renders (first part by
-  // default). Parts stay mounted so their state survives the switch.
-  const activePart: ProjectTab | null = parts.length
-    ? part && (parts as readonly ProjectTab[]).includes(part)
-      ? part
-      : parts[0]
-    : null;
+  const stepParts = STEP_PARTS[shown];
+  const inputGroups = groupInputLinks(project.links);
+  const cardCount =
+    board?.columns.reduce((n, column) => n + column.tasks.length, 0) ??
+    project.card_rollup?.total ??
+    0;
+  const spineMeta: Record<ProjectStep, SpineStepMeta> = {
+    requirements: {
+      pill: inputCount(inputGroups) ? String(inputCount(inputGroups)) : undefined,
+      sub:
+        (project.clarify?.open_count ?? 0) > 0
+          ? `${project.clarify!.open_count} open questions`
+          : `${inputGroups.files.length} files, ${inputGroups.links.length + inputGroups.memories.length} links`,
+      warn: (project.clarify?.open_count ?? 0) > 0,
+    },
+    plan: {
+      pill: playbook?.active ? `v${playbook.active.rev}` : undefined,
+      sub: playbook?.active?.steps?.length
+        ? `${playbook.active.steps.length} steps`
+        : "No plan yet",
+    },
+    cards: {
+      pill: cardCount ? String(cardCount) : undefined,
+      sub: "Kanban · Graph",
+      warn: needsYou > 0,
+    },
+    runs: {
+      pill: project.runs.length ? String(project.runs.length) : undefined,
+      sub: liveRun
+        ? `R${liveRun.run_no} live`
+        : project.score
+          ? `avg ${project.score.mean.toFixed(1)} ★`
+          : "No runs yet",
+    },
+  };
   const action = nextAction(
     project,
     board,
@@ -359,14 +379,14 @@ export function ProjectDetailView({
       ) : null}
     </button>
   );
-  const SheetSection = TAB_COMPONENT[sheetPart];
+  const SheetSection = sheetPart === "log" ? null : TAB_COMPONENT[sheetPart];
   // On a phone the Chat tab shows only the tab bar above the chat.
-  const phoneHide = section === "chat" ? "max-lg:hidden" : "";
+  const phoneHide = view === "chat" ? "max-lg:hidden" : "";
 
   return (
     <div
       data-component="ProjectDetailView"
-      data-active-section={section}
+      data-active-view={view}
       data-dock={dock.mode}
       className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:gap-6"
     >
@@ -410,6 +430,61 @@ export function ProjectDetailView({
                     categories={categories}
                     categoryId={project.category_id}
                   />
+                </div>
+
+                {/* ── One status sentence + the page's actions (§4 header) ── */}
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <p
+                    data-component="ProjectStatusSentence"
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-sm"
+                  >
+                    <span
+                      aria-hidden
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        liveRun
+                          ? "bg-[var(--color-success)]"
+                          : needsYou
+                            ? "bg-[var(--color-warn)]"
+                            : "bg-[var(--color-muted)]"
+                      }`}
+                    />
+                    {liveRun ? (
+                      <span className="truncate">
+                        Run R{liveRun.run_no} {liveRun.status}
+                      </span>
+                    ) : (
+                      <span className="truncate">{project.status}</span>
+                    )}
+                    {needsYou > 0 ? (
+                      <span className="shrink-0 text-[var(--color-warn-text)]">
+                        ·{" "}
+                        {needsYou === 1
+                          ? t("needsYouOne")
+                          : t("needsYou", { count: needsYou })}
+                      </span>
+                    ) : null}
+                  </p>
+                  <button
+                    type="button"
+                    data-appmcp-hint="Opens the latest run's outputs"
+                    onClick={() => {
+                      selectView("runs");
+                      scrollTo("outputs");
+                    }}
+                    className={TOOL_BTN}
+                  >
+                    {t("steps.latestOutputs")}
+                  </button>
+                  <button
+                    type="button"
+                    data-action="start-run"
+                    data-appmcp-hint="Starts a new run for this project"
+                    onClick={() => selectView("runs")}
+                    className={PRIMARY_BTN}
+                  >
+                    {t("steps.startRun")}
+                  </button>
+                  {more}
                 </div>
 
                 {project.archived ? (
@@ -560,73 +635,36 @@ export function ProjectDetailView({
             </section>
           ) : null}
         </div>
-        <ProjectTabsNav
-          active={section}
-          onSelect={selectSection}
-          badges={tabBadges}
-          end={more}
+        <ProjectSpine
+          active={view}
+          onSelect={selectView}
+          meta={spineMeta}
         />
-
-        {parts.length > 1 ? (
-          <div
-            role="tablist"
-            aria-label={t("tabs.aria")}
-            data-component="ProjectPartsNav"
-            data-active-part={activePart ?? undefined}
-            className={`flex min-w-0 flex-wrap items-center gap-1 ${phoneHide}`}
-          >
-            {parts.map((p) => (
-              <button
-                key={p}
-                type="button"
-                role="tab"
-                aria-selected={p === activePart}
-                aria-controls={`project-section-${p}`}
-                data-part={p}
-                data-appmcp-hint={`Switches this section to show its ${p === "scope" ? t("brief") : PROJECT_TAB_LABEL[p]} part`}
-                onClick={() => selectPart(p)}
-                className={`h-9 rounded-md px-3 text-sm ${
-                  p === activePart
-                    ? "bg-surface-2 font-semibold text-ink"
-                    : "text-muted hover:bg-surface-1"
-                }`}
-              >
-                {p === "scope" ? t("brief") : PROJECT_TAB_LABEL[p]}
-              </button>
-            ))}
-          </div>
-        ) : null}
 
         <div
           data-component="ProjectTabPanel"
           role="tabpanel"
           data-active-tab={shown}
-          data-active-part={activePart ?? undefined}
           className={`flex min-w-0 flex-col gap-6 ${phoneHide}`}
         >
-          {shown === "log" ? (
-            <ProjectLog project={project} />
-          ) : (
-            parts.map((part) => {
-              const Section = TAB_COMPONENT[part];
-              return (
-                <section
-                  key={part}
-                  id={`project-section-${part}`}
-                  data-section={part}
-                  hidden={part !== activePart}
-                  className={`min-w-0 scroll-mt-20 flex-col gap-2 ${part === activePart ? "flex" : "hidden"}`}
-                >
-                  {part === "runs" ? null : (
-                    <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                      {part === "scope" ? t("brief") : PROJECT_TAB_LABEL[part]}
-                    </h2>
-                  )}
-                  <Section {...tabProps} />
-                </section>
-              );
-            })
-          )}
+          {stepParts.map((part) => {
+            const Section = TAB_COMPONENT[part];
+            return (
+              <section
+                key={part}
+                id={`project-section-${part}`}
+                data-section={part}
+                className="flex min-w-0 scroll-mt-20 flex-col gap-2"
+              >
+                {part === "runs" ? null : (
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                    {part === "scope" ? t("brief") : PROJECT_TAB_LABEL[part]}
+                  </h2>
+                )}
+                <Section {...tabProps} />
+              </section>
+            );
+          })}
         </div>
       </div>
 
@@ -635,8 +673,8 @@ export function ProjectDetailView({
         chat={chat ?? null}
         state={dock}
         dispatch={dockDispatch}
-        phoneOpen={section === "chat"}
-        hidden={desktop ? dock.mode === "min" : section !== "chat"}
+        phoneOpen={view === "chat"}
+        hidden={desktop ? dock.mode === "min" : view !== "chat"}
         composerDraft={composerDraft}
       />
 
@@ -667,7 +705,7 @@ export function ProjectDetailView({
                     : "text-[var(--color-muted)] hover:text-[var(--color-fg)]"
                 }`}
               >
-                {PROJECT_TAB_LABEL[part]}
+                {part === "log" ? t("tabs.log") : PROJECT_TAB_LABEL[part]}
               </button>
             ))}
           </div>
@@ -676,7 +714,11 @@ export function ProjectDetailView({
             data-section={sheetPart}
             className="flex min-w-0 flex-col gap-2"
           >
-            <SheetSection {...tabProps} />
+            {sheetPart === "log" || SheetSection == null ? (
+              <ProjectLog project={project} />
+            ) : (
+              <SheetSection {...tabProps} />
+            )}
           </section>
         </Sheet>
       ) : null}

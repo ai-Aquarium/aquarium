@@ -316,5 +316,15 @@
     "starting": "開始中…",
     "failed": "無法開始。",
     "unavailable": "你無法存取這個專案。"
+  },
+  "steps": {
+    "aria": "項目步驟",
+    "requirements": "需求",
+    "plan": "計劃",
+    "cards": "卡片",
+    "runs": "執行",
+    "warn": "這裡需要你處理",
+    "startRun": "開始執行",
+    "latestOutputs": "最新產出"
   }
 }
