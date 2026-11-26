@@ -204,7 +204,7 @@ describe("Plan as cards", () => {
     const r = mount(pending);
     fireEvent.click(r.getByRole("button", { name: "Kanban" }));
     expect(r.getByText("Revision 5 (proposed)")).toBeTruthy();
-    fireEvent.click(r.getByRole("button", { name: "Open step: Pull (2h)" }));
+    fireEvent.click(r.getByRole("button", { name: "Open step: Pull (2h) (Changed in v5)" }));
     const sheet = within(document.querySelector('[data-component="StepEditSheet"]') as HTMLElement);
     expect(sheet.getByText(/Saving proposes revision 6, based on revision 5/)).toBeTruthy();
     fireEvent.change(sheet.getByDisplayValue("Pull (2h)"), { target: { value: "Pull (3h)" } });
@@ -249,6 +249,25 @@ describe("Plan as cards", () => {
     expect(r.container.querySelectorAll('[data-component="StepCard"]')).toHaveLength(V4.length);
   });
 
+  it("counts reordered steps and changed tools as changes", () => {
+    vi.stubGlobal("fetch", server());
+    const v4 = rev(4, V4, 1);
+    const v5 = { ...rev(5, [V4[1], V4[0], V4[2]], 0), base_rev: 4 };
+    const v6 = { ...rev(6, [V4[1], V4[0], { ...V4[2], toolsets: ["web"] }], 0), base_rev: 5 };
+    const r = mount({ active: v4, revisions: [v6, v5, v4] }, { latestRunNo: null });
+    const since = () => r.container.querySelector('[data-component="CardsSinceBase"]')?.textContent;
+    fireEvent.click(r.getByRole("button", { name: "Kanban" }));
+    fireEvent.click(r.container.querySelector('[data-component="RevisionPicker"] [data-rev="5"]')!);
+    expect(since()).toContain("Step order changed since v4.");
+    expect(since()).not.toContain("Same steps");
+    fireEvent.click(r.container.querySelector('[data-component="RevisionPicker"] [data-rev="6"]')!);
+    expect(since()).toContain("Changed since v5: Review.");
+    fireEvent.click(r.getByRole("button", { name: "Graph" }));
+    const node = r.container.querySelector('[data-component="StepNode"][data-step="review"]') as HTMLElement;
+    expect(node.dataset.changed).toBe("true");
+    expect(node.getAttribute("aria-label")).toBe("Open step: Review (Changed in v6)");
+  });
+
   it("marks the cards a version changed against the one before it, with its note", () => {
     vi.stubGlobal("fetch", server());
     const v4 = { ...rev(4, V4, 1), note: "first cut" };
@@ -272,7 +291,9 @@ describe("Plan as cards", () => {
     fireEvent.click(r.container.querySelector('[data-component="RevisionPicker"] [data-rev="5"]')!);
     expect(tags()).toEqual({ pull: null, clean: "Changed in v5", review: null, extra: "New in v5" });
     expect(since()?.textContent).toContain("v5 note: finished workbooks from the NEW drive");
-    expect(since()?.textContent).toContain("Changed since v4: Clean, Extra.");
+    expect(since()?.textContent).toContain("Changed since v4: Clean.");
+    expect(since()?.textContent).toContain("New since v4: Extra.");
+    expect(r.getByRole("button", { name: "Open step: Clean (Changed in v5)" })).toBeTruthy();
 
     // Same steps as v5: no card is marked, and the line says only the text changed.
     fireEvent.click(r.container.querySelector('[data-component="RevisionPicker"] [data-rev="6"]')!);

@@ -355,18 +355,40 @@ interface CardChanges {
 const NO_CHANGES: CardChanges = { changes: new Map(), rev: null };
 const StepChangeContext = createContext<CardChanges>(NO_CHANGES);
 
-function ChangeTag({ stepKey }: { stepKey: string }) {
+/** The change tag's text for a step ("Changed in v5"), or null when unchanged. */
+function useChangeLabel(): (stepKey: string) => string | null {
   const t = useT("playbook");
   const tc = useT("playbookCards");
   const { changes, rev } = useContext(StepChangeContext);
-  const change = changes.get(stepKey);
-  if (!change) return null;
+  return (stepKey) => {
+    const change = changes.get(stepKey);
+    if (!change) return null;
+    return rev == null ? t(`draft.${change}`) : tc(`changedIn.${change}`, { rev });
+  };
+}
+
+/** A step button's accessible name, with its change tag when it has one. */
+function useOpenLabel(): (step: PlaybookStep) => string {
+  const t = useT("playbookCards");
+  const changeLabel = useChangeLabel();
+  return (step) => {
+    const open = t("card.open", { title: step.title });
+    const change = changeLabel(step.key);
+    return change ? `${open} (${change})` : open;
+  };
+}
+
+function ChangeTag({ stepKey }: { stepKey: string }) {
+  const { changes } = useContext(StepChangeContext);
+  const label = useChangeLabel()(stepKey);
+  if (!label) return null;
   return (
     <span
-      data-change={change}
+      data-change={changes.get(stepKey)}
+      aria-hidden="true"
       className="shrink-0 rounded-full bg-[var(--color-attention-bg)] px-1.5 text-[10px] font-medium text-[var(--color-warn-text)]"
     >
-      {rev == null ? t(`draft.${change}`) : tc(`changedIn.${change}`, { rev })}
+      {label}
     </span>
   );
 }
@@ -388,11 +410,21 @@ function SinceBase({
   const lines: string[] = [];
   if (diff) {
     const { base, steps, removed, paragraphs } = diff;
-    const titles = (rev.steps ?? []).filter((s) => steps.has(s.key)).map((s) => s.title);
+    const titlesOf = (kind: StepChange) =>
+      (rev.steps ?? []).filter((s) => steps.get(s.key) === kind).map((s) => s.title);
+    const changed = titlesOf("changed");
+    const added = titlesOf("added");
     const textChanged = paragraphs.some((p) => p.changed) || (base.body ?? "").trim() !== (rev.body ?? "").trim();
-    if (titles.length) lines.push(t("since.steps", { base: base.rev, steps: titles.join(", ") }));
+    const kept = new Set((rev.steps ?? []).map((s) => s.key));
+    const was = new Set((base.steps ?? []).map((s) => s.key));
+    const oldOrder = (base.steps ?? []).filter((s) => kept.has(s.key)).map((s) => s.key);
+    const newOrder = (rev.steps ?? []).filter((s) => was.has(s.key)).map((s) => s.key);
+    const reordered = oldOrder.some((key, i) => newOrder[i] !== key);
+    if (changed.length) lines.push(t("since.steps", { base: base.rev, steps: changed.join(", ") }));
+    if (added.length) lines.push(t("since.added", { base: base.rev, steps: added.join(", ") }));
     if (removed.length) lines.push(t("since.removed", { base: base.rev, steps: removed.map((s) => s.title).join(", ") }));
-    if (!titles.length && !removed.length) {
+    if (reordered) lines.push(t("since.order", { base: base.rev }));
+    if (!steps.size && !removed.length && !reordered) {
       lines.push(t(textChanged ? "since.textOnly" : "since.same", { base: base.rev }));
     }
   }
@@ -468,7 +500,7 @@ function StepCard({
   after: string | null;
   onOpen: (key: string) => void;
 }) {
-  const t = useT("playbookCards");
+  const openLabel = useOpenLabel();
   const changed = useChanged(step.key);
   return (
     <button
@@ -476,7 +508,7 @@ function StepCard({
       data-component="StepCard"
       data-changed={changed ? "true" : undefined}
       data-step={step.key}
-      aria-label={t("card.open", { title: step.title })}
+      aria-label={openLabel(step)}
       onClick={() => onOpen(step.key)}
       className={`flex min-h-11 w-full flex-col gap-1 rounded-lg border bg-[var(--color-surface)] px-3 py-2 text-left text-sm hover:border-[var(--color-accent)] ${
         step.checkpoint ? "border-dashed border-[var(--color-warn)]" : "border-[var(--color-border)]"
@@ -585,6 +617,8 @@ function Graph({
 }) {
   const t = useT("playbookCards");
   const layout = useMemo(() => graphLayout(steps), [steps]);
+  const openLabel = useOpenLabel();
+  const changed = useContext(StepChangeContext).changes;
   const pos = new Map(layout.nodes.map((n) => [n.step.key, n]));
   const pad = 12;
   return (
@@ -643,12 +677,13 @@ function Graph({
               data-component="StepNode"
               data-step={n.step.key}
               data-run-lane={lane}
-              aria-label={t("card.open", { title: n.step.title })}
+              data-changed={changed.has(n.step.key) ? "true" : undefined}
+              aria-label={openLabel(n.step)}
               title={n.step.title}
               onClick={() => onOpen(n.step.key)}
               className={`absolute flex flex-col justify-center gap-0.5 rounded-lg border-2 bg-[var(--color-surface)] px-2 text-left hover:shadow ${
                 n.step.checkpoint ? "border-dashed" : ""
-              }`}
+              } ${changed.has(n.step.key) ? "ring-2 ring-[var(--color-warn)]" : ""}`}
               style={{
                 left: n.x + pad,
                 top: n.y + pad,
@@ -685,6 +720,8 @@ function GraphList({
 }) {
   const t = useT("playbookCards");
   const names = useStepNames(steps);
+  const openLabel = useOpenLabel();
+  const changed = useContext(StepChangeContext).changes;
   const levels = stepLevels(steps);
   const ordered = steps
     .map((s, i) => ({ s, i, level: levels.get(s.key) ?? 0 }))
@@ -697,11 +734,12 @@ function GraphList({
           <li key={s.key} data-step={s.key} data-level={level} style={{ marginLeft: `${Math.min(level, 4) * 0.75}rem` }}>
             <button
               type="button"
-              aria-label={t("card.open", { title: s.title })}
+              data-changed={changed.has(s.key) ? "true" : undefined}
+              aria-label={openLabel(s)}
               onClick={() => onOpen(s.key)}
               className={`flex min-h-11 w-full items-start gap-2 rounded-lg border bg-[var(--color-surface)] px-3 py-2 text-left text-sm ${
                 s.checkpoint ? "border-dashed border-[var(--color-warn)]" : "border-[var(--color-border)]"
-              }`}
+              } ${changed.has(s.key) ? "ring-2 ring-[var(--color-warn)]" : ""}`}
             >
               <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${RUN_DOT[lane]}`} aria-hidden="true" />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">

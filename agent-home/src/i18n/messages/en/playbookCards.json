@@ -74,6 +74,8 @@
     "changed": "Changed in v{rev}"
   },
   "since": {
+    "added": "New since v{base}: {steps}.",
+    "order": "Step order changed since v{base}.",
     "steps": "Changed since v{base}: {steps}.",
     "removed": "Removed since v{base}: {steps}.",
     "textOnly": "No step changed since v{base}; only the playbook text did.",
