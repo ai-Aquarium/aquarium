@@ -44,7 +44,7 @@ import { ChangeRequestSheet } from "@/components/projects/changes/ChangeRequestS
 import { LiveStatusBar } from "@/components/projects/live/LiveStatusBar";
 import { BoardTab } from "@/components/projects/tabs/BoardTab";
 import { DashboardTab } from "@/components/projects/tabs/DashboardTab";
-import { ExecutionRuns } from "@/components/projects/execution/ExecutionRuns";
+import { RunsWorkspace } from "@/components/projects/execution/RunsWorkspace";
 import { InputsTab } from "@/components/projects/tabs/InputsTab";
 import { ScopeTab } from "@/components/projects/tabs/ScopeTab";
 import { IterationsTab } from "@/components/projects/tabs/IterationsTab";
@@ -93,7 +93,7 @@ const PRIMARY_BTN =
 
 const TAB_COMPONENT: Record<ProjectTab, ComponentType<ProjectTabProps>> = {
   dashboard: DashboardTab,
-  runs: ExecutionRuns,
+  runs: RunsWorkspace,
   scope: ScopeTab,
   board: BoardTab,
   outputs: OutputsTab,

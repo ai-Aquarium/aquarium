@@ -12,7 +12,7 @@ describe("?tab= mapping", () => {
   });
 
   it.each([
-    ["dashboard", { view: "runs", part: "dashboard" }],
+    ["dashboard", { view: "runs" }],
     ["overview", { view: "runs" }],
     ["scope", { view: "requirements", part: "scope" }],
     ["inputs", { view: "requirements", part: "inputs" }],
@@ -21,7 +21,7 @@ describe("?tab= mapping", () => {
     ["files", { view: "runs", part: "outputs" }],
     ["setup", { view: "requirements", part: "scope" }],
     ["board", { view: "cards", part: "board" }],
-    ["iterations", { view: "runs", part: "iterations" }],
+    ["iterations", { view: "runs" }],
     ["runs", { view: "runs" }],
     ["work", { view: "runs" }],
     ["planning", { view: "requirements" }],
