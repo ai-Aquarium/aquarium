@@ -191,6 +191,23 @@ describe("data pages", () => {
     expect(screen.getAllByText(/Assigned to All owners & admins/).length).toBeGreaterThan(0);
   });
 
+  it("lets Aquarium data's assignee be shared with from the dictionary, but never a site's owner", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify({ grants: [] }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    const people = [{ user_id: "sam", display: "Sam", role: "member" as const, channels: [] }];
+    const options = () => Array.from(screen.getByRole("combobox", { name: "Person" }).querySelectorAll("option")).map((o) => o.textContent);
+    const app = { ...doc("manage"), source: source({ kind: "app", owner_user_id: "sam", site_id: null }) };
+    render(<DictionaryDetail doc={app} versions={[]} directory={people} />);
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    await waitFor(() => expect(options()).toContain("Sam"));
+    cleanup();
+    render(<DictionaryDetail doc={{ ...doc("manage"), source: source({ owner_user_id: "sam" }) }} versions={[]} directory={people} />);
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+    expect(options()).not.toContain("Sam");
+  });
+
   it("shows who a site's owner is and no assignee picker", () => {
     render(<DataSourceDetail doc={doc("manage")} versions={[]} directory={[]} me="leo" />);
     expect(screen.queryByRole("button", { name: /Assign this data source/ })).toBeNull();

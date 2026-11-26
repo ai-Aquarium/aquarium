@@ -14,6 +14,11 @@ export function allows(access: DataAccess | undefined, need: DataAccess): boolea
   return !!access && RANK[access] >= RANK[need];
 }
 
+/** Who owns a source's access: Aquarium data's stored ID is only its Needs you assignee. */
+export function accessOwnerOf(s: DataSource): string {
+  return s.kind === "app" ? "" : s.owner_user_id;
+}
+
 export function dataPath(id: string, ...parts: string[]): string {
   return ["/api/data/sources", encodeURIComponent(id), ...parts.map(encodeURIComponent)].join("/");
 }

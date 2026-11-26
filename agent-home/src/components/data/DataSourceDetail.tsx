@@ -17,7 +17,7 @@ import { ConnectionHealth } from "./ConnectionHealth";
 import { DictionaryDetail } from "./DictionaryDetail";
 import { AssigneeCard } from "./AssigneeCard";
 import { ShareSheet } from "./ShareSheet";
-import { DATA_TABS, allows, healthOf, type DataTab } from "./format";
+import { DATA_TABS, accessOwnerOf, allows, healthOf, type DataTab } from "./format";
 
 function Card({ title, children, foot }: { title: string; children: ReactNode; foot?: ReactNode }) {
   return (
@@ -247,7 +247,7 @@ export function DataSourceDetail({
           </div>
         ) : null}
       </div>
-      {sharing ? <ShareSheet sourceId={source.id} ownerId={app ? "" : source.owner_user_id} directory={directory} directoryError={directoryError} onClose={() => setSharing(false)} /> : null}
+      {sharing ? <ShareSheet sourceId={source.id} ownerId={accessOwnerOf(source)} directory={directory} directoryError={directoryError} onClose={() => setSharing(false)} /> : null}
     </div>
   );
 }
