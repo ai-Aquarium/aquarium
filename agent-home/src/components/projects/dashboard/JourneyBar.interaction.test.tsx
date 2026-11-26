@@ -87,6 +87,13 @@ describe("JourneyBar", () => {
     expect(primary.textContent).toBe("Start iteration 1");
   });
 
+  it("keeps Start iteration visible on phones when only optional inputs are missing", () => {
+    render(<Bar p={project({ links: {} })} />);
+    expect(document.getElementById("journey-primary")!.textContent).toBe("Add inputs");
+    const start = screen.getByRole("button", { name: "Start iteration 1" });
+    expect(start.parentElement!.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+  });
+
   it("Activate: double click sends one PATCH, confirms, and the bar advances keeping the line", async () => {
     const fetchMock = vi.fn().mockResolvedValue(json(200, { status: "active" }));
     vi.stubGlobal("fetch", fetchMock);
