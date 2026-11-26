@@ -798,7 +798,7 @@ describe("ProjectDetailView", () => {
       />,
     );
     expect(bar(html)).toContain('data-phase="setup"');
-    expect(bar(html)).toContain("4 of 5 ready — next: activate the project");
+    expect(bar(html)).toContain("3 of 4 ready — next: activate the project");
     // Inputs outrank activation in nextAction; the guide line still activates.
     expect(bar(html)).toMatch(/<button[^>]*>Activate<\/button>/);
     expect(html).not.toContain("Run now");
@@ -833,7 +833,7 @@ describe("ProjectDetailView", () => {
     expect(html).toContain("The cron job is gone.");
     expect(html).not.toContain("no plan");
     // The bar guides through the gaps, first one first.
-    expect(bar(html)).toContain("3 of 5 ready — next: declare an output");
+    expect(bar(html)).toContain("2 of 4 ready — next: declare an output");
     // Lead-only edit + settings panel are present.
     expect(html).toContain(">Edit<");
     expect(html).toContain('data-component="SettingsPanel"');
