@@ -48,7 +48,7 @@ function user(id: string, over: Partial<AquariumUser> = {}): AquariumUser {
 }
 
 function snap(users: AquariumUser[]): AquariumSnapshot {
-  return { generated_at: 0, idle_seconds: 30, name: "Aquarium", users };
+  return { generated_at: 0, idle_seconds: 30, name: "Aquarium", name_is_default: true, users };
 }
 
 const bounds = sceneBounds(1200, 800);

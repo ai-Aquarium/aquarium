@@ -95,11 +95,16 @@ def normalize_name(value: Any) -> str:
     return name
 
 
-def aquarium_name(config: Dict[str, Any]) -> str:
+def custom_aquarium_name(config: Dict[str, Any]) -> str:
+    """The owner's own name for the aquarium; ``""`` when none is set."""
     try:
-        return normalize_name(_section(config).get("name")) or AQUARIUM_NAME_DEFAULT
+        return normalize_name(_section(config).get("name"))
     except ValueError:
-        return AQUARIUM_NAME_DEFAULT
+        return ""
+
+
+def aquarium_name(config: Dict[str, Any]) -> str:
+    return custom_aquarium_name(config) or AQUARIUM_NAME_DEFAULT
 
 
 def set_aquarium_name(config: Dict[str, Any], value: Any) -> str:
@@ -114,7 +119,14 @@ def set_aquarium_name(config: Dict[str, Any], value: Any) -> str:
 
 
 def settings(config: Dict[str, Any]) -> Dict[str, Any]:
-    return {"idle_seconds": idle_seconds(config), "name": aquarium_name(config)}
+    """``name`` is always filled in; ``name_is_default`` says none was set, so
+    the dashboard can show the box's own name and logo instead."""
+    custom = custom_aquarium_name(config)
+    return {
+        "idle_seconds": idle_seconds(config),
+        "name": custom or AQUARIUM_NAME_DEFAULT,
+        "name_is_default": not custom,
+    }
 
 
 def read_settings() -> Dict[str, Any]:
@@ -124,7 +136,11 @@ def read_settings() -> Dict[str, Any]:
         with ws._profile_scope("default"):
             return settings(ws.load_config())
     except Exception:
-        return {"idle_seconds": IDLE_SECONDS_DEFAULT, "name": AQUARIUM_NAME_DEFAULT}
+        return {
+            "idle_seconds": IDLE_SECONDS_DEFAULT,
+            "name": AQUARIUM_NAME_DEFAULT,
+            "name_is_default": True,
+        }
 
 
 def _served_entries() -> list:

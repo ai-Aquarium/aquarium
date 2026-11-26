@@ -148,7 +148,7 @@
   "aquarium.idle.invalid": "請輸入 {min} 至 {max} 之間的整數秒數。",
   "aquarium.idle.saveFailed": "未能儲存：{error}",
   "aquarium.name.title": "水族館名稱",
-  "aquarium.name.hint": "顯示為儀表板標題及瀏覽器分頁名稱。最多 {max} 個字元；留空即使用「Aquarium」。適用於所有人。",
+  "aquarium.name.hint": "與本系統的標誌一同顯示為儀表板標題及瀏覽器分頁名稱。最多 {max} 個字元；留空即使用「設定 › 名稱及標誌」中的機構名稱及標誌（目前：{box}）。適用於所有人。",
   "aquarium.name.label": "名稱",
   "aquarium.name.invalid": "最多只可輸入 {max} 個字元。",
   "aquarium.name.saveFailed": "未能儲存名稱：{error}",

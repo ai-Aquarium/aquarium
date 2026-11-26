@@ -8,6 +8,7 @@ import {
   normaliseNameInput,
   parseIdleInput,
 } from "@/components/settings/AquariumSettings";
+import { BrandingProvider } from "@/components/brand/BrandingProvider";
 import { AQUARIUM_NAME_MAX, CREATURES, creatureSprite } from "@/lib/aquarium/creatures";
 
 afterEach(() => {
@@ -118,6 +119,19 @@ describe("AquariumIdleSetting", () => {
     await screen.findByText("Saved.");
     expect(calls.at(-1)?.body).toEqual({ name: "" });
     expect(input.value).toBe("");
+  });
+
+  it("shows a name set to “Aquarium” on purpose and offers the box name as the placeholder", async () => {
+    mockFetch(() => ({ idle_seconds: 30, name: "Aquarium", name_is_default: false }));
+    render(
+      <BrandingProvider initial={{ name: "HangSengDev", logo: null }}>
+        <AquariumIdleSetting canEdit />
+      </BrandingProvider>,
+    );
+    const input = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe("Aquarium"));
+    expect(input.placeholder).toBe("HangSengDev");
+    expect(screen.getByText(/leave empty to use the box name and logo/).textContent).toContain("(now: HangSengDev)");
   });
 
   it("shows the server's refusal", async () => {
