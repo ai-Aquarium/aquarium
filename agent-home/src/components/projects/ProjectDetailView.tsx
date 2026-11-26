@@ -30,6 +30,7 @@ import {
 } from "@/components/projects/readiness";
 import { revealTarget } from "@/components/projects/revealTarget";
 import { durationLabel, tokenCountLabel } from "@/components/projects/format";
+import { StartRunSheet } from "@/components/projects/StartRunSheet";
 import { SummariseSheet } from "@/components/projects/SummariseSheet";
 import {
   CADENCE_GLYPH,
@@ -201,6 +202,7 @@ export function ProjectDetailView({
   }, [target]);
   const [dock, dockDispatch] = useChatDock(callerUserId);
   // "Discuss in chat" (a run comparison): fill the docked chat's composer.
+  const [startRunOpen, setStartRunOpen] = useState(false);
   const [composerDraft, setComposerDraft] = useState<ComposerDraft | undefined>(undefined);
   // An old tab name (a readiness link, a dashboard card): open its step
   // and scroll to it, or open the ⋯ sheet on Skills / Settings / Log.
@@ -478,8 +480,8 @@ export function ProjectDetailView({
                   <button
                     type="button"
                     data-action="start-run"
-                    data-appmcp-hint="Starts a new run for this project"
-                    onClick={() => selectView("runs")}
+                    data-appmcp-hint="Opens the dialog to start a new run"
+                    onClick={() => setStartRunOpen(true)}
                     className={PRIMARY_BTN}
                   >
                     {t("steps.startRun")}
@@ -755,6 +757,15 @@ export function ProjectDetailView({
             setChangeOpen(false);
             refresh();
           }}
+        />
+      ) : null}
+
+      {startRunOpen ? (
+        <StartRunSheet
+          project={project}
+          playbook={playbook}
+          onClose={() => setStartRunOpen(false)}
+          onStarted={() => selectView("runs")}
         />
       ) : null}
 
