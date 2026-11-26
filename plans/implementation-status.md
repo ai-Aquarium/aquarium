@@ -2,6 +2,18 @@
 
 Tracking file for in-flight feature work. Update as phases land.
 
+## Project detail: Runs step workspace (redesign PR2)
+
+Plan: `plans/2026-11-27-project-runs-workspace.md`
+Status: **implemented** — updated 2026-11-27
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | Shared helpers extracted (`runData.ts`, `runUi.tsx`, `ComparePanel.tsx`); `ExecutionRuns.tsx` deleted | done |
+| 2 | `RunsWorkspace` master-detail: rail + selected run + progress/ETA + card rows with assignee join | done |
+| 3 | Inline approval (waiting_on_you + board `pending_approvals`, real approvals POST), per-run output tiles + Download all, grade stars/note/self-score/compare-with-prev | done |
+| 4 | `STEP_PARTS.runs` → [runs, outputs] (dashboard/iterations folded); i18n en+zh-Hant; tests; tsc/eslint/vitest/ratchet green | done |
+
 ## Project detail: 4-step spine (redesign PR1)
 
 Plan: `plans/2026-11-27-project-detail-spine.md`

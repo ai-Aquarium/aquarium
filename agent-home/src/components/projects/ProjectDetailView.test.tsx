@@ -661,7 +661,8 @@ describe("ProjectDetailView", () => {
       />,
     );
     expect(html).toContain('data-active-tab="runs"');
-    expect(html).toContain('id="project-section-iterations"');
+    expect(html).toContain('data-component="RunsWorkspace"');
+    expect(html).toContain('id="project-section-outputs"');
     expect(html).not.toContain('id="project-section-plan"');
     const unknown = renderToStaticMarkup(
       <ProjectDetailView
@@ -1225,19 +1226,19 @@ describe("ProjectDetailView — Planning / Execution / Log", () => {
     );
 
   it("maps every older ?tab= value onto the step that now holds it", () => {
-    const cases: Array<[string, string]> = [
-      ["scope", "requirements"],
-      ["inputs", "requirements"],
-      ["plan", "plan"],
-      ["outputs", "runs"],
-      ["dashboard", "runs"],
-      ["board", "cards"],
-      ["iterations", "runs"],
+    const cases: Array<[string, string, string | null]> = [
+      ["scope", "requirements", "scope"],
+      ["inputs", "requirements", "inputs"],
+      ["plan", "plan", "plan"],
+      ["outputs", "runs", "outputs"],
+      ["dashboard", "runs", null],
+      ["board", "cards", "board"],
+      ["iterations", "runs", null],
     ];
-    for (const [legacy, step] of cases) {
+    for (const [legacy, step, section] of cases) {
       const html = render(legacy);
       expect(html).toContain(`data-active-tab="${step}"`);
-      expect(html).toContain(`id="project-section-${legacy}"`);
+      if (section) expect(html).toContain(`id="project-section-${section}"`);
     }
   });
 
