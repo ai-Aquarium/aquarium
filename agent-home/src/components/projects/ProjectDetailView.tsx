@@ -46,6 +46,7 @@ import { LiveStatusBar } from "@/components/projects/live/LiveStatusBar";
 import { CardsStep } from "@/components/projects/cards/CardsStep";
 import { DashboardTab } from "@/components/projects/tabs/DashboardTab";
 import { RunsWorkspace } from "@/components/projects/execution/RunsWorkspace";
+import { RUN_STATUS_WORD } from "@/components/projects/execution/runUi";
 import { InputsTab } from "@/components/projects/tabs/InputsTab";
 import { ScopeTab } from "@/components/projects/tabs/ScopeTab";
 import { IterationsTab } from "@/components/projects/tabs/IterationsTab";
@@ -131,6 +132,7 @@ export function ProjectDetailView({
   isInstanceAdmin,
   initialTab,
   chat,
+  people,
 }: {
   project: ProjectDetail;
   board: ProjectBoardView | null;
@@ -146,6 +148,8 @@ export function ProjectDetailView({
   initialTab?: string;
   /** The docked chat's conversations; without it the dock says chat is unavailable. */
   chat?: ProjectChat;
+  /** Display names by user id, for who made a plan version. */
+  people?: Record<string, string>;
 }) {
   const timeLabel = useTimeLabel();
   const { refresh, refreshing } = useRefresh();
@@ -249,6 +253,10 @@ export function ProjectDetailView({
   const liveRun = project.runs.find(
     (run) => run.status === "running" || run.status === "waiting",
   );
+  const lastRun = project.runs.reduce<(typeof project.runs)[number] | null>(
+    (last, run) => (!last || run.run_no > last.run_no ? run : last),
+    null,
+  );
   // A saved open/closed choice (this browser) wins over the live-run default.
   const [savedStatus, saveStatus] = usePersistentState<StatusPref>(
     STATUS_OPEN_KEY,
@@ -297,6 +305,7 @@ export function ProjectDetailView({
   };
   const tabProps: ProjectTabProps = {
     project,
+    people,
     board,
     playbook,
     directives,
@@ -341,7 +350,9 @@ export function ProjectDetailView({
         ? `R${liveRun.run_no} live`
         : project.score
           ? `avg ${project.score.mean.toFixed(1)} ★`
-          : "No runs yet",
+          : lastRun
+            ? `R${lastRun.run_no} ${RUN_STATUS_WORD[lastRun.status]}`
+            : "No runs yet",
     },
   };
   const action = nextAction(

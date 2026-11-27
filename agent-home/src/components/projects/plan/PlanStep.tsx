@@ -34,6 +34,7 @@ export function PlanStep({
   playbook,
   canLead,
   callerUserId,
+  people,
   onNavigate,
   onDiscussInChat,
 }: ProjectTabProps) {
@@ -91,10 +92,10 @@ export function PlanStep({
               : "") +
             (r.note?.trim() ||
               `${(r.steps ?? []).length} ${t("planStep.stepsWord")}`),
-          author: r.created_by === "agent" ? t("planStep.agent") : r.created_by,
+          author: r.created_by === "agent" ? t("planStep.agent") : personName(r.created_by, people),
           at: r.activated_at ?? r.created_at,
         })),
-    [playbook, active, t],
+    [playbook, active, t, people],
   );
 
   const role =
@@ -151,7 +152,7 @@ export function PlanStep({
             {active ? <Pill tone="accent">v{active.rev}</Pill> : null}
             {active ? (
               <span className="text-xs text-[var(--color-muted)]">
-                {provenance(active, timeLabel, t)}
+                {provenance(active, timeLabel, t, people)}
               </span>
             ) : null}
             <span className="ml-auto flex items-center gap-1.5">
@@ -306,13 +307,18 @@ function provenance(
   rev: PlaybookRev,
   timeLabel: (ts: number, kind?: TimeLabelKind) => string,
   t: Translator,
+  people?: Record<string, string>,
 ): string {
   const who =
     rev.created_by === "agent"
       ? t("planStep.generatedByAgent")
       : rev.created_by
-        ? t("planStep.createdBy", { who: rev.created_by })
+        ? t("planStep.createdBy", { who: personName(rev.created_by, people) })
         : "";
   const when = rev.activated_at ? timeLabel(rev.activated_at, "ago") : null;
   return [who, when].filter(Boolean).join(" · ");
+}
+
+function personName<T extends string | null>(userId: T, people?: Record<string, string>): T | string {
+  return userId ? (people?.[userId] ?? userId) : userId;
 }

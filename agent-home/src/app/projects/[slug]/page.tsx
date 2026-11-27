@@ -10,6 +10,7 @@ import { apiClientForRequest, requirePrincipal } from "@/lib/auth/principal";
 import { readSession } from "@/lib/auth/session";
 import { storageConfigured } from "@/lib/env";
 import { activeEnrolments } from "@/lib/api/my-profiles";
+import { loadDirectory } from "@/app/sites/data";
 import type {
   ProfileSummary,
   ProjectChatTimeline,
@@ -67,7 +68,7 @@ export default async function Page({
     );
   }
 
-  const [board, playbook, directives, doctor, chat] = await Promise.all([
+  const [board, playbook, directives, doctor, chat, directory] = await Promise.all([
     client.projectBoard(slug).catch((): ProjectBoardView | null => null),
     client.projectPlaybook(slug).catch(
       (): ProjectPlaybookResponse | null => null,
@@ -77,7 +78,9 @@ export default async function Page({
     ),
     client.projectDoctor(slug).catch((): ProjectDoctorDetail | null => null),
     projectChat(slug, (project.profiles ?? []).map((p) => p.profile)),
+    loadDirectory(client),
   ]);
+  const people = Object.fromEntries(directory.map((p) => [p.user_id, p.display || p.user_id]));
   const isInstanceAdmin = principal.role === "owner" || principal.role === "admin";
 
   return (
@@ -105,6 +108,7 @@ export default async function Page({
         isInstanceAdmin={isInstanceAdmin}
         initialTab={initialTab}
         chat={chat}
+        people={people}
       />
     </MobileShell>
   );

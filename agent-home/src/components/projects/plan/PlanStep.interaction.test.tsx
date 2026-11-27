@@ -75,6 +75,18 @@ afterEach(() => {
 });
 
 describe("PlanStep", () => {
+  it("names the person who made a version, not their user id", async () => {
+    stubChanges();
+    const mine = rev(3, { created_by: "u9" });
+    render(
+      <PlanStep
+        {...props({ playbook: { active: mine, revisions: [mine, rev(2)] }, people: { u9: "Leo Lau" } })}
+      />,
+    );
+    expect(screen.getByText(/Created by Leo Lau/)).toBeTruthy();
+    expect(screen.queryByText(/u9/)).toBeNull();
+  });
+
   it("renders the toolbar, step rows with why/approval, and the rail", async () => {
     stubChanges();
     render(<PlanStep {...props()} />);
