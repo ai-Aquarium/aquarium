@@ -6,7 +6,7 @@ production rollout — which is now **complete and verified in production**
 (2026-07-27; see "Production rollout — COMPLETED" below). All five requests
 (a–e) plus the step-7 DB-role hardening are shipped, deployed, and E2E-tested.
 
-- **Repo:** `leolau/aquarium`
+- **Repo:** `ai-Aquarium/aquarium`
 - **Base branch:** `develop`
 - **Owner deployment (production):** host `hermes-systest`
   - agent-home: `https://<agent-home-host>` (Next.js, local `127.0.0.1:3100`)
@@ -170,7 +170,7 @@ short-lived signed URLs already fail-close cross-principal reads (proven below).
 
 ## Production rollout — COMPLETED (2026-07-27)
 
-The production rollout notes (live host, paths, steps and checks) moved to the private repo leolau/aquarium-ops: [`handoffs/MULTI_USER_HANDOFF.md`](https://github.com/leolau/aquarium-ops/blob/main/handoffs/MULTI_USER_HANDOFF.md).
+The production rollout notes (live host, paths, steps and checks) moved to the private repo ai-Aquarium/aquarium-ops: [`handoffs/MULTI_USER_HANDOFF.md`](https://github.com/ai-Aquarium/aquarium-ops/blob/main/handoffs/MULTI_USER_HANDOFF.md).
 
 ---
 

@@ -11,8 +11,8 @@ Every PR must keep the existing Hetzner box working (Leo, 2026-10-18) and has an
 |---|---|---|
 | Plan + 7 decisions | done | sections below |
 | Phase 0: git-history secret scan | **done, nothing to rotate** (gitleaks v8.21.2 over 13,622 commits: only upstream fixtures/placeholders) | |
-| Phase 0: move production/handoff/security docs to a private repo | **waiting on Leo**: new `leolau/aquarium-ops` or `docs/` in `leolau/aquarium-deploy-state` | |
-| Phase 0: GitHub secret scanning + push protection + Dependabot | **waiting on Leo** (repo admin): https://github.com/leolau/aquarium/settings/security_analysis | |
+| Phase 0: move production/handoff/security docs to a private repo | **waiting on Leo**: new `ai-Aquarium/aquarium-ops` or `docs/` in `ai-Aquarium/aquarium-deploy-state` | |
+| Phase 0: GitHub secret scanning + push protection + Dependabot | **waiting on Leo** (repo admin): https://github.com/ai-Aquarium/aquarium/settings/security_analysis | |
 | GitHub Actions | **done**: Actions was on; `ci.yml` only ran on `main`. Now runs on PRs/pushes to `develop` and `main`; upstream-only jobs guarded. the 19 pre-existing develop failures + docs MDX error are fixed in #569 (MCP structured-content ones by #560/#563) | #548, #569 |
 | Release pipeline (`vX.Y.Z` tag → tested, signed tarball + `SHA256SUMS` + cosign + `channels.json`) | **done, never run for real** (first tag `v0.1.0-rc.1` waits on Leo) | #550 |
 | Installer: verified release installs, pins, VPN/WhatsApp components | **done** | #544 |
@@ -58,10 +58,10 @@ Every PR must keep the existing Hetzner box working (Leo, 2026-10-18) and has an
 10. `HCLOUD_TOKEN` repo secret (separate Hetzner project) for the install test.
 
 ### Existing Hetzner box notes (read-only inventory, 2026-10-18)
-Moved to the private repo leolau/aquarium-ops: [`production/hetzner-box-inventory-2026-10-18.md`](https://github.com/leolau/aquarium-ops/blob/main/production/hetzner-box-inventory-2026-10-18.md).
+Moved to the private repo ai-Aquarium/aquarium-ops: [`production/hetzner-box-inventory-2026-10-18.md`](https://github.com/ai-Aquarium/aquarium-ops/blob/main/production/hetzner-box-inventory-2026-10-18.md).
 
 ### Picking it up
-1. Production rules (unchanged): read `production/PRODUCTION.md` in leolau/aquarium-ops first; backup before any deploy; Leo merges PRs and approves production deploys; deploy fixes one at a time; no real WhatsApp messages without Leo's OK.
+1. Production rules (unchanged): read `production/PRODUCTION.md` in ai-Aquarium/aquarium-ops first; backup before any deploy; Leo merges PRs and approves production deploys; deploy fixes one at a time; no real WhatsApp messages without Leo's OK.
 2. Sub-agents must not create helper sessions and must not merge.
 
 ## Decisions (Leo, 2026-10-18)
@@ -80,7 +80,7 @@ Moved to the private repo leolau/aquarium-ops: [`production/hetzner-box-inventor
 | Install | `install-aquarium.sh` (#524): one command on a fresh Ubuntu 24.04 VM installs Supabase, the embedding service, agent-home, dashboard, gateway, app-mcp, Caddy/TLS, ufw, first owner, health checks. Unit-tested helpers (#528). | Never run end to end on a clean VM. Installs from the `develop` branch (no versions, no releases: the repo has 0 releases). Pulls Supabase compose from `master`. Leaves the model API key as a manual `.env` edit. No `update` / `backup` / `restore` / `uninstall`. VPN helper, WhatsApp bridge sudo rules, `linux-modules-extra` are not installed. |
 | Setup in the app | agent-home has an onboarding wizard, Settings → Connected accounts (Google, code-paste OAuth), WhatsApp bridges (QR pairing in the page), VPN, network folders, users/roles. | No single "what's left to set up" checklist. Google needs a Google Cloud OAuth client per install, and nothing explains how to create one. Adding a new WhatsApp bridge relies on a root sudo rule into the checkout (finding F14). |
 | Guides | `docs/deployment/PRODUCTION.md` (operator runbook for our box), upstream Hermes docs under `website/docs` (CLI/TUI, not Aquarium). README still opens as "Hermes Agent". | No Aquarium-specific getting-ready guide for a new owner. |
-| Security | 4 Oct static review: 13 High, 11 Medium and 1 Low (grouped) finding (`security/2026-10-04-security-review.md` in leolau/aquarium-ops). Since then: F20 (chat privacy) fixed by #520/#521, F2 partly by #522/#533 (role limits). Live per-role check script (#529) passes 63/63 on prod. | The other High findings look open (e.g. F1: the custom email/WhatsApp MCP and Telegram callback servers still bind `0.0.0.0`; F3: no `nosniff`/CSP in agent-home; F13–F16: the agent user can reach root or read every secret). GitHub Actions workflows exist (tests, lint, osv-scanner, supply-chain-audit) but none run on this repo. **The repo is public**, and until 2026-10-18 it included the production IP and layout (now moved to leolau/aquarium-ops). |
+| Security | 4 Oct static review: 13 High, 11 Medium and 1 Low (grouped) finding (`security/2026-10-04-security-review.md` in ai-Aquarium/aquarium-ops). Since then: F20 (chat privacy) fixed by #520/#521, F2 partly by #522/#533 (role limits). Live per-role check script (#529) passes 63/63 on prod. | The other High findings look open (e.g. F1: the custom email/WhatsApp MCP and Telegram callback servers still bind `0.0.0.0`; F3: no `nosniff`/CSP in agent-home; F13–F16: the agent user can reach root or read every secret). GitHub Actions workflows exist (tests, lint, osv-scanner, supply-chain-audit) but none run on this repo. **The repo is public**, and until 2026-10-18 it included the production IP and layout (now moved to ai-Aquarium/aquarium-ops). |
 
 ## 1. Packaging: "download and install Aquarium"
 
@@ -144,7 +144,7 @@ Each item shows a live status (done / needs attention / not started), a "Set up"
 Honest target: **no open Critical or High findings, OWASP ASVS Level 2 checklist met, and a repeatable test run before every release.** Nobody can promise "unhackable"; what we can promise is that it is checked, tested and fixed continuously.
 
 **Phase 0: urgent, before anything is packaged**
-- **Public repo:** decide whether `leolau/aquarium` should stay public. Right now anyone can read the production IP, the host layout, the security review (a ready-made list of open holes) and all deploy procedures. At minimum: move `PRODUCTION.md`/handoff docs and the security reviews to a private repo, and run a secret scan (gitleaks/trufflehog) over the **full git history**, rotating anything found.
+- **Public repo:** decide whether `ai-Aquarium/aquarium` should stay public. Right now anyone can read the production IP, the host layout, the security review (a ready-made list of open holes) and all deploy procedures. At minimum: move `PRODUCTION.md`/handoff docs and the security reviews to a private repo, and run a secret scan (gitleaks/trufflehog) over the **full git history**, rotating anything found.
 - Turn on GitHub secret scanning and push protection, plus Dependabot.
 
 **Phase 1: fix what we already know (4 Oct review)**
@@ -237,7 +237,7 @@ Deliverable: attach all PNGs in your final message via message_user, plus a shor
 ### Common rules
 
 
-- Repo: github.com/leolau/aquarium (old name leolau/ai-prentice-4-all redirects). Base branch: `develop`. Branch name: `devin/$(date +%s)-<slug>`.
+- Repo: github.com/ai-Aquarium/aquarium (old name leolau/ai-prentice-4-all redirects). Base branch: `develop`. Branch name: `devin/$(date +%s)-<slug>`.
 - Read AGENTS.md first. Primary UI is `agent-home/`. Tests: `scripts/run_tests.sh <paths>` (Python), `cd agent-home && npm test` / `npm run lint` / `npx tsc --noEmit`; Python lint `ruff check`, types `ty check` where the repo uses them.
 - Security review to work from: `docs/reviews/2026-10-04-security-review.md` (consolidated, authoritative; finding IDs F1–F25). Its "Remediation roadmap" section lists the agreed fix direction per finding. Fixed since the review: F20 (by #520/#521) and part of F2 (#522/#533, role limits on Tools & Integrations).
 - Step 1 for every finding you own: re-verify it against current `develop` (exact file:line), record status fixed / open / partly. Do not fix what is already fixed.

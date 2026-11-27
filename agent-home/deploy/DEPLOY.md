@@ -3,8 +3,8 @@
 > **⚠️ SUPERSEDED 2026-08-20 — production moved to Hetzner.** The live box,
 > access method, and every fact below (instance ID, EIP, `aliyun` CLI) are
 > **historical**. The authoritative ops document is
-> [`production/PRODUCTION.md`](https://github.com/leolau/aquarium-ops/blob/main/production/PRODUCTION.md) in the private
-> repo `leolau/aquarium-ops` — read that first. Reach production by SSH as
+> [`production/PRODUCTION.md`](https://github.com/ai-Aquarium/aquarium-ops/blob/main/production/PRODUCTION.md) in the private
+> repo `ai-Aquarium/aquarium-ops` — read that first. Reach production by SSH as
 > described there, not `aliyun`/`OOS_RunCommand`. Deploying agent-home is now just one step of the single
 > whole-stack `deploy-hermes.sh` script documented there — there is no
 > separate dedicated clone anymore. Keep reading only for the historical
@@ -52,7 +52,7 @@ repo). First run clones; later runs fast-forward:
 ```bash
 APP_DIR=/opt/data/agent-home-app
 if [ ! -d "$APP_DIR/.git" ]; then
-  git clone --branch develop https://github.com/leolau/aquarium "$APP_DIR"
+  git clone --branch develop https://github.com/ai-Aquarium/aquarium "$APP_DIR"
 else
   cd "$APP_DIR" && git fetch origin develop && git checkout develop && git reset --hard origin/develop
 fi

@@ -2,7 +2,7 @@
 
 > **Production is the Hetzner box (CX43, nbg1, `<prod-host>`), reached by SSH.**
 > How to reach and deploy it lives in `production/PRODUCTION.md` in the private
-> `leolau/aquarium-ops` repo — read that first. The captured deployment is still
+> `ai-Aquarium/aquarium-ops` repo — read that first. The captured deployment is still
 > *named* `hermes-systest` (every `--deployment` argument below), but the
 > Alibaba cn-hongkong box of that name was decommissioned at the 2026-08-20
 > cutover. The box inventory, services, timers and checks below were
@@ -50,7 +50,7 @@ prose is worse than an old date.
 | `runtime-drift.md` | interpreter/package pinning and the weekly timer |
 | `os-patching.md` | unattended upgrades and the `needrestart` exemption |
 | `mcp-approval-gating.md` | which MCP tools require human approval |
-| `production/PRODUCTION.md` in `leolau/aquarium-ops` | how to reach the box (SSH) and deploy it |
+| `production/PRODUCTION.md` in `ai-Aquarium/aquarium-ops` | how to reach the box (SSH) and deploy it |
 | `../../.agents/skills/testing-hermes-systest-box/SKILL.md` | historical: the decommissioned Alibaba box (no SSH) |
 | `../testing/uat-hermes-systest.md` | the acceptance suite to run against a deployed revision |
 
@@ -87,9 +87,9 @@ Paths, and which of them are reproducible:
 Three git remotes, three separate deploy keys, exactly one of which may write:
 
 ```
-leolau/aquarium                  public   source        read-only key
-leolau/aquarium-deploy-state     private  what the box should look like   read-only key
-leolau/aquarium-deploy-backups   private  age ciphertext                  WRITE key
+ai-Aquarium/aquarium                  public   source        read-only key
+ai-Aquarium/aquarium-deploy-state     private  what the box should look like   read-only key
+ai-Aquarium/aquarium-deploy-backups   private  age ciphertext                  WRITE key
 ```
 
 The state key is read-only deliberately: a box that could push would be able to
@@ -463,13 +463,13 @@ access to the state repo.
 ## Deploying a code change
 
 Production is reached by SSH; the exact host and key are in
-`production/PRODUCTION.md` (private `leolau/aquarium-ops`), never in this
+`production/PRODUCTION.md` (private `ai-Aquarium/aquarium-ops`), never in this
 public repo.
 
 ### Prerequisites
 
 - The production SSH key (see `PRODUCTION.md`).
-- Git push access to `leolau/aquarium` (the `develop` branch requires
+- Git push access to `ai-Aquarium/aquarium` (the `develop` branch requires
   pull requests — a direct `git push origin develop` is rejected by a repository
   rule).
 

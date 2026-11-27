@@ -126,7 +126,7 @@ B1–B4 can run in parallel against the contract; merge B1 → B2 → B3/B4. Est
 
 ## Appendix A-1 — Incomings tab research
 
-Repo `leolau/aquarium` @ `develop` 01ff13fd7. Scope: the left panel gets a **Chats | Incomings** tab switch. Incomings lists WhatsApp/email/calendar arrivals that triage flagged as needing the user, and the list empties as the user handles them.
+Repo `ai-Aquarium/aquarium` @ `develop` 01ff13fd7. Scope: the left panel gets a **Chats | Incomings** tab switch. Incomings lists WhatsApp/email/calendar arrivals that triage flagged as needing the user, and the list empties as the user handles them.
 Legend: **[V]** = checked in code, **[I]** = my inference.
 
 ### 1. What exists today (reusable)
@@ -418,7 +418,7 @@ GET /api/activity/scheduled          (SIGNED_IN; add to test_route_authorization
 
 ## Appendix B — Project skills research
 
-Repo `leolau/aquarium` @ `develop` 01ff13fd7 (2026-11-11). UI = `agent-home/`. Facts below were checked in code; **(inference)** marks anything I did not prove.
+Repo `ai-Aquarium/aquarium` @ `develop` 01ff13fd7 (2026-11-11). UI = `agent-home/`. Facts below were checked in code; **(inference)** marks anything I did not prove.
 
 ### 1. What already exists (reuse)
 

@@ -101,7 +101,7 @@ Python API (module functions):
 ```json
 {"event": "secret.request", "request_id": "sr_…", "message_id": "…",
  "name": "github-pat", "label": "GitHub personal access token",
- "purpose": "Push the fix to leolau/aquarium", "kind": "secret",
+ "purpose": "Push the fix to ai-Aquarium/aquarium", "kind": "secret",
  "username": null, "expires_at": 1794380000.0}
 ```
 

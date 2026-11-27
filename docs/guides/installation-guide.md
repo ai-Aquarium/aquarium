@@ -114,7 +114,7 @@ ssh root@203.0.113.10
 ## 2.2 Get Aquarium and check the server
 
 ```bash
-git clone https://github.com/leolau/aquarium.git && cd aquarium
+git clone https://github.com/ai-Aquarium/aquarium.git && cd aquarium
 ./install-aquarium.sh --check
 ```
 
@@ -189,7 +189,7 @@ trust.
 then installs the newest stable release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/leolau/aquarium/develop/install-aquarium.sh \
+curl -fsSL https://raw.githubusercontent.com/ai-Aquarium/aquarium/develop/install-aquarium.sh \
   | sudo AQUARIUM_HOME_DOMAIN=home.example.com \
          AQUARIUM_DASHBOARD_DOMAIN=dash.example.com \
          bash -s -- --channel stable

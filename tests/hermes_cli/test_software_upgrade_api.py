@@ -49,7 +49,7 @@ STATUS = {
 RELEASES = {"ok": True, "checked_at": "2026-11-05T02:00:00+00:00", "error": "", "releases": [
     {"tag": "v1.2.0-beta.1", "prerelease": True, "packaged": True, "notes": ""},
     {"tag": "v1.1.0", "name": "Spring", "prerelease": False, "packaged": True,
-     "url": "https://github.com/leolau/aquarium/releases/tag/v1.1.0",
+     "url": "https://github.com/ai-Aquarium/aquarium/releases/tag/v1.1.0",
      "notes": "## Highlights\n- **Faster chats** (#12)\n## Fixes\n- [Upload](https://x) no longer fails\n"},
     {"tag": "v1.0.1", "prerelease": False, "packaged": False, "notes": ""},
     {"tag": "v0.9.0", "prerelease": False, "packaged": True, "url": "javascript:alert(1)", "notes": ""},
@@ -458,7 +458,7 @@ def test_background_base_backup_reaches_the_page_without_paths():
 def test_scrub():
     assert su.scrub("cp /opt/data/hermes-agent/x.py to /tmp/y failed") == "cp … to … failed"
     assert su.scrub("password=hunter2 and SECRET=abc") == "password=… and SECRET=…"
-    assert su.scrub("https://github.com/leolau/aquarium/releases ok") == "https://github.com/leolau/aquarium/releases ok"
+    assert su.scrub("https://github.com/ai-Aquarium/aquarium/releases ok") == "https://github.com/ai-Aquarium/aquarium/releases ok"
 
 
 def test_checkout_shows_branch_commits_not_installed():

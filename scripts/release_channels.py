@@ -19,7 +19,7 @@ import json
 import re
 import sys
 
-REPO = "leolau/aquarium"
+REPO = "ai-Aquarium/aquarium"
 TAG_RE = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(rc|beta)\.(0|[1-9]\d*))?$")
 _PRE_RANK = {"beta": 0, "rc": 1}
 

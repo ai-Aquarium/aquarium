@@ -43,7 +43,7 @@ workflow. Order: `v1.3.0-beta.1 < v1.3.0-rc.1 < v1.3.0`.
 | `SHA256SUMS.cosign.bundle` | the same signature + certificate + transparency-log entry in one file (optional, for offline checks) |
 | `channels.json` | which version each channel points at (section 4) |
 
-Download URL: `https://github.com/leolau/aquarium/releases/download/<tag>/<asset>`.
+Download URL: `https://github.com/ai-Aquarium/aquarium/releases/download/<tag>/<asset>`.
 
 ## 3. Verifying (installer and `aquarium update` must do both steps)
 
@@ -51,7 +51,7 @@ Download URL: `https://github.com/leolau/aquarium/releases/download/<tag>/<asset
 TAG=v1.2.0
 cosign verify-blob \
   --certificate SHA256SUMS.pem --signature SHA256SUMS.sig \
-  --certificate-identity "https://github.com/leolau/aquarium/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-identity "https://github.com/ai-Aquarium/aquarium/.github/workflows/release.yml@refs/tags/$TAG" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 sha256sum -c SHA256SUMS
@@ -78,13 +78,13 @@ sha256sum -c SHA256SUMS
 ```json
 {
   "schema": 1,
-  "repo": "leolau/aquarium",
+  "repo": "ai-Aquarium/aquarium",
   "generated_at": "2026-10-18T08:00:00Z",
   "channels": {
     "stable": {"version": "v1.2.0", "tarball": "aquarium-v1.2.0-linux-x86_64.tar.gz",
-               "download_base": "https://github.com/leolau/aquarium/releases/download/v1.2.0/"},
+               "download_base": "https://github.com/ai-Aquarium/aquarium/releases/download/v1.2.0/"},
     "beta":   {"version": "v1.3.0-rc.1", "tarball": "aquarium-v1.3.0-rc.1-linux-x86_64.tar.gz",
-               "download_base": "https://github.com/leolau/aquarium/releases/download/v1.3.0-rc.1/"}
+               "download_base": "https://github.com/ai-Aquarium/aquarium/releases/download/v1.3.0-rc.1/"}
   }
 }
 ```
@@ -93,12 +93,12 @@ sha256sum -c SHA256SUMS
 - `beta` = newest release of any kind (if a stable is newer than every rc,
   beta users get that stable).
 - Fixed URL for the current file:
-  `https://github.com/leolau/aquarium/releases/latest/download/channels.json`
+  `https://github.com/ai-Aquarium/aquarium/releases/latest/download/channels.json`
   (the workflow re-uploads it to the newest stable release after each beta).
   Before the first stable release this URL returns 404; fall back to the API.
-- API fallback (same answer): stable = `GET /repos/leolau/aquarium/releases/latest`
+- API fallback (same answer): stable = `GET /repos/ai-Aquarium/aquarium/releases/latest`
   (GitHub excludes prereleases); beta = newest entry of
-  `GET /repos/leolau/aquarium/releases` that is not a draft.
+  `GET /repos/ai-Aquarium/aquarium/releases` that is not a draft.
 - `channels.json` is not signed. It only picks a version; the tarball for that
   version must still pass section 3 with that version's tag.
 

@@ -1,6 +1,6 @@
 # Landing page: backend and feasibility spec
 
-**Repo:** `leolau/aquarium` @ `develop` (`213c343b4`). **Status:** read-only audit. Nothing is implemented, no PR is open, and production was not touched.
+**Repo:** `ai-Aquarium/aquarium` @ `develop` (`213c343b4`). **Status:** read-only audit. Nothing is implemented, no PR is open, and production was not touched.
 **Scope:** features a–g of the landing page brief. Line numbers are for `213c343b4`.
 
 ---

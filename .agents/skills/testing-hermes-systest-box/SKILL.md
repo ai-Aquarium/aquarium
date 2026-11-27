@@ -1,6 +1,6 @@
 ---
 name: testing-hermes-systest-box
-description: "SUPERSEDED 2026-08-20 — the Alibaba 'systest' box this skill describes is decommissioned. Production moved to a Hetzner box reachable by SSH; read production/PRODUCTION.md in the private repo leolau/aquarium-ops before any production action. Kept only for historical/rollback reference — do NOT use OOS_RunCommand against production."
+description: "SUPERSEDED 2026-08-20 — the Alibaba 'systest' box this skill describes is decommissioned. Production moved to a Hetzner box reachable by SSH; read production/PRODUCTION.md in the private repo ai-Aquarium/aquarium-ops before any production action. Kept only for historical/rollback reference — do NOT use OOS_RunCommand against production."
 ---
 
 # ⚠️ SUPERSEDED — this box is decommissioned, do not act on it ⚠️
@@ -13,14 +13,14 @@ longer serving any real traffic**. Running commands against it wastes time
 and changes nothing anyone will ever see.
 
 **Before doing anything "live box" related, read
-[`production/PRODUCTION.md`](https://github.com/leolau/aquarium-ops/blob/main/production/PRODUCTION.md) in the private repo
-`leolau/aquarium-ops`.** Current production is a Hetzner box reached directly
+[`production/PRODUCTION.md`](https://github.com/ai-Aquarium/aquarium-ops/blob/main/production/PRODUCTION.md) in the private repo
+`ai-Aquarium/aquarium-ops`.** Current production is a Hetzner box reached directly
 by SSH; the host and access details are only in that file.
 
 No OOS polling, no base64-decoding invocation results, no ~60s MCP call
 ceiling — it's a normal SSH session. The full service catalog, deploy
 procedure, and health-check commands for the *current* box are in
-`PRODUCTION.md` §4–5.7 (leolau/aquarium-ops).
+`PRODUCTION.md` §4–5.7 (ai-Aquarium/aquarium-ops).
 
 This exact mistake — debugging and redeploying to this decommissioned box
 while believing it was production — happened once already and cost a full

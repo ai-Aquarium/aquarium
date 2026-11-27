@@ -42,7 +42,7 @@ const rel = (tag: string, published_at: string) => ({
   name: tag,
   published_at,
   prerelease: false,
-  url: `https://github.com/leolau/aquarium/releases/tag/${tag}`,
+  url: `https://github.com/ai-Aquarium/aquarium/releases/tag/${tag}`,
   highlights: [{ title: "Fixes", items: [`fix in ${tag}`] }],
 });
 

@@ -2,17 +2,17 @@
 # install-aquarium.sh — install the whole Aquarium stack on a fresh Ubuntu 24.04 VM.
 #
 # From a git clone (installs exactly that clone; asks for the instance settings):
-#   git clone https://github.com/leolau/aquarium.git && cd aquarium && sudo ./install-aquarium.sh
+#   git clone https://github.com/ai-Aquarium/aquarium.git && cd aquarium && sudo ./install-aquarium.sh
 #   ./install-aquarium.sh --check      read-only preflight: OS, CPU, memory, disk, ports, DNS
 #
 # Without a clone:
-#   curl -fsSL https://raw.githubusercontent.com/leolau/aquarium/develop/install-aquarium.sh \
+#   curl -fsSL https://raw.githubusercontent.com/ai-Aquarium/aquarium/develop/install-aquarium.sh \
 #     | sudo AQUARIUM_HOME_DOMAIN=home.example.com AQUARIUM_DASHBOARD_DOMAIN=example.com bash -s -- [OPTION]
 #
 # What to install (one option; default: the clone the script runs from, else --channel stable):
 #   --from-checkout       the git clone this script is in, copied to $AQUARIUM_ROOT/hermes-agent
 #                         (no download; not signature-verified; updates: scripts/aquarium-update.sh)
-#   --version vX.Y.Z      that GitHub release of leolau/aquarium
+#   --version vX.Y.Z      that GitHub release of ai-Aquarium/aquarium
 #   --channel stable|beta newest release on the channel (beta includes pre-releases)
 #   --from-branch BRANCH  a git checkout of BRANCH (development boxes only; not verified)
 # Instance settings (asked once when run in a terminal; saved in /etc/aquarium/aquarium.conf
@@ -40,7 +40,7 @@
 #   AQUARIUM_ORG_NAME          organization this instance is for        (default: Aquarium)
 #   AQUARIUM_OWNER_EMAIL       owner's email, the Let's Encrypt contact (default: none)
 #   (each of these five: --option > environment > saved instance settings > prompt > default)
-#   AQUARIUM_REPO / AQUARIUM_BRANCH   source for --from-branch (default: leolau/aquarium, develop);
+#   AQUARIUM_REPO / AQUARIUM_BRANCH   source for --from-branch (default: ai-Aquarium/aquarium, develop);
 #                              setting AQUARIUM_BRANCH alone also selects a branch install
 #   AQUARIUM_ROOT              install root                              (default: /opt/data)
 #   AQUARIUM_SUPABASE_REF      supabase/supabase commit for the compose files (default: pins.env;
@@ -51,7 +51,7 @@
 set -Eeuo pipefail
 
 ROOT=${AQUARIUM_ROOT:-/opt/data}
-REPO_URL=${AQUARIUM_REPO:-https://github.com/leolau/aquarium.git}
+REPO_URL=${AQUARIUM_REPO:-https://github.com/ai-Aquarium/aquarium.git}
 BRANCH=${AQUARIUM_BRANCH:-develop}
 HOME_DOMAIN=${AQUARIUM_HOME_DOMAIN:-}
 DASH_DOMAIN=${AQUARIUM_DASHBOARD_DOMAIN:-}
@@ -82,7 +82,7 @@ if [ -n "$SCRIPT_DIR" ] && [ -e "$SCRIPT_DIR/.git" ] && [ -f "$HELPERS/lib.sh" ]
 if [ ! -f "$HELPERS/lib.sh" ]; then
   HELPERS=$(mktemp -d)
   for f in lib.sh pins.env supabase-images.lock; do
-    curl -fsSL "https://raw.githubusercontent.com/leolau/aquarium/${AQUARIUM_INSTALLER_REF:-$BRANCH}/deploy/install/$f" \
+    curl -fsSL "https://raw.githubusercontent.com/ai-Aquarium/aquarium/${AQUARIUM_INSTALLER_REF:-$BRANCH}/deploy/install/$f" \
       -o "$HELPERS/$f" || die "cannot fetch deploy/install/$f"
   done
 fi

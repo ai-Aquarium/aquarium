@@ -17,7 +17,7 @@ const REQUEST: ChatSecretRequest = {
   requestId: "sr_0123456789abcdef",
   name: "github-pat",
   label: "GitHub personal access token",
-  purpose: "Push the fix to leolau/aquarium",
+  purpose: "Push the fix to ai-Aquarium/aquarium",
   kind: "secret",
   username: null,
   expiresAt: null,
@@ -30,7 +30,7 @@ describe("SecretRequestModal (request mode)", () => {
     render(<SecretRequestModal mode="request" request={REQUEST} onSubmit={vi.fn()} onDismiss={vi.fn()} />);
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.getByText("GitHub personal access token")).toBeTruthy();
-    expect(screen.getByText("Push the fix to leolau/aquarium")).toBeTruthy();
+    expect(screen.getByText("Push the fix to ai-Aquarium/aquarium")).toBeTruthy();
     expect(screen.getByText("github-pat")).toBeTruthy();
     const input = valueInput();
     expect(input.type).toBe("password");
