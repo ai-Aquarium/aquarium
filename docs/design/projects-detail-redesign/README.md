@@ -1,21 +1,22 @@
 # Projects detail page — "less is more" redesign
 
 Status: **Runs step and Start run dialog approved by Yan (2026-11-27). Requirements, Plan, Cards
-(Kanban, Graph) and Compare runs mocked up 2026-11-27, waiting for Yan's review. Not yet implemented.** This folder is the
+(Kanban, Graph), Compare runs and the Agent co-author panel states mocked up 2026-11-27, waiting for Yan's review. Not yet implemented.** This folder is the
 handoff for the agent that builds it in `agent-home/` (the primary UI — see `AGENTS.md`).
 
 - Figma (source of truth for layout and tokens): <https://www.figma.com/design/2ulo0wiREINRTTsynkpkgl>
   (file "Aquarium — Projects detail redesign", page "Projects detail"; frames
   `Project detail — Runs step (key mockup)`, `Start run dialog`, `Project detail — Requirements step`,
   `Project detail — Plan step`, `Project detail — Cards step (Kanban)`, `Project detail — Cards step (Graph)`,
-  `Project detail — Compare runs`).
+  `Project detail — Compare runs`, `Agent co-author panel — states`).
 - Screenshots: [`screenshots/runs-step-desktop.png`](screenshots/runs-step-desktop.png),
   [`screenshots/start-run-dialog.png`](screenshots/start-run-dialog.png),
   [`screenshots/requirements-step.png`](screenshots/requirements-step.png),
   [`screenshots/plan-step.png`](screenshots/plan-step.png),
   [`screenshots/cards-kanban.png`](screenshots/cards-kanban.png),
   [`screenshots/cards-graph.png`](screenshots/cards-graph.png),
-  [`screenshots/compare-runs.png`](screenshots/compare-runs.png).
+  [`screenshots/compare-runs.png`](screenshots/compare-runs.png),
+  [`screenshots/agent-panel-states.png`](screenshots/agent-panel-states.png).
 - Exact values without Figma access:
   - [`figma-spec.json`](figma-spec.json): every layer's size, auto-layout (gap/padding/alignment),
     fill/stroke colour, radius, text and font, exported from the Figma file. Treat it as the pixel
@@ -25,7 +26,7 @@ handoff for the agent that builds it in `agent-home/` (the primary UI — see `A
   - [`figma-build-steps.js`](figma-build-steps.js): the script for the other five screens (clones
     the Runs frame, so run it after `figma-build-script.js`).
 - With Figma MCP access, `get_design_context` / `get_screenshot` on file `2ulo0wiREINRTTsynkpkgl`
-  (nodes `1:2`, `1:277`, `9:2`, `9:420`, `9:855`, `9:1301`, `9:1690`) return the same details.
+  (nodes `1:2`, `1:277`, `9:2`, `9:420`, `9:855`, `9:1301`, `9:1690`, `18:2`) return the same details.
   Extend this file rather than starting a new one.
 
 ![Runs step](screenshots/runs-step-desktop.png)
@@ -41,6 +42,8 @@ handoff for the agent that builds it in `agent-home/` (the primary UI — see `A
 ![Cards step, Graph](screenshots/cards-graph.png)
 
 ![Compare runs](screenshots/compare-runs.png)
+
+![Agent co-author panel states](screenshots/agent-panel-states.png)
 
 ## 1. Requested workflow (owner's words)
 
@@ -163,6 +166,36 @@ Theme: existing `agent-home/src/app/globals.css` tokens only (`--color-bg #0b0d1
 - "What changed" agent summary in 2–3 plain bullets, plus `Open outputs side by side`.
 - Header status sentence switches to the latest finished run ("Last run R7 finished 10:17 · graded 5 ★").
 
+### Agent co-author panel
+One 380 px panel on every step (frame `Agent co-author panel — states`, node `18:2`, five states side by side).
+Script: [`figma-build-agent-panel.js`](figma-build-agent-panel.js) (self-contained).
+- **Header** (every state): avatar, `Agent`, `Co-author` pill, profile picker (who answers, e.g. `Planner`,
+  `Runner`; today's `ProjectChatProfilePicker`), `»` collapse. **Context strip**: "Working on [Requirements v5]"
+  plus `Sees N items` (opens the list of what the agent can read).
+- **1 · Start (empty)**: "Co-write the requirements", one line saying what it can read and that it only
+  suggests. Four step-specific suggestion rows (Requirements: "Turn my notes into requirements", "Find gaps
+  and contradictions", "Summarize the 5 sources", "Write the “Done when” checklist"), then a "What I can
+  see" box (current version being edited, sources, read-only items). Suggestions change per step.
+- **2 · Working**: the agent's turn is one card: spinner + "Building Plan v4 from Requirements v6", then a
+  live checklist (done ✓ / current spinner / todo ○), footer "Planner · 42 s" + `Stop`. Messages sent
+  while it works show "Waiting · read when the plan is ready"; the composer's Send becomes `Stop`.
+- **3 · Proposal**: a proposal card with a `v3 → v4` pill and "from Requirements v6"; per changed step a
+  red struck-through old line and a green new line; "Affects Card 3, Card 4 · 4 steps unchanged";
+  `Save as v4` (primary) · `Edit first` (opens the step editor with the change applied, unsaved) · `Discard`.
+  Resolved proposals collapse to one line: "✓ Saved as Requirements v6 · Undo" or
+  "○ Discarded: … · Restore". Follow-up questions ("Why change step 3?") answer in plain language.
+- **4 · Follows you**: switching step adds a divider "You moved to Runs › R7" (same thread, no new
+  chat) and the context strip updates. "2 new while you were away" pill (today's `ProjectChatUnread`).
+  Run actions work inline in messages (`Approve`, `Reject`, `Open in run`); outputs show as chips.
+  Composer: `+ Attach` menu = File from your computer, Link (internal or external), Folder bridge,
+  VPN reference, then "From this project": Requirements version, Plan version, Card, Run output.
+  `@ Mention` adds a project item; attached items show as chips above the text.
+- **5 · Collapsed**: 56 px rail with `«` and the avatar; an amber badge counts what needs you
+  (proposals + approvals); hover tooltip lists them ("Plan v4 proposal waiting", "R7 approval waiting",
+  "Click or press / to open"). Collapse state is shared with the chat page (same remembered setting).
+- Rules: the agent never saves on its own (every change is a proposal); one thread per project and
+  person, carrying the step context; the panel never covers the workspace (it pushes it).
+
 ### Start run dialog
 Title "Start a new run", sub "Runs the cards of the chosen plan on one iteration batch."
 Fields: **Plan version** (default latest, meta "from Requirements v5 · 6 steps"), **Iteration batch**
@@ -198,7 +231,7 @@ Map to existing code before building anything new (extend, don't duplicate):
 | Inline approvals | `CardApprovals.tsx`, `board/NeedsYouStrip.tsx`, `ProjectRun.waiting_on_you` |
 | Outputs | `outputs/*` (`LatestOutputsShelf`, `DeliverableCard`, `useProjectArtifacts`) |
 | Grade | `ProjectRun.score_user` / `score_self` / `score_note`; `ProjectDetail.score` |
-| Agent panel | `chat/ProjectChatPanel.tsx`, `chat/ProjectChatDock.tsx`, `chat/dockState.ts`, `chat/ProposedPlaybookCard` |
+| Agent panel | `chat/ProjectChatPanel.tsx` (profile picker, rail, unread, seed note), `chat/ProjectChatDock.tsx`, `chat/dockState.ts`, `chat/ProposedPlaybookCard`, `chat/projectTimeline.ts` |
 
 Data gaps to verify (not confirmed while designing):
 - **Requirements version number**: the brief has change history (`ProjectChangesHistory`) but no
