@@ -349,3 +349,4 @@ develop`, HSD via the agent-home software-upgrade release flow) track
   navigates, no `from Req vN` lineage. `PlanTab` deleted.
 - Verified: tsc, eslint, projects suite 1106 green, ratchet green.
 - Plan: `plans/2026-11-27-project-plan-step.md`.
+| 2026-11-27 | PR6 — Cards step: Kanban⇄Graph + 300px detail panel (CardsStep; BoardView stays for BoardPanel/page) | plans/2026-11-27-project-cards-step.md |
