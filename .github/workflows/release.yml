@@ -135,9 +135,17 @@ jobs:
           gh release download "$PREV" --repo "$GITHUB_REPOSITORY" --dir prev \
             -p "aquarium-${PREV}-linux-x86_64.tar.gz" -p SHA256SUMS -p SHA256SUMS.sig -p SHA256SUMS.pem
           cd prev
-          cosign verify-blob --certificate SHA256SUMS.pem --signature SHA256SUMS.sig \
-            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${PREV}" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+          # releases before the move to ai-Aquarium were signed in leolau/aquarium
+          signed=
+          for repo in "$GITHUB_REPOSITORY" leolau/aquarium; do
+            if cosign verify-blob --certificate SHA256SUMS.pem --signature SHA256SUMS.sig \
+                --certificate-identity "https://github.com/${repo}/.github/workflows/release.yml@refs/tags/${PREV}" \
+                --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS; then
+              signed=1
+              break
+            fi
+          done
+          [ -n "$signed" ] || { echo "signature check failed for $PREV"; exit 1; }
           sha256sum -c SHA256SUMS
           echo "AQUARIUM_REHEARSAL_FROM=$PWD/aquarium-${PREV}-linux-x86_64.tar.gz" >> "$GITHUB_ENV"
           echo "AQUARIUM_REHEARSAL_TO=$GITHUB_WORKSPACE/dist/aquarium-${TAG}-linux-x86_64.tar.gz" >> "$GITHUB_ENV"
