@@ -438,15 +438,17 @@
     "editing": "editing",
     "readOnly": "read only",
     "sources": "sources",
-    "sug.req1": "Turn my notes into requirements",
-    "sug.req2": "Find gaps and contradictions",
-    "sug.req3": "Write the “Done when” checklist",
-    "sug.plan1": "Update the plan from the latest requirements",
-    "sug.plan2": "Tighten the steps",
-    "sug.plan3": "Explain the step order",
-    "sug.cards1": "Split the biggest card",
-    "sug.cards2": "Check the dependencies",
-    "sug.runs1": "What went wrong in the last run?",
-    "sug.runs2": "Summarize the outputs"
+    "sug": {
+      "req1": "Turn my notes into requirements",
+      "req2": "Find gaps and contradictions",
+      "req3": "Write the “Done when” checklist",
+      "plan1": "Update the plan from the latest requirements",
+      "plan2": "Tighten the steps",
+      "plan3": "Explain the step order",
+      "cards1": "Split the biggest card",
+      "cards2": "Check the dependencies",
+      "runs1": "What went wrong in the last run?",
+      "runs2": "Summarize the outputs"
+    }
   }
 }

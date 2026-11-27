@@ -25,9 +25,8 @@ import type {
 /**
  * Start-run dialog (projects-detail-redesign, frame "Start run dialog"):
  * pick the plan version, see the iteration batch (inputs) it will run, an
- * honest estimate from prior runs, then POST /runs with `playbook_rev`.
- * There is no batch entity on the backend — the batch row names the
- * current inputs instead.
+ * honest estimate from prior runs, then POST /runs with `playbook_rev`
+ * and the chosen `batch_id` (or a just-created batch, or none).
  */
 export function StartRunSheet({
   project,
@@ -131,19 +130,19 @@ export function StartRunSheet({
   async function start() {
     let chosen = batchId || undefined;
     if (batchId === "__new__") {
-      const res = await fetch(
+      const created = await action.run(
         `/api/projects/${encodeURIComponent(project.slug)}/batches`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+          body: {
             title: newBatch.title.trim(),
             description: newBatch.description.trim() || undefined,
-          }),
+          },
         },
       );
-      if (!res.ok) return;
-      chosen = (await res.json()).id;
+      const id = created?.ok ? created.data?.id : undefined;
+      if (typeof id !== "string") return;
+      chosen = id;
     }
     const result = await action.run(
       `/api/projects/${encodeURIComponent(project.slug)}/runs`,

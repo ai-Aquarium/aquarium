@@ -451,5 +451,11 @@
   "GET /api/sites/[id]/history/[entity]/[key]": "signed-in",
   "PUT /api/settings/branding": "owner",
   "PUT /api/settings/branding/logo": "owner",
-  "DELETE /api/settings/branding/logo": "owner"
+  "DELETE /api/settings/branding/logo": "owner",
+  "GET /api/projects/[slug]/batches": "signed-in",
+  "POST /api/projects/[slug]/batches": "signed-in",
+  "PATCH /api/projects/[slug]/batches/[batchId]": "signed-in",
+  "GET /api/projects/[slug]/requirements/versions": "signed-in",
+  "POST /api/projects/[slug]/requirements/versions": "signed-in",
+  "GET /api/projects/[slug]/requirements/versions/[rev]": "signed-in"
 }

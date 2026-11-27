@@ -114,16 +114,16 @@
     "loadFailed": "無法載入這些執行。",
     "draft": "比較此專案的第 {runs} 次執行：\n{lines}\n最好的一次為何較好？劇本應作哪些修改？",
     "line": "- 第 {n} 次執行（劇本 v{rev}）：{status}，{duration}，評分 {score}",
-    "selfScore": "",
-    "approvals": "",
-    "none": "",
-    "swap": "",
+    "selfScore": "Agent 自評",
+    "approvals": "核准",
+    "none": "無",
+    "swap": "對調",
     "openRun": "Open R{n}",
-    "whatChanged": "",
+    "whatChanged": "有什麼改變",
     "changedPlan": "Plan v{from} → v{to}",
     "changedDuration": "Duration {pct}",
     "changedScore": "Your grade {from} → {to} ★",
-    "batch": "",
-    "agentRead": " Agent "
+    "batch": "迭代批次",
+    "agentRead": "請 Agent 分析"
   }
 }
