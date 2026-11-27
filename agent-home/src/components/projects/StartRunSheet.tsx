@@ -252,7 +252,7 @@ export function StartRunSheet({
               disabled={action.busy}
               data-action="confirm-start-run"
               data-appmcp-hint="Start the run with the chosen plan version"
-              className="rounded-[var(--radius-md)] bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-on-accent)] disabled:opacity-50"
+              className="rounded-[var(--radius-md)] bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-fg)] disabled:opacity-50"
             >
               {t("startRun.start")}
             </button>
