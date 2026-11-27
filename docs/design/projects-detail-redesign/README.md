@@ -1,7 +1,7 @@
 # Projects detail page — "less is more" redesign
 
-Status: **Runs step and Start run dialog approved by Yan (2026-11-27). Requirements, Plan, Cards
-(Kanban, Graph), Compare runs and the Agent co-author panel states mocked up 2026-11-27, waiting for Yan's review. Not yet implemented.** This folder is the
+Status: **Runs step, Start run dialog and Agent co-author panel approved by Yan (2026-11-27). Requirements, Plan, Cards
+(Kanban, Graph) and Compare runs mocked up 2026-11-27, waiting for Yan's review. Not yet implemented.** This folder is the
 handoff for the agent that builds it in `agent-home/` (the primary UI — see `AGENTS.md`).
 
 - Figma (source of truth for layout and tokens): <https://www.figma.com/design/2ulo0wiREINRTTsynkpkgl>
@@ -195,6 +195,10 @@ Script: [`figma-build-agent-panel.js`](figma-build-agent-panel.js) (self-contain
   "Click or press / to open"). Collapse state is shared with the chat page (same remembered setting).
 - Rules: the agent never saves on its own (every change is a proposal); one thread per project and
   person, carrying the step context; the panel never covers the workspace (it pushes it).
+- **Approved decisions (Yan, 2026-11-27):** (1) one thread per project and person that carries on
+  across steps, not a chat per step; (2) `Edit first` opens the proposed change in that step's editor,
+  unsaved, for adjusting before Save; (3) the agent never saves anything itself, even small changes —
+  every change is a proposal the person accepts.
 
 ### Start run dialog
 Title "Start a new run", sub "Runs the cards of the chosen plan on one iteration batch."
