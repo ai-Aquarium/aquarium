@@ -355,3 +355,6 @@ develop`, HSD via the agent-home software-upgrade release flow) track
 | 2026-11-27 | Backend gaps decided (Yan): explicit req versions + agent proposals, named iteration batches, hybrid compare summary, agent_progress timeline events | plans/2026-11-27-projects-backend-gaps.md |
 | 2026-11-27 | B1 — iteration batches: table + batch_id on runs, picker in Start-run dialog, batch in run meta + compare (#1148) | plans/2026-11-27-projects-backend-gaps.md |
 | 2026-11-27 | B2–B4 — requirement versions + plan lineage, agent_progress Working checklist, compare "agent's read" link | plans/2026-11-27-projects-req-versions-progress.md |
+| 2026-11-27 | Deployed develop @ d823bf951 to the box; follow-up fixes: B1–B4 follow-through gaps (i18n/zh-Hant, BFF route-roles, rawFetch) #1152, Start-run footer scroll #1153; route-auth declarations #1150 | plans/2026-11-27-projects-req-versions-progress.md |
+| 2026-11-27 | Releases: v0.2.19 published (tag moved to fixed commit), superseded by v0.2.20 (Latest) — HSD upgrades via software-upgrade page; no data migration needed on either box | — |
+| 2026-11-27 | Repo transferred leolau/aquarium → ai-Aquarium/aquarium; refs updated in #1157, old signing identity still accepted | — |
