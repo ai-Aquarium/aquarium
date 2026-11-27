@@ -418,6 +418,13 @@ SIGNED_IN = {
     "PUT /api/registry/projects/{slug}/schedule",
     "DELETE /api/registry/projects/{slug}/schedule",
     "GET /api/registry/projects/{slug}/doctor",
+    # iteration batches + requirement versions: project read/write per project
+    "GET /api/registry/projects/{slug}/batches",
+    "POST /api/registry/projects/{slug}/batches",
+    "PATCH /api/registry/projects/{slug}/batches/{batch_id}",
+    "GET /api/registry/projects/{slug}/requirements/versions",
+    "POST /api/registry/projects/{slug}/requirements/versions",
+    "GET /api/registry/projects/{slug}/requirements/versions/{rev}",
     # --- B1 projects_skills_api: project read (D6 summary) per project; run
     # details/candidate bodies need `lab` re-resolved in each profile; dismiss
     # needs project write or host-profile `lab` ---
@@ -432,6 +439,7 @@ SIGNED_IN = {
     "GET /api/registry/projects/{slug}/chat/timeline",
     "POST /api/registry/projects/{slug}/chat/prepare",
     "POST /api/registry/projects/{slug}/chat/messages",
+    "POST /api/registry/projects/{slug}/chat/progress",
     # only a file its sender attached in the group chat, for people on the
     # project (viewers included) or an instance admin
     "GET /api/registry/projects/{slug}/chat/media",
