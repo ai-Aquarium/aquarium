@@ -123,10 +123,13 @@ export function ProjectChatDock({
   profile,
   phoneOpen,
   controls,
+  needsYou,
   children,
 }: {
   /** Header controls replacing the "Answering: …" line (the profile picker). */
   controls?: ReactNode;
+  /** Things waiting on the person (proposals + approvals): amber rail badge. */
+  needsYou?: number;
   state: DockState;
   dispatch: (action: DockAction) => void;
   profile: string;
@@ -147,6 +150,7 @@ export function ProjectChatDock({
   if (mode === "min" && seen === null) setSeen(count);
   const unread =
     mode === "min" && seen !== null ? Math.max(0, count - seen) : 0;
+  const badge = unread + (needsYou ?? 0);
 
   const restoreRef = useRef<HTMLButtonElement>(null);
   const maximizeRef = useRef<HTMLButtonElement>(null);
@@ -258,20 +262,25 @@ export function ProjectChatDock({
             onClick={() => dispatch({ type: "restore" })}
             title={t("dock.openHint")}
             aria-label={
-              unread > 0
-                ? t("dock.openUnread", { count: unread })
+              badge > 0
+                ? t("dock.openUnread", { count: badge })
                 : t("dock.open")
             }
             className="hidden h-full w-12 flex-col items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] py-3 text-[var(--color-muted)] hover:text-[var(--color-fg)] lg:flex"
           >
             <span className="relative">
               {avatar}
-              {unread > 0 ? (
+              {badge > 0 ? (
                 <span
                   data-component="ProjectChatUnread"
-                  className="absolute -right-1.5 -top-1.5 min-w-4 rounded-[var(--radius-full)] bg-[var(--color-danger,#dc2626)] px-1 text-center text-[10px] font-semibold leading-4 text-white"
+                  data-needs-you={needsYou ? true : undefined}
+                  className={`absolute -right-1.5 -top-1.5 min-w-4 rounded-[var(--radius-full)] px-1 text-center text-[10px] font-semibold leading-4 ${
+                    needsYou
+                      ? "bg-[var(--color-warn)] text-black"
+                      : "bg-[var(--color-danger,#dc2626)] text-white"
+                  }`}
                 >
-                  {unread}
+                  {badge}
                 </span>
               ) : null}
             </span>

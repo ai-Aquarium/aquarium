@@ -62,6 +62,8 @@ import {
   type SheetPart,
 } from "@/components/projects/tabs/sections";
 import { groupInputLinks, inputCount } from "@/components/projects/inputs/inputKinds";
+import { boardTasks } from "@/components/projects/board/model";
+import type { CoAuthorContext } from "@/components/projects/chat/ProjectChatPanel";
 import { SettingsTab } from "@/components/projects/tabs/SettingsTab";
 import { useProjectSkillCandidateCount } from "@/components/projects/skills/store";
 import { SkillsTab } from "@/components/projects/tabs/SkillsTab";
@@ -387,6 +389,57 @@ export function ProjectDetailView({
   // On a phone the Chat tab shows only the tab bar above the chat.
   const phoneHide = view === "chat" ? "max-lg:hidden" : "";
 
+  const latestRunNo = project.runs.length
+    ? Math.max(...project.runs.map((r) => r.run_no))
+    : null;
+  const nInputs = inputCount(groupInputLinks(project.links));
+  const stepDefs: Record<ProjectStep, { name: string; sees: string[]; suggestions: string[] }> = {
+    requirements: {
+      name: t("steps.requirements"),
+      sees: [
+        `${t("steps.requirements")} (${t("coauthor.editing")})`,
+        `${nInputs} ${t("coauthor.sources")}`,
+        playbook?.active ? `Plan v${playbook.active.rev} (${t("coauthor.readOnly")})` : "",
+      ].filter(Boolean),
+      suggestions: [t("coauthor.sug.req1"), t("coauthor.sug.req2"), t("coauthor.sug.req3")],
+    },
+    plan: {
+      name: playbook?.active ? `Plan v${playbook.active.rev}` : t("steps.plan"),
+      sees: [
+        playbook?.active ? `Plan v${playbook.active.rev} (${t("coauthor.editing")})` : t("steps.plan"),
+        `${nInputs} ${t("coauthor.sources")}`,
+      ].filter(Boolean),
+      suggestions: [t("coauthor.sug.plan1"), t("coauthor.sug.plan2"), t("coauthor.sug.plan3")],
+    },
+    cards: {
+      name: t("steps.cards"),
+      sees: [
+        `${t("steps.cards")} (${t("coauthor.editing")})`,
+        playbook?.active ? `Plan v${playbook.active.rev} (${t("coauthor.readOnly")})` : "",
+      ].filter(Boolean),
+      suggestions: [t("coauthor.sug.cards1"), t("coauthor.sug.cards2")],
+    },
+    runs: {
+      name: latestRunNo ? `Runs · R${latestRunNo}` : t("steps.runs"),
+      sees: [
+        latestRunNo ? `Runs R1–R${latestRunNo} (${t("coauthor.readOnly")})` : t("steps.runs"),
+        playbook?.active ? `Plan v${playbook.active.rev} (${t("coauthor.readOnly")})` : "",
+      ].filter(Boolean),
+      suggestions: [t("coauthor.sug.runs1"), t("coauthor.sug.runs2")],
+    },
+  };
+  const stepDef = stepDefs[shown];
+  const coAuthorContext: CoAuthorContext = {
+    label: stepDef.name,
+    stepName: stepDef.name,
+    seesCount: stepDef.sees.length,
+    seesList: stepDef.sees,
+    suggestions: stepDef.suggestions,
+  };
+  const coAuthorNeedsYou =
+    (chat?.timeline?.proposals?.filter((pp) => !pp.active).length ?? 0) +
+    boardTasks(board).reduce((n, tk) => n + (tk.pending_approvals?.length ?? 0), 0);
+
   return (
     <div
       data-component="ProjectDetailView"
@@ -484,7 +537,7 @@ export function ProjectDetailView({
                     data-action="start-run"
                     data-appmcp-hint="Opens the dialog to start a new run"
                     onClick={() => setStartRunOpen(true)}
-                    className={PRIMARY_BTN}
+                    className={view === "runs" ? PRIMARY_BTN : TOOL_BTN}
                   >
                     {t("steps.startRun")}
                   </button>
@@ -680,6 +733,9 @@ export function ProjectDetailView({
         phoneOpen={view === "chat"}
         hidden={desktop ? dock.mode === "min" : view !== "chat"}
         composerDraft={composerDraft}
+        context={coAuthorContext}
+        needsYou={coAuthorNeedsYou}
+        playbook={playbook}
       />
 
       {sheet ? (

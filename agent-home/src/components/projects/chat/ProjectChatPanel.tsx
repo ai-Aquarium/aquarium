@@ -17,6 +17,7 @@ import {
   timelineMessages,
 } from "@/components/projects/chat/projectTimeline";
 import { useProjectAction } from "@/components/projects/useProjectAction";
+import { planDiff } from "@/components/projects/changes/planDiff";
 import { stripInjectedContext } from "@/lib/chat/transcript";
 import { useT } from "@/i18n";
 import type {
@@ -27,6 +28,7 @@ import type {
   ProjectChatProposal,
   ProjectChatSeed,
   ProjectChatTimeline,
+  ProjectPlaybookResponse,
 } from "@/types";
 
 /** What the project chat opens with (read by the page). */
@@ -46,6 +48,24 @@ export interface ProjectChatData {
 export const TIMELINE_POLL_MS = 5000;
 
 /**
+ * What the agent co-author panel shows about the step it sits on (mockup
+ * "Agent co-author panel"): the step label, how much of the project the
+ * agent can see, and the suggestions that fit this step.
+ */
+export interface CoAuthorContext {
+  /** "Requirements v5" · "Plan v3" · "Cards" · "Runs · R7". */
+  label: string;
+  /** The step name alone ("requirements") for the empty-state heading. */
+  stepName: string;
+  /** "Sees N items". */
+  seesCount: number;
+  /** "What I can see" rows for the empty state. */
+  seesList: string[];
+  /** Step-matched suggestion prompts ("Turn my notes into requirements"). */
+  suggestions: string[];
+}
+
+/**
  * The docked project group chat: one timeline every member sees, over each
  * person's own per-profile conversations (their own prompt cache and memory;
  * members' turns run in parallel and land in arrival order). The picker sets
@@ -61,6 +81,9 @@ export function ProjectChatPanel({
   phoneOpen,
   hidden,
   composerDraft,
+  context,
+  needsYou,
+  playbook,
 }: {
   slug: string;
   chat: ProjectChatData | null;
@@ -71,6 +94,12 @@ export function ProjectChatPanel({
   hidden: boolean;
   /** Text a tab hands to the composer ("Discuss in chat"). */
   composerDraft?: ComposerDraft;
+  /** The step the panel sits on (co-author strip + suggestions). */
+  context?: CoAuthorContext;
+  /** Proposals + approvals waiting on the person (rail badge). */
+  needsYou?: number;
+  /** For proposal diff lines (no extra fetch). */
+  playbook?: ProjectPlaybookResponse | null;
 }) {
   const t = useT("projects");
   const [profile, setProfile] = useState(chat?.profile ?? "default");
@@ -154,6 +183,7 @@ export function ProjectChatPanel({
       dispatch={dispatch}
       profile={profile}
       phoneOpen={phoneOpen}
+      needsYou={needsYou}
       controls={chat ? picker("project-chat-profile") : undefined}
     >
       {(onMessageCount) =>
@@ -175,6 +205,8 @@ export function ProjectChatPanel({
               onComposerText={onComposerText}
               askAgent={askAgent}
               onAskAgent={setAskAgent}
+              context={context}
+              playbook={playbook}
             />
             </ComposerPrefillContext.Provider>
           </div>
@@ -244,9 +276,13 @@ function ProjectChatPane({
   onComposerText,
   askAgent,
   onAskAgent,
+  context,
+  playbook,
 }: {
   askAgent: boolean;
   onAskAgent: (on: boolean) => void;
+  context?: CoAuthorContext;
+  playbook?: ProjectPlaybookResponse | null;
   slug: string;
   profile: string;
   timeline: ProjectChatTimeline;
@@ -321,6 +357,29 @@ function ProjectChatPane({
     if (synced > 0) onStaleRef.current();
   }, [synced]);
 
+  // Follows-you (mockup state 4): a divider note when the person changes
+  // step while the thread stays; cleared once they send again.
+  const [movedTo, setMovedTo] = useState<string | null>(null);
+  const lastLabel = useRef(context?.label);
+  useEffect(() => {
+    if (!context?.label || context.label === lastLabel.current) return;
+    lastLabel.current = context.label;
+    if (conv.messages.length > 0) setMovedTo(context.label);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [context?.label]);
+  const sendWrap = useCallback(
+    (text: string, attachments: ChatAttachment[]) => {
+      setMovedTo(null);
+      return view.send(text, attachments);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [view],
+  );
+  const convView = useMemo(
+    () => ({ ...view, send: sendWrap }),
+    [view, sendWrap],
+  );
+
   const count = conv.messages.length;
   const onCountRef = useRef(onMessageCount);
   useEffect(() => {
@@ -363,7 +422,9 @@ function ProjectChatPane({
     if (i === 0) {
       if (timeline.truncated) before.push(<Note key="older">{t("dock.chat.olderHidden")}</Note>);
       for (const p of cards.get(-1) ?? []) {
-        before.push(<ProposedPlaybookCard key={`p${p.rev}`} slug={slug} proposal={p} />);
+        before.push(
+          <ProposedPlaybookCard key={`p${p.rev}`} slug={slug} proposal={p} playbook={playbook} />,
+        );
       }
     }
     if (m.role === "user" && m.catchUp) {
@@ -388,7 +449,7 @@ function ProjectChatPane({
       />,
     );
     const after = (cards.get(i) ?? []).map((p) => (
-      <ProposedPlaybookCard key={`p${p.rev}`} slug={slug} proposal={p} />
+      <ProposedPlaybookCard key={`p${p.rev}`} slug={slug} proposal={p} playbook={playbook} />
     ));
     return { before, after };
   };
@@ -407,8 +468,20 @@ function ProjectChatPane({
     <MediaProjectContext.Provider value={slug}>
     <ComposerPrefillContext.Provider value={canPost ? prefill : null}>
     <div data-component="ProjectChatPane" className="flex min-h-0 flex-1 flex-col">
+      {context ? (
+        <p
+          data-component="CoAuthorStrip"
+          className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-1 pb-2 text-xs text-[var(--color-muted)]"
+        >
+          <span>
+            {t("dock.chat.workingOn")}{" "}
+            <span className="font-semibold text-[var(--color-fg)]">{context.label}</span>
+          </span>
+          <span>{t("dock.chat.seesItems", { count: context.seesCount })}</span>
+        </p>
+      ) : null}
       <ChatConversationView
-        conv={view}
+        conv={convView}
         readOnly={
           canPost ? undefined : (
             <Note data-component="ProjectChatReadOnly">{t("dock.chat.viewerReadOnly")}</Note>
@@ -423,16 +496,60 @@ function ProjectChatPane({
         emptyState={
           <div className="space-y-3">
             {(cards.get(-1) ?? []).map((p) => (
-              <ProposedPlaybookCard key={`p${p.rev}`} slug={slug} proposal={p} />
+              <ProposedPlaybookCard key={`p${p.rev}`} slug={slug} proposal={p} playbook={playbook} />
             ))}
-            <p className="py-8 text-center text-sm text-[var(--color-muted)]">
-              {t("dock.chat.empty")}
-            </p>
+            {context ? (
+              <div data-component="CoAuthorEmpty" className="space-y-3 py-4">
+                <p className="text-center text-sm font-semibold">
+                  {t("dock.chat.coWrite", { step: context.stepName })}
+                </p>
+                <p className="text-center text-xs text-[var(--color-muted)]">
+                  {t("dock.chat.coWriteSub")}
+                </p>
+                <p className="pt-1 text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
+                  {t("dock.chat.try")}
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {context.suggestions.map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => prefill?.(sug)}
+                      data-appmcp-hint="Use this suggestion as your message"
+                      className="flex items-center justify-between rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-left text-sm hover:bg-[var(--color-surface-2)]"
+                    >
+                      {sug}
+                      <span aria-hidden className="text-[var(--color-muted)]">→</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="pt-1 text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
+                  {t("dock.chat.whatICanSee")}
+                </p>
+                <ul className="space-y-1 rounded-[var(--radius-md)] border border-[var(--color-border)] p-3 text-xs text-[var(--color-muted)]">
+                  {context.seesList.map((item) => (
+                    <li key={item} className="flex items-center gap-1.5">
+                      <span aria-hidden className="text-[var(--color-accent)]">•</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="py-8 text-center text-sm text-[var(--color-muted)]">
+                {t("dock.chat.empty")}
+              </p>
+            )}
           </div>
         }
         aboveComposer={
           canPost ? (
             <div className="space-y-2 pt-2">
+              {movedTo ? (
+                <Note data-component="CoAuthorMoved">
+                  {t("dock.chat.movedTo", { to: movedTo })}
+                </Note>
+              ) : null}
               {pending}
               {noteError ? (
                 <p role="alert" className="text-xs text-[var(--color-danger)]">
@@ -624,12 +741,16 @@ export function SeedNote({ person, seed }: { person: string; seed: ProjectChatSe
 export function ProposedPlaybookCard({
   slug,
   proposal,
+  playbook,
 }: {
   slug: string;
   proposal: ProjectChatProposal;
+  /** For the before/after step lines (mockup state 3 · Proposal). */
+  playbook?: ProjectPlaybookResponse | null;
 }) {
   const t = useT("projects");
   const action = useProjectAction();
+  const discard = useProjectAction();
   const parts: string[] = [];
   if (proposal.added) {
     const titles = proposal.added_titles.length ? ` (${proposal.added_titles.join(", ")})` : "";
@@ -637,10 +758,31 @@ export function ProposedPlaybookCard({
   }
   if (proposal.changed) parts.push(t("dock.chat.proposal.changed", { count: proposal.changed }));
   if (proposal.removed) parts.push(t("dock.chat.proposal.removed", { count: proposal.removed }));
+
+  const diff = useMemo(() => {
+    if (!playbook) return null;
+    const draft = playbook.revisions.find((r) => r.rev === proposal.rev);
+    if (!draft) return null;
+    const base =
+      (proposal.base_rev != null
+        ? playbook.revisions.find((r) => r.rev === proposal.base_rev)
+        : null) ?? playbook.active;
+    if (!base) return null;
+    return planDiff(base.steps ?? [], draft.steps ?? []);
+  }, [playbook, proposal.rev, proposal.base_rev]);
+  const diffRows = (diff?.rows ?? []).filter((r) => r.kind !== "same").slice(0, 3);
+  const unchanged = diff ? diff.rows.length - diffRows.length - 0 : 0;
+  const sameCount = diff ? diff.rows.filter((r) => r.kind === "same").length : 0;
+
   const activate = () =>
     void action.run(
       `/api/projects/${encodeURIComponent(slug)}/playbook/${proposal.rev}/activate`,
       { body: {} },
+    );
+  const onDiscard = () =>
+    void discard.run(
+      `/api/projects/${encodeURIComponent(slug)}/playbook/${proposal.rev}`,
+      { method: "DELETE" },
     );
   return (
     <div
@@ -651,6 +793,11 @@ export function ProposedPlaybookCard({
       <div className="flex flex-wrap items-center gap-2">
         <PlaybookIcon />
         <span className="font-semibold">{t("dock.chat.proposal.title", { rev: proposal.rev })}</span>
+        {proposal.base_rev != null ? (
+          <span className="rounded-[var(--radius-full)] border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium">
+            v{proposal.base_rev} → v{proposal.rev}
+          </span>
+        ) : null}
         <span
           className={`rounded-[var(--radius-full)] px-2 py-0.5 text-[11px] font-medium ${
             proposal.active
@@ -665,14 +812,33 @@ export function ProposedPlaybookCard({
         {parts.length ? parts.join(" · ") : t("dock.chat.proposal.noChange")}
         {proposal.created_by ? ` · ${t("dock.chat.proposal.by", { who: proposal.created_by })}` : ""}
       </p>
+      {diffRows.length ? (
+        <div data-component="ProposalDiff" className="mt-2 space-y-1.5">
+          {diffRows.map((row) => (
+            <div key={row.key} className="text-xs">
+              <p className="font-medium">{row.step.title}</p>
+              {row.before?.body && row.kind === "changed" ? (
+                <p className="rounded bg-[var(--color-danger)]/10 px-2 py-0.5 text-[var(--color-danger)] line-through">
+                  {row.before.body}
+                </p>
+              ) : null}
+              {row.kind === "removed" ? (
+                <p className="rounded bg-[var(--color-danger)]/10 px-2 py-0.5 text-[var(--color-danger)] line-through">
+                  {row.step.body ?? row.step.title}
+                </p>
+              ) : row.step.body ? (
+                <p className="rounded bg-[var(--color-success)]/10 px-2 py-0.5 text-[var(--color-success)]">
+                  {row.step.body}
+                </p>
+              ) : null}
+            </div>
+          ))}
+          <p className="text-[11px] text-[var(--color-muted)]">
+            {t("dock.chat.proposal.unchanged", { count: sameCount + Math.max(0, unchanged - sameCount) })}
+          </p>
+        </div>
+      ) : null}
       <div className="mt-2 flex flex-wrap gap-2">
-        <a
-          href={`/projects/${encodeURIComponent(slug)}?tab=plan&rev=${proposal.rev}`}
-          data-action="review-proposal"
-          className="inline-flex min-h-[44px] items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-medium hover:bg-[var(--color-surface-2)]"
-        >
-          {t("dock.chat.proposal.review")}
-        </a>
         {proposal.active ? null : (
           <button
             type="button"
@@ -681,13 +847,34 @@ export function ProposedPlaybookCard({
             onClick={activate}
             className="inline-flex min-h-[44px] items-center rounded-[var(--radius-md)] bg-[var(--color-accent)] px-3 text-xs font-medium text-[var(--color-accent-fg)] disabled:opacity-60"
           >
-            {action.busy ? t("dock.chat.proposal.activating") : t("dock.chat.proposal.activate")}
+            {action.busy
+              ? t("dock.chat.proposal.activating")
+              : t("dock.chat.proposal.saveAs", { rev: proposal.rev })}
+          </button>
+        )}
+        <a
+          href={`/projects/${encodeURIComponent(slug)}?tab=plan&rev=${proposal.rev}`}
+          data-action="review-proposal"
+          data-appmcp-hint="Open this proposal in the plan step to adjust before saving"
+          className="inline-flex min-h-[44px] items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-medium hover:bg-[var(--color-surface-2)]"
+        >
+          {t("dock.chat.proposal.editFirst")}
+        </a>
+        {proposal.active ? null : (
+          <button
+            type="button"
+            data-action="discard-proposal"
+            disabled={discard.busy}
+            onClick={onDiscard}
+            className="inline-flex min-h-[44px] items-center rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 text-xs font-medium text-[var(--color-muted)] disabled:opacity-60"
+          >
+            {discard.busy ? t("dock.chat.proposal.discarding") : t("dock.chat.proposal.discard")}
           </button>
         )}
       </div>
-      {action.error ? (
+      {action.error || discard.error ? (
         <p role="alert" className="mt-1 text-xs text-[var(--color-danger)]">
-          {t("dock.chat.proposal.failed")} {action.error}
+          {t("dock.chat.proposal.failed")} {action.error ?? discard.error}
         </p>
       ) : null}
     </div>

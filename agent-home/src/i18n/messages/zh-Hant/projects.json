@@ -222,7 +222,12 @@
         "review": "檢視",
         "activate": "設為生效",
         "activating": "設定中…",
-        "failed": "無法設為生效。"
+        "failed": "無法設為生效。",
+        "saveAs": "",
+        "editFirst": "",
+        "discard": "",
+        "discarding": "",
+        "unchanged": ""
       },
       "you": "你",
       "fromTo": "{person} 給 {profile}",
@@ -240,7 +245,14 @@
         "request": "{person} 的原始請求",
         "openOriginal": "開啟原始聊天",
         "onlyYou": "只有你能開啟"
-      }
+      },
+      "workingOn": "",
+      "seesItems": "",
+      "coWrite": "",
+      "coWriteSub": "",
+      "try": "",
+      "whatICanSee": "",
+      "movedTo": ""
     }
   },
   "log": {
@@ -416,5 +428,20 @@
     "cardMeta": " {card} · Plan {plan} {step}",
     "openCard": "",
     "askAgent": ""
+  },
+  "coauthor": {
+    "editing": "",
+    "readOnly": "",
+    "sources": "",
+    "sug.req1": "",
+    "sug.req2": "",
+    "sug.req3": "",
+    "sug.plan1": "",
+    "sug.plan2": "",
+    "sug.plan3": "",
+    "sug.cards1": "",
+    "sug.cards2": "",
+    "sug.runs1": "",
+    "sug.runs2": ""
   }
 }

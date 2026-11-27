@@ -222,7 +222,12 @@
         "review": "Review",
         "activate": "Make active",
         "activating": "Activating…",
-        "failed": "Couldn't make it active."
+        "failed": "Couldn't make it active.",
+        "saveAs": "Save as v{rev}",
+        "editFirst": "Edit first",
+        "discard": "Discard",
+        "discarding": "Discarding…",
+        "unchanged": "{count} steps unchanged"
       },
       "you": "You",
       "fromTo": "{person} to {profile}",
@@ -240,7 +245,14 @@
         "request": "{person}'s original request",
         "openOriginal": "Open original chat",
         "onlyYou": "only you can open it"
-      }
+      },
+      "workingOn": "Working on",
+      "seesItems": "Sees {count} items",
+      "coWrite": "Co-write the {step}",
+      "coWriteSub": "I can read what's here and its sources. I suggest edits; you accept them.",
+      "try": "Try",
+      "whatICanSee": "What I can see",
+      "movedTo": "You moved to {to}"
     }
   },
   "log": {
@@ -416,5 +428,20 @@
     "cardMeta": "Card {card} · Plan {plan} {step}",
     "openCard": "Open card",
     "askAgent": "Ask agent"
+  },
+  "coauthor": {
+    "editing": "editing",
+    "readOnly": "read only",
+    "sources": "sources",
+    "sug.req1": "Turn my notes into requirements",
+    "sug.req2": "Find gaps and contradictions",
+    "sug.req3": "Write the “Done when” checklist",
+    "sug.plan1": "Update the plan from the latest requirements",
+    "sug.plan2": "Tighten the steps",
+    "sug.plan3": "Explain the step order",
+    "sug.cards1": "Split the biggest card",
+    "sug.cards2": "Check the dependencies",
+    "sug.runs1": "What went wrong in the last run?",
+    "sug.runs2": "Summarize the outputs"
   }
 }
