@@ -8,6 +8,8 @@ import { briefPatch, type BriefState } from "@/components/projects/EditBriefShee
 import { FileDropZone } from "@/components/projects/inputs/FileDropZone";
 import {
   groupInputLinks,
+  isNoteRef,
+  isUrlRef,
   type LinkEntry,
 } from "@/components/projects/inputs/inputKinds";
 import { LinkNoteInput } from "@/components/projects/inputs/LinkNoteInput";
@@ -464,6 +466,9 @@ function sourceTag(l: ProjectLink): string {
       return "MEM";
     case "sample":
       return "TPL";
+    case "reference":
+      if (isNoteRef(l.ref)) return "NOTE";
+      return isUrlRef(l.ref) ? "LINK" : "REF";
     default:
       return "LINK";
   }

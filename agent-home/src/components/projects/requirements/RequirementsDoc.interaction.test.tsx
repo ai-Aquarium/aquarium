@@ -115,6 +115,24 @@ afterEach(() => {
 });
 
 describe("RequirementsDoc", () => {
+  it("tags a reference file REF, so a file never reads as a link", () => {
+    stubFetch();
+    const ref = (r: string, label: string) => ({
+      project_id: "p1",
+      kind: "reference",
+      profile: "default",
+      ref: r,
+      label,
+      added_by: null,
+      added_at: 1_790_000_000,
+    });
+    const p = props();
+    const links = { reference: [ref("/data/final.xlsx", "Final workbook"), ref("https://wiki.example/x", "Wiki page")] };
+    render(<RequirementsDoc {...p} project={{ ...p.project, links } as unknown as ProjectDetail} />);
+    expect(screen.getByText("Final workbook").textContent).toContain("REF");
+    expect(screen.getByText("Wiki page").textContent).toContain("LINK");
+  });
+
   it("renders the doc: sections, source chips, version rail", async () => {
     stubFetch();
     render(<RequirementsDoc {...props()} />);

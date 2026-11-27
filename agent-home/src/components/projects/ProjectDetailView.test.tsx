@@ -678,6 +678,21 @@ describe("ProjectDetailView", () => {
     expect(unknown).toContain('data-active-tab="requirements"');
   });
 
+  it("the Runs step names the last run once nothing is live", () => {
+    const html = renderToStaticMarkup(
+      <ProjectDetailView
+        project={{ ...PROJECT, runs: [{ ...PROJECT.runs[0], run_no: 3, status: "done" }] }}
+        board={BOARD}
+        playbook={null}
+        directives={null}
+        callerUserId="leo"
+        isInstanceAdmin={false}
+      />,
+    );
+    expect(html).toContain("R3 finished");
+    expect(html).not.toContain("No runs yet");
+  });
+
   it("the spine picks the step and stacks its parts", () => {
     const html = renderToStaticMarkup(
       <ProjectDetailView

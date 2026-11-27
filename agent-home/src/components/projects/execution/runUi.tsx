@@ -23,6 +23,16 @@ export const RUN_TONE: Record<ProjectRunStatus, Tone> = {
   cancelled: "muted",
 };
 
+/** A run's status as a word, e.g. "R3 finished". */
+export const RUN_STATUS_WORD: Record<ProjectRunStatus, string> = {
+  running: "running",
+  waiting: "waiting",
+  blocked: "blocked",
+  done: "finished",
+  failed: "failed",
+  cancelled: "cancelled",
+};
+
 export const STATE_CLASS: Record<CardState, string> = {
   done: "text-[var(--color-success)]",
   running: "text-[var(--color-accent)]",

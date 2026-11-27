@@ -52,6 +52,8 @@ export interface ProjectTabProps {
   directives: ProjectDirectivesResponse | null;
   doctor: ProjectDoctorDetail | null;
   callerUserId: string;
+  /** Display names by user id; an id missing here shows as given. */
+  people?: Record<string, string>;
   /** Owner, lead or box admin. */
   canLead: boolean;
   readiness: ReadinessItem[];
