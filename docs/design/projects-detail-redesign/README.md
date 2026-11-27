@@ -1,7 +1,8 @@
 # Projects detail page — "less is more" redesign
 
 Status: **Runs step, Start run dialog and Agent co-author panel approved by Yan (2026-11-27). Requirements, Plan, Cards
-(Kanban, Graph) and Compare runs mocked up 2026-11-27, waiting for Yan's review. Not yet implemented.** This folder is the
+(Kanban, Graph) and Compare runs mocked up 2026-11-27; their three design decisions approved by Yan (2026-11-27, see
+"Approved decisions" below section 5's table). Not yet implemented.** This folder is the
 handoff for the agent that builds it in `agent-home/` (the primary UI — see `AGENTS.md`).
 
 - Figma (source of truth for layout and tokens): <https://www.figma.com/design/2ulo0wiREINRTTsynkpkgl>
@@ -111,6 +112,11 @@ Theme: existing `agent-home/src/app/globals.css` tokens only (`--color-bg #0b0d1
 | **Plan** | Ordered steps; "Built from Requirements vN" | Generate from requirements · Edit · Ask agent · Save (→ v+1) · History/diff |
 | **Cards** | Kanban ⇄ Graph toggle over the same cards | Generate from plan · Edit card · Ask agent |
 | **Runs** | Run list (left, 264 px) + selected run (right) | Start run · Pause/Stop · Approve/Reject · Open/download outputs · Grade · Compare |
+
+**Approved decisions (Yan, 2026-11-27):**
+1. Editing a card does not change the plan: card edits never create a new Plan version. Only Requirements and Plan are versioned.
+2. Kanban columns show the latest run's status for each card, not a separate status stored per card.
+3. `Start run` is the blue primary button only on the Runs step. On every other step the primary button is that step's own action (e.g. `Save as v6`), and `Start run` is secondary.
 
 ### Runs step (key mockup)
 - **Run list**: rows `R7 [Running] Plan v3 · Nov wk 4 · 6 min`, done runs show `★ 4.0`; a tick box
