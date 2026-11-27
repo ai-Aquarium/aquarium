@@ -352,3 +352,4 @@ develop`, HSD via the agent-home software-upgrade release flow) track
 | 2026-11-27 | PR6 — Cards step: Kanban⇄Graph + 300px detail panel (CardsStep; BoardView stays for BoardPanel/page) | plans/2026-11-27-project-cards-step.md |
 | 2026-11-27 | PR7 — Agent co-author panel: context strip, suggestions, proposal diff card, rail needs-you badge; Start-run primary only on Runs (#1144 dec. 3) | plans/2026-11-27-project-agent-panel.md |
 | 2026-11-27 | PR8 — Compare runs: Swap/Open R, self-score + approvals rows, accent diff tint, what-changed bullets | plans/2026-11-27-project-compare-runs.md |
+| 2026-11-27 | Backend gaps decided (Yan): explicit req versions + agent proposals, named iteration batches, hybrid compare summary, agent_progress timeline events | plans/2026-11-27-projects-backend-gaps.md |
