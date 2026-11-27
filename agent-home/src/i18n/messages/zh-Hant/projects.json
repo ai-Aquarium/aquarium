@@ -371,5 +371,24 @@
     "planWillUpdate": "計劃 v{rev} 是根據目前需求建立的，計劃步驟會提示更新。",
     "usedByPlan": "計劃 v{rev} 根據目前的需求建立。",
     "usedByRuns": "R{run} 使用了目前的需求。"
+  },
+  "planStep": {
+    "title": "計劃",
+    "steps": "步驟",
+    "diff": "差異",
+    "viewToggle": "步驟或差異",
+    "edit": "編輯",
+    "makeCards": "產生卡片",
+    "empty": "尚無計劃 — 可請代理人起草一份。",
+    "staleTitle": "需求在計劃建立後有變更",
+    "staleBody": "計劃 v{rev} 早於其後落地的 {count} 項需求變更。",
+    "seeChanges": "查看變更",
+    "updatePlan": "更新計劃",
+    "needsApproval": "需要核准",
+    "agent": "代理人",
+    "generatedByAgent": "由代理人產生",
+    "createdBy": "由 {who} 建立",
+    "stepsWord": "個步驟",
+    "usedByRuns": "{runs} 使用了 v{rev}。"
   }
 }
