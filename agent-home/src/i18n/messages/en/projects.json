@@ -356,7 +356,11 @@
     "willApprove": "will ask for your approval",
     "noEstimate": "First run — no estimate yet.",
     "starting": "Starting…",
-    "start": "Start run"
+    "start": "Start run",
+    "noBatch": "This run only (no batch)",
+    "newBatch": "+ New batch…",
+    "newBatchTitle": "Batch title (e.g. Christmas Testing)",
+    "newBatchDesc": "Description (optional)"
   },
   "reqDoc": {
     "title": "Requirements",

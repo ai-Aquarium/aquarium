@@ -29,6 +29,7 @@ export async function POST(
         playbookRev !== undefined && playbookRev !== null
           ? Number(playbookRev)
           : undefined,
+      batch_id: body.batch_id ? String(body.batch_id) : undefined,
     }),
   );
 }
