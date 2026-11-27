@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ActionError } from "@/components/projects/ActionError";
 import { AddToProjectSheet } from "@/components/projects/AddToProjectSheet";
@@ -70,8 +70,24 @@ export function RequirementsDoc({
 
   const history = useChangesHistory(project.slug, project);
   const changes = useMemo(() => history?.changes ?? [], [history]);
-  // v1 = first draft; every landed requirement change bumps the doc by one.
-  const currentRev = 1 + changes.length;
+  // Real versions (explicit Save-as-vN snapshots, Yan's decision); the
+  // counter falls back to the derived count on builds without any.
+  const slugPath = `/api/projects/${encodeURIComponent(project.slug)}`;
+  const [reqRevs, setReqRevs] = useState<import("@/types").ProjectRequirementRev[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch(`${slugPath}/requirements/versions`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (live && d) setReqRevs(d.revisions ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.slug]);
+  const currentRev = reqRevs?.length ? reqRevs[0].rev : 1 + changes.length;
 
   const saveAction = useProjectAction();
   const directiveAction = useProjectAction();
@@ -85,12 +101,19 @@ export function RequirementsDoc({
     onUploaded: () => refresh(),
   });
 
-  const slugPath = `/api/projects/${encodeURIComponent(project.slug)}`;
-
   async function save() {
     const body = briefPatch(initial, fields);
-    if (Object.keys(body).length === 0) return;
-    await saveAction.run(slugPath, { method: "PATCH", body });
+    const result = await saveAction.run(`${slugPath}/requirements/versions`, {
+      body: {
+        goal: fields.goal,
+        description: fields.description,
+        audience: fields.target_audience,
+      },
+    });
+    if (!result?.ok) return;
+    if (Object.keys(body).length) {
+      await saveAction.run(slugPath, { method: "PATCH", body });
+    }
   }
 
   async function answerDirective(id: string, action: "activate" | "retire") {
@@ -118,7 +141,17 @@ export function RequirementsDoc({
             : null,
       });
     }
-    if (changes.length === 0) {
+    if (reqRevs?.length) {
+      reqRevs.forEach((r, i) => {
+        rows.push({
+          rev: r.rev,
+          current: i === 0,
+          note: r.note ?? firstLine(r.goal ?? ""),
+          author: r.created_by,
+          at: r.created_at,
+        });
+      });
+    } else if (changes.length === 0) {
       rows.push({ rev: 1, current: true, note: t("reqDoc.firstDraft") });
     } else {
       changes.forEach((c, i) => {
@@ -133,7 +166,7 @@ export function RequirementsDoc({
       rows.push({ rev: 1, note: t("reqDoc.firstDraft") });
     }
     return rows;
-  }, [dirty, proposed.length, changes, currentRev, t]);
+  }, [dirty, proposed.length, changes, currentRev, reqRevs, t]);
 
   return (
     <div

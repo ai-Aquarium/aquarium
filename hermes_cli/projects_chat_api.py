@@ -433,6 +433,13 @@ def _member_notes(project_id: str, spans: Spans, viewer: Optional[str] = None) -
             "person": r["user_id"],
             "member_only": True,
         }
+        if r.get("kind"):
+            note["kind"] = r["kind"]
+        if r.get("meta"):
+            try:
+                note["meta"] = json.loads(r["meta"])
+            except (TypeError, ValueError):
+                pass
         seed = _seed_view(r, viewer)
         if seed is not None:
             note["seed"] = seed
@@ -1006,6 +1013,45 @@ def _post_note_sync(project, user_id: str, person: str, content: str) -> dict:
         "profile": None,
         "session_id": None,
     }
+
+
+
+
+@router.post("/{slug}/chat/progress")
+async def chat_post_progress(request: Request) -> dict[str, Any]:
+    """Record an agent working-progress snapshot (mockup "Working": the
+    panel's live checklist). ``items`` = [{task, state: done|working|todo,
+    detail?}]; each call replaces the previous checklist visually — the
+    timeline keeps them all."""
+    project, role, _profiles, principal = await _require_write(request, judgement=True)
+    projects_api_refuse_archived(project)
+    body = await _body(request)
+    items = body.get("items")
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=422, detail="items are required")
+    cleaned = []
+    for it in items:
+        if not isinstance(it, dict) or not it.get("task"):
+            raise HTTPException(status_code=422, detail="each item needs a task")
+        cleaned.append({
+            "task": str(it["task"])[:200],
+            "state": it.get("state") if it.get("state") in ("done", "working", "todo") else "todo",
+            "detail": str(it["detail"])[:300] if it.get("detail") else None,
+        })
+
+    def _post_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            return projects_db.add_chat_message(
+                conn,
+                project_id=project.id,
+                user_id=principal.user_id,
+                person=str(body.get("person") or "agent"),
+                content=str(body.get("title") or "Working…"),
+                kind="agent_progress",
+                meta={"items": cleaned},
+            )
+
+    return await asyncio.to_thread(_post_sync)
 
 
 @router.post("/{slug}/chat/messages")

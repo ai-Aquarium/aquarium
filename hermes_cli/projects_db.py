@@ -402,6 +402,24 @@ CREATE TABLE IF NOT EXISTS project_iteration_batches (
 CREATE INDEX IF NOT EXISTS idx_project_iteration_batches
     ON project_iteration_batches(project_id, created_at);
 
+-- Explicit requirements snapshots ("Save as vN"): goal + description +
+-- audience + the links/directives state at save time (Yan's decision —
+-- a version only exists when the person or an accepted proposal saves it).
+CREATE TABLE IF NOT EXISTS project_requirement_revs (
+    id            TEXT PRIMARY KEY,
+    project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    rev           INTEGER NOT NULL,
+    goal          TEXT,
+    description   TEXT,
+    audience      TEXT,
+    links         TEXT,              -- JSON snapshot of project_links rows
+    directives    TEXT,              -- JSON snapshot of active directives
+    created_by    TEXT,
+    created_at    INTEGER NOT NULL,
+    note          TEXT,
+    UNIQUE (project_id, rev)
+);
+
 -- Which cards belong to which run. The mapping lives here so the shared
 -- board learns nothing about Projects (no run_id column on tasks).
 CREATE TABLE IF NOT EXISTS project_run_cards (
@@ -651,6 +669,8 @@ _PROJECT_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
     # The highest playbook rev ever handed out, so a discarded rev's number
     # is never given to a different revision.
     ("playbook_rev_seq", "playbook_rev_seq INTEGER NOT NULL DEFAULT 0"),
+    # Highest requirements rev ever handed out (versions are never reused).
+    ("requirement_rev_seq", "requirement_rev_seq INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -682,6 +702,7 @@ _SKILL_CANDIDATE_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
 _PLAYBOOK_COLUMN_MIGRATIONS = (
     ("base_rev", "base_rev INTEGER"),
     ("discarded_at", "discarded_at INTEGER"),
+    ("requirement_rev", "requirement_rev INTEGER"),
 )
 
 _CHAT_MESSAGE_COLUMN_MIGRATIONS = (
@@ -3052,13 +3073,18 @@ def _insert_playbook_rev(
         base_rev = int(active["rev"]) if active else 0
     elif base_rev is None:
         base_rev = 0
+    req_rev_row = conn.execute(
+        "SELECT COALESCE(requirement_rev_seq, 0) AS r FROM projects WHERE id = ?",
+        (project_id,),
+    ).fetchone()
     conn.execute(
         """INSERT INTO project_playbook
            (project_id, rev, body, steps, active, created_by, created_at,
-            note, base_rev)
-           VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+            note, base_rev, requirement_rev)
+           VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
         (project_id, rev, str(body or ""), json.dumps(steps),
-         created_by, _now(), note, base_rev),
+         created_by, _now(), note, base_rev,
+         int(req_rev_row["r"]) if req_rev_row else 0),
     )
     return rev
 
@@ -4035,6 +4061,87 @@ def update_iteration_batch(
 def batches_by_id(conn: sqlite3.Connection, project_id: str) -> dict[str, dict]:
     """``{batch_id: batch}`` for payload joins."""
     return {b["id"]: b for b in list_iteration_batches(conn, project_id)}
+
+
+
+# ---------------------------------------------------------------------------
+# Requirements revisions (explicit "Save as vN" snapshots)
+# ---------------------------------------------------------------------------
+
+
+def save_requirement_rev(
+    conn: sqlite3.Connection,
+    project_id: str,
+    *,
+    goal: Optional[str] = None,
+    description: Optional[str] = None,
+    audience: Optional[str] = None,
+    links: Optional[list] = None,
+    directives: Optional[list] = None,
+    created_by: Optional[str] = None,
+    note: Optional[str] = None,
+) -> int:
+    """Snapshot the requirements as rev N+1. ``None`` fields read the
+    project's live state; callers pass the editor's unsaved draft so Save
+    versions exactly what the person sees."""
+    links = get_project_links(conn, project_id) if links is None else links
+    if directives is None:
+        directives = list_project_directives(conn, project_id)
+    with write_txn(conn):
+        row = conn.execute(
+            "SELECT MAX(COALESCE((SELECT MAX(rev) FROM "
+            "project_requirement_revs WHERE project_id = ?), 0), "
+            "COALESCE((SELECT requirement_rev_seq FROM projects "
+            "WHERE id = ?), 0)) AS m",
+            (project_id, project_id),
+        ).fetchone()
+        rev = int(row["m"]) + 1
+        conn.execute(
+            "UPDATE projects SET requirement_rev_seq = ? WHERE id = ?",
+            (rev, project_id),
+        )
+        conn.execute(
+            """INSERT INTO project_requirement_revs
+               (id, project_id, rev, goal, description, audience,
+                links, directives, created_by, created_at, note)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (_new_row_id("reqrev"), project_id, rev, goal, description,
+             audience, json.dumps(links), json.dumps(directives),
+             created_by, _now(), note),
+        )
+    return rev
+
+
+def list_requirement_revs(
+    conn: sqlite3.Connection, project_id: str
+) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM project_requirement_revs WHERE project_id = ? "
+        "ORDER BY rev DESC",
+        (project_id,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["links"] = json.loads(d.get("links") or "[]")
+        d["directives"] = json.loads(d.get("directives") or "[]")
+        out.append(d)
+    return out
+
+
+def get_requirement_rev(
+    conn: sqlite3.Connection, project_id: str, rev: int
+) -> Optional[dict]:
+    row = conn.execute(
+        "SELECT * FROM project_requirement_revs WHERE project_id = ? AND rev = ?",
+        (project_id, rev),
+    ).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["links"] = json.loads(d.get("links") or "[]")
+    d["directives"] = json.loads(d.get("directives") or "[]")
+    return d
 
 
 class FirstRunTaken(ValueError):

@@ -405,7 +405,8 @@
     "generatedByAgent": "由代理人產生",
     "createdBy": "由 {who} 建立",
     "stepsWord": "個步驟",
-    "usedByRuns": "{runs} 使用了 v{rev}。"
+    "usedByRuns": "{runs} 使用了 v{rev}。",
+    "fromReq": ""
   },
   "cardsStep": {
     "title": "",

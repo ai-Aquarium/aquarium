@@ -360,13 +360,11 @@ function ProjectChatPane({
   // Follows-you (mockup state 4): a divider note when the person changes
   // step while the thread stays; cleared once they send again.
   const [movedTo, setMovedTo] = useState<string | null>(null);
-  const lastLabel = useRef(context?.label);
-  useEffect(() => {
-    if (!context?.label || context.label === lastLabel.current) return;
-    lastLabel.current = context.label;
-    if (conv.messages.length > 0) setMovedTo(context.label);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [context?.label]);
+  const [lastLabel, setLastLabel] = useState(context?.label);
+  if (context?.label !== lastLabel) {
+    setLastLabel(context?.label);
+    if (context?.label && conv.messages.length > 0) setMovedTo(context.label);
+  }
   const sendWrap = useCallback(
     (text: string, attachments: ChatAttachment[]) => {
       setMovedTo(null);
@@ -379,6 +377,13 @@ function ProjectChatPane({
     () => ({ ...view, send: sendWrap }),
     [view, sendWrap],
   );
+
+  const progress = useMemo(() => {
+    const note = [...timeline.messages]
+      .reverse()
+      .find((m) => m.kind === "agent_progress" && m.meta?.items?.length);
+    return note?.meta?.items ?? null;
+  }, [timeline.messages]);
 
   const count = conv.messages.length;
   const onCountRef = useRef(onMessageCount);
@@ -468,6 +473,29 @@ function ProjectChatPane({
     <MediaProjectContext.Provider value={slug}>
     <ComposerPrefillContext.Provider value={canPost ? prefill : null}>
     <div data-component="ProjectChatPane" className="flex min-h-0 flex-1 flex-col">
+      {progress ? (
+        <div
+          data-component="AgentProgressCard"
+          className="mx-1 mb-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2"
+        >
+          {progress.map((item) => (
+            <p key={item.task} className="flex items-center gap-2 py-0.5 text-xs">
+              <span aria-hidden className={
+                item.state === "done"
+                  ? "text-[var(--color-success)]"
+                  : item.state === "working"
+                    ? "text-[var(--color-accent)]"
+                    : "text-[var(--color-muted)]"
+              }>
+                {item.state === "done" ? "✓" : item.state === "working" ? "◌" : "○"}
+              </span>
+              <span className={item.state === "todo" ? "text-[var(--color-muted)]" : ""}>
+                {item.task}
+              </span>
+            </p>
+          ))}
+        </div>
+      ) : null}
       {context ? (
         <p
           data-component="CoAuthorStrip"

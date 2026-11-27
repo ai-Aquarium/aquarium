@@ -173,7 +173,7 @@ export function ComparePanel({
               ))}
             </div>
           ))}
-          <WhatChanged runs={runs} t={t} />
+          <WhatChanged runs={runs} t={t} onAsk={onDiscuss ? discuss : undefined} />
           <div role="row" className="grid" style={cols}>
             <span role="rowheader" className={`${LABEL} px-2 py-2`}>
               {t("compare.retro")}
@@ -275,9 +275,11 @@ function CompareLine({
 function WhatChanged({
   runs,
   t,
+  onAsk,
 }: {
   runs: ProjectRun[];
   t: (k: string, p?: Record<string, string | number>) => string;
+  onAsk?: () => void;
 }) {
   if (runs.length !== 2) return null;
   const [a, b] = runs;
@@ -302,6 +304,17 @@ function WhatChanged({
             <li key={b}>{b}</li>
           ))}
         </ul>
+        {onAsk ? (
+          <button
+            type="button"
+            data-appmcp-hint="Ask the agent to explain what changed between these runs"
+            onClick={onAsk}
+            className="mt-1.5 inline-flex min-h-11 items-center gap-1 text-xs text-[var(--color-accent)]"
+          >
+            <MessageIcon size={12} aria-hidden />
+            {t("compare.agentRead")}
+          </button>
+        ) : null}
       </div>
     </div>
   );
