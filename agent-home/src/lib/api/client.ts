@@ -230,6 +230,7 @@ import type {
   TriageSkillFileHistory,
   TriageStatus,
   ProjectIterationBatch,
+  ProjectRequirementRev,
 } from "@/types";
 
 /** Per-person Telegram bot actions forwarded to Hermes `/api/telegram-bot/*`. */
@@ -3088,6 +3089,30 @@ export class HermesApiClient {
     return this.request(
       `/api/registry/projects/${encodeURIComponent(slug)}/batches/${encodeURIComponent(batchId)}`,
       { method: "PATCH", json: payload },
+    );
+  }
+
+  async listRequirementRevs(
+    slug: string,
+  ): Promise<{ revisions: ProjectRequirementRev[] }> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/requirements/versions`,
+    );
+  }
+
+  async saveRequirementRev(
+    slug: string,
+    payload: { goal?: string; description?: string; audience?: string; note?: string },
+  ): Promise<{ rev: number; version: ProjectRequirementRev }> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/requirements/versions`,
+      { method: "POST", json: payload },
+    );
+  }
+
+  async getRequirementRev(slug: string, rev: number): Promise<ProjectRequirementRev> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/requirements/versions/${rev}`,
     );
   }
 

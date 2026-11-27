@@ -86,8 +86,11 @@ export function PlanStep({
           rev: r.rev,
           current: r.rev === active?.rev,
           note:
-            r.note?.trim() ||
-            `${(r.steps ?? []).length} ${t("planStep.stepsWord")}`,
+            (r.requirement_rev
+              ? `${t("planStep.fromReq", { rev: r.requirement_rev })} · `
+              : "") +
+            (r.note?.trim() ||
+              `${(r.steps ?? []).length} ${t("planStep.stepsWord")}`),
           author: r.created_by === "agent" ? t("planStep.agent") : r.created_by,
           at: r.activated_at ?? r.created_at,
         })),

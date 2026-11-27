@@ -2578,6 +2578,20 @@ export interface ProjectRunCheckpointWait {
 }
 
 /** The full run row (§6) as the detail/list reads return it. */
+export interface ProjectRequirementRev {
+  id: string;
+  project_id: string;
+  rev: number;
+  goal: string | null;
+  description: string | null;
+  audience: string | null;
+  links: unknown[];
+  directives: unknown[];
+  created_by: string | null;
+  created_at: number;
+  note: string | null;
+}
+
 export interface ProjectIterationBatch {
   id: string;
   project_id: string;
@@ -2728,6 +2742,8 @@ export interface PlaybookRev {
   note: string | null;
   /** The revision a proposal was written from; null on old revisions. */
   base_rev?: number | null;
+  /** Requirements rev this playbook rev was written from (lineage). */
+  requirement_rev?: number | null;
 }
 
 /**
@@ -3840,6 +3856,9 @@ export interface ProjectChatTurn {
   seed?: ProjectChatSeed;
   /** A steer delivered mid-turn, shown as the person's own row. */
   sent_while_working?: boolean;
+  /** Special row kind (`agent_progress` carries the Working checklist). */
+  kind?: string;
+  meta?: { items?: { task: string; state: string; detail?: string | null }[] };
 }
 
 /** A playbook revision saved while the project chat ran. */

@@ -5200,6 +5200,73 @@ async def patch_batch_route(request: Request, batch_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+
+
+@router.get("/{slug}/requirements/versions")
+async def list_requirement_revs_route(request: Request) -> dict[str, Any]:
+    """Every saved requirements version (explicit Save-as-vN snapshots)."""
+    project, _role, _profiles, _principal = await _require_read(request)
+
+    def _list_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            return {
+                "revisions": projects_db.list_requirement_revs(conn, project.id)
+            }
+
+    return await asyncio.to_thread(_list_sync)
+
+
+@router.post("/{slug}/requirements/versions")
+async def save_requirement_rev_route(request: Request) -> dict[str, Any]:
+    """Save the current requirements as v{N+1} — explicit snapshot only;
+    body may carry the editor's unsaved draft so the version is exactly
+    what the person sees."""
+    project, _role, _profiles, principal = await _require_write(request)
+    body = await request.json() if request.headers.get("content-length") else {}
+
+    def _save_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            rev = projects_db.save_requirement_rev(
+                conn,
+                project.id,
+                goal=body.get("goal", project.goal),
+                description=body.get("description", project.description),
+                audience=body.get("audience", project.target_audience),
+                created_by=principal.user_id,
+                note=body.get("note"),
+            )
+            projects_db.record_project_activity(
+                conn, project.id, "requirement_rev_saved",
+                actor=principal.user_id, detail={"rev": rev},
+            )
+            return {
+                "rev": rev,
+                "version": projects_db.get_requirement_rev(conn, project.id, rev),
+            }
+
+    try:
+        return await asyncio.to_thread(_save_sync)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/{slug}/requirements/versions/{rev}")
+async def get_requirement_rev_route(request: Request, rev: int) -> dict[str, Any]:
+    project, _role, _profiles, _principal = await _require_read(request)
+
+    def _get_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            row = projects_db.get_requirement_rev(conn, project.id, rev)
+            if row is None:
+                raise KeyError(rev)
+            return row
+
+    try:
+        return await asyncio.to_thread(_get_sync)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="requirement version not found")
+
+
 @router.get("/{slug}/runs/{run_no}")
 async def get_run_route(request: Request, run_no: int) -> dict[str, Any]:
     """Run detail: cards, deliveries, cost read from the C8 trace (never
