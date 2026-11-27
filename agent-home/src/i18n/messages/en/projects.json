@@ -345,5 +345,31 @@
     "noEstimate": "First run — no estimate yet.",
     "starting": "Starting…",
     "start": "Start run"
+  },
+  "reqDoc": {
+    "title": "Requirements",
+    "unsaved": "Unsaved changes",
+    "attach": "Attach",
+    "discard": "Discard",
+    "saveAs": "Save as v{rev}",
+    "saving": "Saving…",
+    "goal": "Goal",
+    "sources": "Sources",
+    "audience": "Audience",
+    "doneWhen": "Done when",
+    "noSources": "No sources yet — add files, links or notes below.",
+    "agent": "Agent",
+    "accept": "Accept",
+    "reject": "Reject",
+    "drop": "Drop files here, or add",
+    "chooseFiles": "Choose files",
+    "addLink": "+ Link",
+    "notSavedYet": "Not saved yet",
+    "agentEdits": "{count} agent edits waiting",
+    "firstDraft": "First draft",
+    "saveNote": "Saving creates v{rev}. {plan}",
+    "planWillUpdate": "Plan v{rev} was built from the current requirements, so the Plan step will offer to update.",
+    "usedByPlan": "Plan v{rev} is built from the current requirements.",
+    "usedByRuns": "Run R{run} used the current set."
   }
 }

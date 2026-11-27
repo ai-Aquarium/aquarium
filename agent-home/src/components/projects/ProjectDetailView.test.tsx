@@ -695,8 +695,8 @@ describe("ProjectDetailView", () => {
       expect(html).toContain(`data-step="${s}"`);
     }
     expect(html).toContain('data-active-tab="requirements"');
+    expect(html).toContain('id="project-section-reqdoc"');
     expect(html).toContain('id="project-section-scope"');
-    expect(html).toContain('id="project-section-inputs"');
     expect(html).not.toContain('id="project-section-board"');
     // A part deep-link selects the step that holds it.
     const deep = renderToStaticMarkup(
@@ -1228,7 +1228,7 @@ describe("ProjectDetailView — Planning / Execution / Log", () => {
   it("maps every older ?tab= value onto the step that now holds it", () => {
     const cases: Array<[string, string, string | null]> = [
       ["scope", "requirements", "scope"],
-      ["inputs", "requirements", "inputs"],
+      ["inputs", "requirements", "reqdoc"],
       ["plan", "plan", "plan"],
       ["outputs", "runs", "outputs"],
       ["dashboard", "runs", null],
@@ -1242,9 +1242,9 @@ describe("ProjectDetailView — Planning / Execution / Log", () => {
     }
   });
 
-  it("shows the Brief (Scope) at the top of Requirements, ahead of Inputs", () => {
+  it("shows the requirements doc at the top of Requirements, ahead of the Brief", () => {
     const html = render("requirements");
-    const order = ["scope", "inputs"].map((part) => html.indexOf(`id="project-section-${part}"`));
+    const order = ["reqdoc", "scope"].map((part) => html.indexOf(`id="project-section-${part}"`));
     expect(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1]))).toBe(true);
     expect(html).toContain(">Brief</h2>");
   });

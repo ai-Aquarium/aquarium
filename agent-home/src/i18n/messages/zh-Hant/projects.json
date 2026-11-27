@@ -345,5 +345,31 @@
     "noEstimate": "首次執行 — 暫無估計。",
     "starting": "正在開始…",
     "start": "開始執行"
+  },
+  "reqDoc": {
+    "title": "需求",
+    "unsaved": "有未儲存的變更",
+    "attach": "附加",
+    "discard": "放棄",
+    "saveAs": "儲存為 v{rev}",
+    "saving": "正在儲存…",
+    "goal": "目標",
+    "sources": "來源",
+    "audience": "對象",
+    "doneWhen": "完成條件",
+    "noSources": "尚無來源 — 可在下方新增檔案、連結或筆記。",
+    "agent": "代理人",
+    "accept": "接受",
+    "reject": "拒絕",
+    "drop": "把檔案拖到此處，或新增",
+    "chooseFiles": "選擇檔案",
+    "addLink": "+ 連結",
+    "notSavedYet": "尚未儲存",
+    "agentEdits": "{count} 項代理人修改待處理",
+    "firstDraft": "初稿",
+    "saveNote": "儲存後會建立 v{rev}。{plan}",
+    "planWillUpdate": "計劃 v{rev} 是根據目前需求建立的，計劃步驟會提示更新。",
+    "usedByPlan": "計劃 v{rev} 根據目前的需求建立。",
+    "usedByRuns": "R{run} 使用了目前的需求。"
   }
 }
