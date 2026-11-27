@@ -43,7 +43,7 @@ import { useRefresh } from "@/components/ui/useRefresh";
 import { useProjectEvents } from "@/components/projects/useProjectEvents";
 import { ChangeRequestSheet } from "@/components/projects/changes/ChangeRequestSheet";
 import { LiveStatusBar } from "@/components/projects/live/LiveStatusBar";
-import { BoardTab } from "@/components/projects/tabs/BoardTab";
+import { CardsStep } from "@/components/projects/cards/CardsStep";
 import { DashboardTab } from "@/components/projects/tabs/DashboardTab";
 import { RunsWorkspace } from "@/components/projects/execution/RunsWorkspace";
 import { InputsTab } from "@/components/projects/tabs/InputsTab";
@@ -97,7 +97,7 @@ const TAB_COMPONENT: Record<ProjectTab, ComponentType<ProjectTabProps>> = {
   dashboard: DashboardTab,
   runs: RunsWorkspace,
   scope: ScopeTab,
-  board: BoardTab,
+  board: CardsStep,
   outputs: OutputsTab,
   iterations: IterationsTab,
   inputs: InputsTab,

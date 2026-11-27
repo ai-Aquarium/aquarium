@@ -390,5 +390,31 @@
     "createdBy": "由 {who} 建立",
     "stepsWord": "個步驟",
     "usedByRuns": "{runs} 使用了 v{rev}。"
+  },
+  "cardsStep": {
+    "title": "",
+    "viewToggle": "",
+    "kanban": "",
+    "graph": "",
+    "regenerate": "",
+    "addCard": "+ ",
+    "cardTitle": "…",
+    "create": "",
+    "laneEmpty": "",
+    "up_next": "",
+    "working": "",
+    "waiting": "",
+    "done": "",
+    "approval": "",
+    "auto": "",
+    "edited": "",
+    "needsApproval": "",
+    "editedBy": "",
+    "instructions": "",
+    "profile": "",
+    "waitingApproval": " {count} 。",
+    "cardMeta": " {card} · Plan {plan} {step}",
+    "openCard": "",
+    "askAgent": ""
   }
 }

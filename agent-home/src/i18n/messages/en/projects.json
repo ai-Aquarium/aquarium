@@ -390,5 +390,31 @@
     "createdBy": "Created by {who}",
     "stepsWord": "steps",
     "usedByRuns": "Runs {runs} used v{rev}."
+  },
+  "cardsStep": {
+    "title": "Cards",
+    "viewToggle": "Card view",
+    "kanban": "Kanban",
+    "graph": "Graph",
+    "regenerate": "Regenerate",
+    "addCard": "+ Card",
+    "cardTitle": "Card title…",
+    "create": "Add",
+    "laneEmpty": "Nothing here",
+    "up_next": "Ready",
+    "working": "Running",
+    "waiting": "Needs you",
+    "done": "Done",
+    "approval": "Approval",
+    "auto": "Auto",
+    "edited": "Edited",
+    "needsApproval": "Needs approval",
+    "editedBy": "Edited by you",
+    "instructions": "Instructions",
+    "profile": "Profile",
+    "waitingApproval": "{count} approval(s) waiting for your decision.",
+    "cardMeta": "Card {card} · Plan {plan} {step}",
+    "openCard": "Open card",
+    "askAgent": "Ask agent"
   }
 }
