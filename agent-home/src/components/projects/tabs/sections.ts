@@ -14,7 +14,7 @@ export type ProjectView = ProjectStep | "chat";
 
 /** What each step shows, top to bottom (the older tabs, reused). */
 export const STEP_PARTS: Record<ProjectStep, readonly ProjectTab[]> = {
-  requirements: ["scope", "inputs"],
+  requirements: ["reqdoc", "scope"],
   plan: ["plan"],
   cards: ["board"],
   runs: ["runs", "outputs"],
@@ -50,8 +50,17 @@ export function resolveTabParam(value: string | null | undefined): TabTarget {
     case "scope":
     case "brief":
     case "inputs":
+    case "reqdoc":
     case "setup":
-      return { view: "requirements", part: raw === "brief" || raw === "setup" ? "scope" : (raw as ProjectTab) };
+      return {
+        view: "requirements",
+        part:
+          raw === "brief" || raw === "setup"
+            ? "scope"
+            : raw === "inputs" || raw === "reqdoc"
+              ? "reqdoc"
+              : (raw as ProjectTab),
+      };
     case "playbook":
       return { view: "plan" };
     case "board":

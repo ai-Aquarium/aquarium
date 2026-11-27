@@ -15,7 +15,7 @@ describe("?tab= mapping", () => {
     ["dashboard", { view: "runs" }],
     ["overview", { view: "runs" }],
     ["scope", { view: "requirements", part: "scope" }],
-    ["inputs", { view: "requirements", part: "inputs" }],
+    ["inputs", { view: "requirements", part: "reqdoc" }],
     ["plan", { view: "plan" }],
     ["outputs", { view: "runs", part: "outputs" }],
     ["files", { view: "runs", part: "outputs" }],

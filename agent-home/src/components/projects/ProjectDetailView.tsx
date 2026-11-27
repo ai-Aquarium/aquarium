@@ -49,6 +49,7 @@ import { RunsWorkspace } from "@/components/projects/execution/RunsWorkspace";
 import { InputsTab } from "@/components/projects/tabs/InputsTab";
 import { ScopeTab } from "@/components/projects/tabs/ScopeTab";
 import { IterationsTab } from "@/components/projects/tabs/IterationsTab";
+import { RequirementsDoc } from "@/components/projects/requirements/RequirementsDoc";
 import { OutputsTab } from "@/components/projects/tabs/OutputsTab";
 import { PlanTab } from "@/components/projects/tabs/PlanTab";
 import { ProjectSpine, type SpineStepMeta } from "@/components/projects/tabs/ProjectSpine";
@@ -100,6 +101,7 @@ const TAB_COMPONENT: Record<ProjectTab, ComponentType<ProjectTabProps>> = {
   outputs: OutputsTab,
   iterations: IterationsTab,
   inputs: InputsTab,
+  reqdoc: RequirementsDoc,
   plan: PlanTab,
   settings: SettingsTab,
   skills: SkillsTab,
@@ -658,7 +660,7 @@ export function ProjectDetailView({
                 data-section={part}
                 className="flex min-w-0 scroll-mt-20 flex-col gap-2"
               >
-                {part === "runs" ? null : (
+                {part === "runs" || part === "reqdoc" ? null : (
                   <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
                     {part === "scope" ? t("brief") : PROJECT_TAB_LABEL[part]}
                   </h2>

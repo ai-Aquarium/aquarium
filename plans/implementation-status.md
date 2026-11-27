@@ -2,6 +2,22 @@
 
 Tracking file for in-flight feature work. Update as phases land.
 
+## New Hetzner instance: ProxyAdvisor (CX43, release install)
+
+Plan: `plans/2026-11-27-hetzner-proxyadvisor-instance.md`
+Status: **installed, pending handover** — updated 2026-11-27
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | Hetzner project `ProxyAdvisor` + API token + hcloud context | done (user console step) |
+| 2 | Fresh SSH keypair, firewall (22/80/443), CX43 in nbg1 — `46.224.198.234` | done |
+| 3 | Aquarium v0.2.18 signed-release install (`--channel stable`, domain-less); SSH password auth disabled | done |
+| 4 | Owner setup link consumed; model provider key added | pending (handover) |
+| 5 | Domain added later → re-run installer with `--home-domain`/`--dashboard-domain` | pending (org supplies domain) |
+
+Note: `curl | bash` piping truncated the installer mid-script (stdin eaten);
+always download `install-aquarium.sh` to a file and run it from disk.
+
 ## Project detail: Runs step workspace (redesign PR2)
 
 Plan: `plans/2026-11-27-project-runs-workspace.md`
@@ -307,3 +323,16 @@ develop`, HSD via the agent-home software-upgrade release flow) track
   read defensively from the runs record endpoint.
 - Verified: tsc, eslint, projects suite 1100 green, hint-ratchet green.
 - Plan: `plans/2026-11-27-project-start-run-dialog.md`.
+
+## 2026-11-27 — Project detail redesign PR4: Requirements doc editor
+
+- `RequirementsDoc` per the mockup: labelled doc (Goal/Sources/Audience/
+  Done when) + source chips + add row (dropzone + link), agent-proposed
+  directives as accept/reject rows, Save→PATCH diff only, and a shared
+  `VersionRail` (v1=first draft + one row per landed change).
+- `reqdoc` is now the Requirements step's top part; clarify stays below;
+  `?tab=inputs` lands on the doc.
+- Approximations in the plan file: vN derived from change count, no
+  plan-lineage field, no folder/VPN link kinds.
+- Verified: tsc, eslint, projects suite 1103 green, ratchet green.
+- Plan: `plans/2026-11-27-project-requirements-doc.md`.

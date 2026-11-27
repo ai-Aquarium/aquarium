@@ -21,7 +21,7 @@ interface BriefFields {
 const TEXT_FIELDS = ["name", "goal", "description", "target_audience"] as const;
 
 /** The brief plus its category (null = Uncategorized). */
-type BriefState = BriefFields & { category_id?: string | null };
+export type BriefState = BriefFields & { category_id?: string | null };
 
 export type BriefPatch = Partial<BriefFields> & { category_id?: string | null };
 
