@@ -113,6 +113,15 @@
     "loading": "正在載入執行…",
     "loadFailed": "無法載入這些執行。",
     "draft": "比較此專案的第 {runs} 次執行：\n{lines}\n最好的一次為何較好？劇本應作哪些修改？",
-    "line": "- 第 {n} 次執行（劇本 v{rev}）：{status}，{duration}，評分 {score}"
+    "line": "- 第 {n} 次執行（劇本 v{rev}）：{status}，{duration}，評分 {score}",
+    "selfScore": "",
+    "approvals": "",
+    "none": "",
+    "swap": "",
+    "openRun": "Open R{n}",
+    "whatChanged": "",
+    "changedPlan": "Plan v{from} → v{to}",
+    "changedDuration": "Duration {pct}",
+    "changedScore": "Your grade {from} → {to} ★"
   }
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { compareRows } from "@/components/projects/execution/runStats";
@@ -33,7 +34,9 @@ export function ComparePanel({
   onDiscuss?: (text: string) => void;
 }) {
   const t = useT("execution");
-  const key = runNos.join(",");
+  const [order, setOrder] = useState<number[] | null>(null);
+  const nos = order ?? runNos;
+  const key = nos.join(",");
   const [state, setState] = useState<{ key: string; runs?: ProjectRun[]; failed?: boolean }>({ key });
   useEffect(() => {
     let live = true;
@@ -101,6 +104,14 @@ export function ComparePanel({
           <CompareLine label={t("compare.score")} style={cols}>
             {runs.map((r) => (r.score_user != null ? `${r.score_user}/5` : "—"))}
           </CompareLine>
+          <CompareLine label={t("compare.selfScore")} style={cols}>
+            {runs.map((r) => (r.score_self != null ? `${r.score_self}/5` : "—"))}
+          </CompareLine>
+          <CompareLine label={t("compare.approvals")} style={cols}>
+            {runs.map((r) =>
+              r.waiting_on_you?.length ? `${r.waiting_on_you.length}` : t("compare.none"),
+            )}
+          </CompareLine>
           <CompareLine label={t("compare.duration")} style={cols}>
             {runs.map((r) => durationLabel(r.duration_seconds))}
           </CompareLine>
@@ -155,6 +166,7 @@ export function ComparePanel({
               ))}
             </div>
           ))}
+          <WhatChanged runs={runs} t={t} />
           <div role="row" className="grid" style={cols}>
             <span role="rowheader" className={`${LABEL} px-2 py-2`}>
               {t("compare.retro")}
@@ -177,6 +189,23 @@ export function ComparePanel({
           {t("compare.heading", { runs: label })}
         </h3>
         <div className="ml-auto flex items-center gap-1">
+          {nos.length > 1 ? (
+            <button
+              type="button"
+              data-appmcp-hint="Swap the two columns"
+              onClick={() => setOrder([...nos].reverse())}
+              className="inline-flex min-h-11 items-center rounded-xl border border-[var(--color-border)] px-3 text-sm"
+            >
+              {t("compare.swap")}
+            </button>
+          ) : null}
+          <Link
+            href={`/projects/${encodeURIComponent(slug)}/runs/${nos[nos.length - 1]}`}
+            data-appmcp-hint="Open the newer run"
+            className="inline-flex min-h-11 items-center rounded-xl border border-[var(--color-border)] px-3 text-sm"
+          >
+            {t("compare.openRun", { n: nos[nos.length - 1] })}
+          </Link>
           {onDiscuss ? (
             <button
               type="button"
@@ -220,10 +249,53 @@ function CompareLine({
         {label}
       </span>
       {children.map((value, i) => (
-        <span role="cell" key={i} className="px-2 py-2 text-sm tabular-nums">
+        <span
+          role="cell"
+          key={i}
+          data-differs={i > 0 && value !== children[0] ? true : undefined}
+          className={`px-2 py-2 text-sm tabular-nums ${
+            i > 0 && value !== children[0] ? "font-medium text-[var(--color-accent)]" : ""
+          }`}
+        >
           {value}
         </span>
       ))}
+    </div>
+  );
+}
+
+/** Mockup "What changed": plain bullets from the two runs' own fields. */
+function WhatChanged({
+  runs,
+  t,
+}: {
+  runs: ProjectRun[];
+  t: (k: string, p?: Record<string, string | number>) => string;
+}) {
+  if (runs.length !== 2) return null;
+  const [a, b] = runs;
+  const bullets: string[] = [];
+  if ((a.playbook_rev ?? null) !== (b.playbook_rev ?? null)) {
+    bullets.push(t("compare.changedPlan", { from: a.playbook_rev ?? "—", to: b.playbook_rev ?? "—" }));
+  }
+  if (a.duration_seconds != null && b.duration_seconds != null && a.duration_seconds > 0) {
+    const pct = Math.round(((b.duration_seconds - a.duration_seconds) / a.duration_seconds) * 100);
+    if (pct !== 0) bullets.push(t("compare.changedDuration", { pct: `${pct > 0 ? "+" : ""}${pct}` }));
+  }
+  if (a.score_user != null && b.score_user != null && a.score_user !== b.score_user) {
+    bullets.push(t("compare.changedScore", { from: a.score_user, to: b.score_user }));
+  }
+  if (!bullets.length) return null;
+  return (
+    <div role="row" data-component="CompareWhatChanged" className="grid border-b border-[var(--color-border)]" style={{ gridTemplateColumns: "1fr" }}>
+      <div className="px-2 py-2">
+        <p className="text-xs font-semibold">{t("compare.whatChanged")}</p>
+        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-[var(--color-muted)]">
+          {bullets.map((b) => (
+            <li key={b}>{b}</li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
