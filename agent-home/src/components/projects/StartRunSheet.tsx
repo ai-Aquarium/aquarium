@@ -169,8 +169,7 @@ export function StartRunSheet({
         role="dialog"
         aria-label={t("startRun.title")}
         data-component="StartRunSheet"
-        className="mx-auto flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-t-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:rounded-2xl"
-        style={{ paddingBottom: "calc(var(--safe-bottom) + 1rem)" }}
+        className="mx-auto flex max-h-[90dvh] w-full max-w-md flex-col gap-4 overflow-hidden rounded-t-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div>
@@ -179,6 +178,8 @@ export function StartRunSheet({
             {t("startRun.subtitle")}
           </p>
         </div>
+
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
 
         <Field label={t("startRun.planVersion")}>
           <SelectBox
@@ -304,8 +305,12 @@ export function StartRunSheet({
           action={action}
           className="text-xs text-[var(--color-danger)]"
         />
+        </div>
 
-        <div className="flex items-center justify-end gap-2">
+        <div
+          className="flex items-center justify-end gap-2"
+          style={{ paddingBottom: "var(--safe-bottom)" }}
+        >
           <button
             type="button"
             onClick={onClose}
