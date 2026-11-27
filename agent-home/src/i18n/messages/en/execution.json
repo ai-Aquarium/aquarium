@@ -113,6 +113,15 @@
     "loading": "Loading runs…",
     "loadFailed": "Couldn’t load these runs.",
     "draft": "Compare runs {runs} of this project:\n{lines}\nWhat made the best run better, and what should change in the playbook?",
-    "line": "- Run {n} (playbook v{rev}): {status}, {duration}, score {score}"
+    "line": "- Run {n} (playbook v{rev}): {status}, {duration}, score {score}",
+    "selfScore": "Agent self-score",
+    "approvals": "Approvals",
+    "none": "None",
+    "swap": "Swap",
+    "openRun": "Open R{n}",
+    "whatChanged": "What changed",
+    "changedPlan": "Plan v{from} → v{to}",
+    "changedDuration": "Duration {pct}",
+    "changedScore": "Your grade {from} → {to} ★"
   }
 }
