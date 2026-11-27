@@ -132,8 +132,11 @@ PY_PINS = [
     "pymysql==1.2.0", "pytesseract==0.3.13", "tabulate==0.10.0", "tornado==6.5.7", "numpy==2.4.3",
 ]
 
+# Releases up to the move to ai-Aquarium were signed in the old repo; keep them installable.
+LEGACY_REPOS = ("leolau/aquarium",)
+
 DEFAULTS: Dict[str, str] = {
-    "REPO": "leolau/aquarium",
+    "REPO": "ai-Aquarium/aquarium",
     "RELEASE_API": "",  # default https://api.github.com/repos/<REPO>
     "CHANNEL": "stable",
     # Same signer rule as install-aquarium.sh (deploy/install/lib.sh aq_release_identity):
@@ -685,11 +688,14 @@ def verify_sums(cfg: Dict[str, str], folder: Path, version: str) -> str:
         raise Fail("cosign is not installed, so the release signature can't be checked",
                    "Re-run install-aquarium.sh (it installs a pinned cosign) and run the update again. "
                    "Updates never skip this check.")
-    identity = f"https://github.com/{cfg['REPO']}/.github/workflows/{cfg['RELEASE_WORKFLOW']}@refs/tags/{version}"
-    proc = run([cosign, "verify-blob", "--certificate", str(pem), "--signature", str(sig),
-                "--certificate-identity", identity,
-                "--certificate-oidc-issuer", cfg["SIGNER_ISSUER"], str(sums)], check=False, timeout=180)
-    if proc.returncode != 0:
+    for repo in dict.fromkeys([cfg["REPO"], DEFAULTS["REPO"], *LEGACY_REPOS]):
+        identity = f"https://github.com/{repo}/.github/workflows/{cfg['RELEASE_WORKFLOW']}@refs/tags/{version}"
+        proc = run([cosign, "verify-blob", "--certificate", str(pem), "--signature", str(sig),
+                    "--certificate-identity", identity,
+                    "--certificate-oidc-issuer", cfg["SIGNER_ISSUER"], str(sums)], check=False, timeout=180)
+        if proc.returncode == 0:
+            break
+    else:
         raise Fail("the release signature is NOT valid — this download was not built by the Aquarium release workflow",
                    "Nothing was installed. Do not install this file; report it.")
     name = TARBALL.format(version=version)

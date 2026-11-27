@@ -125,7 +125,7 @@ Log:
 ## Deploy (next step — not started)
 
 Nothing below has run on production. Get Yan's go-ahead first, then read
-`production/PRODUCTION.md` in `leolau/aquarium-ops` for the host, access and
+`production/PRODUCTION.md` in `ai-Aquarium/aquarium-ops` for the host, access and
 deploy procedure. Do not use the old Alibaba box.
 
 1. **Ship `develop`** (it includes #921 and #924) to production the way

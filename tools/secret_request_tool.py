@@ -273,7 +273,7 @@ REQUEST_SECRET_SCHEMA = {
             },
             "purpose": {
                 "type": "string",
-                "description": "Why you need it, shown to the person, e.g. 'Push the fix to leolau/aquarium'.",
+                "description": "Why you need it, shown to the person, e.g. 'Push the fix to ai-Aquarium/aquarium'.",
             },
             "kind": {
                 "type": "string",

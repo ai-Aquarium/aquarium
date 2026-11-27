@@ -391,7 +391,7 @@ def test_update_installs_verified_stable_release(box, capsys):
     assert not list(box.p("/opt/aquarium/releases").glob(".*partial"))
     log = box.log()
     assert "cosign verify-blob" in log
-    assert "--certificate-identity https://github.com/leolau/aquarium/.github/workflows/release.yml@refs/tags/v1.1.0 " in log
+    assert "--certificate-identity https://github.com/ai-Aquarium/aquarium/.github/workflows/release.yml@refs/tags/v1.1.0 " in log
     assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in log
     # app-mcp restarts on every update, or new MCP tools are never registered.
     assert "systemctl restart app-mcp.service" in log

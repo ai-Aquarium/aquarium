@@ -9,7 +9,8 @@ AQ_OPT=${AQ_OPT:-/opt/aquarium}                 # releases/<version>, current ->
 AQ_TOOLS=${AQ_TOOLS:-/usr/local/lib/aquarium}   # pinned helper binaries (cosign)
 AQ_ROOTFS=${AQ_ROOTFS:-}                        # prefix for /etc and /usr paths (tests only)
 AQ_CODE_OWNER=${AQ_CODE_OWNER:-root:root}       # owner of installed code
-AQ_GITHUB_REPO=${AQ_GITHUB_REPO:-leolau/aquarium}
+AQ_GITHUB_REPO=${AQ_GITHUB_REPO:-ai-Aquarium/aquarium}
+AQ_LEGACY_GITHUB_REPO=leolau/aquarium     # signed releases up to the move to ai-Aquarium
 AQ_GITHUB_API=${AQ_GITHUB_API:-https://api.github.com}
 AQ_GITHUB_DL=${AQ_GITHUB_DL:-https://github.com}
 AQ_OIDC_ISSUER=https://token.actions.githubusercontent.com
@@ -374,20 +375,27 @@ aq_install_cosign() {  # prints the path of the pinned cosign (COSIGN_VERSION/CO
   printf '%s\n' "$bin"
 }
 
-# The only signer accepted: the release workflow of this repo, running for exactly this tag.
-aq_release_identity() {
+# The only signers accepted: the release workflow of this repo (or of the repo it moved
+# from), running for exactly this tag.
+aq_release_identity() {  # VERSION [REPO]
   printf 'https://github.com/%s/.github/workflows/%s@refs/tags/%s' \
-    "$AQ_GITHUB_REPO" "$AQUARIUM_RELEASE_WORKFLOW" "$1"
+    "${2:-$AQ_GITHUB_REPO}" "$AQUARIUM_RELEASE_WORKFLOW" "$1"
 }
 
 aq_verify_release() {  # COSIGN DIR VERSION: signature over SHA256SUMS, then the tarball's sum
-  local cosign=$1 dir=$2 v=$3 tarball line
+  local cosign=$1 dir=$2 v=$3 tarball line repo signed=
   tarball=$(aq_tarball_name "$v")
-  if ! "$cosign" verify-blob \
-      --certificate "$dir/SHA256SUMS.pem" --signature "$dir/SHA256SUMS.sig" \
-      --certificate-identity "$(aq_release_identity "$v")" \
-      --certificate-oidc-issuer "$AQ_OIDC_ISSUER" \
-      "$dir/SHA256SUMS" >/dev/null; then
+  for repo in "$AQ_GITHUB_REPO" "$AQ_LEGACY_GITHUB_REPO"; do
+    if "$cosign" verify-blob \
+        --certificate "$dir/SHA256SUMS.pem" --signature "$dir/SHA256SUMS.sig" \
+        --certificate-identity "$(aq_release_identity "$v" "$repo")" \
+        --certificate-oidc-issuer "$AQ_OIDC_ISSUER" \
+        "$dir/SHA256SUMS" >/dev/null; then
+      signed=1
+      break
+    fi
+  done
+  if [ -z "$signed" ]; then
     aq_fail "signature check failed: SHA256SUMS of $v was not signed by the $AQ_GITHUB_REPO release workflow for tag $v"
     return 1
   fi

@@ -1,6 +1,6 @@
 # Production
 
-**Moved to the private repo [leolau/aquarium-ops](https://github.com/leolau/aquarium-ops): [`production/PRODUCTION.md`](https://github.com/leolau/aquarium-ops/blob/main/production/PRODUCTION.md).**
+**Moved to the private repo [ai-Aquarium/aquarium-ops](https://github.com/ai-Aquarium/aquarium-ops): [`production/PRODUCTION.md`](https://github.com/ai-Aquarium/aquarium-ops/blob/main/production/PRODUCTION.md).**
 
 This file described the live production box, so it no longer lives in this
 public repo. Its earlier versions are still in this repo's git history

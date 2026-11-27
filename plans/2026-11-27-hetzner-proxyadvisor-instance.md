@@ -31,7 +31,7 @@ Same release path as HSD — no git checkout on the box, updates via
 
 ```bash
 curl -fsSL -o /root/install-aquarium.sh \
-  https://raw.githubusercontent.com/leolau/aquarium/develop/install-aquarium.sh
+  https://raw.githubusercontent.com/ai-Aquarium/aquarium/develop/install-aquarium.sh
 /root/install-aquarium.sh --channel stable --yes --org-name "ProxyAdvisor"
 ```
 

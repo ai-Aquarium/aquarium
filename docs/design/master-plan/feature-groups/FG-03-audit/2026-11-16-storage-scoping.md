@@ -1,6 +1,6 @@
 # FG-03 P0 — Task A: data & storage scoping audit
 
-Repo `leolau/aquarium`, branch `develop` @ `ea324d093`. All citations are `path:line` on that commit. **V** = VERIFIED (read in code), **I** = INFERRED.
+Repo `ai-Aquarium/aquarium`, branch `develop` @ `ea324d093`. All citations are `path:line` on that commit. **V** = VERIFIED (read in code), **I** = INFERRED.
 
 **Words used:** *box-wide* = one copy per machine. *per-profile* = one copy per HERMES_HOME (`profiles/<name>/`) or per profile app schema. *per-user* = keyed by `owner_user_id` / GoTrue subject.
 

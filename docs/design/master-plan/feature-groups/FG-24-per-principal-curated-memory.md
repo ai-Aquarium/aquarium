@@ -397,7 +397,7 @@ its fix:
 ## Cloud-agent prompt
 
 > **[Phase-6 Wave A — independent; may run in parallel with FG-25]** Repo
-> `leolau/aquarium`, branch off `develop`. Read
+> `ai-Aquarium/aquarium`, branch off `develop`. Read
 > `docs/design/master-plan/README.md`, `AGENTS.md`, and this doc (FG-24). Split
 > curated memory layers 1–2 into a **shared** block and a **per-principal**
 > block. Add a `user_id` scope parameter to `get_memory_dir()` and

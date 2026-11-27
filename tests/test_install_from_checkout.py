@@ -145,12 +145,12 @@ def test_invalid_settings_are_refused_before_anything_is_written(tmp_path, args)
 
 def test_conf_set_replaces_keys_and_keeps_other_lines(tmp_path):
     conf = tmp_path / "aquarium.conf"
-    conf.write_text("# mine\nREPO=leolau/aquarium\nORG_NAME=Old\nORG_NAME=Dup\n")
+    conf.write_text("# mine\nREPO=ai-Aquarium/aquarium\nORG_NAME=Old\nORG_NAME=Dup\n")
     out = _bash(f"aq_conf_set '{conf}' ORG_NAME='New Org' HOME_DOMAIN=a.example.org\n"
                 f"aq_conf_get '{conf}' ORG_NAME; aq_conf_get '{conf}' MISSING || echo absent")
     assert out.returncode == 0, out.stderr
     assert out.stdout.split("\n")[:2] == ["New Org", "absent"]
-    assert conf.read_text() == '# mine\nREPO=leolau/aquarium\nORG_NAME="New Org"\nHOME_DOMAIN=a.example.org\n'
+    assert conf.read_text() == '# mine\nREPO=ai-Aquarium/aquarium\nORG_NAME="New Org"\nHOME_DOMAIN=a.example.org\n'
 
 
 # ------------------------------------------------------------------ preflight

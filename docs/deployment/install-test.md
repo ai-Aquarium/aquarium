@@ -9,7 +9,7 @@ Aquarium on a brand-new Ubuntu 24.04 server, the way a customer would run it.
    Then creates a throwaway Hetzner VM (`cx33`, `nbg1`, Ubuntu 24.04) and a one-off SSH key,
    both named `aq-install-test-<run id>-<attempt>` and labelled `purpose=aquarium-install-test`.
 2. On the VM, runs the installer exactly like the README command:
-   `curl -fsSL https://raw.githubusercontent.com/leolau/aquarium/<ref>/install-aquarium.sh | bash -s -- <mode>`.
+   `curl -fsSL https://raw.githubusercontent.com/ai-Aquarium/aquarium/<ref>/install-aquarium.sh | bash -s -- <mode>`.
    `<mode>` is `--version <ref>` when `<ref>` is a tag with a published GitHub release
    (the signed release a customer gets), otherwise `--from-branch <ref>` (a development
    install of that branch or tag). On a release-candidate tag push the workflow first
@@ -49,7 +49,7 @@ The workflow needs a Hetzner Cloud API token. It is not created automatically.
 1. Hetzner Cloud console → pick the project for test servers (ideally a separate
    project from production, so a test token can never touch the production server)
    → Security → API tokens → Generate API token, permission **Read & Write**.
-2. GitHub → leolau/aquarium → Settings → Secrets and variables → Actions →
+2. GitHub → ai-Aquarium/aquarium → Settings → Secrets and variables → Actions →
    New repository secret, name `HCLOUD_TOKEN`, paste the token.
 
 Without the secret the workflow stops at its first step with a clear error and creates nothing.

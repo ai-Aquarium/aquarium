@@ -21,7 +21,7 @@
 > On a fresh Ubuntu 24.04 server:
 >
 > ```bash
-> git clone https://github.com/leolau/aquarium.git && cd aquarium
+> git clone https://github.com/ai-Aquarium/aquarium.git && cd aquarium
 > ./install-aquarium.sh --check   # read-only preflight: OS, RAM, disk, ports, DNS
 > sudo ./install-aquarium.sh      # installs this clone; asks for org name, domains, owner once
 > ```

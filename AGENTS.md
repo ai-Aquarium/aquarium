@@ -4,11 +4,11 @@ Instructions for AI coding assistants and developers working on the hermes-agent
 
 **Never give up on the right solution.**
 
-## ⚠️ STOP — before touching "production", read `production/PRODUCTION.md` in `leolau/aquarium-ops` ⚠️
+## ⚠️ STOP — before touching "production", read `production/PRODUCTION.md` in `ai-Aquarium/aquarium-ops` ⚠️
 
 **The single source of truth for where production lives, how to reach it and
-how to deploy is [`production/PRODUCTION.md`](https://github.com/leolau/aquarium-ops/blob/main/production/PRODUCTION.md)
-in the private repo `leolau/aquarium-ops`.** Read it before running any
+how to deploy is [`production/PRODUCTION.md`](https://github.com/ai-Aquarium/aquarium-ops/blob/main/production/PRODUCTION.md)
+in the private repo `ai-Aquarium/aquarium-ops`.** Read it before running any
 deploy, restart, or "check the live box" command — do not rely on
 conversation history, a skill file, or a past session's memory of the access
 method, because **this has changed and the wrong assumption costs hours of
@@ -17,7 +17,7 @@ and ask; do not guess the host or access method.
 
 This repo is public. Do not add the production host, IP, domains, SSH key
 path, box inventory or open security findings here; they belong in
-`leolau/aquarium-ops`. Use placeholders such as `<prod-host>` in public docs.
+`ai-Aquarium/aquarium-ops`. Use placeholders such as `<prod-host>` in public docs.
 
 Production is a Hetzner box reached by SSH (2026-08-20 onwards). The
 **previous** production host — Alibaba Cloud ECS `hermes-systest`
@@ -35,7 +35,7 @@ wrong box — was found.
 
 Any doc, skill, or plan file describing Alibaba/`aliyun`/`OOS_RunCommand` as
 the deploy path is **historical only** — verify against `PRODUCTION.md` in
-`leolau/aquarium-ops` before acting on it, and fix it (add a superseded
+`ai-Aquarium/aquarium-ops` before acting on it, and fix it (add a superseded
 banner) if you find one that doesn't already say so.
 
 ## ★ Primary UI = `agent-home` (not the dashboard) ★

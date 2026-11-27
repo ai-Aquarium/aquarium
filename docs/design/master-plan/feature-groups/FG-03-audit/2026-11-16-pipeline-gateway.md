@@ -1,6 +1,6 @@
 # FG-03 P0 — Task B: message pipeline & gateway audit
 
-Repo `leolau/aquarium`, branch `develop` @ `ea324d0937`. Read-only.
+Repo `ai-Aquarium/aquarium`, branch `develop` @ `ea324d0937`. Read-only.
 **V** = VERIFIED (I read the code at that line). **I** = INFERRED (reasoned from the code, or depends on box state I can't see).
 
 ## TL;DR

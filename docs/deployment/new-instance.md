@@ -4,7 +4,7 @@ One server = one organization. On a fresh **Ubuntu 24.04, x86_64** server with
 8 GB+ RAM and 25 GB+ free disk:
 
 ```bash
-git clone https://github.com/leolau/aquarium.git && cd aquarium
+git clone https://github.com/ai-Aquarium/aquarium.git && cd aquarium
 ./install-aquarium.sh --check     # read-only: OS, CPU, memory, disk, ports 80/443, DNS
 sudo ./install-aquarium.sh        # installs this clone; asks for the settings below once
 ```

@@ -126,7 +126,7 @@ def test_pick_release_by_channel(tmp_path, channel, tag):
 
 
 def test_resolve_version_fails_clearly_when_nothing_is_published(tmp_path):
-    api = tmp_path / "api" / "repos" / "leolau" / "aquarium"
+    api = tmp_path / "api" / "repos" / "ai-Aquarium" / "aquarium"
     api.mkdir(parents=True)
     (api / "releases").write_text(json.dumps([{"tag_name": "v1.0.0-beta", "prerelease": True}]))
     # curl treats the query string as part of a file:// path, so serve the list via a stub.
@@ -238,7 +238,7 @@ def test_verify_release_checks_signer_identity_then_checksum(tmp_path):
         "--certificate": f"{dl}/SHA256SUMS.pem",
         "--signature": f"{dl}/SHA256SUMS.sig",
         "--certificate-identity":
-            "https://github.com/leolau/aquarium/.github/workflows/release.yml@refs/tags/v1.2.3",
+            "https://github.com/ai-Aquarium/aquarium/.github/workflows/release.yml@refs/tags/v1.2.3",
         "--certificate-oidc-issuer": "https://token.actions.githubusercontent.com",
     }
 
@@ -570,3 +570,15 @@ def test_service_secrets_are_written_outside_the_checkout_root_only():
         # optional so a box that hasn't moved it keeps working.
         assert lines[-1].startswith("EnvironmentFile=-/etc/aquarium/"), unit
         assert all(ln.startswith("EnvironmentFile=-") for ln in lines), unit
+
+
+def test_verify_release_accepts_releases_signed_before_the_repo_moved(tmp_path):
+    dl = _release(tmp_path)
+    cosign = tmp_path / "cosign"
+    cosign.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "{tmp_path}/cosign.args"\n'
+                      'case "$*" in *github.com/leolau/aquarium/*) exit 0;; *) exit 1;; esac\n')
+    cosign.chmod(0o755)
+    out = _lib(f"aq_verify_release '{cosign}' '{dl}' v1.2.3")
+    assert out.returncode == 0, out.stderr
+    assert ("https://github.com/leolau/aquarium/.github/workflows/release.yml@refs/tags/v1.2.3"
+            in (tmp_path / "cosign.args").read_text().splitlines())

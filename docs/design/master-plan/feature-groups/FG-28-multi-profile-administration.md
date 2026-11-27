@@ -63,7 +63,7 @@ Each row is about one PR. Phase A is standalone and ships first.
 | C4 | Create-user and CSV-import picker over administered profiles; body `profile` must equal `?profile=` | `CreateUserForm.tsx`, `CsvImportPanel.tsx`, `comms_create_member` / `comms_import_members` | picker is not a grant: `?profile=hr` by an hr member → 403 | 0.5–1 d | C2, C3 |
 | D-1 | Box-wide Supabase keys (D2) in `_GLOBAL_ENV_EXACT`; arm fail-closed in the dashboard when the registry serves > 1 profile (config.yaml, not an env var); migrate remaining console-reachable `os.environ` reads (`_llm_tag_suggest`, ElevenLabs, `EMAIL_CONFIG_PATH`) | `agent/secret_scope.py`, `web_server.py` startup, `hermes_cli/config.py`, `email_accounts_api.py` | `test_fg28_member_credentials.py`, `test_secret_scope.py` | 1 d | D2 |
 | D-2 | Audit payload names acting and target profile; real-Postgres negative matrix (CFO/CTO/shared-member over `hr`/`engineers`/`testers`) and two-profiles-one-process secret isolation, reusing the Docker fixture lifted out of `test_fg26_profile_scope_e2e.py` | `identity_audit.py`, `members.py`; new `tests/hermes_cli/test_fg28_console_matrix_e2e.py`, `test_fg28_secret_isolation_e2e.py` | itself (write red first) | 2 d | A1–C4 |
-| D-3 | System test on the current production box via the private runbook (`PRODUCTION.md` in `leolau/aquarium-ops`), or the Docker e2e above as the gate; `scripts/fg28_systest.py` docstring updated | — | — | 0.5 d | all |
+| D-3 | System test on the current production box via the private runbook (`PRODUCTION.md` in `ai-Aquarium/aquarium-ops`), or the Docker e2e above as the gate; `scripts/fg28_systest.py` docstring updated | — | — | 0.5 d | all |
 
 Total ≈ 14–17 engineer-days (about 3 Devin sessions). A1 and A2 are each a
 standalone security PR.
@@ -921,7 +921,7 @@ secret-isolation tests green on real Postgres; `scripts/run_tests.sh`, `ruff`,
 
 > **[Start here. Nothing gates this FG any more: FG-26 and FG-27 are done,
 > deployed and system-tested, and item 1 of this FG's checklist is closed.]**
-> Repo `leolau/aquarium`, branch off `develop`. Read
+> Repo `ai-Aquarium/aquarium`, branch off `develop`. Read
 > `docs/design/master-plan/README.md`, `AGENTS.md`, FG-26, FG-27, FG-29 and this
 > doc — including §"Reframing", which supersedes the motivation in §"Summary".
 > Goal: one admin console at one URL where an administrator manages users in
