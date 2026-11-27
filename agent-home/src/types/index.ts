@@ -2491,6 +2491,8 @@ export interface ProjectRunBrief {
   score_user: number | null;
   /** The playbook version the run executed (the list returns full rows). */
   playbook_rev?: number | null;
+  batch_id?: string | null;
+  batch_title?: string | null;
   /** Started from Task mode: Start approved every card of the run, so
    * cards still in triage are queued for a slot, not waiting on a person. */
   auto_approve?: boolean;
@@ -2576,7 +2578,19 @@ export interface ProjectRunCheckpointWait {
 }
 
 /** The full run row (§6) as the detail/list reads return it. */
+export interface ProjectIterationBatch {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  created_by: string | null;
+  created_at: number;
+  archived_at: number | null;
+  run_count?: number;
+}
+
 export interface ProjectRun {
+  batch?: ProjectIterationBatch | null;
   id: string;
   /** `P12-R3` — the project's ref plus `run_no`. */
   ref?: string | null;

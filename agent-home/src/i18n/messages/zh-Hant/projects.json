@@ -356,7 +356,11 @@
     "willApprove": "個步驟需要你核准",
     "noEstimate": "首次執行 — 暫無估計。",
     "starting": "正在開始…",
-    "start": "開始執行"
+    "start": "開始執行",
+    "noBatch": "",
+    "newBatch": "+ ",
+    "newBatchTitle": "",
+    "newBatchDesc": ""
   },
   "reqDoc": {
     "title": "需求",

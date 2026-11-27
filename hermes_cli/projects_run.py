@@ -1185,6 +1185,7 @@ def start_run(
     accessible: Optional[Sequence[str]] = None,
     first_only: bool = False,
     activate: bool = False,
+    batch_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Open a run and bring up its cards + guidance (§6 pipeline).
 
@@ -1249,6 +1250,11 @@ def start_run(
     if not host:
         raise ValueError("the project has no profiles — add one before running")
 
+    if batch_id is not None and projects_db.get_iteration_batch(
+        pconn, project.id, batch_id
+    ) is None:
+        raise ValueError(f"unknown batch {batch_id}")
+
     run = projects_db.open_project_run(
         pconn,
         project_id=project.id,
@@ -1259,6 +1265,7 @@ def start_run(
         auto_approve=auto_approve and (project.autonomy or "supervised") != "manual",
         first_only=first_only,
         activate=activate,
+        batch_id=batch_id,
     )
     if activate:
         project = projects_db.get_project(pconn, project.id)

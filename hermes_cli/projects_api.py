@@ -565,6 +565,10 @@ def _runs_brief(
     appended when it fell out of the window.
     """
     rows = projects_db.list_project_runs(conn, project_id, limit=limit)
+    batch_titles = {
+        b["id"]: b["title"]
+        for b in projects_db.list_iteration_batches(conn, project_id)
+    }
     if not any(r.get("status") == "waiting" for r in rows):
         waiting = projects_db.latest_waiting_run(conn, project_id)
         if waiting is not None:
@@ -588,6 +592,8 @@ def _runs_brief(
             "error": r.get("error"),
             "score_user": r.get("score_user"),
             "auto_approve": bool(r.get("auto_approve")),
+            "batch_id": r.get("batch_id"),
+            "batch_title": batch_titles.get(r.get("batch_id") or ""),
         }
         divergent = _divergent_self(r)
         if divergent is not None:
@@ -5036,6 +5042,10 @@ def _run_payload(
     for card in cards:
         card["ref"] = card_refs.get(card["task_id"])
     payload = dict(run)
+    if run.get("batch_id"):
+        payload["batch"] = projects_db.get_iteration_batch(
+            conn, project.id, run["batch_id"]
+        )
     project_ref = _project_refs([project]).get(project.id)
     payload["project_ref"] = project_ref
     payload["ref"] = short_refs.run_ref(project_ref, run.get("run_no"))
@@ -5121,6 +5131,75 @@ async def list_runs_route(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(_list_sync)
 
 
+
+
+@router.get("/{slug}/batches")
+async def list_batches_route(request: Request) -> dict[str, Any]:
+    """Named iteration batches (Yan's "Christmas Testing" groups)."""
+    project, _role, _profiles, _principal = await _require_read(request)
+
+    def _list_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            return {"batches": projects_db.list_iteration_batches(conn, project.id)}
+
+    return await asyncio.to_thread(_list_sync)
+
+
+@router.post("/{slug}/batches")
+async def create_batch_route(request: Request) -> dict[str, Any]:
+    """Create a batch (title + optional description) runs can be filed into."""
+    project, _role, _profiles, principal = await _require_write(request)
+    body = await request.json()
+
+    def _create_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            batch = projects_db.create_iteration_batch(
+                conn,
+                project.id,
+                title=body.get("title"),
+                description=body.get("description"),
+                created_by=principal.user_id,
+            )
+            projects_db.record_project_activity(
+                conn, project.id, "batch_created",
+                actor=principal.user_id, detail={"title": batch["title"]},
+            )
+            return batch
+
+    try:
+        return await asyncio.to_thread(_create_sync)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.patch("/{slug}/batches/{batch_id}")
+async def patch_batch_route(request: Request, batch_id: str) -> dict[str, Any]:
+    """Rename, re-describe or archive/restore a batch."""
+    project, _role, _profiles, _principal = await _require_write(request)
+    body = await request.json()
+
+    def _patch_sync() -> dict:
+        with projects_db.connect_closing() as conn:
+            batch = projects_db.update_iteration_batch(
+                conn,
+                project.id,
+                batch_id,
+                title=body.get("title"),
+                description=body.get("description"),
+                archived=body.get("archived"),
+            )
+            if batch is None:
+                raise KeyError(batch_id)
+            return batch
+
+    try:
+        return await asyncio.to_thread(_patch_sync)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="batch not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.get("/{slug}/runs/{run_no}")
 async def get_run_route(request: Request, run_no: int) -> dict[str, Any]:
     """Run detail: cards, deliveries, cost read from the C8 trace (never
@@ -5177,6 +5256,7 @@ async def start_run_route(request: Request) -> dict[str, Any]:
                         trigger=trigger,
                         triggered_by=principal.user_id,
                         playbook_rev=body.get("playbook_rev"),
+                        batch_id=body.get("batch_id"),
                         accessible=accessible,
                     )
                 except projects_run.AssigneeNotAccessible as exc:

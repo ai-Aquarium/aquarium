@@ -229,6 +229,7 @@ import type {
   TriageSkillFileContent,
   TriageSkillFileHistory,
   TriageStatus,
+  ProjectIterationBatch,
 } from "@/types";
 
 /** Per-person Telegram bot actions forwarded to Hermes `/api/telegram-bot/*`. */
@@ -3055,11 +3056,38 @@ export class HermesApiClient {
   /** Start a run now (`trigger='manual'`); `playbook_rev` repeats an old method. */
   async startProjectRun(
     slug: string,
-    payload: { playbook_rev?: number } = {},
+    payload: { playbook_rev?: number; batch_id?: string } = {},
   ): Promise<ProjectRun> {
     return this.request(
       `/api/registry/projects/${encodeURIComponent(slug)}/runs`,
       { method: "POST", json: payload },
+    );
+  }
+
+  async listProjectBatches(slug: string): Promise<{ batches: ProjectIterationBatch[] }> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/batches`,
+    );
+  }
+
+  async createProjectBatch(
+    slug: string,
+    payload: { title: string; description?: string },
+  ): Promise<ProjectIterationBatch> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/batches`,
+      { method: "POST", json: payload },
+    );
+  }
+
+  async updateProjectBatch(
+    slug: string,
+    batchId: string,
+    payload: { title?: string; description?: string; archived?: boolean },
+  ): Promise<ProjectIterationBatch> {
+    return this.request(
+      `/api/registry/projects/${encodeURIComponent(slug)}/batches/${encodeURIComponent(batchId)}`,
+      { method: "PATCH", json: payload },
     );
   }
 

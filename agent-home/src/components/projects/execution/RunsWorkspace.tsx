@@ -269,7 +269,8 @@ function RunListRail({
                       {run.playbook_rev != null
                         ? `${t("workspace.plan")} ${versionLabel(run.playbook_rev)} · `
                         : ""}
-                      {run.trigger} ·{" "}
+                      {run.trigger}
+                      {run.batch_title ? ` · ${run.batch_title}` : ""} ·{" "}
                       {isLiveRun(run.status)
                         ? timeLabel(run.started_at, "ago")
                         : durationLabel(run.duration_seconds)}

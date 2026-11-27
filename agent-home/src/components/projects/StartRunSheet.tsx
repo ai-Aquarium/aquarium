@@ -15,6 +15,7 @@ import { BusyRegion } from "@/components/ui/BusyRegion";
 import { Pill } from "@/components/ui/Pill";
 import type {
   PlaybookRev,
+  ProjectIterationBatch,
   ProjectDetail,
   ProjectLink,
   ProjectPlaybookResponse,
@@ -111,12 +112,47 @@ export function StartRunSheet({
     };
   }, [history, project.runs, chosen]);
 
+  const [batches, setBatches] = useState<ProjectIterationBatch[] | null>(null);
+  const [batchId, setBatchId] = useState<string>("");
+  const [newBatch, setNewBatch] = useState({ title: "", description: "" });
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/projects/${encodeURIComponent(project.slug)}/batches`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (live && d) setBatches(d.batches ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [project.slug]);
+
   async function start() {
+    let chosen = batchId || undefined;
+    if (batchId === "__new__") {
+      const res = await fetch(
+        `/api/projects/${encodeURIComponent(project.slug)}/batches`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: newBatch.title.trim(),
+            description: newBatch.description.trim() || undefined,
+          }),
+        },
+      );
+      if (!res.ok) return;
+      chosen = (await res.json()).id;
+    }
     const result = await action.run(
       `/api/projects/${encodeURIComponent(project.slug)}/runs`,
       {
         method: "POST",
-        body: revNo != null ? { playbook_rev: revNo } : {},
+        body: {
+          ...(revNo != null ? { playbook_rev: revNo } : {}),
+          ...(chosen ? { batch_id: chosen } : {}),
+        },
       },
     );
     if (result?.ok) {
@@ -181,21 +217,56 @@ export function StartRunSheet({
         <Field label={t("startRun.batch")}>
           <SelectBox
             ariaLabel={t("startRun.batch")}
-            data-appmcp-hint="See which inputs this run will use"
-            disabled
+            data-appmcp-hint="Choose which named batch this run is filed under"
           >
-            <div className="flex w-full items-center gap-2 px-3 py-2">
-              <span className="truncate text-sm font-semibold">
-                {t("startRun.currentBatch")}
-              </span>
-              <span className="ml-auto truncate text-xs text-[var(--color-muted)]">
-                {inputCount(groups)} {t("startRun.inputs")}
-                {newSince > 0 && lastRun
-                  ? ` · ${newSince} ${t("startRun.newSince", { run: lastRun.run_no })}`
-                  : ""}
-              </span>
-            </div>
+            <select
+              aria-label={t("startRun.batch")}
+              value={batchId}
+              onChange={(e) => setBatchId(e.target.value)}
+              className="w-full appearance-none bg-transparent px-3 py-2 text-sm font-semibold outline-none"
+              data-testid="start-run-batch"
+            >
+              <option value="">{t("startRun.noBatch")}</option>
+              {(batches ?? [])
+                .filter((b) => !b.archived_at)
+                .map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.title}
+                    {b.run_count ? ` · ${b.run_count}` : ""}
+                  </option>
+                ))}
+              <option value="__new__">{t("startRun.newBatch")}</option>
+            </select>
+            <Chevron />
           </SelectBox>
+          {batchId === "__new__" ? (
+            <div className="mt-2 flex flex-col gap-2">
+              <input
+                value={newBatch.title}
+                onChange={(e) =>
+                  setNewBatch((n) => ({ ...n, title: e.target.value }))
+                }
+                placeholder={t("startRun.newBatchTitle")}
+                data-appmcp-hint="Title for the new batch"
+                className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+              />
+              <input
+                value={newBatch.description}
+                onChange={(e) =>
+                  setNewBatch((n) => ({ ...n, description: e.target.value }))
+                }
+                placeholder={t("startRun.newBatchDesc")}
+                data-appmcp-hint="Optional description for the new batch"
+                className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+              />
+            </div>
+          ) : null}
+          <p className="mt-1 text-xs text-[var(--color-muted)]">
+            {inputCount(groups)} {t("startRun.inputs")}
+            {newSince > 0 && lastRun
+              ? ` · ${newSince} ${t("startRun.newSince", { run: lastRun.run_no })}`
+              : ""}
+          </p>
         </Field>
 
         {allInputs.length ? (

@@ -104,6 +104,13 @@ export function ComparePanel({
           <CompareLine label={t("compare.score")} style={cols}>
             {runs.map((r) => (r.score_user != null ? `${r.score_user}/5` : "—"))}
           </CompareLine>
+          <CompareLine label={t("compare.batch")} style={cols}>
+            {runs.map((r) =>
+              (r as ProjectRun & { batch_title?: string | null }).batch_title ??
+              (r as ProjectRun).batch?.title ??
+              t("compare.none"),
+            )}
+          </CompareLine>
           <CompareLine label={t("compare.selfScore")} style={cols}>
             {runs.map((r) => (r.score_self != null ? `${r.score_self}/5` : "—"))}
           </CompareLine>

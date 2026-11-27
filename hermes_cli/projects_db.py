@@ -388,6 +388,20 @@ CREATE TABLE IF NOT EXISTS project_runs (
 CREATE INDEX IF NOT EXISTS idx_project_runs_recent
     ON project_runs(project_id, run_no DESC);
 
+-- A named group runs are filed under ("Christmas Testing"): the person
+-- creates batches and picks one at run start (§iteration batches).
+CREATE TABLE IF NOT EXISTS project_iteration_batches (
+    id            TEXT PRIMARY KEY,
+    project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title         TEXT NOT NULL,
+    description   TEXT,
+    created_by    TEXT,
+    created_at    INTEGER NOT NULL,
+    archived_at   INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_project_iteration_batches
+    ON project_iteration_batches(project_id, created_at);
+
 -- Which cards belong to which run. The mapping lives here so the shared
 -- board learns nothing about Projects (no run_id column on tasks).
 CREATE TABLE IF NOT EXISTS project_run_cards (
@@ -653,6 +667,7 @@ _DIRECTIVE_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
 # triage are queued for a slot, not waiting on a person.
 _RUN_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("auto_approve", "auto_approve INTEGER NOT NULL DEFAULT 0"),
+    ("batch_id", "batch_id TEXT"),
 )
 
 
@@ -3883,6 +3898,7 @@ def open_project_run(
     auto_approve: bool = False,
     first_only: bool = False,
     activate: bool = False,
+    batch_id: Optional[str] = None,
 ) -> dict:
     """Open the run row: ``run_no = max+1``, status ``running`` (§6).
 
@@ -3921,13 +3937,104 @@ def open_project_run(
         conn.execute(
             """INSERT INTO project_runs
                (id, project_id, run_no, trigger, triggered_by, profile,
-                playbook_rev, status, started_at, trace_id, auto_approve)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)""",
+                playbook_rev, status, started_at, trace_id, auto_approve,
+                batch_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)""",
             (rid, project_id, run_no, trigger, triggered_by,
              str(profile).strip(), playbook_rev, _now(), trace_id,
-             1 if auto_approve else 0),
+             1 if auto_approve else 0, batch_id),
         )
     return get_project_run_by_id(conn, rid)
+
+
+
+# ---------------------------------------------------------------------------
+# Iteration batches (named run groupings — "Christmas Testing")
+# ---------------------------------------------------------------------------
+
+
+def create_iteration_batch(
+    conn: sqlite3.Connection,
+    project_id: str,
+    *,
+    title: str,
+    description: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> dict:
+    """Create a named batch runs can be filed into."""
+    title = str(title or "").strip()
+    if not title:
+        raise ValueError("batch title is required")
+    bid = _new_row_id("batch")
+    with write_txn(conn):
+        conn.execute(
+            """INSERT INTO project_iteration_batches
+               (id, project_id, title, description, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (bid, project_id, title, (description or "").strip() or None,
+             created_by, _now()),
+        )
+    return get_iteration_batch(conn, project_id, bid)
+
+
+def get_iteration_batch(
+    conn: sqlite3.Connection, project_id: str, batch_id: str
+) -> Optional[dict]:
+    row = conn.execute(
+        "SELECT * FROM project_iteration_batches WHERE id = ? AND project_id = ?",
+        (batch_id, project_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_iteration_batches(conn: sqlite3.Connection, project_id: str) -> list[dict]:
+    """All batches (archived last) with their run count."""
+    rows = conn.execute(
+        """SELECT b.*,
+                  (SELECT COUNT(*) FROM project_runs r WHERE r.batch_id = b.id)
+                      AS run_count
+             FROM project_iteration_batches b
+            WHERE b.project_id = ?
+            ORDER BY b.archived_at IS NOT NULL, b.created_at DESC""",
+        (project_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_iteration_batch(
+    conn: sqlite3.Connection,
+    project_id: str,
+    batch_id: str,
+    *,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    archived: Optional[bool] = None,
+) -> Optional[dict]:
+    batch = get_iteration_batch(conn, project_id, batch_id)
+    if batch is None:
+        return None
+    sets, params = [], []
+    if title is not None:
+        t = str(title).strip()
+        if not t:
+            raise ValueError("batch title is required")
+        sets.append("title = ?"); params.append(t)
+    if description is not None:
+        sets.append("description = ?"); params.append(str(description).strip() or None)
+    if archived is not None:
+        sets.append("archived_at = ?"); params.append(_now() if archived else None)
+    if sets:
+        with write_txn(conn):
+            conn.execute(
+                f"UPDATE project_iteration_batches SET {', '.join(sets)} WHERE id = ?",
+                (*params, batch_id),
+            )
+    return get_iteration_batch(conn, project_id, batch_id)
+
+
+def batches_by_id(conn: sqlite3.Connection, project_id: str) -> dict[str, dict]:
+    """``{batch_id: batch}`` for payload joins."""
+    return {b["id"]: b for b in list_iteration_batches(conn, project_id)}
 
 
 class FirstRunTaken(ValueError):

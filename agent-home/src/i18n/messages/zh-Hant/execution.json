@@ -122,6 +122,7 @@
     "whatChanged": "",
     "changedPlan": "Plan v{from} → v{to}",
     "changedDuration": "Duration {pct}",
-    "changedScore": "Your grade {from} → {to} ★"
+    "changedScore": "Your grade {from} → {to} ★",
+    "batch": ""
   }
 }
