@@ -24,6 +24,7 @@ export default async function Page() {
       <SettingsView
         canManageMembers={principal.is_owner || principal.role === "admin"}
         canManageTools={canManageTools(principal)}
+        isOwner={principal.is_owner}
       />
     </MobileShell>
   );
