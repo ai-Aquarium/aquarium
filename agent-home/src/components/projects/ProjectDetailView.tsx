@@ -51,7 +51,7 @@ import { ScopeTab } from "@/components/projects/tabs/ScopeTab";
 import { IterationsTab } from "@/components/projects/tabs/IterationsTab";
 import { RequirementsDoc } from "@/components/projects/requirements/RequirementsDoc";
 import { OutputsTab } from "@/components/projects/tabs/OutputsTab";
-import { PlanTab } from "@/components/projects/tabs/PlanTab";
+import { PlanStep } from "@/components/projects/plan/PlanStep";
 import { ProjectSpine, type SpineStepMeta } from "@/components/projects/tabs/ProjectSpine";
 import {
   SHEET_PARTS,
@@ -102,7 +102,7 @@ const TAB_COMPONENT: Record<ProjectTab, ComponentType<ProjectTabProps>> = {
   iterations: IterationsTab,
   inputs: InputsTab,
   reqdoc: RequirementsDoc,
-  plan: PlanTab,
+  plan: PlanStep,
   settings: SettingsTab,
   skills: SkillsTab,
 };

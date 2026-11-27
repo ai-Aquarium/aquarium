@@ -336,3 +336,16 @@ develop`, HSD via the agent-home software-upgrade release flow) track
   plan-lineage field, no folder/VPN link kinds.
 - Verified: tsc, eslint, projects suite 1103 green, ratchet green.
 - Plan: `plans/2026-11-27-project-requirements-doc.md`.
+
+## 2026-11-27 — Project detail redesign PR5: Plan step
+
+- `PlanStep` per the mockup: stale-requirements banner (real timestamp
+  compare vs `activated_at`), toolbar w/ Steps⇄Diff toggle (`planDiff` +
+  `PlanDiffView`), step rows w/ assignee pill + `Why:` reason +
+  checkpoint `Needs approval`, Edit → full `PlanPanel`, `Make cards` →
+  Cards step, and the shared `VersionRail` w/ runs grouped by
+  `playbook_rev` in USED BY.
+- Approximations: no per-step source chips (not stored), Make cards
+  navigates, no `from Req vN` lineage. `PlanTab` deleted.
+- Verified: tsc, eslint, projects suite 1106 green, ratchet green.
+- Plan: `plans/2026-11-27-project-plan-step.md`.
