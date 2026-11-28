@@ -168,6 +168,8 @@ PAGES: Tuple[PageSpec, ...] = (
         admin_markers=("SoftwareUpgradeView",),
         member_redirect="/not-available",
     ),
+    # Owner only, and smoke accounts are never the owner.
+    PageSpec("/settings/fleet", redirect="/not-available"),
     PageSpec("/profiles/suggestions", ("ProfileSuggestionsView",)),
     # Every signed-in role edits only their own triage layer.
     PageSpec("/profiles/default/triage", ("TriageSkillsView",)),
