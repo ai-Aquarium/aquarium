@@ -1086,6 +1086,22 @@ def with_project_names(items: Iterable[dict]) -> list[dict]:
     return items
 
 
+def for_profile(items: Iterable[dict], profile: Optional[str]) -> list[dict]:
+    """Waits raised in one ``profile`` (``context.profile``); untagged → default.
+
+    The profile detail page's "waiting for you" list needs just this agent's
+    waits. Most sources are profile-agnostic (source claims, data duties) and
+    carry no ``context.profile`` — they belong to ``default``, the profile the
+    dashboard itself runs in.
+    """
+    if not profile:
+        return list(items)
+    return [
+        i for i in items
+        if (i.get("context") or {}).get("profile", "default") == profile
+    ]
+
+
 def finalize(items: Iterable[dict]) -> list[dict]:
     """Merge per-arrival rows, drop duplicate ids; severity first, then oldest wait first.
 

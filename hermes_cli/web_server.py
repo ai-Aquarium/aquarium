@@ -13660,11 +13660,16 @@ async def needs_you(request: Request):
     ``?include=count`` the ``items`` array is empty and only the counts are
     returned. Each source is scoped to the caller and fails independently
     (see ``hermes_cli.needs_you``).
+
+    ``?profile=<name>`` narrows the response to waits raised in that
+    profile (``context.profile``); untagged waits count toward ``default``,
+    the profile the dashboard itself runs in.
     """
     from hermes_cli import needs_you as ny
     from hermes_cli.projects_api import _enrolled_profiles, _instance_admin
 
     count_only = request.query_params.get("include") == "count"
+    only_profile = (request.query_params.get("profile") or "").strip() or None
     try:
         principal = await _comms_resolve_principal(request)
     except _CommsNotConfigured:
@@ -13805,6 +13810,8 @@ async def needs_you(request: Request):
         _log.warning("needs-you: project names failed", exc_info=True)
 
     items = ny.finalize(items)
+    if only_profile:
+        items = ny.for_profile(items, only_profile)
     # Enrolled push devices are the instance's, not per-member, so only the
     # admin's own waits are pushed from here.
     if admin:
@@ -17630,6 +17637,34 @@ async def describe_profile_auto_endpoint(name: str, body: ProfileDescribeAuto):
         # sweep leaves any existing description untouched, so don't claim it's
         # auto-generated.
         "description_auto": bool(outcome.ok),
+    }
+
+
+@app.get("/api/profiles/{name}/skill-suggestions", dependencies=_ADMIN)
+async def profile_skill_suggestions_endpoint(name: str, request: Request):
+    """Skills the library has that this profile doesn't, scored 1-10 for
+    relevance to its goal + SOUL.md — the "Could learn" list on the
+    agent-profile page. One auxiliary-LLM call per change of
+    (goal, soul, candidate set); cached in ``skill_suggestions.json``.
+    ``?refresh=1`` forces re-scoring.
+
+    Like describe-auto, expected failures return ``ok: false`` + a reason
+    (no aux client, LLM error) instead of an HTTP error so the page can
+    render an empty state.
+    """
+    _resolve_profile_dir(name)
+    refresh = request.query_params.get("refresh") in ("1", "true")
+    from hermes_cli import profile_skill_suggestions
+    outcome = await asyncio.to_thread(
+        profile_skill_suggestions.suggest_skills, name, refresh=refresh
+    )
+    return {
+        "ok": bool(outcome.ok),
+        "reason": outcome.reason,
+        "profile": outcome.profile_name,
+        "suggestions": outcome.suggestions,
+        "cached": outcome.cached,
+        "context_hash": outcome.context_hash,
     }
 
 
