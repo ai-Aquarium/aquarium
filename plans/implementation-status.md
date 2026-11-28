@@ -359,3 +359,4 @@ develop`, HSD via the agent-home software-upgrade release flow) track
 | 2026-11-27 | Releases: v0.2.19 published (tag moved to fixed commit), superseded by v0.2.20 (Latest) — HSD upgrades via software-upgrade page; no data migration needed on either box | — |
 | 2026-11-27 | Repo transferred leolau/aquarium → ai-Aquarium/aquarium; refs updated in #1157, old signing identity still accepted | — |
 | 2026-11-27 | C1 — Project header dedupe: one meta line (category inline), one attention pill w/ needs-you count, ONE ⋯ menu (lifecycle + More merged), JourneyBar+LiveStatusBar flattened into one status card | plans/2026-11-27-project-detail-cleanup.md |
+| 2026-11-28 | C2 — Requirements long lists: collapsible counted DocSections (persisted), sources >8 become grouped compact rows with search + kind filters + "Show all N" (#1162) | plans/2026-11-27-project-detail-cleanup.md |
