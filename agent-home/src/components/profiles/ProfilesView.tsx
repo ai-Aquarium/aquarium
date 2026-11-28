@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -10,14 +11,18 @@ import {
   type ReactNode,
 } from "react";
 
-import { CreatureIcon } from "@/components/aquarium/CreatureIcon";
 import { OCEAN_GRADIENT } from "@/components/aquarium/AquariumBackdrop";
 import { NewProfileDialog } from "@/components/profiles/NewProfileDialog";
-import { ProfileEditor } from "@/components/profiles/ProfileEditor";
+import {
+  Avatar,
+  Metric,
+  Skel,
+  Spark,
+  StatusPill,
+} from "@/components/profiles/card-atoms";
 import {
   FILTER_LABEL,
   SORT_LABEL,
-  STATUS_LABEL,
   activityLine,
   activityShort,
   channelLabels,
@@ -33,14 +38,12 @@ import {
   type StatusFilter,
 } from "@/components/profiles/profile-cards";
 import { ActionButton } from "@/components/ui/ActionButton";
-import { InfoTip } from "@/components/ui/InfoTip";
 import { InlineAlert } from "@/components/ui/InlineAlert";
-import { Pill, type Tone } from "@/components/ui/Pill";
+import { Pill } from "@/components/ui/Pill";
 import {
   primaryButtonClass,
   secondaryButtonClass,
 } from "@/components/ui/Sheet";
-import { bone, skeletonPulse } from "@/components/ui/Skeleton";
 import { Spinner } from "@/components/ui/Spinner";
 import {
   BellIcon,
@@ -66,23 +69,9 @@ export interface ProfilesViewProps {
   initialProfiles: ProfileInfo[];
   providers: ModelProviderOption[];
   error: string | null;
-  /** Profile whose editor starts open, e.g. coming back from its triage page. */
-  initialOpen?: string | null;
 }
 
 const STATS_DAYS = 30;
-const STATUS_TONE: Record<ProfileStatus, Tone> = {
-  working: "accent",
-  ready: "success",
-  off: "muted",
-  setup: "warning",
-};
-const DOT: Record<ProfileStatus, string> = {
-  working: "bg-[var(--color-accent-fg)]",
-  ready: "bg-[var(--color-success)]",
-  off: "bg-[var(--color-muted)]",
-  setup: "bg-[var(--color-warn)]",
-};
 const FILTERS: StatusFilter[] = ["all", "working", "ready", "off", "setup"];
 
 type StatsState =
@@ -90,21 +79,16 @@ type StatsState =
   | { state: "error"; error: string }
   | { state: "ready"; data: ProfileStatsResponse };
 
-/** The Profiles page body: summary strip, toolbar, profile cards (rows on a phone), editor and new-profile dialog. */
+/** The Profiles page body: summary strip, toolbar, profile cards (rows on a phone) and new-profile dialog. */
 export function ProfilesView({
   initialProfiles,
   providers,
   error,
-  initialOpen = null,
 }: ProfilesViewProps) {
+  const router = useRouter();
   const [profiles, setProfiles] = useState(initialProfiles);
   const [loadError, setLoadError] = useState(error);
   const [stats, setStats] = useState<StatsState>({ state: "loading" });
-  const [editing, setEditing] = useState<string | null>(() =>
-    initialOpen && initialProfiles.some((p) => p.name === initialOpen)
-      ? initialOpen
-      : null,
-  );
   const [opening, setOpening] = useState<string | null>(null);
   const openLock = useRef(false);
   const [creating, setCreating] = useState<{ from?: string } | null>(null);
@@ -148,30 +132,16 @@ export function ProfilesView({
     }
   }, []);
 
-  /** One tap opens the editor; later taps are ignored until it closes. */
-  const open = useCallback((name: string) => {
-    if (openLock.current) return;
-    openLock.current = true;
-    setOpening(name);
-    window.setTimeout(() => {
-      setEditing(name);
-      setOpening(null);
-    }, 0);
-  }, []);
-
-  const close = useCallback(() => {
-    setEditing(null);
-    openLock.current = false;
-  }, []);
-
-  // Keep `?open=<name>` in the address bar so a reload or shared link reopens the same profile.
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    if (editing) url.searchParams.set("open", editing);
-    else url.searchParams.delete("open");
-    if (url.href !== window.location.href)
-      window.history.replaceState(window.history.state, "", url);
-  }, [editing]);
+  /** One tap navigates to the profile page; later taps are ignored until it loads. */
+  const open = useCallback(
+    (name: string) => {
+      if (openLock.current) return;
+      openLock.current = true;
+      setOpening(name);
+      router.push(`/profiles/${encodeURIComponent(name)}`);
+    },
+    [router],
+  );
 
   const statsMap = stats.state === "ready" ? stats.data.profiles : null;
   const statusOf = useCallback(
@@ -204,8 +174,6 @@ export function ProfilesView({
       ),
     [profiles, filter, statusOf, statsMap, query, sort],
   );
-
-  const current = profiles.find((p) => p.name === editing) ?? null;
 
   return (
     <section data-component="ProfilesView" className="space-y-4">
@@ -359,28 +327,6 @@ export function ProfilesView({
         </span>
       </p>
 
-      {current ? (
-        <ProfileEditor
-          profile={current}
-          providers={providers}
-          onClose={close}
-          onChanged={reload}
-          onRenamed={async (name) => {
-            await reload();
-            setEditing(name);
-          }}
-          onDeleted={async () => {
-            close();
-            await reload();
-            void loadStats();
-          }}
-          onDuplicate={() => {
-            close();
-            setCreating({ from: current.name });
-          }}
-        />
-      ) : null}
-
       {creating ? (
         <NewProfileDialog
           profiles={profiles}
@@ -399,16 +345,6 @@ export function ProfilesView({
 }
 
 /** An inline skeleton bone (the stats load after the page renders). */
-function Skel({ className = "" }: { className?: string }) {
-  return (
-    <span
-      data-skeleton
-      aria-hidden
-      className={`inline-block align-middle ${bone} ${skeletonPulse} ${className}`}
-    />
-  );
-}
-
 function SummaryStrip({ count, stats }: { count: number; stats: StatsState }) {
   const t = stats.state === "ready" ? stats.data.totals : null;
   const value = (v: string | undefined) =>
@@ -462,100 +398,6 @@ interface ItemProps {
   opening: boolean;
   locked: boolean;
   onOpen(): void;
-}
-
-function StatusPill({
-  status,
-  needs,
-}: {
-  status: ProfileStatus;
-  needs?: number;
-}) {
-  if (needs) {
-    return (
-      <Pill tone="warning">
-        <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${DOT.setup}`} />
-        {needs} need you
-      </Pill>
-    );
-  }
-  return (
-    <Pill tone={STATUS_TONE[status]}>
-      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${DOT[status]}`} />
-      {STATUS_LABEL[status]}
-    </Pill>
-  );
-}
-
-function Avatar({ profile, size }: { profile: ProfileInfo; size: number }) {
-  const id = profileCreature(profile);
-  return (
-    <span
-      className="flex shrink-0 items-center justify-center rounded-[28%] border border-[var(--color-border)] bg-[var(--color-surface-2)]"
-      style={{ width: size, height: size }}
-    >
-      <CreatureIcon id={id} size={Math.round(size * 0.8)} />
-    </span>
-  );
-}
-
-function Metric({
-  icon,
-  label,
-  tip,
-  value,
-  sub,
-  extra,
-}: {
-  icon: ReactNode;
-  label: string;
-  tip: string;
-  value: ReactNode;
-  sub: ReactNode;
-  extra?: ReactNode;
-}) {
-  return (
-    <div
-      data-component="ProfileMetric"
-      className="relative min-w-0 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-2.5"
-    >
-      <div className="flex items-center gap-1 pr-4 text-[10px] font-semibold uppercase text-[var(--color-muted)]">
-        {icon}
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        <span className="absolute right-1 top-1 z-10 normal-case">
-          <InfoTip label={`What is ${label}?`} align="end">
-            {tip}
-          </InfoTip>
-        </span>
-      </div>
-      <div className="mt-0.5 flex items-end gap-1.5">
-        <span className="text-[17px] font-semibold leading-tight">{value}</span>
-        {extra}
-      </div>
-      <div className="truncate text-[11px] text-[var(--color-muted)]">
-        {sub}
-      </div>
-    </div>
-  );
-}
-
-function Spark({ values }: { values: number[] }) {
-  const max = Math.max(...values, 1);
-  return (
-    <span
-      aria-hidden
-      data-component="TokenSpark"
-      className="mb-1 flex h-4 items-end gap-0.5"
-    >
-      {values.map((v, i) => (
-        <span
-          key={i}
-          className={`w-1 rounded-sm bg-[var(--color-accent)] ${v ? "opacity-75" : "opacity-25"}`}
-          style={{ height: `${Math.max(12, Math.round((v / max) * 100))}%` }}
-        />
-      ))}
-    </span>
-  );
 }
 
 function ProfileCard({
