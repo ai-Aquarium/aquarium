@@ -27,6 +27,11 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+const push = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push }),
+}));
+
 const P = (over: Partial<ProfileInfo>): ProfileInfo => ({
   name: "default",
   is_default: false,
@@ -161,6 +166,7 @@ describe("buildProfileCreate", () => {
 describe("ProfilesView", () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    push.mockReset();
     vi.stubGlobal("fetch", fetchMock);
     statsReply = () => reply(STATS);
     fetchMock.mockImplementation((url: string) => {
@@ -293,10 +299,7 @@ describe("ProfilesView", () => {
     expect(card("sandbox").dataset.status).toBe("setup");
     expect(card("sandbox").textContent).toContain("no usage yet");
     fireEvent.click(screen.getByRole("button", { name: "Set model" }));
-    await screen.findByDisplayValue("You are kind.");
-    expect(
-      document.querySelector('[data-component="ProfileEditor"]'),
-    ).toBeTruthy();
+    expect(push).toHaveBeenCalledWith("/profiles/sandbox");
   });
 
   it("filters by status tab and search, and sorts by name", async () => {
@@ -356,7 +359,7 @@ describe("ProfilesView", () => {
     ).toMatch(/sm:grid-cols-2.*lg:grid-cols-3.*xl:grid-cols-4/);
   });
 
-  it("opening a card locks every card until the editor is open, and keeps ?open= in sync", async () => {
+  it("opening a card navigates to its page and locks every card", async () => {
     render(
       <ProfilesView initialProfiles={PROFILES} providers={[]} error={null} />,
     );
@@ -366,87 +369,13 @@ describe("ProfilesView", () => {
     fireEvent.click(open);
     fireEvent.click(open);
     fireEvent.click(document.querySelector('[data-profile="default"]')!);
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledWith("/profiles/coder");
     expect(card("coder").getAttribute("aria-busy")).toBe("true");
     expect(
       (document.querySelector('[data-profile="default"]') as HTMLButtonElement)
         .disabled,
     ).toBe(true);
-    await screen.findByDisplayValue("You are kind.");
-    expect(
-      document.querySelectorAll('[data-component="ProfileEditor"]'),
-    ).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Delete…" })).toBeTruthy();
-    expect(new URL(window.location.href).searchParams.get("open")).toBe(
-      "coder",
-    );
-  });
-
-  it("opens the editor from ?open= and saves a creature pick once", async () => {
-    render(
-      <ProfilesView
-        initialProfiles={PROFILES}
-        providers={[]}
-        error={null}
-        initialOpen="coder"
-      />,
-    );
-    await screen.findByDisplayValue("You are kind.");
-    const crab = document.querySelector(
-      '[data-creature-option="crab"]',
-    ) as HTMLButtonElement;
-    fireEvent.click(crab);
-    fireEvent.click(crab);
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/profiles/named/coder/creature",
-        expect.objectContaining({ method: "PUT" }),
-      ),
-    );
-    const puts = fetchMock.mock.calls.filter(([url]) =>
-      String(url).endsWith("/creature"),
-    );
-    expect(puts).toHaveLength(1);
-    expect(JSON.parse(String((puts[0][1] as RequestInit).body))).toEqual({
-      creature: "crab",
-    });
-  });
-
-  it("the default profile cannot be renamed or deleted", async () => {
-    render(
-      <ProfilesView initialProfiles={PROFILES} providers={[]} error={null} />,
-    );
-    fireEvent.click(document.querySelector('[data-profile="default"]')!);
-    await screen.findByDisplayValue("You are kind.");
-    expect(screen.queryByRole("button", { name: "Rename…" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Delete…" })).toBeNull();
-    expect(screen.getByText(/Path: hidden for safety/)).toBeTruthy();
-  });
-
-  it("delete needs the profile name typed before it is sent", async () => {
-    render(
-      <ProfilesView initialProfiles={PROFILES} providers={[]} error={null} />,
-    );
-    fireEvent.click(document.querySelector('[data-profile="coder"]')!);
-    fireEvent.click(await screen.findByRole("button", { name: "Delete…" }));
-    const confirm = screen.getByRole("button", {
-      name: "Delete profile",
-    }) as HTMLButtonElement;
-    expect(confirm.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText(/type the profile name/i), {
-      target: { value: "code" },
-    });
-    expect(confirm.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText(/type the profile name/i), {
-      target: { value: "coder" },
-    });
-    expect(confirm.disabled).toBe(false);
-    fireEvent.click(confirm);
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/profiles/named/coder",
-        expect.objectContaining({ method: "DELETE" }),
-      ),
-    );
   });
 
   it("new profile dialog walks the steps and creates with one POST", async () => {

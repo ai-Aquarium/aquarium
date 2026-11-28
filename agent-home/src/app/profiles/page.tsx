@@ -21,6 +21,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ o
   const t = await getT("system");
   const { open } = await searchParams;
   if (!canAdminister(principal)) redirect("/not-available?app=profiles");
+  // Legacy `?open=<name>` deep-links (the retired drawer) land on the page.
+  if (open) redirect(`/profiles/${encodeURIComponent(open)}`);
 
   let profiles: ProfileInfo[] = [];
   let providers: ModelProviderOption[] = [];
@@ -38,7 +40,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ o
 
   return (
     <MobileShell title={t("cards.profiles.name")} subtitle={t("pages.profiles.subtitle")} wide>
-      <ProfilesView initialProfiles={profiles} providers={providers} error={error} initialOpen={open ?? null} />
+      <ProfilesView initialProfiles={profiles} providers={providers} error={error} />
     </MobileShell>
   );
 }
