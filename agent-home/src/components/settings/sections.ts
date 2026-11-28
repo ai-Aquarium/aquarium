@@ -16,6 +16,7 @@ export const SETTINGS_SECTIONS = [
   "tools",
   "get-ready",
   "upgrade",
+  "fleet",
   "entity-goal",
   "tags",
   "aquarium",
@@ -31,6 +32,8 @@ export interface SettingsAccess {
   canManageTools: boolean;
   /** Owner-only sections (Accounts, Name and logo) need the install owner. */
   isOwner?: boolean;
+  /** The server manages a fleet (fleet.json exists); owner-only on top of that. */
+  hasFleet?: boolean;
 }
 
 /** Sections that already have their own route under `/settings`. */
@@ -39,6 +42,7 @@ const OWN_ROUTE: Partial<Record<SettingsSectionId, string>> = {
   "get-ready": "/settings/get-ready",
   sources: "/settings/sources",
   upgrade: "/settings/upgrade",
+  fleet: "/settings/fleet",
 };
 
 export function isSettingsSection(id: string): id is SettingsSectionId {
@@ -68,6 +72,8 @@ export function canOpenSettingsSection(id: SettingsSectionId, access: SettingsAc
     case "accounts":
     case "box-identity":
       return access.isOwner === true;
+    case "fleet":
+      return access.isOwner === true && access.hasFleet === true;
     default:
       return true;
   }
@@ -118,6 +124,7 @@ export const ADMIN_ENTRIES: SettingsEntryId[] = [
   "aquarium",
   "model-timeouts",
   "upgrade",
+  "fleet",
 ];
 
 /** Admin entries a non-admin may still open, read-only. */

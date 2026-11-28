@@ -12,6 +12,7 @@ service user through ``python -m hermes_cli.aquarium_probe``.
     aquarium restore <file> [--test] [--yes] put a backup back (or only test it)
     aquarium doctor [--json]                 health checks with a plain-language fix each
     aquarium logs [service] [-n N] [-f]
+    aquarium fleet <status|job|switch|probe>   managed boxes (fleet.json; for the dashboard)
     aquarium migrate-layout [--dry-run | --yes | --undo]
     aquarium uninstall [--yes] [--purge-data]
 
@@ -31,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import concurrent.futures
 import contextlib
 import datetime as _dt
 import errno
@@ -109,7 +111,7 @@ ROOT_COPIES = [
     ("/usr/local/lib/hermes-tools/bin/hermes", "deploy/hermes-tools-shim", "terminal hermes command", "bin"),
     *[(f"/etc/sudoers.d/{name}", f"deploy/sudoers.d/{name}", f"sudoers rule {name}", "sudoers") for name in (
         "hermes-tools", "hermes-vpn", "hermes-wa-bridge", "hermes-security-check", "hermes-backup",
-        "aquarium-apps", "aquarium-upgrade")],
+        "aquarium-apps", "aquarium-upgrade", "aquarium-fleet")],
 ]
 ROOT_COPY_MODE = {"bin": 0o755, "sudoers": 0o440, "unit": 0o644}
 #: Units app-mcp comes with (installed, source): the exception to "never install a missing
@@ -5094,6 +5096,321 @@ def cmd_uninstall(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- fleet
+#
+# Settings → Fleet (agent-home, owner only): the boxes this server manages, over SSH.
+# The whole feature is config-gated: it exists only where /etc/aquarium/fleet.json is
+# present — that file names the managed boxes and the SSH key to reach them, lives
+# root:root 0600, and is never part of a release (hosts stay out of the repo).
+#
+#   aquarium fleet status   each box's `aquarium upgrade status` (JSON)
+#   aquarium fleet job      layout-switch jobs: local record + remote unit state
+#   aquarium fleet switch   one JSON line on stdin: {"box","layout","by"}
+#
+# Only these three verbs appear in deploy/sudoers.d/aquarium-fleet; the dashboard
+# (user hermes) cannot read the fleet key or reach a box any other way. A switch
+# runs as a transient systemd unit ON THE TARGET BOX (aquarium-fleet-switch), so it
+# survives SSH drops and the dashboard's own restart — same pattern as `upgrade run`.
+
+FLEET_CONF = f"{ETC}/fleet.json"
+FLEET_JOBS = "/var/lib/aquarium/fleet-jobs.json"
+FLEET_SWITCH_UNIT = "aquarium-fleet-switch"
+FLEET_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
+FLEET_BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,60}$")
+
+
+def load_fleet() -> Optional[Dict]:
+    """The fleet inventory, or None when this server manages no boxes."""
+    try:
+        data = json.loads(P(FLEET_CONF).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("boxes"), list):
+        return None
+    return data
+
+
+def fleet_boxes(conf: Dict) -> List[Dict]:
+    """Validated box entries: ssh details stay server-side and are never answered out."""
+    ssh = conf.get("ssh") or {}
+    boxes = []
+    for raw in conf["boxes"]:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "")
+        self_box = bool(raw.get("self"))
+        host = str(raw.get("host") or "")
+        if not FLEET_NAME_RE.match(name) or (not self_box and not host):
+            continue
+        branch = str(raw.get("branch") or "develop")
+        if not FLEET_BRANCH_RE.match(branch):
+            branch = "develop"
+        boxes.append({"name": name, "label": str(raw.get("label") or name)[:80],
+                      "host": host, "self": self_box, "branch": branch,
+                      "user": str(raw.get("user") or ssh.get("user") or "root")})
+    return boxes
+
+
+def _fleet_ssh(box: Dict, conf: Dict, remote_argv: Sequence[str], *,
+               input: Optional[bytes] = None, timeout: float = 60) -> subprocess.CompletedProcess:
+    ssh = conf.get("ssh") or {}
+    identity = str(ssh.get("identity") or f"{ETC}/fleet_id_ed25519")
+    connect = int(ssh.get("connect_timeout") or 8)
+    return run(["ssh", "-o", "BatchMode=yes", "-o", f"ConnectTimeout={connect}",
+                "-o", "StrictHostKeyChecking=accept-new",
+                "-i", identity, f"{box['user']}@{box['host']}", *remote_argv],
+               check=False, input=input, timeout=timeout)
+
+
+def _fleet_ssh_text(proc: subprocess.CompletedProcess) -> str:
+    lines = (proc.stderr or proc.stdout or b"").decode(errors="replace").strip().splitlines()
+    return lines[-1] if lines else ""
+
+
+def _last_json_line(text: str) -> Optional[Dict]:
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
+def fleet_box_status(cfg: Dict, box: Dict, conf: Dict) -> Dict:
+    """One row of the fleet table: what the box runs and whether it answers."""
+    row: Dict = {"name": box["name"], "label": box["label"], "self": box["self"],
+                 "reachable": False, "installed": None, "job": None, "error": ""}
+    if box["self"]:
+        try:
+            answer = upgrade_public_status(cfg)
+            row["reachable"], row["error"] = True, ""
+        except Exception as error:  # the local status failing must not hide the fleet
+            row["error"] = str(error)
+            answer = None
+    else:
+        proc = _fleet_ssh(box, conf, ["aquarium", "upgrade", "status"], timeout=45)
+        if proc.returncode != 0:
+            row["error"] = _fleet_ssh_text(proc) or "ssh failed"
+            answer = None
+        else:
+            answer = _last_json_line(proc.stdout.decode(errors="replace"))
+            if answer is None:
+                row["error"] = "the box answered nothing the fleet understands"
+            else:
+                row["reachable"] = bool(answer.get("ok", True))
+                row["error"] = str(answer.get("error") or "")
+    if isinstance(answer, dict):
+        row["installed"] = answer.get("installed")
+        job = answer.get("job")
+        if isinstance(job, dict):
+            row["job"] = {k: job.get(k) for k in ("id", "kind", "phase", "result", "to", "seconds")}
+        elif job:
+            row["job"] = job
+    return row
+
+
+def _load_fleet_jobs() -> Dict:
+    try:
+        data = json.loads(P(FLEET_JOBS).read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_fleet_jobs(jobs: Dict) -> None:
+    write_private(P(FLEET_JOBS), json.dumps(jobs, indent=2, sort_keys=True).encode())
+
+
+@contextlib.contextmanager
+def _fleet_lock() -> Iterator[None]:
+    path = P(FLEET_JOBS + ".lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
+
+
+def _unit_view(text: str) -> Dict:
+    kv = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+    active = kv.get("ActiveState", "")
+    return {"state": {"active": "running", "activating": "running"}.get(active, "finished"),
+            "active": active,
+            "exit": int(kv["ExecMainStatus"]) if kv.get("ExecMainStatus", "").isdigit() else None,
+            "result": kv.get("Result", "")}
+
+
+def fleet_unit_view(cfg: Dict, box: Dict, conf: Dict, unit: str) -> Dict:
+    """Active state + exit + log tail of a fleet-switch unit, local or remote."""
+    show = ["systemctl", "show", "-p", "ActiveState,ExecMainStatus,Result", f"{unit}.service"]
+    tail = ["journalctl", "-u", f"{unit}.service", "-n", "60", "--no-pager", "-o", "cat"]
+    if box["self"]:
+        proc_show = run(show, check=False)
+        proc_tail = run(tail, check=False)
+    else:
+        proc_show = _fleet_ssh(box, conf, show, timeout=30)
+        proc_tail = _fleet_ssh(box, conf, tail, timeout=30)
+    view = _unit_view(proc_show.stdout.decode(errors="replace")) if proc_show.returncode == 0 \
+        else {"state": "unknown", "active": "", "exit": None, "result": ""}
+    view["log"] = [line[:500] for line in proc_tail.stdout.decode(errors="replace").splitlines()[-60:]]
+    return view
+
+
+def fleet_box_job(cfg: Dict, box: Dict, conf: Dict, jobs: Dict) -> Optional[Dict]:
+    """The switch job recorded for this box, merged with the unit's live state."""
+    rec = jobs.get(box["name"])
+    if not rec:
+        return None
+    job = {k: rec.get(k) for k in ("id", "to", "by", "started", "finished")}
+    if rec.get("state") == "running":
+        view = fleet_unit_view(cfg, box, conf, rec.get("unit") or FLEET_SWITCH_UNIT)
+        job.update(log=view["log"], active=view["active"])
+        if view["state"] == "finished":
+            job["state"] = "ok" if view.get("exit") == 0 else "failed"
+            job["finished"] = now_iso()
+            rec.update(state=job["state"], finished=job["finished"])
+            return job
+        job["state"] = "running" if view["state"] == "running" else rec.get("state")
+    else:
+        job["state"] = rec.get("state")
+    return job
+
+
+def fleet_switch_script(box: Dict, layout: str, cfg: Dict) -> str:
+    """The script the target box runs as `aquarium-fleet-switch` (detached unit)."""
+    if layout == "git":
+        url = f"https://raw.githubusercontent.com/{cfg['REPO']}/{box['branch']}/install-aquarium.sh"
+        return f"""#!/usr/bin/env bash
+set -euo pipefail
+APP=/opt/data/hermes-agent
+if [ ! -L "$APP" ]; then
+  echo "fleet-switch: $APP is not a release-install symlink; nothing to do"
+  exit 3
+fi
+curl -fsSL -o /root/install-aquarium.sh {url}
+rm "$APP"
+bash /root/install-aquarium.sh --from-branch {box['branch']} --yes
+"""
+    return """#!/usr/bin/env bash
+set -euo pipefail
+/usr/local/sbin/aquarium migrate-layout --yes
+CONF=/etc/aquarium/aquarium.conf
+if grep -q '^INSTALL_SOURCE=' "$CONF"; then
+  sed -i 's/^INSTALL_SOURCE=.*/INSTALL_SOURCE=release/' "$CONF"
+else
+  echo 'INSTALL_SOURCE=release' >> "$CONF"
+fi
+"""
+
+
+def _fleet_refuse(message: str) -> int:
+    return _offsite_answer({"ok": False, "error": message}, 1)
+
+
+def fleet_switch(cfg: Dict, conf: Dict, boxes: List[Dict]) -> int:
+    try:
+        req = _read_request()
+    except ValueError:
+        return _fleet_refuse("the request could not be read")
+    name = str(req.get("box") or "")
+    layout = str(req.get("layout") or "")
+    by = BY_STRIP.sub("", str(req.get("by") or ""))[:64].strip()
+    box = next((b for b in boxes if b["name"] == name), None)
+    if box is None:
+        return _fleet_refuse("unknown box")
+    if layout not in ("git", "release"):
+        return _fleet_refuse("layout must be 'git' (direct deploy) or 'release' (software upgrade)")
+    row = fleet_box_status(cfg, box, conf)
+    if not row["reachable"]:
+        return _fleet_refuse(f"{box['label']} is not reachable: {row['error'] or 'ssh failed'}")
+    current = (row.get("installed") or {}).get("layout")
+    if current == layout:
+        return _fleet_refuse(f"{box['label']} already runs on the {'git checkout' if layout == 'git' else 'release'} layout")
+    if current not in ("release", "git"):
+        return _fleet_refuse(f"{box['label']} does not report a layout it can switch from")
+    with _fleet_lock():
+        jobs = _load_fleet_jobs()
+        rec = jobs.get(name)
+        if rec and rec.get("state") == "running":
+            view = fleet_unit_view(cfg, box, conf, rec.get("unit") or FLEET_SWITCH_UNIT)
+            if view["state"] == "running":
+                return _fleet_refuse(f"a switch is already running on {box['label']}")
+            rec["state"] = "failed"
+        script = fleet_switch_script(box, layout, cfg)
+        job_id = utcnow()
+        if box["self"]:
+            script_path = P(f"/var/lib/aquarium/{FLEET_SWITCH_UNIT}.sh")
+            write_private(script_path, script.encode())
+            proc = run(["systemd-run", "--unit", FLEET_SWITCH_UNIT, "--collect",
+                        "--description", "Aquarium fleet layout switch",
+                        "bash", real(script_path)], check=False)
+        else:
+            push = _fleet_ssh(box, conf, ["cat", ">", "/root/fleet-switch.sh"],
+                              input=script.encode(), timeout=30)
+            if push.returncode != 0:
+                return _fleet_refuse(f"could not send the switch to {box['label']}: {_fleet_ssh_text(push)}")
+            proc = _fleet_ssh(box, conf,
+                              ["systemd-run", "--unit", FLEET_SWITCH_UNIT, "--collect",
+                               "--description", "Aquarium fleet layout switch",
+                               "bash", "/root/fleet-switch.sh"], timeout=30)
+        if proc.returncode != 0:
+            return _fleet_refuse(f"the switch could not be started on {box['label']}")
+        jobs[name] = {"id": job_id, "unit": FLEET_SWITCH_UNIT, "to": layout, "by": by,
+                      "started": now_iso(), "state": "running"}
+        _save_fleet_jobs(jobs)
+    audit(f"fleet switch {name} -> {layout}: started (by {by or '?'})")
+    return _offsite_answer({"ok": True, "started": True, "box": name, "layout": layout,
+                            "job": jobs[name]})
+
+
+def cmd_fleet(args: argparse.Namespace, cfg: Dict[str, str]) -> int:
+    conf = load_fleet()
+    boxes = fleet_boxes(conf) if conf else []
+    if args.verb == "probe":
+        # The Settings index's cheap check: does this server manage a fleet at all?
+        return _offsite_answer({"ok": True, "available": bool(boxes)})
+    if conf is None:
+        return _offsite_answer({"ok": True, "available": False, "boxes": []})
+    if args.verb == "switch":
+        if not boxes:
+            return _fleet_refuse("no boxes are configured")
+        return fleet_switch(cfg, conf, boxes)
+    if args.verb == "job":
+        with _fleet_lock():
+            jobs = _load_fleet_jobs()
+        answer = {b["name"]: fleet_box_job(cfg, b, conf, jobs) for b in boxes if jobs.get(b["name"])}
+        with _fleet_lock():
+            fresh = _load_fleet_jobs()
+            for name, rec in jobs.items():
+                if name in fresh:
+                    fresh[name] = rec
+            _save_fleet_jobs(fresh)
+        return _offsite_answer({"ok": True, "available": True, "jobs": answer})
+    with _fleet_lock():
+        jobs = _load_fleet_jobs()
+
+    def _row(box: Dict) -> Dict:
+        row = fleet_box_status(cfg, box, conf)
+        row["switch"] = fleet_box_job(cfg, box, conf, jobs)
+        return row
+
+    # One SSH probe per box, in parallel: a hung box costs one timeout, not N.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(1, len(boxes)))) as pool:
+        rows = list(pool.map(_row, boxes))
+    with _fleet_lock():
+        # Merge probe results without clobbering a switch that started meanwhile.
+        fresh = _load_fleet_jobs()
+        for name, rec in jobs.items():
+            if name in fresh:
+                fresh[name] = rec
+        _save_fleet_jobs(fresh)
+    return _offsite_answer({"ok": True, "available": True, "boxes": rows})
+
+
 # --------------------------------------------------------------------------- main
 
 
@@ -5139,6 +5456,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--foreground", action="store_true", help=argparse.SUPPRESS)
     p = sub.add_parser("upgrade", help="Settings → Software upgrade: status, releases, start, rollback (JSON)")
     p.add_argument("verb", choices=["status", "releases", "check", "start", "rollback", "run"])
+    p = sub.add_parser("fleet", help="Settings → Fleet: managed-box status and layout switch (JSON)")
+    p.add_argument("verb", choices=["status", "job", "switch", "probe"])
     p = sub.add_parser("doctor", help="check everything and say how to fix what fails")
     p.add_argument("--json", action="store_true", help="print the results as one JSON line")
     p = sub.add_parser("logs", help="service logs")
@@ -5160,7 +5479,7 @@ def parser() -> argparse.ArgumentParser:
 COMMANDS = {"status": cmd_status, "update": cmd_update, "backup": cmd_backup, "restore": cmd_restore,
             "doctor": cmd_doctor, "logs": cmd_logs, "migrate-layout": cmd_migrate_layout,
             "uninstall": cmd_uninstall, "offsite": cmd_offsite, "apps": cmd_apps,
-            "upgrade": cmd_upgrade}
+            "upgrade": cmd_upgrade, "fleet": cmd_fleet}
 
 
 def main(argv: Optional[List[str]] = None) -> int:
