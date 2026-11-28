@@ -5324,6 +5324,7 @@ async def start_run_route(request: Request) -> dict[str, Any]:
                         triggered_by=principal.user_id,
                         playbook_rev=body.get("playbook_rev"),
                         batch_id=body.get("batch_id"),
+                        note=body.get("note"),
                         accessible=accessible,
                     )
                 except projects_run.AssigneeNotAccessible as exc:

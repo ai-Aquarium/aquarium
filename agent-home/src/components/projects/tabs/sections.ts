@@ -17,7 +17,7 @@ export const STEP_PARTS: Record<ProjectStep, readonly ProjectTab[]> = {
   requirements: ["reqdoc", "scope"],
   plan: ["plan"],
   cards: ["board"],
-  runs: ["runs", "outputs"],
+  runs: ["runs", "outputs", "iterations"],
 };
 
 /** Skills, Settings and the Log live in the header's ⋯ sheet. */
@@ -66,6 +66,7 @@ export function resolveTabParam(value: string | null | undefined): TabTarget {
     case "board":
       return { view: "cards", part: "board" };
     case "iterations":
+      return { view: "runs", part: "iterations" };
     case "dashboard":
       return { view: "runs" };
     case "outputs":

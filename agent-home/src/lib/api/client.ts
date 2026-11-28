@@ -3072,7 +3072,7 @@ export class HermesApiClient {
   /** Start a run now (`trigger='manual'`); `playbook_rev` repeats an old method. */
   async startProjectRun(
     slug: string,
-    payload: { playbook_rev?: number; batch_id?: string } = {},
+    payload: { playbook_rev?: number; batch_id?: string; note?: string } = {},
   ): Promise<ProjectRun> {
     return this.request(
       `/api/registry/projects/${encodeURIComponent(slug)}/runs`,

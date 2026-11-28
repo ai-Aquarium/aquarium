@@ -30,6 +30,7 @@ export async function POST(
           ? Number(playbookRev)
           : undefined,
       batch_id: body.batch_id ? String(body.batch_id) : undefined,
+      note: body.note ? String(body.note) : undefined,
     }),
   );
 }

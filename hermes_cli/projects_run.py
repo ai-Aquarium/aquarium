@@ -230,6 +230,7 @@ def compile_guidance(
     last_run: Optional[dict] = None,
     cfg: Optional[Dict[str, Any]] = None,
     clarify_lines: Optional[List[str]] = None,
+    run_note: Optional[str] = None,
 ) -> str:
     """Assemble the §5.2 block in its fixed order.
 
@@ -318,6 +319,11 @@ def compile_guidance(
                 f"{_epoch_day(d.get('created_at'))}]"
             )
 
+    note_lines: List[str] = []
+    if run_note and run_note.strip():
+        # One-off steering for this run only — never truncated by the cap.
+        note_lines = ["", "### This run only", run_note.strip()[:2000]]
+
     retro_lines: List[str] = []
     if last_run and (last_run.get("retro") or "").strip():
         retro_lines = ["", "### What we learnt last run"]
@@ -344,6 +350,7 @@ def compile_guidance(
                 sample_lines,
                 scope_lines,
                 directive_lines,
+                note_lines,
                 retro_lines,
             )
             if part
@@ -364,7 +371,7 @@ def compile_guidance(
         ]
         block = _rejoin(
             header, brief_lines, audience_lines, output_lines,
-            sample_lines, scope_lines, directive_lines, retro_lines,
+            sample_lines, scope_lines, directive_lines, note_lines, retro_lines,
         )
     if len(block) > limit and directive_lines:
         while len(block) > limit and len(directive_lines) > 3:
@@ -372,13 +379,13 @@ def compile_guidance(
         directive_lines.append("…[further standing instructions omitted]")
         block = _rejoin(
             header, brief_lines, audience_lines, output_lines,
-            sample_lines, scope_lines, directive_lines, retro_lines,
+            sample_lines, scope_lines, directive_lines, note_lines, retro_lines,
         )
     if len(block) > limit and scope_lines:
         scope_lines = _trim_scope_lines(scope_lines, len(block) - limit)
         block = _rejoin(
             header, brief_lines, audience_lines, output_lines,
-            sample_lines, scope_lines, directive_lines, retro_lines,
+            sample_lines, scope_lines, directive_lines, note_lines, retro_lines,
         )
     return block
 
@@ -1186,6 +1193,7 @@ def start_run(
     first_only: bool = False,
     activate: bool = False,
     batch_id: Optional[str] = None,
+    note: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Open a run and bring up its cards + guidance (§6 pipeline).
 
@@ -1266,6 +1274,7 @@ def start_run(
         first_only=first_only,
         activate=activate,
         batch_id=batch_id,
+        note=note,
     )
     if activate:
         project = projects_db.get_project(pconn, project.id)
@@ -1347,6 +1356,7 @@ def start_run(
         clarify_lines=projects_clarify_context.clarify_context_lines(
             pconn, project.id
         ),
+        run_note=run.get("note"),
     )
 
     made = instantiate_run_cards(

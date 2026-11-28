@@ -719,6 +719,27 @@ def test_guidance_applies_at_spawn_not_mid_conversation(stores):
     assert second["run"]["run_no"] == 2
 
 
+def test_run_note_lands_in_guidance_and_never_leaks(stores):
+    """A one-off note at start rides in THAT run's guidance block only —
+    stored on the run row, never written as a standing directive, gone
+    from the next run's block."""
+    project, _ = _make_project()
+    _save_playbook(project.id, [{"key": "one", "title": "One"}])
+    with projects_db.connect_closing() as conn:
+        projects_db.activate_playbook_rev(conn, project.id, 1)
+    first = _start(project.id, note="use before-v4.xlsx as the raw workbook")
+    assert first["run"]["note"] == "use before-v4.xlsx as the raw workbook"
+    assert "### This run only" in first["guidance"]
+    assert "use before-v4.xlsx" in first["guidance"]
+    with projects_db.connect_closing() as conn:
+        projects_db.update_project_run(conn, first["run"]["id"], status="done")
+    second = _start(project.id)
+    assert second["run"]["note"] is None
+    assert "before-v4.xlsx" not in second["guidance"]
+    with projects_db.connect_closing() as conn:
+        assert projects_db.list_project_directives(conn, project.id) == []
+
+
 def test_budget_gate_stops_the_run_into_waiting(stores):
     project, _ = _make_project(budget=5.0)
     _save_playbook(project.id, [{"key": "one", "title": "One"}])

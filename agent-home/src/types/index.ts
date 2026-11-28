@@ -2630,6 +2630,9 @@ export interface ProjectRun {
   scored_by: string | null;
   scored_at: number | null;
   error: string | null;
+  /** One-off instruction the starter wrote at run start ("Note for this
+      run"); never a standing directive. NULL when none was given. */
+  note?: string | null;
   /** Joined fields — present on the detail read. */
   cards?: ProjectRunCard[];
   blocked_tasks?: ProjectRunBlockedTask[];

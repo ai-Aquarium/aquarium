@@ -113,6 +113,7 @@ export function StartRunSheet({
 
   const [batches, setBatches] = useState<ProjectIterationBatch[] | null>(null);
   const [batchId, setBatchId] = useState<string>("");
+  const [note, setNote] = useState("");
   const [newBatch, setNewBatch] = useState({ title: "", description: "" });
   useEffect(() => {
     let live = true;
@@ -151,6 +152,7 @@ export function StartRunSheet({
         body: {
           ...(revNo != null ? { playbook_rev: revNo } : {}),
           ...(chosen ? { batch_id: chosen } : {}),
+          ...(note.trim() ? { note: note.trim() } : {}),
         },
       },
     );
@@ -283,6 +285,19 @@ export function StartRunSheet({
             </div>
           </Field>
         ) : null}
+
+        <Field label={t("startRun.note")}>
+          <textarea
+            aria-label={t("startRun.note")}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={t("startRun.notePlaceholder")}
+            rows={2}
+            data-appmcp-hint="One-off instruction for this run only — it never becomes a standing rule"
+            data-testid="start-run-note"
+            className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+          />
+        </Field>
 
         <div className="rounded-[var(--radius-md)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-muted)]">
           {estimate.hasHistory ? (

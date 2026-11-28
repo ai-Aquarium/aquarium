@@ -21,7 +21,7 @@ describe("?tab= mapping", () => {
     ["files", { view: "runs", part: "outputs" }],
     ["setup", { view: "requirements", part: "scope" }],
     ["board", { view: "cards", part: "board" }],
-    ["iterations", { view: "runs" }],
+    ["iterations", { view: "runs", part: "iterations" }],
     ["runs", { view: "runs" }],
     ["work", { view: "runs" }],
     ["planning", { view: "requirements" }],
