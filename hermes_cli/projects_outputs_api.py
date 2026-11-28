@@ -363,6 +363,19 @@ def _served_or_kept(path_str: str, task, roots: list[Path]) -> Optional[Path]:
     return found
 
 
+def _delivery_servable(path_str: str, task, board: Optional[str]) -> Optional[Path]:
+    """The file behind a delivery's ``link_ref``: the board's managed roots,
+    else anywhere under the kanban home. Deliveries recorded before the
+    managed-roots guard (``link_kind 'path'``, or ``'workspace'`` pointing at
+    a project working dir like ``auction-work``) sit outside those roots but
+    inside the home. The delivery row is the allowlist — only recorded refs
+    reach this lookup."""
+    found = _servable(path_str, _managed_roots(task, board))
+    if found is None:
+        found = _servable(path_str, [kanban_db.kanban_home()])
+    return found
+
+
 def _uploaded_copy(uploaded: dict[str, str], name: str) -> Optional[str]:
     """The remote copy a run recorded for a local file: same file name, or
     a native document (no extension) named after the file's stem — a
@@ -654,9 +667,9 @@ def build_artifacts(project, ctx: dict) -> list[dict]:
                 name = uploaded_names.get(_doc_url_key(ref)) or (
                     None if _is_file_content_route(ref) else _url_meta(ref)[0]
                 )
-        elif kind == "workspace" and ref:
+        elif kind in ("workspace", "path") and ref:
             file_id = path_to_id.get(ref)
-            if file_id is None and _servable(ref, _managed_roots(task, board)):
+            if file_id is None and _delivery_servable(ref, task, board):
                 href = _content_href(slug, f"d:{d['id']}")
                 location = (
                     "kept artifacts" if "/artifacts/kept/" in ref else _location(ref, task)
@@ -682,7 +695,7 @@ def build_artifacts(project, ctx: dict) -> list[dict]:
                 href = remote
                 location = urlparse(remote).hostname
         missing = (
-            href is None and kind in ("workspace", None) and bool(ref)
+            href is None and kind in ("workspace", "path", None) and bool(ref)
             and os.path.isabs(ref) and not os.path.lexists(ref)
         )
         fname = (
@@ -795,14 +808,14 @@ def resolve_content(project, principal, artifact_id: str) -> Optional[Path]:
         if delivery is None:
             return None
         ref = delivery.get("link_ref")
-        if delivery.get("link_kind") == "workspace":
+        if delivery.get("link_kind") in ("workspace", "path"):
             match = next(
                 (f for aid, f in files.items() if aid.startswith("f:") and f["path"] == ref),
                 None,
             )
             if match is None and ref:
                 task = ctx["tasks"].get(delivery.get("task_id") or "")
-                return _servable(ref, _managed_roots(task, project.board_slug or None))
+                return _delivery_servable(ref, task, project.board_slug or None)
         elif delivery.get("link_kind") == "attachment":
             match = files.get(f"att:{ref}")
         else:

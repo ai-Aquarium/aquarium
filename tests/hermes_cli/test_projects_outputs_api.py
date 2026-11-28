@@ -858,6 +858,43 @@ def test_a_delivery_inside_its_cards_own_workspace_is_served(env, tmp_path):
     assert d["link_kind"] == "workspace" and d["link_ref"] == str(book)
 
 
+def test_a_legacy_delivery_under_the_home_still_opens(env, tmp_path, monkeypatch):
+    """Deliveries recorded before the managed-roots guard — ``link_kind
+    'path'``, or ``'workspace'`` pointing at a project working dir like
+    ``auction-work`` — sit outside the managed roots but inside the kanban
+    home. They must still get an href and resolve on the content route,
+    else Accept asks people to review files they can never see."""
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(tmp_path))
+    client, _state, _tmp = env
+    project = _project(env)
+    delivered = tmp_path / "auction-work" / "delivered"
+    delivered.mkdir(parents=True)
+    book = delivered / "book.xlsx"
+    book.write_bytes(b"book")
+    output_id = project["outputs"][0]["id"]
+    ids = []
+    with projects_db.connect_closing() as conn:
+        for kind in ("path", "workspace"):
+            ids.append(
+                projects_db.record_output_delivery(
+                    conn, output_id=output_id, link_kind=kind,
+                    link_ref=str(book), profile="default",
+                )
+            )
+    for did in ids:
+        item = next(i for i in _artifacts(env, project["slug"]) if i["id"] == f"d:{did}")
+        assert item["missing"] is False and item["href"]
+        got = client.get(item["href"].replace("/api/projects/", "/api/registry/projects/"))
+        assert got.status_code == 200 and got.content == b"book"
+    with projects_db.connect_closing() as conn:
+        gone = projects_db.record_output_delivery(
+            conn, output_id=output_id, link_kind="path",
+            link_ref=str(delivered / "gone.xlsx"), profile="default",
+        )
+    item = next(i for i in _artifacts(env, project["slug"]) if i["id"] == f"d:{gone}")
+    assert item["missing"] is True and item["href"] is None
+
+
 def test_urls_and_non_paths_are_delivered_as_given(env):
     project = _project(env)
     url = "https://home.example/api/files/abc/content?download=1"
