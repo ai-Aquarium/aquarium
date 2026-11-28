@@ -97,6 +97,7 @@ export default async function Page({
         )
       }
       wide
+      titleSrOnly
     >
       <ProjectDetailView
         project={project}

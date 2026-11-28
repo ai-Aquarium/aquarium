@@ -83,6 +83,7 @@ export async function MobileShell({
   hideHeader = false,
   chatChrome = false,
   followProfileLink = false,
+  titleSrOnly = false,
 }: {
   title: ReactNode;
   children: ReactNode;
@@ -116,6 +117,11 @@ export async function MobileShell({
    * switches the session there before the page shows (see `ProfileScope`).
    */
   followProfileLink?: boolean;
+  /**
+   * The page renders its own visible title (the project detail title band);
+   * the PageHeader's h1 stays mounted but hidden for screen readers.
+   */
+  titleSrOnly?: boolean;
 }) {
   // The badge count: one cached facets call per 30s.  The session is
   // resolved outside the cache so cookies() isn't called inside it, and
@@ -199,6 +205,7 @@ export async function MobileShell({
         hideHeader ? null : (
         <PageHeader
           compact={chatChrome}
+          titleSrOnly={titleSrOnly}
           title={title}
           subtitle={subtitle}
           info={info}
