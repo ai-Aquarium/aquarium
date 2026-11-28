@@ -28,6 +28,18 @@ describe("settings sections", () => {
     expect(visibleSettingsSections({ canManageMembers: true, canManageTools: true })).toContain("menu");
   });
 
+  it("shows Fleet only to the owner on a server that manages one", () => {
+    const ownerNoFleet = { canManageMembers: true, canManageTools: true, isOwner: true };
+    const ownerFleet = { ...ownerNoFleet, hasFleet: true };
+    expect(canOpenSettingsSection("fleet", ownerNoFleet)).toBe(false);
+    expect(canOpenSettingsSection("fleet", ownerFleet)).toBe(true);
+    expect(canOpenSettingsSection("fleet", { ...ownerFleet, isOwner: false })).toBe(false);
+    expect(settingsIndexGroups(ownerFleet).admin).toContain("fleet");
+    expect(settingsIndexGroups(ownerNoFleet).admin).not.toContain("fleet");
+    expect(settingsSectionHref("fleet")).toBe("/settings/fleet");
+    expect(isDetailSection("fleet")).toBe(false);
+  });
+
   it("lets only the owner open Name and logo", () => {
     expect(canOpenSettingsSection("box-identity", { canManageMembers: true, canManageTools: true })).toBe(false);
     expect(canOpenSettingsSection("box-identity", { canManageMembers: true, canManageTools: true, isOwner: true })).toBe(true);

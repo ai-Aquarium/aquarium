@@ -2,6 +2,19 @@
 
 Tracking file for in-flight feature work. Update as phases land.
 
+## Fleet page: per-box layout switch, only where a fleet is configured
+
+Plan: `plans/2026-11-28-fleet-page.md`
+Status: **implemented** — updated 2026-11-28
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `aquarium fleet probe/status/job/switch` in `deploy/aquarium.py` + `deploy/sudoers.d/aquarium-fleet` + ROOT_COPIES | done |
+| 2 | `hermes_cli/fleet_api.py` (OWNER-gated, password re-check, scrubbing) + router registration | done |
+| 3 | agent-home: types, client, route-roles, BFF routes, sections/`hasFleet`, Fleet page + FleetView, i18n en+zh-Hant | done |
+| 4 | tests (deploy helper, API, vitest) + RELEASES.md + this file | done |
+| 5 | ops setup on the managing box (fleet key, fleet.json, sudoers, dashboard restart) | pending — aquarium-ops |
+
 ## New Hetzner instance: ProxyAdvisor (CX43, release install)
 
 Plan: `plans/2026-11-27-hetzner-proxyadvisor-instance.md`

@@ -1,0 +1,13 @@
+# Lets the Hermes dashboard (user hermes) run Settings → Fleet (owner only; the
+# dashboard checks the role and re-checks the owner's password before it calls
+# sudo). Each line is one exact command of the root-owned
+# /usr/local/sbin/aquarium (installed from deploy/aquarium.py, never the
+# checkout's copy, which the hermes user can write). `switch` reads
+# {"box": "<name>", "layout": "git"|"release", "by": "<name>"} on stdin and hands
+# the work to a transient systemd unit on the target box; the SSH key and the
+# box inventory stay in root-owned files under /etc/aquarium/ that hermes cannot
+# read or write. Install: root:root 0440.
+hermes ALL=(root) NOPASSWD: /usr/local/sbin/aquarium fleet probe
+hermes ALL=(root) NOPASSWD: /usr/local/sbin/aquarium fleet status
+hermes ALL=(root) NOPASSWD: /usr/local/sbin/aquarium fleet job
+hermes ALL=(root) NOPASSWD: /usr/local/sbin/aquarium fleet switch

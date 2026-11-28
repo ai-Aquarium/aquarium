@@ -4666,6 +4666,67 @@ export interface SoftwareUpgradeStatus {
   can_upgrade?: boolean;
 }
 
+// ── Fleet (Settings → Fleet; owner only, config-gated) ──
+// `GET /api/fleet` — the boxes this server manages. `available` is false on any
+// server without /etc/aquarium/fleet.json; the Settings tile stays hidden there.
+
+/** A layout switch the fleet started on a box (runs as a systemd unit there). */
+export interface FleetSwitchJob {
+  id: string | null;
+  /** "git" = direct deploy, "release" = software upgrade. */
+  to: "git" | "release" | null;
+  by: string | null;
+  started: string | null;
+  finished: string | null;
+  state: "running" | "ok" | "failed";
+  /** The unit's systemd ActiveState while it runs. */
+  active: string | null;
+  /** Journal tail from the switch unit on the target box. */
+  log: string[];
+}
+
+export interface FleetBox {
+  name: string;
+  label: string;
+  /** True on the box the dashboard itself runs on. */
+  self: boolean;
+  reachable: boolean;
+  installed: {
+    /** "release" = software upgrade path, "git" = direct deploy. */
+    layout: "release" | "git" | null;
+    version: string | null;
+    label: string | null;
+    commit: string | null;
+    channel: "stable" | "beta" | null;
+    installed_at: string | null;
+  } | null;
+  /** An upgrade/rollback job running on the box itself. */
+  job: {
+    id: string | null;
+    phase: string | null;
+    result: string | null;
+    to: string | null;
+    seconds: number | null;
+  } | null;
+  /** A layout switch this fleet started on the box. */
+  switch: FleetSwitchJob | null;
+  error: string | null;
+}
+
+/** `GET /api/fleet`. */
+export interface FleetStatus {
+  available: boolean;
+  error?: string;
+  boxes?: FleetBox[];
+}
+
+/** `GET /api/fleet/job` — in-flight switches keyed by box name. */
+export interface FleetJobs {
+  available: boolean;
+  error?: string;
+  jobs?: Record<string, FleetSwitchJob | null>;
+}
+
 // ── Short refs (FG-36) ──
 /** `GET /api/refs/:ref` — what a short ref names, for a caller who may see it. */
 export interface RefResolution {

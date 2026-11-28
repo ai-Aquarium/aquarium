@@ -205,7 +205,7 @@ as root after an upgrade. The list is `ROOT_COPIES` in `deploy/aquarium.py`:
 `/usr/local/sbin/aquarium`, `hermes-vpn-helper`, `hermes-wa-bridge-add`,
 `hermes-security-check`, `hermes-tools-exec`, `hermes-tools-cli`,
 `/usr/local/lib/hermes-tools/bin/hermes` (from `deploy/hermes-tools-shim`) and
-`/etc/sudoers.d/{hermes-tools,hermes-vpn,hermes-wa-bridge,hermes-security-check,hermes-backup,aquarium-apps,aquarium-upgrade}`.
+`/etc/sudoers.d/{hermes-tools,hermes-vpn,hermes-wa-bridge,hermes-security-check,hermes-backup,aquarium-apps,aquarium-upgrade,aquarium-fleet}`.
 
 - Only copies the box already has are replaced; a feature that was never set
   up is not turned on.
