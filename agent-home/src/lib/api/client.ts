@@ -106,6 +106,7 @@ import type {
   Principal,
   ProfileCreateInput,
   ProfileCreateResult,
+  ProfileStatsResponse,
   ProfileDescribeResult,
   MyProfilesResponse,
   PersonProfilesResponse,
@@ -522,6 +523,17 @@ export class HermesApiClient {
     return this.request(`/api/profiles/${encodeURIComponent(name)}/describe-auto`, {
       method: "POST",
       json: { overwrite },
+    });
+  }
+
+  async profileStats(days = 30): Promise<ProfileStatsResponse> {
+    return this.request(`/api/profiles/stats?days=${encodeURIComponent(String(days))}`);
+  }
+
+  async setProfileCreature(name: string, creature: string): Promise<{ ok: boolean; creature: string }> {
+    return this.request(`/api/profiles/${encodeURIComponent(name)}/creature`, {
+      method: "PUT",
+      json: { creature },
     });
   }
 

@@ -689,6 +689,9 @@ class ProfileInfo:
     # surfaces a "review" badge in this case so the user can edit or
     # accept.
     description_auto: bool = False
+    # One of the 40 Aquarium creatures (``hermes_cli.aquarium_creatures``):
+    # the saved ``profile.yaml`` pick, else a stable one derived from the name.
+    creature: str = ""
 
 
 def _read_distribution_meta(profile_dir: Path) -> tuple:
@@ -860,20 +863,32 @@ def read_profile_meta(profile_dir: Path) -> dict:
     ``hermes profile list``.
     """
     path = _profile_yaml_path(profile_dir)
+    empty = {"description": "", "description_auto": False, "creature": ""}
     if not path.is_file():
-        return {"description": "", "description_auto": False}
+        return dict(empty)
     try:
         import yaml
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     except Exception:
-        return {"description": "", "description_auto": False}
+        return dict(empty)
     if not isinstance(data, dict):
-        return {"description": "", "description_auto": False}
+        return dict(empty)
+    from hermes_cli.aquarium_creatures import is_creature
+
+    creature = data.get("creature")
     return {
         "description": str(data.get("description") or "").strip(),
         "description_auto": bool(data.get("description_auto", False)),
+        "creature": creature if is_creature(creature) else "",
     }
+
+
+def profile_creature_for(name: str, meta: dict) -> str:
+    """The profile's saved creature, else the stable default for its name."""
+    from hermes_cli.aquarium_creatures import profile_creature
+
+    return meta.get("creature") or profile_creature(name)
 
 
 def write_profile_meta(
@@ -881,6 +896,7 @@ def write_profile_meta(
     *,
     description: Optional[str] = None,
     description_auto: Optional[bool] = None,
+    creature: Optional[str] = None,
 ) -> None:
     """Update ``<profile_dir>/profile.yaml`` in place.
 
@@ -905,6 +921,12 @@ def write_profile_meta(
         existing["description"] = description.strip()
     if description_auto is not None:
         existing["description_auto"] = bool(description_auto)
+    if creature is not None:
+        from hermes_cli.aquarium_creatures import is_creature
+
+        if not is_creature(creature):
+            raise ValueError(f"unknown creature: {creature!r}")
+        existing["creature"] = creature
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(existing, f, sort_keys=False, default_flow_style=False)
 
@@ -938,6 +960,7 @@ def list_profiles() -> List[ProfileInfo]:
             distribution_source=dist_source,
             description=meta.get("description", ""),
             description_auto=meta.get("description_auto", False),
+            creature=profile_creature_for("default", meta),
         ))
 
     # Named profiles
@@ -980,6 +1003,7 @@ def list_profiles() -> List[ProfileInfo]:
                 distribution_source=dist_source,
                 description=meta.get("description", ""),
                 description_auto=meta.get("description_auto", False),
+                creature=profile_creature_for(name, meta),
             ))
 
     return profiles

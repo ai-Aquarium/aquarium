@@ -1,14 +1,66 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
+import { CreatureIcon } from "@/components/aquarium/CreatureIcon";
+import { OCEAN_GRADIENT } from "@/components/aquarium/AquariumBackdrop";
 import { NewProfileDialog } from "@/components/profiles/NewProfileDialog";
 import { ProfileEditor } from "@/components/profiles/ProfileEditor";
-import { Pill } from "@/components/ui/Pill";
-import { primaryButtonClass } from "@/components/ui/Sheet";
+import {
+  FILTER_LABEL,
+  SORT_LABEL,
+  STATUS_LABEL,
+  activityLine,
+  activityShort,
+  channelLabels,
+  compactNumber,
+  costLabel,
+  creatureLabel,
+  matchesSearch,
+  profileCreature,
+  profileStatus,
+  sortProfiles,
+  type ProfileSort,
+  type ProfileStatus,
+  type StatusFilter,
+} from "@/components/profiles/profile-cards";
+import { ActionButton } from "@/components/ui/ActionButton";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { InlineAlert } from "@/components/ui/InlineAlert";
+import { Pill, type Tone } from "@/components/ui/Pill";
+import {
+  primaryButtonClass,
+  secondaryButtonClass,
+} from "@/components/ui/Sheet";
+import { bone, skeletonPulse } from "@/components/ui/Skeleton";
+import { Spinner } from "@/components/ui/Spinner";
+import {
+  BellIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  CoinsIcon,
+  FolderIcon,
+  InfoIcon,
+  LoaderIcon,
+  MessageIcon,
+  SearchIcon,
+  SparklesIcon,
+} from "@/components/ui/icons";
 import { errorText, getJson } from "@/lib/admin-fetch";
-import type { ModelProviderOption, ProfileInfo } from "@/types";
+import type {
+  ModelProviderOption,
+  ProfileInfo,
+  ProfileStats,
+  ProfileStatsResponse,
+} from "@/types";
 
 export interface ProfilesViewProps {
   initialProfiles: ProfileInfo[];
@@ -18,14 +70,73 @@ export interface ProfilesViewProps {
   initialOpen?: string | null;
 }
 
-/** The Profiles page body: card grid, the editor drawer and the new-profile dialog. */
-export function ProfilesView({ initialProfiles, providers, error, initialOpen = null }: ProfilesViewProps) {
+const STATS_DAYS = 30;
+const STATUS_TONE: Record<ProfileStatus, Tone> = {
+  working: "accent",
+  ready: "success",
+  off: "muted",
+  setup: "warning",
+};
+const DOT: Record<ProfileStatus, string> = {
+  working: "bg-[var(--color-accent-fg)]",
+  ready: "bg-[var(--color-success)]",
+  off: "bg-[var(--color-muted)]",
+  setup: "bg-[var(--color-warn)]",
+};
+const FILTERS: StatusFilter[] = ["all", "working", "ready", "off", "setup"];
+
+type StatsState =
+  | { state: "loading" }
+  | { state: "error"; error: string }
+  | { state: "ready"; data: ProfileStatsResponse };
+
+/** The Profiles page body: summary strip, toolbar, profile cards (rows on a phone), editor and new-profile dialog. */
+export function ProfilesView({
+  initialProfiles,
+  providers,
+  error,
+  initialOpen = null,
+}: ProfilesViewProps) {
   const [profiles, setProfiles] = useState(initialProfiles);
   const [loadError, setLoadError] = useState(error);
+  const [stats, setStats] = useState<StatsState>({ state: "loading" });
   const [editing, setEditing] = useState<string | null>(() =>
-    initialOpen && initialProfiles.some((p) => p.name === initialOpen) ? initialOpen : null,
+    initialOpen && initialProfiles.some((p) => p.name === initialOpen)
+      ? initialOpen
+      : null,
   );
+  const [opening, setOpening] = useState<string | null>(null);
+  const openLock = useRef(false);
   const [creating, setCreating] = useState<{ from?: string } | null>(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<StatusFilter>("all");
+  const [sort, setSort] = useState<ProfileSort>("active");
+
+  const fetchStats = useCallback(
+    () =>
+      getJson<ProfileStatsResponse>(
+        `/api/profiles/stats?days=${STATS_DAYS}`,
+      ).then(
+        (data): StatsState => ({ state: "ready", data }),
+        (err): StatsState => ({ state: "error", error: errorText(err) }),
+      ),
+    [],
+  );
+
+  const loadStats = useCallback(async () => {
+    setStats({ state: "loading" });
+    setStats(await fetchStats());
+  }, [fetchStats]);
+
+  useEffect(() => {
+    let live = true;
+    void fetchStats().then((next) => {
+      if (live) setStats(next);
+    });
+    return () => {
+      live = false;
+    };
+  }, [fetchStats]);
 
   const reload = useCallback(async () => {
     try {
@@ -37,90 +148,234 @@ export function ProfilesView({ initialProfiles, providers, error, initialOpen = 
     }
   }, []);
 
+  /** One tap opens the editor; later taps are ignored until it closes. */
+  const open = useCallback((name: string) => {
+    if (openLock.current) return;
+    openLock.current = true;
+    setOpening(name);
+    window.setTimeout(() => {
+      setEditing(name);
+      setOpening(null);
+    }, 0);
+  }, []);
+
+  const close = useCallback(() => {
+    setEditing(null);
+    openLock.current = false;
+  }, []);
+
+  // Keep `?open=<name>` in the address bar so a reload or shared link reopens the same profile.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (editing) url.searchParams.set("open", editing);
+    else url.searchParams.delete("open");
+    if (url.href !== window.location.href)
+      window.history.replaceState(window.history.state, "", url);
+  }, [editing]);
+
+  const statsMap = stats.state === "ready" ? stats.data.profiles : null;
+  const statusOf = useCallback(
+    (p: ProfileInfo) => profileStatus(p, statsMap?.[p.name]),
+    [statsMap],
+  );
+
+  const counts = useMemo(() => {
+    const out: Record<StatusFilter, number> = {
+      all: profiles.length,
+      working: 0,
+      ready: 0,
+      off: 0,
+      setup: 0,
+    };
+    for (const p of profiles) out[statusOf(p)] += 1;
+    return out;
+  }, [profiles, statusOf]);
+
+  const visible = useMemo(
+    () =>
+      sortProfiles(
+        profiles.filter(
+          (p) =>
+            (filter === "all" || statusOf(p) === filter) &&
+            matchesSearch(p, statsMap?.[p.name], query),
+        ),
+        statsMap,
+        sort,
+      ),
+    [profiles, filter, statusOf, statsMap, query, sort],
+  );
+
   const current = profiles.find((p) => p.name === editing) ?? null;
 
   return (
     <section data-component="ProfilesView" className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="min-w-0 flex-1 text-sm text-[var(--color-muted)]">
-          {profiles.length} {profiles.length === 1 ? "profile" : "profiles"} · each is its own
-          agent: soul, model, skills, memory, credentials
-        </p>
+      <SummaryStrip count={profiles.length} stats={stats} />
+
+      {stats.state === "error" ? (
+        <InlineAlert
+          tone="danger"
+          title="Couldn't load activity numbers"
+          action={
+            <ActionButton
+              className={secondaryButtonClass}
+              busyLabel="Retrying…"
+              onAction={loadStats}
+              data-appmcp-hint="Reloads the activity numbers for every profile"
+            >
+              Retry
+            </ActionButton>
+          }
+        >
+          Profiles still open as usual; tokens, skills used and projects show
+          “—” until this works ({stats.error}).
+        </InlineAlert>
+      ) : null}
+
+      <div
+        data-component="ProfilesToolbar"
+        className="flex flex-wrap items-center gap-2 lg:gap-3"
+      >
+        <label className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 sm:max-w-xs">
+          <SearchIcon
+            size={14}
+            className="shrink-0 text-[var(--color-muted)]"
+          />
+          <input
+            type="search"
+            aria-label="Search profiles"
+            placeholder="Search name, goal or skill"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--color-muted)]"
+          />
+        </label>
         <button
           type="button"
           data-testid="new-profile"
-          className={primaryButtonClass}
+          className={`${primaryButtonClass} sm:order-last`}
           onClick={() => setCreating({})}
         >
           + New profile
         </button>
+        <div className="-mx-1 w-full overflow-x-auto px-1 lg:w-auto">
+          <div
+            role="group"
+            aria-label="Filter by status"
+            className="inline-flex gap-0.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5"
+          >
+            {FILTERS.map((f) => (
+              <button
+                key={f}
+                type="button"
+                aria-pressed={filter === f}
+                data-filter={f}
+                data-appmcp-hint={`Shows only ${f} profiles`}
+                onClick={() => setFilter(f)}
+                className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[var(--radius-sm)] px-2.5 py-1.5 text-xs ${
+                  filter === f
+                    ? "bg-[var(--color-surface-2)] font-semibold text-[var(--color-fg)]"
+                    : "text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+                }`}
+              >
+                {FILTER_LABEL[f]}
+                <span className="rounded-full bg-[var(--color-surface-2)] px-1.5 text-[10px] text-[var(--color-fg)]">
+                  {counts[f]}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="flex items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm lg:ml-auto">
+          <span className="text-[var(--color-muted)]">Sort:</span>
+          <select
+            aria-label="Sort profiles"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as ProfileSort)}
+            className="bg-transparent font-medium outline-none"
+          >
+            {(Object.keys(SORT_LABEL) as ProfileSort[]).map((k) => (
+              <option key={k} value={k}>
+                {SORT_LABEL[k]}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {loadError ? (
+        <InlineAlert tone="danger" title="Couldn't load profiles">
+          {loadError}
+        </InlineAlert>
+      ) : null}
+
+      {visible.length === 0 && profiles.length > 0 ? (
         <p
-          data-component="ProfilesError"
-          className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-muted)]"
+          data-component="ProfilesEmpty"
+          className="rounded-2xl border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]"
         >
-          Couldn&apos;t load profiles ({loadError}).
+          No profile matches{query ? ` “${query}”` : ""}
+          {filter !== "all" ? ` in ${FILTER_LABEL[filter]}` : ""}.
         </p>
       ) : null}
 
-      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {profiles.map((p) => (
-          <li key={p.name}>
-            <button
-              type="button"
-              data-component="ProfileCard"
-              data-profile={p.name}
-              onClick={() => setEditing(p.name)}
-              className="h-full w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left hover:border-[var(--color-accent)]"
-            >
-              <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate font-semibold">{p.name}</span>
-                {p.is_default ? <Pill tone="accent">default</Pill> : null}
-              </div>
-              <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-[var(--color-muted)]">
-                {p.description || "No description yet."}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {p.description_auto ? <Pill>auto description</Pill> : null}
-                <Pill>{p.model || "no model set"}</Pill>
-                <Pill>
-                  {p.skill_count} {p.skill_count === 1 ? "skill" : "skills"}
-                </Pill>
-                <Pill tone={p.gateway_running ? "success" : "muted"}>
-                  gateway {p.gateway_running ? "running" : "off"}
-                </Pill>
-              </div>
-            </button>
+      <ul
+        data-component="ProfileGrid"
+        className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4"
+      >
+        {visible.map((p) => (
+          <li key={p.name} className="min-w-0">
+            <ProfileCard
+              profile={p}
+              stats={stats}
+              status={statusOf(p)}
+              opening={opening === p.name}
+              locked={opening !== null}
+              onOpen={() => open(p.name)}
+            />
+            <ProfileRow
+              profile={p}
+              stats={stats}
+              status={statusOf(p)}
+              opening={opening === p.name}
+              locked={opening !== null}
+              onOpen={() => open(p.name)}
+            />
           </li>
         ))}
       </ul>
 
-      <p className="text-sm text-[var(--color-muted)]">
-        Tap a profile to edit it. Pending{" "}
-        <Link href="/profiles/suggestions" className="text-[var(--color-accent)] underline">
-          Profile suggestions
-        </Link>{" "}
-        stay on their own page; adopting one adds a card here.
+      <p className="flex items-start gap-1.5 text-xs text-[var(--color-muted)]">
+        <InfoIcon size={14} className="mt-px shrink-0" />
+        <span>
+          Numbers cover the last {STATS_DAYS} days. Open a card to edit its
+          goal, model, creature and skills. Pending{" "}
+          <Link
+            href="/profiles/suggestions"
+            className="text-[var(--color-accent)] underline"
+          >
+            Profile suggestions
+          </Link>{" "}
+          stay on their own page; adopting one adds a card here.
+        </span>
       </p>
 
       {current ? (
         <ProfileEditor
           profile={current}
           providers={providers}
-          onClose={() => setEditing(null)}
+          onClose={close}
           onChanged={reload}
           onRenamed={async (name) => {
             await reload();
             setEditing(name);
           }}
           onDeleted={async () => {
-            setEditing(null);
+            close();
             await reload();
+            void loadStats();
           }}
           onDuplicate={() => {
-            setEditing(null);
+            close();
             setCreating({ from: current.name });
           }}
         />
@@ -135,9 +390,490 @@ export function ProfilesView({ initialProfiles, providers, error, initialOpen = 
           onCreated={async () => {
             setCreating(null);
             await reload();
+            void loadStats();
           }}
         />
       ) : null}
     </section>
+  );
+}
+
+/** An inline skeleton bone (the stats load after the page renders). */
+function Skel({ className = "" }: { className?: string }) {
+  return (
+    <span
+      data-skeleton
+      aria-hidden
+      className={`inline-block align-middle ${bone} ${skeletonPulse} ${className}`}
+    />
+  );
+}
+
+function SummaryStrip({ count, stats }: { count: number; stats: StatsState }) {
+  const t = stats.state === "ready" ? stats.data.totals : null;
+  const value = (v: string | undefined) =>
+    stats.state === "loading" ? (
+      <Skel className="h-7 w-12 bg-white/20" />
+    ) : (
+      (v ?? "—")
+    );
+  const kpis: Array<[ReactNode, string]> = [
+    [String(count), count === 1 ? "profile" : "profiles"],
+    [value(t ? String(t.working) : undefined), "running now"],
+    [value(t ? String(t.needs_you) : undefined), "need you"],
+    [
+      value(t ? compactNumber(t.tokens) : undefined),
+      `tokens · ${STATS_DAYS} days`,
+    ],
+    [
+      value(t ? String(t.projects_done) : undefined),
+      `projects done · ${STATS_DAYS} days`,
+    ],
+    [
+      value(t ? (t.cost_usd > 0 ? costLabel(t.cost_usd) : "$0") : undefined),
+      `model cost · ${STATS_DAYS} days`,
+    ],
+  ];
+  return (
+    <div
+      data-component="ProfilesSummary"
+      aria-busy={stats.state === "loading"}
+      className={`relative -mx-1 overflow-x-auto rounded-2xl px-1 sm:mx-0 sm:px-0 ${OCEAN_GRADIENT}`}
+    >
+      <dl className="relative flex gap-2 p-2 sm:flex-wrap sm:items-center sm:justify-around sm:gap-x-8 sm:gap-y-3 sm:px-8 sm:py-4">
+        {kpis.map(([v, label]) => (
+          <div
+            key={label}
+            className="shrink-0 rounded-xl bg-white/10 px-3 py-2 sm:bg-transparent sm:p-0"
+          >
+            <dd className="text-lg font-bold text-white sm:text-2xl">{v}</dd>
+            <dt className="whitespace-nowrap text-xs text-white/80">{label}</dt>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+interface ItemProps {
+  profile: ProfileInfo;
+  stats: StatsState;
+  status: ProfileStatus;
+  opening: boolean;
+  locked: boolean;
+  onOpen(): void;
+}
+
+function StatusPill({
+  status,
+  needs,
+}: {
+  status: ProfileStatus;
+  needs?: number;
+}) {
+  if (needs) {
+    return (
+      <Pill tone="warning">
+        <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${DOT.setup}`} />
+        {needs} need you
+      </Pill>
+    );
+  }
+  return (
+    <Pill tone={STATUS_TONE[status]}>
+      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${DOT[status]}`} />
+      {STATUS_LABEL[status]}
+    </Pill>
+  );
+}
+
+function Avatar({ profile, size }: { profile: ProfileInfo; size: number }) {
+  const id = profileCreature(profile);
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-[28%] border border-[var(--color-border)] bg-[var(--color-surface-2)]"
+      style={{ width: size, height: size }}
+    >
+      <CreatureIcon id={id} size={Math.round(size * 0.8)} />
+    </span>
+  );
+}
+
+function Metric({
+  icon,
+  label,
+  tip,
+  value,
+  sub,
+  extra,
+}: {
+  icon: ReactNode;
+  label: string;
+  tip: string;
+  value: ReactNode;
+  sub: ReactNode;
+  extra?: ReactNode;
+}) {
+  return (
+    <div
+      data-component="ProfileMetric"
+      className="relative min-w-0 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-2.5"
+    >
+      <div className="flex items-center gap-1 pr-4 text-[10px] font-semibold uppercase text-[var(--color-muted)]">
+        {icon}
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <span className="absolute right-1 top-1 z-10 normal-case">
+          <InfoTip label={`What is ${label}?`} align="end">
+            {tip}
+          </InfoTip>
+        </span>
+      </div>
+      <div className="mt-0.5 flex items-end gap-1.5">
+        <span className="text-[17px] font-semibold leading-tight">{value}</span>
+        {extra}
+      </div>
+      <div className="truncate text-[11px] text-[var(--color-muted)]">
+        {sub}
+      </div>
+    </div>
+  );
+}
+
+function Spark({ values }: { values: number[] }) {
+  const max = Math.max(...values, 1);
+  return (
+    <span
+      aria-hidden
+      data-component="TokenSpark"
+      className="mb-1 flex h-4 items-end gap-0.5"
+    >
+      {values.map((v, i) => (
+        <span
+          key={i}
+          className={`w-1 rounded-sm bg-[var(--color-accent)] ${v ? "opacity-75" : "opacity-25"}`}
+          style={{ height: `${Math.max(12, Math.round((v / max) * 100))}%` }}
+        />
+      ))}
+    </span>
+  );
+}
+
+function ProfileCard({
+  profile: p,
+  stats,
+  status,
+  opening,
+  locked,
+  onOpen,
+}: ItemProps) {
+  const s: ProfileStats | undefined =
+    stats.state === "ready" ? stats.data.profiles[p.name] : undefined;
+  const loading = stats.state === "loading";
+  const failed = stats.state === "error";
+  const creature = profileCreature(p);
+  const never = !loading && !failed && !s?.last_active_at && !s?.current_task;
+  const dash = (v: string) =>
+    loading ? <Skel className="h-5 w-12" /> : failed || never ? "—" : v;
+  const used = s?.skills_used ?? 0;
+  const channels = channelLabels(s);
+  const activity = loading
+    ? null
+    : failed
+      ? "Activity unavailable"
+      : activityLine(s);
+  return (
+    <article
+      data-component="ProfileCard"
+      data-status={status}
+      aria-busy={opening}
+      className={`relative hidden h-full flex-col gap-3 rounded-2xl border bg-[var(--color-surface)] p-4 transition-colors focus-within:border-[var(--color-accent)] hover:border-[var(--color-accent)] sm:flex ${
+        status === "setup"
+          ? "border-[var(--color-warn)]/50"
+          : "border-[var(--color-border)]"
+      }`}
+    >
+      <button
+        type="button"
+        data-profile={p.name}
+        aria-label={`Open ${p.name}`}
+        disabled={locked}
+        onClick={onOpen}
+        className="absolute inset-0 rounded-2xl disabled:cursor-progress"
+      />
+      <div className="flex items-center gap-3">
+        <Avatar profile={p} size={52} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-[15px] font-semibold">{p.name}</span>
+            {p.is_default ? <Pill tone="accent">default</Pill> : null}
+          </div>
+          <p className="truncate text-xs text-[var(--color-muted)]">
+            {creatureLabel(creature)} · {p.model || "no model"}
+          </p>
+          <div className="mt-1">
+            <StatusPill status={status} />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+          Goal
+        </p>
+        <p className="line-clamp-2 min-h-[2.25rem] text-[13px] leading-[18px]">
+          {p.description || (
+            <span className="text-[var(--color-muted)]">
+              No goal written yet.
+            </span>
+          )}
+        </p>
+        <div className="flex min-h-5 items-center gap-1.5 text-xs">
+          {activity === null ? (
+            <Skel className="h-3.5 w-32" />
+          ) : (
+            <>
+              {s?.current_task ? (
+                <LoaderIcon
+                  size={12}
+                  className="shrink-0 text-[var(--color-accent)]"
+                />
+              ) : (
+                <ClockIcon
+                  size={12}
+                  className="shrink-0 text-[var(--color-muted)]"
+                />
+              )}
+              <span
+                data-component="ProfileActivity"
+                className={`min-w-0 truncate ${s?.current_task ? "font-medium text-[var(--color-accent)]" : "text-[var(--color-muted)]"}`}
+              >
+                {activity}
+              </span>
+            </>
+          )}
+          {s?.needs_you ? (
+            <span className="shrink-0">
+              <Pill tone="warning">{s.needs_you} need you</Pill>
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Metric
+          icon={<CoinsIcon size={12} />}
+          label={`Tokens · ${STATS_DAYS}d`}
+          tip={`Tokens sent to and from the model in the last ${STATS_DAYS} days, all chats and projects. The bars are the last 7 days.`}
+          value={dash(compactNumber(s?.tokens ?? 0))}
+          sub={
+            loading
+              ? "…"
+              : failed
+                ? "—"
+                : never
+                  ? "no usage yet"
+                  : costLabel(s?.cost_usd ?? 0)
+          }
+          extra={s && !never ? <Spark values={s.tokens_by_day} /> : undefined}
+        />
+        <Metric
+          icon={<SparklesIcon size={12} />}
+          label="Skills used"
+          tip={`Different skills this profile used in the last ${STATS_DAYS} days, out of the skills installed on it.`}
+          value={
+            loading ? (
+              <Skel className="h-5 w-12" />
+            ) : (
+              `${failed ? "—" : used} / ${p.skill_count}`
+            )
+          }
+          sub="used / installed"
+        />
+        <Metric
+          icon={<FolderIcon size={12} />}
+          label="Projects"
+          tip={`Projects this profile finished a run on in the last ${STATS_DAYS} days, and projects it is running now.`}
+          value={dash(String(s?.projects_done ?? 0))}
+          sub={
+            loading
+              ? "…"
+              : failed
+                ? "—"
+                : s?.projects_running
+                  ? `${s.projects_running} running`
+                  : never
+                    ? "no projects yet"
+                    : "none running"
+          }
+        />
+        <Metric
+          icon={<MessageIcon size={12} />}
+          label={`Chats · ${STATS_DAYS}d`}
+          tip={`Conversations started with this profile in the last ${STATS_DAYS} days, on every channel.`}
+          value={dash(String(s?.chats ?? 0))}
+          sub={
+            loading
+              ? "…"
+              : failed
+                ? "—"
+                : never || !s
+                  ? "none yet"
+                  : `across ${s.chat_sources.length} channel${s.chat_sources.length === 1 ? "" : "s"}`
+          }
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <div
+          role="progressbar"
+          aria-label="Skills used"
+          aria-valuemin={0}
+          aria-valuemax={p.skill_count}
+          aria-valuenow={Math.min(used, p.skill_count)}
+          className="h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-2)]"
+        >
+          <div
+            className="h-full rounded-full bg-[var(--color-accent)]"
+            style={{
+              width: `${p.skill_count ? Math.min(100, (used / p.skill_count) * 100) : 0}%`,
+            }}
+          />
+        </div>
+        {s?.top_skills.length ? (
+          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px]">
+            <span className="text-[var(--color-muted)]">Top:</span>
+            {s.top_skills.map((k) => (
+              <span
+                key={k.name}
+                className="truncate rounded-full bg-[var(--color-surface-2)] px-2 py-0.5"
+              >
+                {k.name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {status === "setup" ? (
+        <InlineAlert
+          tone="warn"
+          className="relative z-10"
+          action={
+            <button
+              type="button"
+              disabled={locked}
+              onClick={onOpen}
+              className={`${primaryButtonClass} inline-flex items-center gap-1.5`}
+            >
+              {opening ? <Spinner /> : null}
+              Set model
+            </button>
+          }
+        >
+          No model set, so this profile can’t run yet.
+        </InlineAlert>
+      ) : null}
+
+      <div className="mt-auto flex items-center gap-2 border-t border-[var(--color-border)] pt-3 text-[11px] text-[var(--color-muted)]">
+        <BellIcon size={12} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">
+          {channels.length ? channels.join(" · ") : "No channels"}
+        </span>
+        <span className="flex items-center gap-0.5 text-xs font-semibold text-[var(--color-accent)]">
+          {opening ? <Spinner /> : null}
+          {opening ? "Opening…" : "Open"}
+          <ChevronRightIcon size={14} />
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function ProfileRow({
+  profile: p,
+  stats,
+  status,
+  opening,
+  locked,
+  onOpen,
+}: ItemProps) {
+  const s = stats.state === "ready" ? stats.data.profiles[p.name] : undefined;
+  const loading = stats.state === "loading";
+  const failed = stats.state === "error";
+  const never = !loading && !failed && !s?.last_active_at && !s?.current_task;
+  const show = (v: string) => (loading ? "…" : failed || never ? "—" : v);
+  const metrics: Array<[ReactNode, string, string]> = [
+    [
+      <CoinsIcon key="t" size={11} />,
+      show(compactNumber(s?.tokens ?? 0)),
+      "tokens",
+    ],
+    [
+      <SparklesIcon key="s" size={11} />,
+      `${loading ? "…" : failed ? "—" : (s?.skills_used ?? 0)}/${p.skill_count}`,
+      "skills used / installed",
+    ],
+    [
+      <FolderIcon key="p" size={11} />,
+      show(String(s?.projects_done ?? 0)),
+      "projects done",
+    ],
+    [
+      <ClockIcon key="c" size={11} />,
+      loading ? "…" : failed ? "—" : activityShort(s),
+      "last active",
+    ],
+  ];
+  return (
+    <button
+      type="button"
+      data-component="ProfileRow"
+      data-profile-row={p.name}
+      data-status={status}
+      aria-label={`Open ${p.name}`}
+      aria-busy={opening}
+      disabled={locked}
+      onClick={onOpen}
+      className={`flex w-full items-center gap-3 rounded-[14px] border bg-[var(--color-surface)] p-3 text-left disabled:cursor-progress sm:hidden ${
+        status === "setup"
+          ? "border-[var(--color-warn)]/50"
+          : "border-[var(--color-border)]"
+      }`}
+    >
+      <Avatar profile={p} size={44} />
+      <span className="min-w-0 flex-1 space-y-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-sm font-semibold">{p.name}</span>
+          {p.is_default ? <Pill tone="accent">default</Pill> : null}
+          <span className="ml-auto shrink-0">
+            <StatusPill status={status} needs={s?.needs_you} />
+          </span>
+        </span>
+        <span className="block truncate text-xs text-[var(--color-muted)]">
+          {p.description || "No goal written yet."}
+        </span>
+        <span className="flex items-center gap-2.5 text-[11px] text-[var(--color-muted)]">
+          {metrics.map(([icon, v, label]) => (
+            <span
+              key={label}
+              title={label}
+              className={`inline-flex items-center gap-0.5 ${label === "last active" && s?.current_task ? "text-[var(--color-accent)]" : ""}`}
+            >
+              {icon}
+              <span className="sr-only">{label}: </span>
+              {v}
+            </span>
+          ))}
+        </span>
+      </span>
+      {opening ? (
+        <Spinner className="text-[var(--color-accent)]" />
+      ) : (
+        <ChevronRightIcon
+          size={16}
+          className="shrink-0 text-[var(--color-muted)]"
+        />
+      )}
+    </button>
   );
 }

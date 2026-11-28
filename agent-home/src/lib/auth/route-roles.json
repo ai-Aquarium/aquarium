@@ -395,6 +395,8 @@
   "PUT /api/profiles/named/[name]/description": "admin",
   "POST /api/profiles/named/[name]/describe-auto": "admin",
   "PUT /api/profiles/named/[name]/model": "admin",
+  "PUT /api/profiles/named/[name]/creature": "admin",
+  "GET /api/profiles/stats": "admin",
   "GET /api/skills": "skill:view",
   "POST /api/skills": "skill:manage",
   "PUT /api/skills/toggle": "skill:manage",

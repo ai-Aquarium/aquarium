@@ -168,6 +168,8 @@ PAGES: Tuple[PageSpec, ...] = (
         admin_markers=("SoftwareUpgradeView",),
         member_redirect="/not-available",
     ),
+    # Owner only, and smoke accounts are never the owner.
+    PageSpec("/settings/fleet", redirect="/not-available"),
     PageSpec("/profiles/suggestions", ("ProfileSuggestionsView",)),
     # Every signed-in role edits only their own triage layer.
     PageSpec("/profiles/default/triage", ("TriageSkillsView",)),
@@ -310,6 +312,7 @@ APIS: Tuple[ApiSpec, ...] = (
     ApiSpec("/api/notifications/vapid-public-key", OK),
     ApiSpec("/api/notifications/config", _same(401)),  # internal: never a browser session
     ApiSpec("/api/profiles", ADMIN_ONLY),
+    ApiSpec("/api/profiles/stats", ADMIN_ONLY),
     ApiSpec("/api/profiles/suggestions", OK),
     ApiSpec("/api/project-categories", OK),
     ApiSpec("/api/projects", OK, quick=True),

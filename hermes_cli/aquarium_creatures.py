@@ -46,3 +46,9 @@ def fallback_creature(user_id: str) -> str:
     """Stable creature for a person created before FG-35 (no pref saved)."""
     digest = hashlib.sha256(user_id.encode("utf-8")).digest()
     return _FALLBACK_CREATURES[digest[0] % len(_FALLBACK_CREATURES)]
+
+
+def profile_creature(profile_name: str) -> str:
+    """Stable creature for an agent profile with none saved in ``profile.yaml``."""
+    digest = hashlib.sha256(f"profile:{profile_name}".encode("utf-8")).digest()
+    return CREATURES[int.from_bytes(digest[:4], "big") % len(CREATURES)]

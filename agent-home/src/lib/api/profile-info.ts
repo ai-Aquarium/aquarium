@@ -10,6 +10,7 @@ export function toProfileInfo(raw: Record<string, unknown>): ProfileInfo {
     is_default: raw.is_default === true,
     description: typeof raw.description === "string" ? raw.description : "",
     description_auto: raw.description_auto === true,
+    creature: typeof raw.creature === "string" ? raw.creature : undefined,
     model: typeof raw.model === "string" ? raw.model : null,
     provider: typeof raw.provider === "string" ? raw.provider : null,
     has_env: raw.has_env === true,
