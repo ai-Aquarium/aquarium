@@ -16991,6 +16991,10 @@ class ProfileDescriptionUpdate(BaseModel):
     description: str = ""
 
 
+class ProfileCreatureUpdate(BaseModel):
+    creature: str
+
+
 class ProfileModelUpdate(BaseModel):
     provider: str
     model: str
@@ -17019,11 +17023,18 @@ def _profile_to_dict(info) -> Dict[str, Any]:
         "gateway_running": bool(_profile_attr(info, "gateway_running", False)),
         "description": _profile_attr(info, "description", "") or "",
         "description_auto": bool(_profile_attr(info, "description_auto", False)),
+        "creature": _profile_attr(info, "creature", "") or _default_profile_creature(_profile_attr(info, "name", "")),
         "distribution_name": _profile_attr(info, "distribution_name"),
         "distribution_version": _profile_attr(info, "distribution_version"),
         "distribution_source": _profile_attr(info, "distribution_source"),
         "has_alias": _profile_attr(info, "alias_path") is not None,
     }
+
+
+def _default_profile_creature(name: str) -> str:
+    from hermes_cli.aquarium_creatures import profile_creature
+
+    return profile_creature(str(name or "default"))
 
 
 def _fallback_profile_dicts(profiles_mod) -> List[Dict[str, Any]]:
@@ -17048,6 +17059,7 @@ def _fallback_profile_dicts(profiles_mod) -> List[Dict[str, Any]]:
             "gateway_running": _safe(lambda: profiles_mod._check_gateway_running(default_home), False),
             "description": _safe(lambda: profiles_mod.read_profile_meta(default_home).get("description", ""), ""),
             "description_auto": _safe(lambda: profiles_mod.read_profile_meta(default_home).get("description_auto", False), False),
+            "creature": _safe(lambda: profiles_mod.profile_creature_for("default", profiles_mod.read_profile_meta(default_home)), None) or _default_profile_creature("default"),
             "distribution_name": None,
             "distribution_version": None,
             "distribution_source": None,
@@ -17071,6 +17083,7 @@ def _fallback_profile_dicts(profiles_mod) -> List[Dict[str, Any]]:
                 "gateway_running": _safe(lambda entry=entry: profiles_mod._check_gateway_running(entry), False),
                 "description": _safe(lambda entry=entry: profiles_mod.read_profile_meta(entry).get("description", ""), ""),
                 "description_auto": _safe(lambda entry=entry: profiles_mod.read_profile_meta(entry).get("description_auto", False), False),
+                "creature": _safe(lambda entry=entry: profiles_mod.profile_creature_for(entry.name, profiles_mod.read_profile_meta(entry)), None) or _default_profile_creature(entry.name),
                 "distribution_name": None,
                 "distribution_version": None,
                 "distribution_source": None,
@@ -17213,6 +17226,35 @@ def _disable_unselected_skills(profile_dir: Path, keep: List[str]) -> int:
     finally:
         reset_hermes_home_override(token)
     return disabled_count
+
+
+@app.get("/api/profiles/stats", dependencies=_ADMIN)
+async def profile_stats_endpoint(days: int = 30):
+    """Activity per profile for agent-home's Agent Profiles cards: tokens, cost,
+    chats, skills used, projects, current task, needs-you count and channels
+    over the last ``days`` (``hermes_cli.profile_stats``). Separate from
+    ``GET /api/profiles`` so the list stays fast. Read-only; no paths.
+    """
+    from hermes_cli import profile_stats
+    from hermes_cli import profiles as profiles_mod
+
+    days = max(1, min(int(days), 365))
+    live = [
+        {"profile": run.get("profile"), "started_at": run.get("started_at")}
+        for run in list(_CHAT_RUNS.values())
+        if not run.get("done")
+    ]
+
+    def _collect() -> dict:
+        try:
+            targets = [(p.name, Path(p.path)) for p in profiles_mod.list_profiles()]
+        except Exception:
+            _log.exception("GET /api/profiles/stats: list_profiles failed")
+            targets = [(d["name"], Path(d["path"])) for d in _fallback_profile_dicts(profiles_mod)]
+        return profile_stats.collect(targets, days=days, live_chats=live)
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _collect)
 
 
 @app.get("/api/profiles", dependencies=_ADMIN)
@@ -17522,6 +17564,23 @@ async def update_profile_description_endpoint(name: str, body: ProfileDescriptio
         _log.exception("PUT /api/profiles/%s/description failed", name)
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True, "description": text, "description_auto": False}
+
+
+@app.put("/api/profiles/{name}/creature", dependencies=_ADMIN)
+async def update_profile_creature_endpoint(name: str, body: ProfileCreatureUpdate):
+    """Pick the Aquarium creature that stands for a profile (``profile.yaml``)."""
+    from hermes_cli import profiles as profiles_mod
+    from hermes_cli.aquarium_creatures import is_creature
+
+    profile_dir = _resolve_profile_dir(name)
+    if not is_creature(body.creature):
+        raise HTTPException(status_code=400, detail="Unknown creature.")
+    try:
+        profiles_mod.write_profile_meta(profile_dir, creature=body.creature)
+    except Exception:
+        _log.exception("PUT /api/profiles/%s/creature failed", name)
+        raise HTTPException(status_code=500, detail="Couldn't save the creature.")
+    return {"ok": True, "creature": body.creature}
 
 
 @app.put("/api/profiles/{name}/model", dependencies=_ADMIN)

@@ -737,6 +737,8 @@ ADMIN_ROUTES = [
     ("post", "/api/gateway/restart", None),
     ("get", "/api/profiles", None),
     ("post", "/api/profiles", {"name": "evil"}),
+    ("get", "/api/profiles/stats", None),
+    ("put", "/api/profiles/default/creature", {"creature": "octopus"}),
     ("post", "/api/skills/hub/install", {"identifier": "x"}),
     ("get", "/api/skills/details?name=x", None),
     ("post", "/api/memory/providers/honcho/oauth/start", None),

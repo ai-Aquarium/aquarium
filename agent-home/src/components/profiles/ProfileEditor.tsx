@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { choiceValue, modelChoices } from "@/components/profiles/model-choices";
+import { profileCreature } from "@/components/profiles/profile-cards";
+import { ProfileCreaturePicker } from "@/components/profiles/ProfileCreaturePicker";
 import { ProfileSkillsPanel } from "@/components/profiles/ProfileSkillsPanel";
 import { ActionButton } from "@/components/ui/ActionButton";
 import {
@@ -27,7 +29,7 @@ export interface ProfileEditorProps {
 
 type Mode = "edit" | "rename" | "delete";
 
-/** The drawer behind a profile card: description, model, SOUL.md, skills, status. */
+/** The drawer behind a profile card: description (goal), creature, model, SOUL.md, skills, status. */
 export function ProfileEditor({
   profile,
   providers,
@@ -247,6 +249,12 @@ export function ProfileEditor({
             onChange={(e) => setDescription(e.target.value)}
           />
         </label>
+
+        <ProfileCreaturePicker
+          profile={profile.name}
+          value={profileCreature(profile)}
+          onSaved={onChanged}
+        />
 
         <label className="block space-y-1">
           <span className="font-medium">Model</span>

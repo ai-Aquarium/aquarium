@@ -4394,6 +4394,8 @@ export interface BrowseSaveResult {
 
 /** One profile from `GET /api/profiles` — filesystem paths are stripped by the BFF. */
 export interface ProfileInfo extends ProfileSummary {
+  /** One of the 40 Aquarium creature ids (`lib/aquarium/creatures`). */
+  creature?: string;
   model: string | null;
   provider: string | null;
   has_env: boolean;
@@ -4782,4 +4784,40 @@ export interface SecretLinkResult {
   ok: true;
   status: "stored" | "declined";
   name?: string;
+}
+
+/** What a profile is doing now (`hermes_cli/profile_stats.py`); titles of private tasks are null. */
+export interface ProfileCurrentTask {
+  kind: "task" | "project" | "chat";
+  title: string | null;
+  started_at: number | null;
+}
+
+/** One profile's activity over the stats window (GET /api/profiles/stats). */
+export interface ProfileStats {
+  tokens: number;
+  cost_usd: number;
+  /** Tokens per day for the last 7 days, oldest first. */
+  tokens_by_day: number[];
+  chats: number;
+  messages: number;
+  chat_sources: string[];
+  /** Epoch seconds; null = never used. */
+  last_active_at: number | null;
+  skills_used: number;
+  top_skills: Array<{ name: string; uses: number }>;
+  projects_done: number;
+  projects_running: number;
+  tasks_running: number;
+  current_task: ProfileCurrentTask | null;
+  needs_you: number;
+  /** Connected messaging platforms from the profile's gateway. */
+  channels: string[];
+}
+
+export interface ProfileStatsResponse {
+  days: number;
+  generated_at: number;
+  profiles: Record<string, ProfileStats>;
+  totals: { tokens: number; cost_usd: number; projects_done: number; working: number; needs_you: number };
 }

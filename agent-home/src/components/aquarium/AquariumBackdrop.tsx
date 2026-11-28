@@ -21,6 +21,9 @@ export interface AquariumBackdropProps {
  * swaying seaweed, plankton and vent bubbles. Reduced motion paints one still
  * frame; a hidden tab stops the loop.
  */
+/** The Aquarium ocean (surface to deep water), shared by surfaces that echo it. */
+export const OCEAN_GRADIENT = "bg-[linear-gradient(180deg,#0a6fa8_0%,#07508a_35%,#053467_70%,#031f45_100%)]";
+
 export function AquariumBackdrop({ pushers }: AquariumBackdropProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -112,7 +115,7 @@ export function AquariumBackdrop({ pushers }: AquariumBackdropProps) {
       ref={wrapRef}
       aria-hidden
       data-component="AquariumBackdrop"
-      className="pointer-events-none absolute inset-0 overflow-hidden bg-[linear-gradient(180deg,#0a6fa8_0%,#07508a_35%,#053467_70%,#031f45_100%)]"
+      className={`pointer-events-none absolute inset-0 overflow-hidden ${OCEAN_GRADIENT}`}
     >
       <div
         className="absolute inset-0 bg-cover bg-center"
