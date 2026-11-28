@@ -21,11 +21,18 @@ import {
 } from "@/components/projects/steps/VersionRail";
 import type { ProjectTabProps } from "@/components/projects/tabs/types";
 import { useProjectAction } from "@/components/projects/useProjectAction";
+import { usePersistentState } from "@/lib/use-persistent-state";
 import { useT } from "@/i18n";
 import { BusyRegion } from "@/components/ui/BusyRegion";
+import { ChevronDownIcon } from "@/components/ui/icons";
 import { Pill } from "@/components/ui/Pill";
 import { useRefresh, useServerState } from "@/components/ui/useRefresh";
 import type { ProjectDirective, ProjectLink } from "@/types";
+
+/** Chip list flips to grouped, searchable rows past this many sources. */
+const SRC_ROW_MODE = 8;
+/** Rows shown per group before a "Show all N" footer. */
+const SRC_GROUP_PREVIEW = 5;
 
 /**
  * The Requirements step (redesign, frame "Project detail — Requirements
@@ -65,6 +72,57 @@ export function RequirementsDoc({
     () => [...groups.files, ...groups.links, ...groups.memories],
     [groups],
   );
+  // Long source lists: rows + search + kind filters past the chip threshold.
+  const srcRowMode = sources.length > SRC_ROW_MODE;
+  const [srcQuery, setSrcQuery] = useState("");
+  const [srcKind, setSrcKind] = useState<string>("all");
+  const [srcGroupsOpen, setSrcGroupsOpen] = usePersistentState<
+    Record<string, boolean>
+  >(
+    `reqdoc-groups-${project.slug}`,
+    {},
+    (raw) => {
+      try {
+        return JSON.parse(raw) as Record<string, boolean>;
+      } catch {
+        return {};
+      }
+    },
+    JSON.stringify,
+  );
+  const [srcShowAll, setSrcShowAll] = useState<Record<string, boolean>>({});
+  const srcKinds = useMemo(
+    () => [...new Set(sources.map((l) => sourceTag(l)))],
+    [sources],
+  );
+  const srcGroups = useMemo(() => {
+    const q = srcQuery.trim().toLowerCase();
+    const match = (l: ProjectLink) =>
+      (srcKind === "all" || sourceTag(l) === srcKind) &&
+      (!q ||
+        sourceName(l).toLowerCase().includes(q) ||
+        l.ref.toLowerCase().includes(q));
+    const bucket: Record<string, ProjectLink[]> = {};
+    for (const l of sources) {
+      if (!match(l)) continue;
+      const tag = sourceTag(l);
+      const key =
+        tag === "TPL"
+          ? "tpl"
+          : tag === "LINK" || tag === "NOTE"
+            ? "links"
+            : tag === "MEM"
+              ? "mem"
+              : "ref";
+      (bucket[key] ??= []).push(l);
+    }
+    return [
+      { key: "ref", label: t("reqDoc.groupRef"), items: bucket.ref ?? [] },
+      { key: "tpl", label: t("reqDoc.groupTpl"), items: bucket.tpl ?? [] },
+      { key: "links", label: t("reqDoc.groupLinks"), items: bucket.links ?? [] },
+      { key: "mem", label: t("reqDoc.groupMem"), items: bucket.mem ?? [] },
+    ].filter((g) => g.items.length > 0);
+  }, [sources, srcQuery, srcKind, t]);
   const proposed = useMemo<ProjectDirective[]>(
     () => directives?.proposed ?? [],
     [directives],
@@ -219,7 +277,7 @@ export function RequirementsDoc({
           </span>
         </div>
 
-        <DocSection label={t("reqDoc.goal")}>
+        <DocSection id={`${project.slug}-goal`} label={t("reqDoc.goal")}>
           <EditableText
             value={fields.goal}
             onChange={(goal) => setFields((p) => ({ ...p, goal }))}
@@ -230,8 +288,16 @@ export function RequirementsDoc({
           />
         </DocSection>
 
-        <DocSection label={t("reqDoc.sources")}>
-          {sources.length ? (
+        <DocSection
+          id={`${project.slug}-sources`}
+          label={t("reqDoc.sources")}
+          count={sources.length || undefined}
+        >
+          {sources.length === 0 ? (
+            <p className="text-xs text-[var(--color-muted)]">
+              {t("reqDoc.noSources")}
+            </p>
+          ) : !srcRowMode ? (
             <ul className="flex flex-wrap gap-1.5" data-testid="req-sources">
               {sources.map((l) => (
                 <li key={`${l.kind}:${l.ref}`} title={l.label ?? l.ref}>
@@ -243,13 +309,124 @@ export function RequirementsDoc({
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-[var(--color-muted)]">
-              {t("reqDoc.noSources")}
-            </p>
+            <div data-testid="req-sources" className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <input
+                  type="search"
+                  value={srcQuery}
+                  onChange={(e) => setSrcQuery(e.target.value)}
+                  placeholder={t("reqDoc.searchSources", {
+                    count: sources.length,
+                  })}
+                  data-appmcp-hint="Filter the project's sources by name"
+                  className="w-44 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-transparent px-2.5 py-1.5 text-xs outline-none focus:border-[var(--color-accent)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setSrcKind("all")}
+                  className={`rounded-[var(--radius-full)] border px-2.5 py-1 text-[11px] font-semibold ${
+                    srcKind === "all"
+                      ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
+                      : "border-[var(--color-border)] text-[var(--color-muted)]"
+                  }`}
+                >
+                  {t("reqDoc.filterAll", { count: sources.length })}
+                </button>
+                {srcKinds.map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    data-appmcp-hint={`Show only ${kind} sources`}
+                    onClick={() =>
+                      setSrcKind((k) => (k === kind ? "all" : kind))
+                    }
+                    className={`rounded-[var(--radius-full)] border px-2.5 py-1 text-[11px] font-semibold ${
+                      srcKind === kind
+                        ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
+                        : "border-[var(--color-border)] text-[var(--color-muted)]"
+                    }`}
+                  >
+                    {kind}{" "}
+                    {sources.filter((l) => sourceTag(l) === kind).length}
+                  </button>
+                ))}
+              </div>
+              {srcGroups.length === 0 ? (
+                <p className="text-xs text-[var(--color-muted)]">
+                  {t("reqDoc.noMatches")}
+                </p>
+              ) : null}
+              {srcGroups.map((g) => {
+                const open = srcGroupsOpen[g.key] ?? true;
+                const shown = srcShowAll[g.key]
+                  ? g.items
+                  : g.items.slice(0, SRC_GROUP_PREVIEW);
+                const hidden = g.items.length - shown.length;
+                return (
+                  <div
+                    key={g.key}
+                    className="rounded-[var(--radius-md)] bg-[var(--color-surface-2)] p-2"
+                  >
+                    <button
+                      type="button"
+                      data-appmcp-hint={`Collapse or expand the ${g.label} source group`}
+                      onClick={() =>
+                        setSrcGroupsOpen({ ...srcGroupsOpen, [g.key]: !open })
+                      }
+                      aria-expanded={open}
+                      className="flex items-center gap-1.5 text-xs font-semibold"
+                    >
+                      <ChevronDownIcon
+                        aria-hidden
+                        className={`h-3.5 w-3.5 text-[var(--color-muted)] transition-transform ${open ? "" : "-rotate-90"}`}
+                      />
+                      {g.label}
+                      <span className="font-normal text-[var(--color-muted)]">
+                        {g.items.length}
+                      </span>
+                    </button>
+                    {open ? (
+                      <>
+                        <ul className="mt-1.5 flex flex-col gap-1">
+                          {shown.map((l) => (
+                            <li
+                              key={`${l.kind}:${l.ref}`}
+                              title={l.label ?? l.ref}
+                              className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5"
+                            >
+                              <span className="shrink-0 rounded bg-[var(--color-accent)]/10 px-1 py-0.5 text-[10px] font-semibold text-[var(--color-accent)]">
+                                {sourceTag(l)}
+                              </span>
+                              <span className="min-w-0 truncate text-xs">
+                                {sourceName(l)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        {hidden > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSrcShowAll({
+                                ...srcShowAll,
+                                [g.key]: true,
+                              })
+                            }
+                            className="mt-1.5 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 text-center text-[11px] font-semibold text-[var(--color-accent)]"
+                          >
+                            {t("reqDoc.showAll", { count: g.items.length })}
+                          </button>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </DocSection>
 
-        <DocSection label={t("reqDoc.audience")}>
+        <DocSection id={`${project.slug}-audience`} label={t("reqDoc.audience")}>
           <EditableText
             value={fields.target_audience}
             onChange={(target_audience) =>
@@ -262,7 +439,7 @@ export function RequirementsDoc({
           />
         </DocSection>
 
-        <DocSection label={t("reqDoc.doneWhen")}>
+        <DocSection id={`${project.slug}-donewhen`} label={t("reqDoc.doneWhen")}>
           <EditableText
             value={fields.description}
             onChange={(description) =>
@@ -400,19 +577,40 @@ export function RequirementsDoc({
   );
 }
 
+/** Sections collapse independently; the choice persists per project. */
 function DocSection({
+  id,
   label,
+  count,
   children,
 }: {
+  id: string;
   label: string;
+  count?: number;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = usePersistentState<boolean>(
+    `reqdoc-sec-${id}`,
+    true,
+    (raw) => raw !== "false",
+    String,
+  );
   return (
     <div>
-      <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
+      >
+        <ChevronDownIcon
+          aria-hidden
+          className={`h-3.5 w-3.5 transition-transform ${open ? "" : "-rotate-90"}`}
+        />
         {label}
-      </h3>
-      {children}
+        {count != null ? <span className="font-semibold">{count}</span> : null}
+      </button>
+      {open ? children : null}
     </div>
   );
 }
