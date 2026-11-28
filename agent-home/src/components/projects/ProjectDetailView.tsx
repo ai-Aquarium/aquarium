@@ -9,7 +9,7 @@ import {
   type ProjectChatData,
 } from "@/components/projects/chat/ProjectChatPanel";
 import { ProjectLog } from "@/components/projects/log/ProjectLog";
-import { ChevronDownIcon, MoreIcon } from "@/components/ui/icons";
+import { ChevronDownIcon } from "@/components/ui/icons";
 import { Sheet } from "@/components/ui/Sheet";
 import { useT } from "@/i18n";
 import { usePersistentState } from "@/lib/use-persistent-state";
@@ -376,26 +376,11 @@ export function ProjectDetailView({
     .filter(Boolean)
     .join(" · ");
 
-  const more = (
-    <button
-      type="button"
-      data-action="project-more"
-      onClick={() => {
-        setSheetPart("skills");
-        setSheet("skills");
-      }}
-      title={t("more.hint")}
-      aria-label={t("more.aria")}
-      className="inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-muted)] hover:text-[var(--color-fg)]"
-    >
-      <MoreIcon />
-      {skillCandidates > 0 ? (
-        <span className="rounded-[var(--radius-full)] bg-[var(--color-accent)] px-1.5 text-[10px] font-semibold text-[var(--color-accent-fg)]">
-          {skillCandidates}
-        </span>
-      ) : null}
-    </button>
-  );
+  // The header's one ⋯ menu (was two): lifecycle actions + the More sheet.
+  const openMore = () => {
+    setSheetPart("skills");
+    setSheet("skills");
+  };
   const SheetSection = sheetPart === "log" ? null : TAB_COMPONENT[sheetPart];
   // On a phone the Chat tab shows only the tab bar above the chat.
   const phoneHide = view === "chat" ? "max-lg:hidden" : "";
@@ -474,6 +459,7 @@ export function ProjectDetailView({
                 data-component="ProjectHeader"
                 className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
               >
+                {/* ── One meta line + one attention pill (§4 header) ── */}
                 <div className="flex items-center gap-2">
                   <span
                     aria-hidden
@@ -484,54 +470,18 @@ export function ProjectDetailView({
                   <span className="min-w-0 flex-1 truncate text-sm text-[var(--color-muted)]">
                     {meta}
                   </span>
-                  <Pill tone={HEALTH_TONE[project.health]}>
-                    {HEALTH_LABEL[project.health]}
-                  </Pill>
-                  <ProjectLifecycleMenu
-                    project={project}
-                    callerUserId={callerUserId}
-                    isInstanceAdmin={isInstanceAdmin}
-                  />
-                </div>
-                <div className="mt-1 flex">
                   <ProjectCategoryTag
                     categories={categories}
                     categoryId={project.category_id}
                   />
+                  <Pill tone={HEALTH_TONE[project.health]}>
+                    {HEALTH_LABEL[project.health]}
+                    {needsYou > 0 ? ` · ${needsYou}` : ""}
+                  </Pill>
                 </div>
 
-                {/* ── One status sentence + the page's actions (§4 header) ── */}
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <p
-                    data-component="ProjectStatusSentence"
-                    className="flex min-w-0 flex-1 items-center gap-1.5 text-sm"
-                  >
-                    <span
-                      aria-hidden
-                      className={`h-2 w-2 shrink-0 rounded-full ${
-                        liveRun
-                          ? "bg-[var(--color-success)]"
-                          : needsYou
-                            ? "bg-[var(--color-warn)]"
-                            : "bg-[var(--color-muted)]"
-                      }`}
-                    />
-                    {liveRun ? (
-                      <span className="truncate">
-                        Run R{liveRun.run_no} {liveRun.status}
-                      </span>
-                    ) : (
-                      <span className="truncate">{project.status}</span>
-                    )}
-                    {needsYou > 0 ? (
-                      <span className="shrink-0 text-[var(--color-warn-text)]">
-                        ·{" "}
-                        {needsYou === 1
-                          ? t("needsYouOne")
-                          : t("needsYou", { count: needsYou })}
-                      </span>
-                    ) : null}
-                  </p>
+                {/* ── The page's actions + the single ⋯ menu ── */}
+                <div className="mt-2 flex flex-wrap items-center justify-end gap-x-2 gap-y-2">
                   <button
                     type="button"
                     data-appmcp-hint="Opens the latest run's outputs"
@@ -552,7 +502,13 @@ export function ProjectDetailView({
                   >
                     {t("steps.startRun")}
                   </button>
-                  {more}
+                  <ProjectLifecycleMenu
+                    project={project}
+                    callerUserId={callerUserId}
+                    isInstanceAdmin={isInstanceAdmin}
+                    onOpenMore={openMore}
+                    badge={skillCandidates || undefined}
+                  />
                 </div>
 
                 {project.archived ? (
@@ -569,7 +525,7 @@ export function ProjectDetailView({
             data-component="ProjectStatus"
             aria-label={t("statusAria")}
             data-open={statusOpen ? "true" : "false"}
-            className={`min-w-0 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 lg:border-0 lg:bg-transparent lg:p-0`}
+            className={`min-w-0 rounded-2xl border-2 border-[var(--color-accent)] bg-[var(--color-surface)] p-3 shadow-lg`}
           >
             <button
               type="button"
@@ -600,6 +556,7 @@ export function ProjectDetailView({
                   onNavigate={selectTab}
                   onReveal={reveal}
                   onChangeRequest={openChange}
+                  flat
                 />
               </div>
               <LiveStatusBar
@@ -607,6 +564,7 @@ export function ProjectDetailView({
                 board={board}
                 runnable={runnable}
                 ownsNextStep={false}
+                flat
               />
             </div>
           </aside>

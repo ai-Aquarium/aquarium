@@ -22,10 +22,16 @@ export function ProjectLifecycleMenu({
   project,
   callerUserId,
   isInstanceAdmin,
+  onOpenMore,
+  badge,
 }: {
   project: ProjectDetail;
   callerUserId: string;
   isInstanceAdmin: boolean;
+  /** Header has one ⋯: this menu also opens the More sheet (skills/settings/log). */
+  onOpenMore?: () => void;
+  /** Count shown on the trigger (e.g. skill candidates waiting for review). */
+  badge?: number;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -48,7 +54,8 @@ export function ProjectLifecycleMenu({
     callerRole === "lead";
   // A viewer — or a shared-read principal with no member row — sees none of
   // the three.
-  if (!canLead && callerRole !== "member") return null;
+  // With a merged overflow menu a viewer still needs the More entry.
+  if (!canLead && callerRole !== "member" && !onOpenMore) return null;
 
   const slugPath = `/api/projects/${encodeURIComponent(project.slug)}`;
   const hasDoneWork = project.outputs.some(
@@ -109,9 +116,14 @@ export function ProjectLifecycleMenu({
           aria-label="Project actions"
           aria-expanded={open}
           onClick={() => setOpen((prev) => !prev)}
-          className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-sm text-[var(--color-muted)]"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-sm text-[var(--color-muted)]"
         >
           ⋯
+          {badge ? (
+            <span className="rounded-[var(--radius-full)] bg-[var(--color-accent)] px-1.5 text-[10px] font-semibold text-[var(--color-accent-fg)]">
+              {badge}
+            </span>
+          ) : null}
         </button>
 
         {/* Kept mounted (hidden) so the affordances are inspectable even
@@ -129,6 +141,20 @@ export function ProjectLifecycleMenu({
           data-component="ProjectLifecycleMenuItems"
           className={`absolute right-0 z-40 mt-1 w-60 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg ${open ? "" : "hidden"}`}
         >
+          {onOpenMore ? (
+            <button
+              type="button"
+              data-action="project-more"
+              data-appmcp-hint="Opens the More sheet — skills, settings and log"
+              onClick={() => {
+                setOpen(false);
+                onOpenMore();
+              }}
+              className={itemClass}
+            >
+              More — skills, settings, log
+            </button>
+          ) : null}
           {project.archived ? (
             <>
               <ActionButton

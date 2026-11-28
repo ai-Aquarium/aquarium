@@ -548,6 +548,7 @@ export function LiveStatusBar({
   ownsNextStep = true,
   streamRun = true,
   showTaskRows = true,
+  flat = false,
 }: {
   project: ProjectDetail;
   board: ProjectBoardView | null;
@@ -561,6 +562,8 @@ export function LiveStatusBar({
   streamRun?: boolean;
   /** False when the page shows the running cards itself (Task mode). */
   showTaskRows?: boolean;
+  /** True when the parent card draws the chrome (merged status card). */
+  flat?: boolean;
 }) {
   const slug = project.slug;
   const now = useNow();
@@ -639,7 +642,9 @@ export function LiveStatusBar({
       className={
         ownsNextStep
           ? "sticky top-0 z-30 rounded-2xl border-2 border-[var(--color-accent)] bg-[var(--color-surface)] px-3 py-2.5 shadow-lg"
-          : "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"
+          : flat
+            ? "mt-2 border-t border-[var(--color-border)] pt-2"
+            : "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"
       }
     >
       <div className="flex flex-wrap items-center gap-2">

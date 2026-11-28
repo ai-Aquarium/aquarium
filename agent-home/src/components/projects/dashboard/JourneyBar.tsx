@@ -48,6 +48,7 @@ export function JourneyBar({
   onNavigate,
   onReveal,
   onChangeRequest,
+  flat = false,
 }: {
   project: ProjectDetail;
   action: NextAction;
@@ -60,6 +61,8 @@ export function JourneyBar({
   /** Open a readiness item's tab and scroll to + highlight its field. */
   onReveal: (item: ReadinessItem) => void;
   onChangeRequest: (initialText?: string) => void;
+  /** True when the parent card draws the chrome (merged status card). */
+  flat?: boolean;
 }) {
   const phase = journeyPhase(project, readiness, action);
   const current = JOURNEY_STEPS.findIndex((step) => step.phase === phase);
@@ -108,7 +111,11 @@ export function JourneyBar({
       data-tone={action.tone}
       data-needs-person={action.needsPerson ? "true" : undefined}
       aria-label="Project journey"
-      className="rounded-2xl border-2 border-[var(--color-accent)] bg-[var(--color-surface)] px-3 py-2.5 shadow-lg"
+      className={
+        flat
+          ? ""
+          : "rounded-2xl border-2 border-[var(--color-accent)] bg-[var(--color-surface)] px-3 py-2.5 shadow-lg"
+      }
     >
       <ol data-component="JourneySteps" className="flex items-center gap-0.5 text-[11px] sm:gap-1 sm:text-xs">
         {JOURNEY_STEPS.map((step, i) => {
