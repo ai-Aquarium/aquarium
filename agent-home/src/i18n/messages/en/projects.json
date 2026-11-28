@@ -360,7 +360,9 @@
     "noBatch": "This run only (no batch)",
     "newBatch": "+ New batch…",
     "newBatchTitle": "Batch title (e.g. Christmas Testing)",
-    "newBatchDesc": "Description (optional)"
+    "newBatchDesc": "Description (optional)",
+    "note": "Note for this run",
+    "notePlaceholder": "What should this run know? e.g. which input file is the raw workbook"
   },
   "reqDoc": {
     "title": "Requirements",

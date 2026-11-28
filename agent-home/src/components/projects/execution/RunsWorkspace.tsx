@@ -392,6 +392,15 @@ function SelectedRun({
         ) : null}
       </div>
 
+      {run?.note ? (
+        <p
+          data-testid="run-note"
+          className="mt-2 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs text-[var(--color-muted)]"
+        >
+          {run.note}
+        </p>
+      ) : null}
+
       <div className="mt-3">
         <div className="flex items-baseline gap-2 text-xs">
           <span className="font-medium">

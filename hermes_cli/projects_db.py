@@ -688,6 +688,7 @@ _DIRECTIVE_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
 _RUN_COLUMN_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("auto_approve", "auto_approve INTEGER NOT NULL DEFAULT 0"),
     ("batch_id", "batch_id TEXT"),
+    ("note", "note TEXT"),
 )
 
 
@@ -3925,6 +3926,7 @@ def open_project_run(
     first_only: bool = False,
     activate: bool = False,
     batch_id: Optional[str] = None,
+    note: Optional[str] = None,
 ) -> dict:
     """Open the run row: ``run_no = max+1``, status ``running`` (§6).
 
@@ -3964,11 +3966,12 @@ def open_project_run(
             """INSERT INTO project_runs
                (id, project_id, run_no, trigger, triggered_by, profile,
                 playbook_rev, status, started_at, trace_id, auto_approve,
-                batch_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)""",
+                batch_id, note)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)""",
             (rid, project_id, run_no, trigger, triggered_by,
              str(profile).strip(), playbook_rev, _now(), trace_id,
-             1 if auto_approve else 0, batch_id),
+             1 if auto_approve else 0, batch_id,
+             (note or "").strip() or None),
         )
     return get_project_run_by_id(conn, rid)
 

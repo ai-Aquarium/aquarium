@@ -360,7 +360,9 @@
     "noBatch": "僅此一次（不指定批次）",
     "newBatch": "+ ",
     "newBatchTitle": "批次標題（例如：聖誕節測試）",
-    "newBatchDesc": "描述（選填）"
+    "newBatchDesc": "描述（選填）",
+    "note": "本次執行備註",
+    "notePlaceholder": "本次執行需要知道什麼？例如：哪個輸入檔是原始工作簿"
   },
   "reqDoc": {
     "title": "需求",
