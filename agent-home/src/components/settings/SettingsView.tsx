@@ -98,6 +98,7 @@ export function SettingsView({
   canManageMembers = true,
   canManageTools = true,
   isOwner = false,
+  hasFleet = false,
 }: {
   /** The detail page to render; omit for the index of section tiles. */
   section?: SettingsSectionId;
@@ -110,9 +111,11 @@ export function SettingsView({
   /** Owner: titles the own-login block "Owner account…" and sets up
    *  install-wide pieces such as the Google client. */
   isOwner?: boolean;
+  /** The server manages a fleet; the Fleet tile needs that and the owner. */
+  hasFleet?: boolean;
 } = {}) {
   if (!section) {
-    return <SettingsIndex access={{ canManageMembers, canManageTools, isOwner }} />;
+    return <SettingsIndex access={{ canManageMembers, canManageTools, isOwner, hasFleet }} />;
   }
   return (
     <div data-component="SettingsView" data-detail={section}>
@@ -145,6 +148,7 @@ const ENTRY_ICON: Record<SettingsEntryId, (p: IconProps) => ReactNode> = {
   apps: FolderIcon,
   menu: SettingsIcon,
   upgrade: RefreshIcon,
+  fleet: HardDriveIcon,
   aquarium: ClockIcon,
   "model-timeouts": CpuIcon,
   "skills-permissions": LockIcon,
@@ -309,7 +313,7 @@ function SettingsSection({
     case "box-identity":
       return <BoxIdentitySection />;
     default:
-      // tools, get-ready and upgrade have their own routes.
+      // tools, get-ready, upgrade and fleet have their own routes.
       return null;
   }
 }

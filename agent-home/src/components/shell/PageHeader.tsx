@@ -22,6 +22,11 @@ export interface PageHeaderProps {
    * pixel goes to the transcript). Desktop keeps the breadcrumb layout.
    */
   compact?: boolean;
+  /**
+   * Keep the h1 for screen readers but hide it — the page renders its own
+   * visible title (the project detail title band).
+   */
+  titleSrOnly?: boolean;
 }
 
 /**
@@ -29,7 +34,7 @@ export interface PageHeaderProps {
  * Back always goes to the logical parent (never browser history); desktop
  * shows the full trail as a breadcrumb, phones show only Back.
  */
-export function PageHeader({ title, subtitle, info, actions, back, labels, compact = false }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, info, actions, back, labels, compact = false, titleSrOnly = false }: PageHeaderProps) {
   const pathname = usePathname() ?? "/";
   const trail = routeTrail(pathname, labels);
   const parent = back ?? (trail.length > 1 ? trail[trail.length - 2] : null);
@@ -82,11 +87,15 @@ export function PageHeader({ title, subtitle, info, actions, back, labels, compa
       >
         <div className="flex min-w-0 items-center gap-1">
           <h1
-            className={`min-w-0 font-semibold tracking-tight text-[var(--color-fg)] lg:text-2xl ${
-              compact
-                ? "truncate text-base lg:overflow-visible lg:whitespace-normal lg:[overflow-wrap:anywhere]"
-                : "text-xl [overflow-wrap:anywhere]"
-            }`}
+            className={
+              titleSrOnly
+                ? "sr-only"
+                : `min-w-0 font-semibold tracking-tight text-[var(--color-fg)] lg:text-2xl ${
+                    compact
+                      ? "truncate text-base lg:overflow-visible lg:whitespace-normal lg:[overflow-wrap:anywhere]"
+                      : "text-xl [overflow-wrap:anywhere]"
+                  }`
+            }
           >
             {title}
           </h1>

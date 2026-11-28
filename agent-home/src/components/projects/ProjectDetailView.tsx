@@ -20,6 +20,7 @@ import { ProjectCategoryTag } from "@/components/projects/categories/ProjectCate
 import { useProjectCategories } from "@/components/projects/categories/useProjectCategories";
 import { ProjectLifecycleMenu } from "@/components/projects/ProjectLifecycleMenu";
 import { ReadinessChecklist } from "@/components/projects/ReadinessChecklist";
+import { RefBadge } from "@/components/refs/RefBadge";
 import { JourneyBar } from "@/components/projects/dashboard/JourneyBar";
 import { nextAction } from "@/components/projects/dashboard/nextAction";
 import {
@@ -441,84 +442,159 @@ export function ProjectDetailView({
       data-component="ProjectDetailView"
       data-active-view={view}
       data-dock={dock.mode}
-      className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:gap-6"
+      className="flex min-w-0 flex-col gap-4"
     >
-      <div
-        data-component="ProjectMain"
-        className={`flex min-w-0 flex-1 flex-col gap-4 ${dock.mode === "max" ? "lg:hidden" : ""}`}
+      {/* ── Title band: full width, above both columns ─────────────────── */}
+      <BusyRegion
+        busy={refreshing}
+        label={refreshing ? "Talking to the agent…" : undefined}
       >
-        <div className={`flex min-w-0 flex-col gap-4 ${phoneHide}`}>
-          <BusyRegion
-            busy={refreshing}
-            label={refreshing ? "Talking to the agent…" : undefined}
-          >
-            <div className="flex flex-col gap-4">
-              {/* ── Header ─────────────────────────────────────────────── */}
-              <header
-                id="project-header"
-                data-component="ProjectHeader"
-                className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+        <header
+          id="project-header"
+          data-component="ProjectTitleBand"
+          className={`rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 ${phoneHide}`}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+            {/* left: the page title with the tools directly beneath it */}
+            <div className="flex min-w-0 flex-col gap-2">
+              <p
+                aria-hidden
+                className="flex min-w-0 items-center gap-2 text-xl font-semibold tracking-tight text-[var(--color-fg)] lg:text-2xl"
               >
-                {/* ── One meta line + one attention pill (§4 header) ── */}
-                <div className="flex items-center gap-2">
-                  <span
-                    aria-hidden
-                    className="text-lg leading-none text-[var(--color-muted)]"
-                  >
-                    {CADENCE_GLYPH[project.cadence]}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-[var(--color-muted)]">
-                    {meta}
-                  </span>
-                  <ProjectCategoryTag
-                    categories={categories}
-                    categoryId={project.category_id}
-                  />
-                  <Pill tone={HEALTH_TONE[project.health]}>
-                    {HEALTH_LABEL[project.health]}
-                    {needsYou > 0 ? ` · ${needsYou}` : ""}
-                  </Pill>
-                </div>
-
-                {/* ── The page's actions + the single ⋯ menu ── */}
-                <div className="mt-2 flex flex-wrap items-center justify-end gap-x-2 gap-y-2">
+                {project.ref ? <RefBadge value={project.ref} /> : null}
+                <span className="min-w-0 [overflow-wrap:anywhere]">
+                  {project.name}
+                </span>
+              </p>
+              {!project.archived ? (
+                <div
+                  data-component="ProjectToolbar"
+                  role="toolbar"
+                  aria-label="Project tools"
+                  className="flex flex-wrap items-center gap-1.5"
+                >
                   <button
                     type="button"
-                    data-appmcp-hint="Opens the latest run's outputs"
-                    onClick={() => {
-                      selectView("runs");
-                      scrollTo("outputs");
-                    }}
+                    onClick={() => setAddOpen(true)}
                     className={TOOL_BTN}
                   >
-                    {t("steps.latestOutputs")}
+                    Add
                   </button>
+                  {canLead ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditOpen(true)}
+                      className={TOOL_BTN}
+                    >
+                      Edit
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    data-action="start-run"
-                    data-appmcp-hint="Opens the dialog to start a new run"
-                    onClick={() => setStartRunOpen(true)}
-                    className={view === "runs" ? PRIMARY_BTN : TOOL_BTN}
+                    onClick={() => setSummariseOpen(true)}
+                    className={TOOL_BTN}
                   >
-                    {t("steps.startRun")}
+                    {project.summary ? "Update summary" : "Summarise"}
                   </button>
-                  <ProjectLifecycleMenu
-                    project={project}
-                    callerUserId={callerUserId}
-                    isInstanceAdmin={isInstanceAdmin}
-                    onOpenMore={openMore}
-                    badge={skillCandidates || undefined}
-                  />
+                  {project.goal || project.usage || project.summary ? (
+                    <details
+                      data-component="ProjectAbout"
+                      className="group min-w-[16rem] basis-full sm:basis-auto"
+                    >
+                      <summary className="cursor-pointer select-none text-xs font-medium text-[var(--color-muted)]">
+                        About
+                      </summary>
+                      {project.goal ? (
+                        <p className="mt-1 text-sm text-[var(--color-muted)]">
+                          {project.goal}
+                        </p>
+                      ) : null}
+                      {project.usage ? (
+                        <ProjectUsageLine usage={project.usage} />
+                      ) : null}
+                      {project.summary ? (
+                        <div
+                          data-component="ProjectSummary"
+                          className="mt-2 rounded-xl bg-[var(--color-surface-2)] px-3 py-2 text-sm"
+                        >
+                          <p className="italic">{project.summary}</p>
+                          {project.summary_at != null ? (
+                            <p className="mt-1 text-xs text-[var(--color-muted)]">
+                              Summarised {timeLabel(project.summary_at, "ago")}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </details>
+                  ) : null}
                 </div>
-
-                {project.archived ? (
-                  <p className="mt-2 text-sm text-[var(--color-muted)]">
-                    This project is archived — restore it (⋯) to run it again.
-                  </p>
-                ) : null}
-              </header>
+              ) : null}
+              {project.archived ? (
+                <p className="text-sm text-[var(--color-muted)]">
+                  This project is archived — restore it (⋯) to run it again.
+                </p>
+              ) : null}
             </div>
-          </BusyRegion>
+
+            {/* right: one meta line + one attention pill, actions beneath */}
+            <div className="flex flex-col gap-2 sm:items-end">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  aria-hidden
+                  className="text-lg leading-none text-[var(--color-muted)]"
+                >
+                  {CADENCE_GLYPH[project.cadence]}
+                </span>
+                <span className="text-sm text-[var(--color-muted)]">{meta}</span>
+                <ProjectCategoryTag
+                  categories={categories}
+                  categoryId={project.category_id}
+                />
+                <Pill tone={HEALTH_TONE[project.health]}>
+                  {HEALTH_LABEL[project.health]}
+                  {needsYou > 0 ? ` · ${needsYou}` : ""}
+                </Pill>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+                <button
+                  type="button"
+                  data-appmcp-hint="Opens the latest run's outputs"
+                  onClick={() => {
+                    selectView("runs");
+                    scrollTo("outputs");
+                  }}
+                  className={TOOL_BTN}
+                >
+                  {t("steps.latestOutputs")}
+                </button>
+                <button
+                  type="button"
+                  data-action="start-run"
+                  data-appmcp-hint="Opens the dialog to start a new run"
+                  onClick={() => setStartRunOpen(true)}
+                  className={view === "runs" ? PRIMARY_BTN : TOOL_BTN}
+                >
+                  {t("steps.startRun")}
+                </button>
+                <ProjectLifecycleMenu
+                  project={project}
+                  callerUserId={callerUserId}
+                  isInstanceAdmin={isInstanceAdmin}
+                  onOpenMore={openMore}
+                  badge={skillCandidates || undefined}
+                />
+              </div>
+            </div>
+          </div>
+        </header>
+      </BusyRegion>
+
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+        <div
+          data-component="ProjectMain"
+          className={`flex min-w-0 flex-1 flex-col gap-4 ${dock.mode === "max" ? "lg:hidden" : ""}`}
+        >
+          <div className={`flex min-w-0 flex-col gap-4 ${phoneHide}`}>
 
           {/* ── Status: the journey bar and live status; collapsible on a phone ── */}
           <aside
@@ -569,95 +645,28 @@ export function ProjectDetailView({
             </div>
           </aside>
 
-          {/* ── Tools, About, readiness: below the journey bar ─────────── */}
-          {!project.archived ||
-          project.goal ||
-          project.usage ||
-          project.summary ? (
+          {/* ── Readiness: below the journey bar ────────────────────────── */}
+          {!project.archived && !runnable ? (
             <section
               data-component="ProjectDetails"
               aria-label="Project details"
-              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 [&>*:first-child]:mt-0"
+              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
             >
-              {!project.archived ? (
-                <div
-                  data-component="ProjectToolbar"
-                  role="toolbar"
-                  aria-label="Project tools"
-                  className="mt-2 flex flex-wrap gap-1.5"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setAddOpen(true)}
-                    className={TOOL_BTN}
-                  >
-                    Add
-                  </button>
-                  {canLead ? (
-                    <button
-                      type="button"
-                      onClick={() => setEditOpen(true)}
-                      className={TOOL_BTN}
-                    >
-                      Edit
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => setSummariseOpen(true)}
-                    className={TOOL_BTN}
-                  >
-                    {project.summary ? "Update summary" : "Summarise"}
-                  </button>
-                </div>
-              ) : null}
-
-              {project.goal || project.usage || project.summary ? (
-                <details data-component="ProjectAbout" className="group mt-2">
-                  <summary className="cursor-pointer select-none text-xs font-medium text-[var(--color-muted)]">
-                    About
-                  </summary>
-                  {project.goal ? (
-                    <p className="mt-1 text-sm text-[var(--color-muted)]">
-                      {project.goal}
-                    </p>
-                  ) : null}
-                  {project.usage ? (
-                    <ProjectUsageLine usage={project.usage} />
-                  ) : null}
-                  {project.summary ? (
-                    <div
-                      data-component="ProjectSummary"
-                      className="mt-2 rounded-xl bg-[var(--color-surface-2)] px-3 py-2 text-sm"
-                    >
-                      <p className="italic">{project.summary}</p>
-                      {project.summary_at != null ? (
-                        <p className="mt-1 text-xs text-[var(--color-muted)]">
-                          Summarised {timeLabel(project.summary_at, "ago")}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </details>
-              ) : null}
-
-              {!project.archived && !runnable ? (
-                <details
-                  data-component="ProjectReadinessDetails"
-                  className="mt-2"
-                >
-                  <summary className="cursor-pointer select-none text-xs font-medium text-[var(--color-muted)]">
-                    Before it can run ·{" "}
-                    {readiness.filter((item) => item.ok).length} of{" "}
-                    {readiness.length} ready
-                  </summary>
-                  <ReadinessChecklist
-                    items={readiness}
-                    findings={findings}
-                    onItem={reveal}
-                  />
-                </details>
-              ) : null}
+              <details
+                data-component="ProjectReadinessDetails"
+                className="mt-2"
+              >
+                <summary className="cursor-pointer select-none text-xs font-medium text-[var(--color-muted)]">
+                  Before it can run ·{" "}
+                  {readiness.filter((item) => item.ok).length} of{" "}
+                  {readiness.length} ready
+                </summary>
+                <ReadinessChecklist
+                  items={readiness}
+                  findings={findings}
+                  onItem={reveal}
+                />
+              </details>
             </section>
           ) : null}
         </div>
@@ -706,6 +715,7 @@ export function ProjectDetailView({
         needsYou={coAuthorNeedsYou}
         playbook={playbook}
       />
+      </div>
 
       {sheet ? (
         <Sheet

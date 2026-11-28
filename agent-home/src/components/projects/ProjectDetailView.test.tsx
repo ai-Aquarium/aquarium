@@ -569,7 +569,7 @@ describe("LinkRow", () => {
 
 /** The slice of the page that is the slim header. */
 function header(html: string): string {
-  return html.slice(html.indexOf('data-component="ProjectHeader"'), html.indexOf("</header>"));
+  return html.slice(html.indexOf('data-component="ProjectTitleBand"'), html.indexOf("</header>"));
 }
 
 /** The slice of the page that is the journey bar. */
@@ -763,12 +763,12 @@ describe("ProjectDetailView", () => {
       const head = header(html);
       expect(head).not.toMatch(/<button[^>]*>(Run now|Activate|Continue run \d+|Start iteration \d+)<\/button>/);
       expect(head).not.toContain('data-action="run-now"');
-      // The journey bar (status rail), then the toolbar (Add / Edit /
-      // Summarise) and the collapsible About.
+      // The title band holds the toolbar (Add / Edit / Summarise) and the
+      // collapsible About, above the journey bar (status rail).
       const at = (marker: string) => html.indexOf(marker);
-      expect(at('data-component="JourneyBar"')).toBeLessThan(at('data-component="ProjectToolbar"'));
+      expect(at('data-component="ProjectTitleBand"')).toBeLessThan(at('data-component="JourneyBar"'));
       expect(at('data-component="ProjectToolbar"')).toBeLessThan(at('data-component="ProjectAbout"'));
-      expect(head).not.toContain('data-component="ProjectToolbar"');
+      expect(head).toContain('data-component="ProjectToolbar"');
       expect(bar(html)).toContain('id="journey-primary"');
     }
   });

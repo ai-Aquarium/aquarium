@@ -437,6 +437,7 @@ from hermes_cli.wa_bridge_api import router as _wa_bridge_router  # noqa: E402
 from hermes_cli.triage_status_api import router as _triage_status_router  # noqa: E402
 from hermes_cli.backup_offsite_api import router as _backup_offsite_router  # noqa: E402
 from hermes_cli.software_upgrade_api import router as _software_upgrade_router  # noqa: E402
+from hermes_cli.fleet_api import router as _fleet_router  # noqa: E402
 from hermes_cli.security_basics_api import router as _security_basics_router  # noqa: E402
 from hermes_cli.goals_api import router as _goals_router  # noqa: E402
 from hermes_cli.projects_api import router as _projects_router  # noqa: E402
@@ -486,6 +487,7 @@ app.include_router(_wa_bridge_router)
 app.include_router(_triage_status_router)
 app.include_router(_backup_offsite_router)
 app.include_router(_software_upgrade_router)
+app.include_router(_fleet_router)
 app.include_router(_security_basics_router)
 app.include_router(_goals_router)
 app.include_router(_projects_router)

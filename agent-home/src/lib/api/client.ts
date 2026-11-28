@@ -85,6 +85,9 @@ import type {
   MemoryDocumentsResponse,
   ModelInfo,
   OffsiteBackupStatus,
+  FleetJobs,
+  FleetStatus,
+  FleetSwitchJob,
   SoftwareUpgradeStatus,
   ModelOptionsResponse,
   ModelSetResponse,
@@ -3437,6 +3440,30 @@ export class HermesApiClient {
     password: string;
   }): Promise<{ started: boolean; status: SoftwareUpgradeStatus }> {
     return this.request("/api/software-upgrade/rollback", { method: "POST", json: body });
+  }
+
+  // -- fleet (Settings → Fleet; owner only, on boxes that manage a fleet) ----
+
+  /** Cheap probe for the Settings tile: does this server manage a fleet at all? */
+  async fleetAvailable(): Promise<{ available: boolean }> {
+    return this.request("/api/fleet/available");
+  }
+
+  async fleet(): Promise<FleetStatus> {
+    return this.request("/api/fleet");
+  }
+
+  /** Progress poll for in-flight layout switches. */
+  async fleetJob(): Promise<FleetJobs> {
+    return this.request("/api/fleet/job");
+  }
+
+  async fleetSwitch(body: {
+    box: string;
+    layout: "git" | "release";
+    password: string;
+  }): Promise<{ started: boolean; box: string; layout: string; job: FleetSwitchJob | null }> {
+    return this.request("/api/fleet/switch", { method: "POST", json: body });
   }
 
   // -- private networks (Settings → In&Out → Fortinet VPN) -----------------

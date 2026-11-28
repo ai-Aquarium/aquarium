@@ -2,6 +2,19 @@
 
 Tracking file for in-flight feature work. Update as phases land.
 
+## Fleet page: per-box layout switch, only where a fleet is configured
+
+Plan: `plans/2026-11-28-fleet-page.md`
+Status: **implemented** — updated 2026-11-28
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | `aquarium fleet probe/status/job/switch` in `deploy/aquarium.py` + `deploy/sudoers.d/aquarium-fleet` + ROOT_COPIES | done |
+| 2 | `hermes_cli/fleet_api.py` (OWNER-gated, password re-check, scrubbing) + router registration | done |
+| 3 | agent-home: types, client, route-roles, BFF routes, sections/`hasFleet`, Fleet page + FleetView, i18n en+zh-Hant | done |
+| 4 | tests (deploy helper, API, vitest) + RELEASES.md + this file | done |
+| 5 | ops setup on the managing box (fleet key, fleet.json, sudoers, dashboard restart) | pending — aquarium-ops |
+
 ## New Hetzner instance: ProxyAdvisor (CX43, release install)
 
 Plan: `plans/2026-11-27-hetzner-proxyadvisor-instance.md`
@@ -360,3 +373,4 @@ develop`, HSD via the agent-home software-upgrade release flow) track
 | 2026-11-27 | Repo transferred leolau/aquarium → ai-Aquarium/aquarium; refs updated in #1157, old signing identity still accepted | — |
 | 2026-11-27 | C1 — Project header dedupe: one meta line (category inline), one attention pill w/ needs-you count, ONE ⋯ menu (lifecycle + More merged), JourneyBar+LiveStatusBar flattened into one status card | plans/2026-11-27-project-detail-cleanup.md |
 | 2026-11-28 | C2 — Requirements long lists: collapsible counted DocSections (persisted), sources >8 become grouped compact rows with search + kind filters + "Show all N" (#1162) | plans/2026-11-27-project-detail-cleanup.md |
+| 2026-11-28 | C3 — Title band: header + toolbar merged into a full-width band above both columns (title left w/ Add/Edit/Summarise + About beneath; meta+pills and actions stacked right). PageHeader gains `titleSrOnly`; band lives in ProjectDetailView, spans over the chat column | plans/2026-11-27-project-detail-cleanup.md |
