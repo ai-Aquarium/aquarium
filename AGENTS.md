@@ -38,6 +38,27 @@ the deploy path is **historical only** — verify against `PRODUCTION.md` in
 `ai-Aquarium/aquarium-ops` before acting on it, and fix it (add a superseded
 banner) if you find one that doesn't already say so.
 
+## ⚠️ SSH to Aquarium boxes — the fail2ban trap ⚠️
+
+Every Aquarium box runs fail2ban on sshd (a handful of auth failures → a
+10-minute ban of the **source IP**). `Connection refused` on port 22 almost
+always means **your source IP is banned — sshd is fine.** Before rebooting or
+entering rescue mode for "SSH down", check whether the box is otherwise
+healthy (Hetzner `hcloud server describe`, HTTPS answering) and check the ban
+DB: `sqlite3 /var/lib/fail2ban/fail2ban.sqlite3 'SELECT * FROM bans'` — bans
+self-expire, so often the right fix is to wait.
+
+- **Only ever SSH with the exact user + key `PRODUCTION.md` documents**, and
+  always `-o BatchMode=yes -o IdentitiesOnly=yes -i <key>` so no other keys
+  are offered. **Never enumerate usernames** (probing `ubuntu`/`debian`/etc.
+  is what once banned a shared home IP and cost a rescue-mode session).
+- Each failed auth counts against the ban budget — repeated wrong-key
+  attempts get your IP banned too.
+- If a box is SSH-unreachable and you can't tell whether it's a ban, an
+  outage, or a moved port — ask before rebooting. Boxes with no SSH access
+  may still be reachable via cloud tooling (e.g. Alibaba Cloud Assistant /
+  `aliyun ecs RunCommand` — see `PRODUCTION.md`).
+
 ## ★ Primary UI = `agent-home` (not the dashboard) ★
 
 **`agent-home/` is THE key, main, user-facing UI of Aquarium.** The
