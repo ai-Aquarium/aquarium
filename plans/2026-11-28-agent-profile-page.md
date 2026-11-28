@@ -341,5 +341,9 @@ page doesn't resurrect edit flows.
   personality (SOUL.md + model), who-can-use-it, danger zone. Card click
   navigates to the page; the drawer render is removed from ProfilesView.
   New BFF: `GET /api/profiles/named/[name]/skill-suggestions`. i18n stays
-  as page-level literals, matching the profiles grid. PR 3 (retire
-  ProfileEditor) intentionally last.
+  as page-level literals, matching the profiles grid.
+- 2026-11-28: **PR 1 merged (#1168)**; PR 2 up as #1170. **PR 3**
+  (`chore/retire-profile-editor`, stacked on `feat/profile-page`) —
+  deletes `ProfileEditor`, `ProfileSkillsPanel` (+ test), `TriageCard`
+  (+ test + fixtures), all drawer-only; the `?open=` redirect to the page
+  stays for old deep-links. Hint-ratchet baseline regenerated.
